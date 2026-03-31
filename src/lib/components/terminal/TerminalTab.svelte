@@ -54,7 +54,7 @@
   }
 
   .terminal-container :global(.xterm) {
-    padding: var(--spacing-5) var(--spacing-5);
+    padding: 0.35rem 0.5rem;
     height: 100%;
   }
 </style>

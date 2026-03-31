@@ -2,10 +2,34 @@
   import DiffViewer from "./DiffViewer.svelte";
   import SummaryView from "./SummaryView.svelte";
   import FlowDiagram from "./FlowDiagram.svelte";
-  import { panelData, activeSection } from "../../stores/panel";
+  import { panelData, activeSection, setSection, togglePanel } from "../../stores/panel";
+  import type { PanelSection } from "../../../types/panel";
+
+  const navItems: { id: PanelSection; label: string; icon: string }[] = [
+    { id: "diff", label: "Diff", icon: "difference" },
+    { id: "summary", label: "Summary", icon: "description" },
+    { id: "flow", label: "Flow", icon: "account_tree" },
+  ];
 </script>
 
 <div class="side-panel">
+  <div class="panel-tabs">
+    <div class="tabs-left">
+      {#each navItems as item}
+        <button
+          class="panel-tab"
+          class:active={$activeSection === item.id}
+          onclick={() => setSection(item.id)}
+        >
+          <span class="material-symbols-outlined tab-icon">{item.icon}</span>
+          <span>{item.label}</span>
+        </button>
+      {/each}
+    </div>
+    <button class="panel-close-btn" onclick={togglePanel} title="Close Panel">
+      <span class="material-symbols-outlined">right_panel_close</span>
+    </button>
+  </div>
   <div class="panel-content">
     {#if $activeSection === "diff"}
       <DiffViewer data={$panelData?.diff} cwd={$panelData?.cwd ?? ''} />
@@ -25,8 +49,81 @@
     background: var(--surface-container-low);
   }
 
+  .panel-tabs {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 36px;
+    padding: 0 0.25rem 0 0.5rem;
+    border-bottom: 1px solid var(--outline-variant);
+    flex-shrink: 0;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .tabs-left {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .panel-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.6rem;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--on-surface-variant);
+    font-size: 11px;
+    font-family: var(--font-body);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .panel-tab:hover {
+    background: var(--surface-container-high);
+    color: var(--on-surface);
+  }
+
+  .panel-tab.active {
+    background: var(--surface-container-high);
+    color: var(--on-surface);
+    font-weight: 500;
+  }
+
+  .tab-icon {
+    font-size: 0.9rem;
+  }
+
+  .panel-close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: none;
+    border: none;
+    color: var(--on-surface-variant);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    padding: 0;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .panel-close-btn:hover {
+    background: var(--surface-container-high);
+    color: var(--on-surface);
+  }
+
+  .panel-close-btn :global(.material-symbols-outlined) {
+    font-size: 1rem;
+  }
+
   .panel-content {
     flex: 1;
-    overflow: hidden;
+    overflow: auto;
+    min-width: 0;
   }
 </style>

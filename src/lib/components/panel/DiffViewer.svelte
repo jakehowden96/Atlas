@@ -1,7 +1,5 @@
 <script lang="ts">
-  import { html as diff2htmlHtml } from "diff2html";
-  import { ColorSchemeType } from "diff2html/lib/types";
-  import "diff2html/bundles/css/diff2html.min.css";
+  import { parseDiff } from "../../diff-parser";
   import type { DiffData } from "../../../types/panel";
   import ChangeSummary from "./ChangeSummary.svelte";
 
@@ -12,23 +10,21 @@
 
   let { data, cwd }: Props = $props();
 
-  const diff2htmlOpts = {
-    drawFileList: true,
-    matching: "lines" as const,
-    outputFormat: "line-by-line" as const,
-    colorScheme: ColorSchemeType.DARK,
-  };
+  let files = $derived(data?.raw ? parseDiff(data.raw) : []);
 
-  let diffHtml = $derived(
-    data?.raw ? diff2htmlHtml(data.raw, diff2htmlOpts) : "",
-  );
-
-  let projectHtmls = $derived(
+  let projectFiles = $derived(
     data?.projects?.map((p) => ({
       ...p,
-      html: diff2htmlHtml(p.raw, diff2htmlOpts),
+      files: parseDiff(p.raw),
     })) ?? [],
   );
+
+  const badgeClass: Record<string, string> = {
+    modified: "badge-modified",
+    added: "badge-added",
+    deleted: "badge-deleted",
+    renamed: "badge-renamed",
+  };
 </script>
 
 <div class="diff-viewer">
@@ -39,8 +35,8 @@
     </div>
   </div>
   {#if data}
-    {#if projectHtmls.length > 0}
-      {#each projectHtmls as project}
+    {#if projectFiles.length > 0}
+      {#each projectFiles as project}
         <div class="project-section">
           <div class="project-header">
             <span class="project-name">{project.name}</span>
@@ -50,15 +46,93 @@
               <span class="stat removed">-{project.lines_removed}</span>
             </span>
           </div>
-          <div class="diff-content">
-            {@html project.html}
-          </div>
+          {#each project.files as file}
+            <div class="file-section">
+              <div class="file-header">
+                <div class="file-header-left">
+                  <span class="material-symbols-outlined file-icon">description</span>
+                  <span class="file-name">{file.newName}</span>
+                  <span class="badge {badgeClass[file.changeType]}">{file.changeType.toUpperCase()}</span>
+                </div>
+              </div>
+              <div class="file-lines">
+                {#each file.hunks as hunk}
+                  {#each hunk.lines as line}
+                    {#if line.type === "hunk-header"}
+                      <div class="diff-line hunk-info">
+                        <div class="line-num"></div>
+                        <div class="line-num"></div>
+                        <div class="line-content">{hunk.header}</div>
+                      </div>
+                    {:else if line.type === "add"}
+                      <div class="diff-line line-add">
+                        <div class="line-num"></div>
+                        <div class="line-num num-add">{line.newNum}</div>
+                        <div class="line-content content-add"><span class="prefix">+</span><span>{line.content}</span></div>
+                      </div>
+                    {:else if line.type === "remove"}
+                      <div class="diff-line line-remove">
+                        <div class="line-num num-remove">{line.oldNum}</div>
+                        <div class="line-num"></div>
+                        <div class="line-content content-remove"><span class="prefix">-</span><span>{line.content}</span></div>
+                      </div>
+                    {:else}
+                      <div class="diff-line">
+                        <div class="line-num">{line.oldNum}</div>
+                        <div class="line-num">{line.newNum}</div>
+                        <div class="line-content">{line.content}</div>
+                      </div>
+                    {/if}
+                  {/each}
+                {/each}
+              </div>
+            </div>
+          {/each}
         </div>
       {/each}
     {:else}
-      <div class="diff-content">
-        {@html diffHtml}
-      </div>
+      {#each files as file}
+        <div class="file-section">
+          <div class="file-header">
+            <div class="file-header-left">
+              <span class="material-symbols-outlined file-icon">description</span>
+              <span class="file-name">{file.newName}</span>
+              <span class="badge {badgeClass[file.changeType]}">{file.changeType.toUpperCase()}</span>
+            </div>
+          </div>
+          <div class="file-lines">
+            {#each file.hunks as hunk}
+              {#each hunk.lines as line}
+                {#if line.type === "hunk-header"}
+                  <div class="diff-line hunk-info">
+                    <div class="line-num"></div>
+                    <div class="line-num"></div>
+                    <div class="line-content">{hunk.header}</div>
+                  </div>
+                {:else if line.type === "add"}
+                  <div class="diff-line line-add">
+                    <div class="line-num"></div>
+                    <div class="line-num num-add">{line.newNum}</div>
+                    <div class="line-content content-add"><span class="prefix">+</span><span>{line.content}</span></div>
+                  </div>
+                {:else if line.type === "remove"}
+                  <div class="diff-line line-remove">
+                    <div class="line-num num-remove">{line.oldNum}</div>
+                    <div class="line-num"></div>
+                    <div class="line-content content-remove"><span class="prefix">-</span><span>{line.content}</span></div>
+                  </div>
+                {:else}
+                  <div class="diff-line">
+                    <div class="line-num">{line.oldNum}</div>
+                    <div class="line-num">{line.newNum}</div>
+                    <div class="line-content">{line.content}</div>
+                  </div>
+                {/if}
+              {/each}
+            {/each}
+          </div>
+        </div>
+      {/each}
     {/if}
     <ChangeSummary {data} {cwd} />
   {:else}
@@ -76,11 +150,11 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1rem 1.25rem;
+    padding: 0.5rem 0.75rem;
     position: sticky;
     top: 0;
     background: var(--surface-container-low);
-    z-index: 1;
+    z-index: 2;
   }
 
   .diff-header-left {
@@ -101,282 +175,153 @@
     color: var(--on-surface);
   }
 
-  .diff-content {
-    padding: 0 var(--spacing-2-5) var(--spacing-2-5);
+  /* File section */
+  .file-section {
+    margin-bottom: 8px;
+    overflow: hidden;
   }
 
-  .empty {
+  .file-header {
     display: flex;
     align-items: center;
-    justify-content: center;
-    height: calc(100% - 3rem);
-    color: var(--on-surface-variant);
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: var(--surface-container-high);
   }
 
-  .empty-text {
-    font-size: 22px;
-    font-family: var(--font-display);
-    letter-spacing: -0.02em;
-  }
-
-  /*
-   * Full dark theme override for diff2html.
-   * Neon Monolith tonal architecture palette.
-   */
-
-  /* Root wrapper */
-  .diff-content :global(.d2h-wrapper) {
-    background: transparent !important;
-    color: var(--on-surface-variant);
-  }
-
-  /* File list (collapsible header above each file) */
-  .diff-content :global(.d2h-file-list-wrapper) {
-    background: var(--surface-container-low) !important;
-    border: none !important;
-    margin-bottom: 0;
-  }
-
-  .diff-content :global(.d2h-file-list-wrapper .d2h-file-list) {
-    background: var(--surface-container-low) !important;
-  }
-
-  .diff-content :global(.d2h-file-list-line) {
-    color: var(--on-surface-variant) !important;
-  }
-
-  .diff-content :global(.d2h-file-list-line a) {
-    color: var(--primary) !important;
-  }
-
-  /* Per-file header bar */
-  .diff-content :global(.d2h-file-header) {
-    background: var(--surface-container-high) !important;
-    border: none !important;
-    color: var(--on-surface-variant) !important;
-    padding: 10px 14px;
-    display: flex;
-    align-items: center;
-  }
-
-  .diff-content :global(.d2h-file-name-wrapper) {
-    background: transparent !important;
+  .file-header-left {
     display: flex;
     align-items: center;
     gap: 8px;
   }
 
-  .diff-content :global(.d2h-file-name) {
-    color: var(--on-surface) !important;
+  .file-icon {
+    font-size: 14px;
+    color: var(--on-surface-variant);
+  }
+
+  .file-name {
     font-size: 13px;
     font-family: var(--font-mono);
+    color: var(--on-surface);
+    font-weight: 500;
   }
 
-  .diff-content :global(.d2h-file-stats) {
-    color: var(--on-surface-variant) !important;
-  }
-
-  .diff-content :global(.d2h-file-stats .d2h-lines-added) {
-    color: var(--secondary) !important;
-    border: none !important;
-    background: transparent !important;
-  }
-
-  .diff-content :global(.d2h-file-stats .d2h-lines-deleted) {
-    color: var(--error) !important;
-    border: none !important;
-    background: transparent !important;
-  }
-
-  /* File diff container */
-  .diff-content :global(.d2h-file-diff) {
-    border: none !important;
-    overflow-x: auto;
-  }
-
-  .diff-content :global(.d2h-diff-table) {
-    border: none !important;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 1.5;
-    border-collapse: collapse;
-    width: 100%;
-  }
-
-  /* Table cells should not overflow or overlap */
-  .diff-content :global(.d2h-diff-table td) {
-    vertical-align: top;
-  }
-
-  /* All code cells */
-  .diff-content :global(.d2h-code-line),
-  .diff-content :global(.d2h-code-line-ctn) {
-    background: var(--surface) !important;
-    color: var(--on-surface-variant) !important;
-    border: none !important;
-    white-space: pre;
-    overflow-x: auto;
-  }
-
-  .diff-content :global(.d2h-code-line-prefix) {
-    color: var(--on-surface-variant) !important;
-    background: transparent !important;
-    border: none !important;
-    user-select: none;
-    flex-shrink: 0;
-  }
-
-  /* Line numbers */
-  .diff-content :global(.d2h-code-linenumber) {
-    background: var(--surface-container-low) !important;
-    color: color-mix(in srgb, var(--on-surface-variant) 70%, transparent) !important;
-    border: none !important;
-    min-width: 40px;
-    white-space: nowrap;
-    user-select: none;
-    text-align: right;
-    padding-left: 6px;
-    padding-right: 6px;
-    position: sticky;
-    left: 0;
-    z-index: 1;
-  }
-
-  /* Hunk info (@@ lines) */
-  .diff-content :global(.d2h-info) {
-    background: var(--surface-container-high) !important;
-    color: var(--on-surface-variant) !important;
-    border: none !important;
-  }
-
-  /* Added lines — secondary at 10% opacity per design spec */
-  .diff-content :global(.d2h-ins) {
-    background: color-mix(in srgb, var(--secondary-container) 10%, var(--surface)) !important;
-    border: none !important;
-  }
-
-  .diff-content :global(.d2h-ins .d2h-code-line-ctn) {
-    background: transparent !important;
-    color: var(--secondary) !important;
-  }
-
-  .diff-content :global(.d2h-ins .d2h-code-line-prefix) {
-    color: var(--secondary) !important;
-    background: transparent !important;
-  }
-
-  .diff-content :global(.d2h-ins .d2h-code-linenumber) {
-    background: color-mix(in srgb, var(--secondary-container) 10%, var(--surface-container-low)) !important;
-    color: color-mix(in srgb, var(--secondary) 80%, transparent) !important;
-    border: none !important;
-  }
-
-  /* Removed lines — error at 10% opacity per design spec */
-  .diff-content :global(.d2h-del) {
-    background: color-mix(in srgb, var(--error-container) 10%, var(--surface)) !important;
-    border: none !important;
-  }
-
-  .diff-content :global(.d2h-del .d2h-code-line-ctn) {
-    background: transparent !important;
-    color: var(--error) !important;
-  }
-
-  .diff-content :global(.d2h-del .d2h-code-line-prefix) {
-    color: var(--error) !important;
-    background: transparent !important;
-  }
-
-  .diff-content :global(.d2h-del .d2h-code-linenumber) {
-    background: color-mix(in srgb, var(--error-container) 10%, var(--surface-container-low)) !important;
-    color: color-mix(in srgb, var(--error) 80%, transparent) !important;
-    border: none !important;
-  }
-
-  /* Inline highlight (word-level diff) */
-  .diff-content :global(.d2h-ins ins),
-  .diff-content :global(.d2h-change ins) {
-    background: color-mix(in srgb, var(--secondary) 28%, transparent) !important;
-    text-decoration: none !important;
-    border-radius: 2px;
-    padding: 1px 0;
-  }
-
-  .diff-content :global(.d2h-del del),
-  .diff-content :global(.d2h-change del) {
-    background: color-mix(in srgb, var(--error) 28%, transparent) !important;
-    text-decoration: none !important;
-    border-radius: 2px;
-    padding: 1px 0;
-  }
-
-  /* Collapse/expand button */
-  .diff-content :global(.d2h-file-collapse) {
-    color: var(--on-surface-variant) !important;
-  }
-
-  .diff-content :global(.d2h-file-collapse .d2h-selected) {
-    color: var(--on-surface) !important;
-  }
-
-  /* Tag badges (renamed, added, deleted, etc.) */
-  .diff-content :global(.d2h-tag) {
-    background: color-mix(in srgb, var(--secondary) 15%, var(--surface-container-highest)) !important;
-    color: var(--secondary) !important;
-    border: none !important;
-    border-radius: 4px !important;
-    font-size: 10px;
+  /* Change type badges */
+  .badge {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 9px;
     font-family: var(--font-mono);
     font-weight: 600;
     letter-spacing: 0.04em;
-    padding: 3px 8px;
-    text-transform: uppercase;
   }
 
-  .diff-content :global(.d2h-changed-tag) {
-    background: color-mix(in srgb, var(--primary) 15%, var(--surface-container-highest)) !important;
-    color: var(--primary) !important;
+  .badge-modified {
+    background: color-mix(in srgb, var(--primary) 15%, var(--surface-container-highest));
+    color: var(--primary);
   }
 
-  .diff-content :global(.d2h-deleted-tag) {
-    background: color-mix(in srgb, var(--error) 15%, var(--surface-container-highest)) !important;
-    color: var(--error) !important;
+  .badge-added {
+    background: color-mix(in srgb, var(--secondary) 15%, var(--surface-container-highest));
+    color: var(--secondary);
   }
 
-  /* Empty diff placeholder */
-  .diff-content :global(.d2h-file-side-diff) {
-    background: var(--surface) !important;
+  .badge-deleted {
+    background: color-mix(in srgb, var(--error) 15%, var(--surface-container-highest));
+    color: var(--error);
   }
 
-  /* Side-by-side fallback */
-  .diff-content :global(.d2h-file-side-diff .d2h-code-wrapper) {
-    background: var(--surface) !important;
+  .badge-renamed {
+    background: color-mix(in srgb, var(--tertiary) 15%, var(--surface-container-highest));
+    color: var(--tertiary);
   }
 
-  /* Code wrapper */
-  .diff-content :global(.d2h-code-wrapper) {
+  /* Diff lines */
+  .file-lines {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 24px;
     overflow-x: auto;
-    background: var(--surface) !important;
+    background: var(--surface);
   }
 
-  /* File wrappers — no border, tonal separation */
-  .diff-content :global(.d2h-file-wrapper) {
-    border: none;
-    border-radius: var(--radius-sm);
-    margin-bottom: 8px;
-    overflow: hidden;
-    background: var(--surface-container-high);
+  .diff-line {
+    display: flex;
   }
 
+  .line-num {
+    width: 40px;
+    flex: none;
+    text-align: right;
+    padding-right: 8px;
+    color: color-mix(in srgb, var(--on-surface-variant) 30%, transparent);
+    user-select: none;
+    font-size: 11px;
+  }
+
+  .line-content {
+    flex: 1;
+    padding: 0 16px;
+    white-space: pre;
+    color: color-mix(in srgb, var(--on-surface-variant) 60%, transparent);
+  }
+
+  .prefix {
+    margin-right: 8px;
+    opacity: 0.5;
+  }
+
+  /* Hunk header (@@ lines) */
+  .hunk-info {
+    border-bottom: 1px solid color-mix(in srgb, var(--outline-variant) 5%, transparent);
+  }
+
+  .hunk-info .line-content {
+    color: var(--on-surface-variant);
+    font-size: 11px;
+    padding: 4px 16px;
+    opacity: 0.6;
+  }
+
+  /* Added lines */
+  .line-add {
+    background: color-mix(in srgb, var(--secondary-container) 10%, var(--surface));
+    border-left: 2px solid var(--secondary);
+  }
+
+  .num-add {
+    color: color-mix(in srgb, var(--secondary) 40%, transparent);
+  }
+
+  .content-add {
+    color: var(--secondary);
+  }
+
+  /* Removed lines */
+  .line-remove {
+    background: color-mix(in srgb, var(--error-container) 10%, var(--surface));
+    border-left: 2px solid var(--error);
+  }
+
+  .num-remove {
+    color: color-mix(in srgb, var(--error) 40%, transparent);
+  }
+
+  .content-remove {
+    color: var(--error);
+  }
+
+  /* Project sections (multi-repo) */
   .project-section {
-    margin-bottom: var(--spacing-4);
+    margin-bottom: 16px;
   }
 
   .project-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--spacing-2-5) var(--spacing-5);
+    padding: 10px 20px;
     background: var(--surface-container-high);
     position: sticky;
     top: 41px;
@@ -396,12 +341,28 @@
     font-family: var(--font-body);
   }
 
+  .stat.added {
+    color: var(--secondary);
+  }
+
+  .stat.removed {
+    color: var(--error);
+  }
+
+  .stat.files {
+    color: var(--on-surface-variant);
+  }
+
+  /* Empty state */
   .empty {
     display: flex;
     align-items: center;
     justify-content: center;
     height: 100%;
     color: var(--on-surface-variant);
+  }
+
+  .empty-text {
     font-size: 22px;
     font-family: var(--font-display);
     letter-spacing: -0.02em;

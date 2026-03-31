@@ -3,12 +3,8 @@
   import TerminalContainer from "./lib/components/terminal/TerminalContainer.svelte";
   import SidePanel from "./lib/components/panel/SidePanel.svelte";
   import Resizer from "./lib/components/layout/Resizer.svelte";
-  import Header from "./lib/components/layout/Header.svelte";
-  import Sidebar from "./lib/components/layout/Sidebar.svelte";
-  import StatusBar from "./lib/components/layout/StatusBar.svelte";
-  import CommandRunner from "./lib/components/layout/CommandRunner.svelte";
   import Toast from "./lib/components/Toast.svelte";
-  import { panelVisible, panelData } from "./lib/stores/panel";
+  import { panelVisible, panelData, togglePanel } from "./lib/stores/panel";
   import { onPanelUpdate } from "./lib/ipc";
   import type { UnlistenFn } from "@tauri-apps/api/event";
 
@@ -34,24 +30,22 @@
 </script>
 
 <div class="app">
-  <Header />
-  <div class="app-body">
-    <Sidebar />
-    <div class="main-stage">
-      <div class="terminal-section">
-        <TerminalContainer />
-      </div>
-      {#if $panelVisible}
-        <Resizer onResize={handleResize} />
-        <div class="panel-section" style="width: {panelWidth}px">
-          <SidePanel />
-        </div>
-      {/if}
+  <div class="main-stage">
+    <div class="terminal-section">
+      <TerminalContainer />
     </div>
+    {#if $panelVisible}
+      <Resizer onResize={handleResize} />
+      <div class="panel-section" style="width: {panelWidth}px">
+        <SidePanel />
+      </div>
+    {:else}
+      <button class="panel-open-tab" onclick={togglePanel} title="Open Panel">
+        <span class="material-symbols-outlined">left_panel_open</span>
+      </button>
+    {/if}
   </div>
-  <StatusBar />
 </div>
-<CommandRunner />
 <Toast />
 
 <style>
@@ -157,16 +151,8 @@
 
   .app {
     display: flex;
-    flex-direction: column;
     height: 100vh;
     width: 100vw;
-  }
-
-  .app-body {
-    display: flex;
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
   }
 
   .main-stage {
@@ -187,5 +173,29 @@
     flex-shrink: 0;
     overflow: hidden;
     background: var(--surface-container-low);
+  }
+
+  .panel-open-tab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    background: var(--surface-container-low);
+    border: none;
+    border-left: 1px solid var(--outline-variant);
+    color: var(--on-surface-variant);
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .panel-open-tab:hover {
+    background: var(--surface-container-high);
+    color: var(--on-surface);
+  }
+
+  .panel-open-tab :global(.material-symbols-outlined) {
+    font-size: 1rem;
   }
 </style>
