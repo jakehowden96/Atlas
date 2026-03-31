@@ -146,6 +146,7 @@ impl PtyManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn kill_all(&self) {
         if let Ok(mut sessions) = self.sessions.write() {
             for (_, session) in sessions.drain() {

@@ -3,8 +3,8 @@ import { theme, xtermTheme, mermaidThemeVariables } from "../theme";
 
 describe("theme", () => {
   it("has all required base colors", () => {
-    expect(theme.bg).toMatch(/^#[0-9a-f]{6}$/);
-    expect(theme.fg).toMatch(/^#[0-9a-f]{6}$/);
+    expect(theme.surface).toMatch(/^#[0-9a-f]{6}$/);
+    expect(theme.onSurface).toMatch(/^#[0-9a-f]{6}$/);
     expect(theme.red).toMatch(/^#[0-9a-f]{6}$/);
     expect(theme.green).toMatch(/^#[0-9a-f]{6}$/);
     expect(theme.blue).toMatch(/^#[0-9a-f]{6}$/);
@@ -14,8 +14,8 @@ describe("theme", () => {
 
 describe("xtermTheme", () => {
   it("derives all colors from the shared palette", () => {
-    expect(xtermTheme.background).toBe(theme.bg);
-    expect(xtermTheme.foreground).toBe(theme.fg);
+    expect(xtermTheme.background).toBe(theme.surface);
+    expect(xtermTheme.foreground).toBe(theme.onSurfaceVariant);
     expect(xtermTheme.red).toBe(theme.red);
     expect(xtermTheme.green).toBe(theme.green);
     expect(xtermTheme.blue).toBe(theme.blue);
@@ -24,8 +24,8 @@ describe("xtermTheme", () => {
 
 describe("mermaidThemeVariables", () => {
   it("derives colors from the shared palette", () => {
-    expect(mermaidThemeVariables.primaryColor).toBe(theme.blue);
-    expect(mermaidThemeVariables.background).toBe(theme.bg);
+    expect(mermaidThemeVariables.primaryColor).toBe(theme.primary);
+    expect(mermaidThemeVariables.background).toBe(theme.surface);
     expect(mermaidThemeVariables.darkMode).toBe(true);
   });
 });

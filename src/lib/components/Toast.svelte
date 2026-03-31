@@ -11,11 +11,11 @@
   function typeColor(type: Toast["type"]): string {
     switch (type) {
       case "error":
-        return "var(--red)";
+        return "var(--error)";
       case "warning":
         return "var(--yellow)";
       default:
-        return "var(--blue)";
+        return "var(--primary)";
     }
   }
 </script>
@@ -39,57 +39,66 @@
 <style>
   .toast-container {
     position: fixed;
-    bottom: 16px;
-    right: 16px;
+    bottom: 20px;
+    right: 20px;
     z-index: 9999;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
     max-width: 400px;
   }
 
   .toast {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 14px;
-    background: var(--bg-light);
-    border: 1px solid var(--border);
+    gap: 10px;
+    padding: var(--spacing-5) var(--spacing-5);
+    background: var(--surface-container-highest);
+    border: 1px solid color-mix(in srgb, var(--outline-variant) 20%, transparent);
     border-left: 3px solid;
-    border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    border-radius: var(--radius-md);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
     animation: slide-in 0.2s ease-out;
   }
 
   @keyframes slide-in {
     from {
       opacity: 0;
-      transform: translateX(20px);
+      transform: translateY(8px);
     }
     to {
       opacity: 1;
-      transform: translateX(0);
+      transform: translateY(0);
     }
   }
 
   .toast-message {
     flex: 1;
     font-size: 13px;
-    color: var(--fg);
-    line-height: 1.4;
+    color: var(--on-surface);
+    line-height: 1.45;
+    font-family: var(--font-body);
   }
 
   .toast-dismiss {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
     background: none;
     border: none;
-    color: var(--fg-muted);
-    font-size: 16px;
+    color: var(--on-surface-variant);
+    font-size: 15px;
     cursor: pointer;
-    padding: 0 2px;
+    border-radius: 6px;
+    padding: 0;
     line-height: 1;
+    transition: background 0.15s, color 0.15s;
   }
 
   .toast-dismiss:hover {
-    color: var(--fg);
+    background: var(--surface-bright);
+    color: var(--on-surface);
   }
 </style>

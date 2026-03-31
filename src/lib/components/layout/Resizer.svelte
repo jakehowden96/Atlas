@@ -32,17 +32,19 @@
   }
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
   class="resizer"
   class:active={isDragging}
   onmousedown={handleMouseDown}
   role="separator"
   aria-orientation="vertical"
+  aria-label="Resize panel"
 ></div>
 
 <style>
   .resizer {
-    width: 4px;
+    width: 6px;
     cursor: col-resize;
     background: transparent;
     transition: background 0.15s;
@@ -51,6 +53,6 @@
 
   .resizer:hover,
   .resizer.active {
-    background: var(--blue);
+    background: var(--primary);
   }
 </style>

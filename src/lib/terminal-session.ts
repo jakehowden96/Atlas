@@ -24,9 +24,11 @@ export class TerminalSession {
   private currentCwd = "";
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private tabId: string;
+  private _visible: boolean;
 
   constructor(opts: TerminalSessionOptions) {
     this.tabId = opts.tabId;
+    this._visible = opts.visible;
 
     this.terminal = new Terminal({
       cursorBlink: true,
@@ -98,9 +100,9 @@ export class TerminalSession {
     });
   }
 
-  private setupResizeObserver(container: HTMLDivElement, visible: boolean) {
+  private setupResizeObserver(container: HTMLDivElement, _visible: boolean) {
     this.resizeObserver = new ResizeObserver(() => {
-      if (visible) {
+      if (this._visible) {
         this.fitAddon.fit();
         if (this.ptyId !== null) {
           ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
@@ -158,6 +160,7 @@ export class TerminalSession {
   }
 
   handleVisibilityChange(visible: boolean) {
+    this._visible = visible;
     if (visible && this.fitAddon) {
       requestAnimationFrame(() => {
         this.fitAddon.fit();

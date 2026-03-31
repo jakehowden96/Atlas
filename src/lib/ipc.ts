@@ -57,6 +57,14 @@ export async function refreshPanel(
   return invoke("refresh_panel", { sessionId, cwd });
 }
 
+export async function gitStageAll(cwd: string): Promise<void> {
+  return invoke("git_stage_all", { cwd });
+}
+
+export async function gitDiscardAll(cwd: string): Promise<void> {
+  return invoke("git_discard_all", { cwd });
+}
+
 export async function onPanelUpdate(
   callback: (data: PanelData) => void,
 ): Promise<UnlistenFn> {

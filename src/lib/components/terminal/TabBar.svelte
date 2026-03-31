@@ -19,7 +19,6 @@
         onclick={() => onSelectTab(tab.id)}
         title="Ctrl+{i + 1}"
       >
-        <span class="tab-index">{i + 1}</span>
         <span class="tab-title">{tab.title || `Tab ${i + 1}`}</span>
         {#if $tabs.length > 1}
           <span
@@ -40,7 +39,7 @@
     {/each}
   </div>
   <button class="new-tab" onclick={onNewTab} title="New Tab (Ctrl+T)">
-    +
+    <span class="material-symbols-outlined">add</span>
   </button>
 </div>
 
@@ -48,10 +47,7 @@
   .tab-bar {
     display: flex;
     align-items: center;
-    background: var(--bg-dark);
-    border-bottom: 1px solid var(--border);
-    height: 36px;
-    padding: 0 4px;
+    gap: 4px;
     user-select: none;
     -webkit-user-select: none;
   }
@@ -70,33 +66,27 @@
     padding: 4px 12px;
     background: transparent;
     border: none;
-    border-radius: 6px 6px 0 0;
-    color: var(--fg-muted);
-    font-size: 12px;
-    font-family: inherit;
+    border-radius: var(--radius-sm);
+    color: var(--on-surface-variant);
+    font-size: 11px;
+    font-family: var(--font-mono);
     cursor: pointer;
     white-space: nowrap;
-    transition: background 0.1s, color 0.1s;
+    transition: background 0.15s, color 0.15s;
   }
 
   .tab:hover {
-    background: var(--bg-light);
-    color: var(--fg);
+    background: var(--surface-container-high);
+    color: var(--on-surface);
   }
 
   .tab.active {
-    background: var(--bg);
-    color: var(--fg-bright);
-  }
-
-  .tab-index {
-    font-size: 10px;
-    opacity: 0.5;
-    font-weight: 600;
+    background: var(--surface-container-high);
+    color: var(--on-surface);
   }
 
   .tab-title {
-    max-width: 160px;
+    max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -109,36 +99,46 @@
     height: 16px;
     background: none;
     border: none;
-    color: var(--fg-muted);
-    font-size: 14px;
+    color: var(--on-surface-variant);
+    font-size: 12px;
     cursor: pointer;
-    border-radius: 3px;
+    border-radius: 4px;
     padding: 0;
     line-height: 1;
+    transition: background 0.15s, color 0.15s;
+    opacity: 0;
+  }
+
+  .tab:hover .tab-close {
+    opacity: 1;
   }
 
   .tab-close:hover {
-    background: color-mix(in srgb, var(--red) 20%, transparent);
-    color: var(--red);
+    background: color-mix(in srgb, var(--error) 15%, transparent);
+    color: var(--error);
   }
 
   .new-tab {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     background: none;
     border: none;
-    color: var(--fg-muted);
-    font-size: 18px;
+    color: var(--on-surface-variant);
     cursor: pointer;
-    border-radius: 4px;
-    margin-left: 4px;
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .new-tab :global(.material-symbols-outlined) {
+    font-size: 0.9rem;
   }
 
   .new-tab:hover {
-    background: var(--bg-light);
-    color: var(--fg);
+    background: var(--surface-container-high);
+    color: var(--on-surface);
   }
 </style>

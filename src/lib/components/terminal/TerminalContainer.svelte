@@ -79,7 +79,19 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="terminal-area">
-  <TabBar onNewTab={createTab} onCloseTab={closeTab} onSelectTab={selectTab} />
+  <div class="terminal-chrome">
+    <div class="chrome-left">
+      <div class="window-dots">
+        <span class="dot dot-red"></span>
+        <span class="dot dot-yellow"></span>
+        <span class="dot dot-green"></span>
+      </div>
+      <span class="session-label">zsh — forge</span>
+    </div>
+    <div class="chrome-tabs">
+      <TabBar onNewTab={createTab} onCloseTab={closeTab} onSelectTab={selectTab} />
+    </div>
+  </div>
   <div class="terminal-panes">
     {#each $tabs as tab (tab.id)}
       <TerminalTab
@@ -97,12 +109,69 @@
     flex-direction: column;
     height: 100%;
     min-width: 0;
+    background: var(--surface);
+  }
+
+  .terminal-chrome {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0 1rem;
+    height: 40px;
+    background: var(--surface-container-low);
+    flex-shrink: 0;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .chrome-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-shrink: 0;
+  }
+
+  .window-dots {
+    display: flex;
+    gap: 6px;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .dot-red {
+    background: color-mix(in srgb, var(--error) 40%, transparent);
+  }
+
+  .dot-yellow {
+    background: color-mix(in srgb, var(--tertiary) 40%, transparent);
+  }
+
+  .dot-green {
+    background: color-mix(in srgb, var(--secondary) 40%, transparent);
+  }
+
+  .session-label {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--on-surface-variant);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .chrome-tabs {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
   }
 
   .terminal-panes {
     flex: 1;
     position: relative;
     overflow: hidden;
-    background: var(--bg);
+    background: var(--surface-container-lowest);
   }
 </style>

@@ -46,6 +46,8 @@ pub fn run() {
             commands::panel::get_session_dir,
             commands::panel::get_panel_data,
             commands::panel::refresh_panel,
+            commands::panel::git_stage_all,
+            commands::panel::git_discard_all,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

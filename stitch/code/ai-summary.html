@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&amp;family=Space+Grotesk:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "on-surface-variant": "#a8abb3",
+            "surface-container-lowest": "#000000",
+            "on-secondary-container": "#e5ffdf",
+            "error-container": "#9f0519",
+            "surface-container-highest": "#20262f",
+            "surface": "#0a0e14",
+            "surface-container-low": "#0f141a",
+            "surface-bright": "#262c36",
+            "on-tertiary": "#4a0003",
+            "secondary-fixed": "#97f999",
+            "inverse-primary": "#0061ab",
+            "on-secondary-fixed": "#004a15",
+            "on-primary-fixed": "#000002",
+            "inverse-on-surface": "#51555c",
+            "tertiary-fixed": "#ff9288",
+            "tertiary-fixed-dim": "#ff7b71",
+            "secondary-fixed-dim": "#89ea8d",
+            "outline-variant": "#44484f",
+            "primary-fixed-dim": "#4899f1",
+            "inverse-surface": "#f8f9ff",
+            "secondary-dim": "#89ea8d",
+            "on-error-container": "#ffa8a3",
+            "surface-container-high": "#1b2028",
+            "on-background": "#f1f3fc",
+            "on-error": "#490006",
+            "surface-dim": "#0a0e14",
+            "surface-tint": "#72b1ff",
+            "primary-fixed": "#58a6ff",
+            "surface-variant": "#20262f",
+            "tertiary-container": "#fd4f49",
+            "on-primary": "#002f58",
+            "primary": "#72b1ff",
+            "primary-container": "#55a3fc",
+            "surface-container": "#151a21",
+            "tertiary-dim": "#ff7167",
+            "on-tertiary-container": "#1f0001",
+            "error": "#ff716c",
+            "on-tertiary-fixed-variant": "#7a000a",
+            "on-secondary": "#005f1e",
+            "on-surface": "#f1f3fc",
+            "secondary": "#97f999",
+            "on-tertiary-fixed": "#3a0002",
+            "primary-dim": "#52a1f9",
+            "tertiary": "#ff7167",
+            "background": "#0a0e14",
+            "on-primary-container": "#002344",
+            "on-secondary-fixed-variant": "#006b22",
+            "secondary-container": "#006e23",
+            "outline": "#72757d",
+            "error-dim": "#d7383b",
+            "on-primary-fixed-variant": "#002f58"
+          },
+          fontFamily: {
+            "headline": ["Space Grotesk"],
+            "body": ["Inter"],
+            "label": ["Inter"],
+            "mono": ["JetBrains Mono"]
+          },
+          borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      font-size: 1.25rem;
+    }
+    .tonal-shift-no-border {
+      background-color: #0a0e14;
+    }
+    .tonal-layering-midnight {
+      background-color: #0f141a;
+    }
+    ::-webkit-scrollbar {
+      width: 4px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #20262f;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body class="bg-surface text-on-surface font-body selection:bg-primary-container selection:text-on-primary-container overflow-hidden">
+<!-- Top Navigation Shell -->
+<nav class="fixed top-0 z-50 flex items-center justify-between px-6 py-2 w-full bg-[#0a0e14] border-b border-[#1b2028] font-headline tracking-tight text-sm">
+<div class="flex items-center gap-8">
+<span class="text-lg font-bold tracking-tighter text-[#f1f3fc]">TERMINAL_OS</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 text-[#a8abb3] hover:bg-[#1b2028] transition-all rounded cursor-pointer active:scale-95 duration-150">
+<span class="material-symbols-outlined">splitscreen</span>
+</button>
+<button class="p-2 text-[#a8abb3] hover:bg-[#1b2028] transition-all rounded cursor-pointer active:scale-95 duration-150">
+<span class="material-symbols-outlined">terminal</span>
+</button>
+<button class="p-2 text-[#a8abb3] hover:bg-[#1b2028] transition-all rounded cursor-pointer active:scale-95 duration-150">
+<span class="material-symbols-outlined">history</span>
+</button>
+</div>
+</nav>
+<!-- Sidebar Shell -->
+<aside class="fixed left-0 top-0 flex flex-col h-full z-40 bg-[#0f141a] h-screen w-64 border-r border-[#1b2028] font-inter text-xs tracking-wide">
+<div class="p-6 mt-12 flex flex-col gap-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center overflow-hidden">
+<img alt="User avatar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA45yT84hfzgeT0MqSvULS1ZBp_iX-VXwBixHzSt9WbhfP6F6dXOUGMDfnRnsHUce62qKXM7B9c5Pg62R2bE87pBi0VpuZ3hFL9Xorcm5wMDTAM1hno0ZVnBqNVBaeJFtpcbHv4nkG3ee_4OegeRJIfF_7I-qBXnVxGZhc86f04bXgM2H_C4pLJiBUOarogBCBG0S0uK2irWHsx2gosMua6N6Hx2Asnh66a-ZwnvN6ISuAQVoO0f7ms4vHoUizidfKpM7DW-wxXlQU"/>
+</div>
+<div class="flex flex-col">
+<span class="text-[#f1f3fc] font-medium">Session Active</span>
+<span class="text-[10px] text-[#a8abb3]">Local Instance</span>
+</div>
+</div>
+</div>
+<nav class="flex-1 flex flex-col gap-1 px-3">
+<div class="text-[#a8abb3] px-3 py-2 uppercase text-[10px] font-bold tracking-widest opacity-50">Navigation</div>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded text-[#a8abb3] hover:bg-[#1b2028]/50 transition-all ease-in-out hover:pl-4" href="#">
+<span class="material-symbols-outlined">terminal</span>
+        Terminal
+      </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded text-[#a8abb3] hover:bg-[#1b2028]/50 transition-all ease-in-out hover:pl-4" href="#">
+<span class="material-symbols-outlined">difference</span>
+        Git Diff
+      </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded bg-[#1b2028] text-[#f1f3fc] border-l-4 border-[#58A6FF] font-medium transition-all ease-in-out hover:pl-4" href="#">
+<span class="material-symbols-outlined">description</span>
+        Summary
+      </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded text-[#a8abb3] hover:bg-[#1b2028]/50 transition-all ease-in-out hover:pl-4" href="#">
+<span class="material-symbols-outlined">account_tree</span>
+        Flow
+      </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded text-[#a8abb3] hover:bg-[#1b2028]/50 transition-all ease-in-out hover:pl-4" href="#">
+<span class="material-symbols-outlined">list_alt</span>
+        Logs
+      </a>
+</nav>
+<div class="p-6 flex flex-col gap-2 border-t border-[#1b2028]">
+<a class="flex items-center gap-3 text-[#a8abb3] hover:text-[#f1f3fc] transition-colors" href="#">
+<span class="material-symbols-outlined">help_outline</span>
+        Help
+      </a>
+<a class="flex items-center gap-3 text-[#a8abb3] hover:text-[#f1f3fc] transition-colors" href="#">
+<span class="material-symbols-outlined">sensors</span>
+        Status
+      </a>
+</div>
+</aside>
+<!-- Main Canvas -->
+<main class="pl-64 pt-14 h-screen flex overflow-hidden">
+<!-- Left Panel: Terminal (60%) -->
+<section class="w-[60%] h-full bg-surface-container-lowest relative flex flex-col border-r border-outline-variant/10">
+<div class="flex items-center justify-between px-5 py-3 bg-surface-container-low/50 backdrop-blur-md">
+<div class="flex items-center gap-4">
+<div class="flex gap-1.5">
+<div class="w-2.5 h-2.5 rounded-full bg-error-dim/40"></div>
+<div class="w-2.5 h-2.5 rounded-full bg-tertiary-dim/40"></div>
+<div class="w-2.5 h-2.5 rounded-full bg-secondary-dim/40"></div>
+</div>
+<span class="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">zsh — project_alpha — 142×44</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface-variant !text-sm">search</span>
+<span class="material-symbols-outlined text-on-surface-variant !text-sm">add</span>
+</div>
+</div>
+<div class="flex-1 p-6 font-mono text-[13px] leading-relaxed overflow-y-auto">
+<div class="mb-4">
+<span class="text-secondary">➜</span> <span class="text-primary-dim">project_alpha</span> <span class="text-on-surface-variant">git:(</span><span class="text-tertiary">main</span><span class="text-on-surface-variant">)</span> <span class="text-on-surface font-bold">npm run build</span>
+</div>
+<div class="space-y-1 text-on-surface-variant">
+<p>&gt; project_alpha@0.1.0 build</p>
+<p>&gt; next build</p>
+<p class="mt-4"><span class="text-secondary">info</span>  - Checking validity of types...</p>
+<p><span class="text-secondary">info</span>  - Creating an optimized production build...</p>
+<p><span class="text-secondary">info</span>  - Compiled successfully</p>
+<p><span class="text-secondary">info</span>  - Collecting page data...</p>
+<p><span class="text-secondary">info</span>  - Generating static pages (0/12)...</p>
+<p><span class="text-secondary">info</span>  - Generating static pages (12/12)</p>
+<p class="text-secondary font-bold mt-2">✓ Finalizing page optimization...</p>
+</div>
+<div class="mt-8 mb-2">
+<span class="text-secondary">➜</span> <span class="text-primary-dim">project_alpha</span> <span class="text-on-surface-variant">git:(</span><span class="text-tertiary">main</span><span class="text-on-surface-variant">)</span> <span class="text-on-surface font-bold">git status</span>
+</div>
+<div class="space-y-1 text-on-surface-variant">
+<p>On branch main</p>
+<p>Your branch is up to date with 'origin/main'.</p>
+<p class="mt-4">Changes to be committed:</p>
+<p class="ml-4">(use "git restore --staged &lt;file&gt;..." to unstage)</p>
+<p class="ml-8 text-secondary">modified:   src/auth/service.ts</p>
+<p class="ml-8 text-secondary">modified:   src/middleware/validate.ts</p>
+<p class="ml-8 text-secondary">modified:   docs/api_v2.md</p>
+<p class="mt-4 text-on-surface-variant">Untracked files:</p>
+<p class="ml-4 text-error-dim">none</p>
+</div>
+<div class="mt-8 flex items-center gap-2">
+<span class="text-secondary">➜</span> <span class="text-primary-dim">project_alpha</span> <span class="text-on-surface-variant">git:(</span><span class="text-tertiary">main</span><span class="text-on-surface-variant">)</span>
+<span class="w-2 h-5 bg-primary animate-pulse"></span>
+</div>
+</div>
+</section>
+<!-- Right Panel: Summary (40%) -->
+<section class="w-[40%] h-full bg-surface-container-low flex flex-col">
+<!-- Summary Header -->
+<div class="px-8 py-6 flex items-center justify-between border-b border-outline-variant/5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-tertiary/10 border border-tertiary/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-tertiary" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+</div>
+<div>
+<h1 class="font-headline text-lg font-bold text-on-surface">Commit Summary</h1>
+<p class="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">Generated by AI Assistant</p>
+</div>
+</div>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined">more_horiz</span>
+</button>
+</div>
+<!-- Summary Content -->
+<div class="flex-1 overflow-y-auto p-8 space-y-8">
+<!-- Section: Overview -->
+<div class="space-y-4">
+<div class="flex items-center gap-2 text-tertiary">
+<span class="material-symbols-outlined !text-sm">analytics</span>
+<span class="text-[10px] uppercase font-bold tracking-[0.2em]">Overview</span>
+</div>
+<div class="bg-surface-container-high p-5 rounded-lg border-l-2 border-tertiary/30">
+<p class="text-sm leading-relaxed text-on-surface/90">
+              Significant refactoring of the <code class="bg-surface px-1.5 py-0.5 rounded text-primary">auth</code> module to improve token validation cycles. This change centralizes authentication logic and mitigates potential latency in high-traffic endpoints.
+            </p>
+</div>
+</div>
+<!-- Section: Key Changes -->
+<div class="space-y-4">
+<div class="flex items-center gap-2 text-primary">
+<span class="material-symbols-outlined !text-sm">list</span>
+<span class="text-[10px] uppercase font-bold tracking-[0.2em]">Key Changes</span>
+</div>
+<div class="space-y-3">
+<div class="group flex items-start gap-3 p-3 rounded-lg hover:bg-surface-bright transition-all cursor-default">
+<div class="mt-1.5 w-1.5 h-1.5 rounded-full bg-secondary shadow-[0_0_8px_rgba(151,249,153,0.4)]"></div>
+<div class="flex-1">
+<p class="text-sm font-medium text-on-surface">Updated <span class="font-mono text-xs text-secondary-dim">login_user</span></p>
+<p class="text-xs text-on-surface-variant mt-1">Refactored to support asynchronous hash verification.</p>
+</div>
+</div>
+<div class="group flex items-start gap-3 p-3 rounded-lg hover:bg-surface-bright transition-all cursor-default">
+<div class="mt-1.5 w-1.5 h-1.5 rounded-full bg-secondary shadow-[0_0_8px_rgba(151,249,153,0.4)]"></div>
+<div class="flex-1">
+<p class="text-sm font-medium text-on-surface">Added <span class="font-mono text-xs text-secondary-dim">validate_token</span></p>
+<p class="text-xs text-on-surface-variant mt-1">New middleware layer for stricter JWT audience checks.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Section: Why -->
+<div class="space-y-4">
+<div class="flex items-center gap-2 text-secondary">
+<span class="material-symbols-outlined !text-sm">psychology</span>
+<span class="text-[10px] uppercase font-bold tracking-[0.2em]">Why</span>
+</div>
+<div class="grid grid-cols-1 gap-3">
+<div class="p-4 bg-surface-container-highest rounded-lg flex flex-col gap-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary !text-sm">shield</span>
+<span class="text-[10px] font-bold text-on-surface-variant uppercase">Security Enforcement</span>
+</div>
+<p class="text-xs text-on-surface leading-snug">To improve security by enforcing stricter token validation and mitigating potential spoofing vectors.</p>
+</div>
+<div class="p-4 bg-surface-container-highest rounded-lg flex flex-col gap-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary !text-sm">speed</span>
+<span class="text-[10px] font-bold text-on-surface-variant uppercase">Performance Optimization</span>
+</div>
+<p class="text-xs text-on-surface leading-snug">To reduce latency in high-traffic endpoints by centralizing auth logic and utilizing async verification cycles.</p>
+</div>
+</div>
+</div>
+<!-- AI Assistant Interactive Card -->
+<div class="mt-12 p-6 rounded-xl bg-gradient-to-br from-surface-container-high to-surface-container-low border border-outline-variant/10 relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
+<span class="material-symbols-outlined !text-8xl">auto_awesome</span>
+</div>
+<div class="relative z-10 space-y-3">
+<h3 class="font-headline font-bold text-on-surface">Need a deeper analysis?</h3>
+<p class="text-xs text-on-surface-variant leading-relaxed">I can generate a pull request description or identify potential edge cases for these changes.</p>
+<div class="pt-2 flex gap-2">
+<button class="text-[11px] font-bold py-2 px-4 rounded bg-surface-container-highest text-primary border border-primary/20 hover:bg-primary hover:text-on-primary transition-all">Generate PR</button>
+<button class="text-[11px] font-bold py-2 px-4 rounded text-on-surface-variant hover:text-on-surface transition-colors">Dismiss</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Action Footer -->
+<div class="p-6 bg-surface-container-low border-t border-outline-variant/10 flex gap-3">
+<button class="flex-1 py-3 px-4 rounded-lg bg-surface-container-high text-on-surface-variant font-bold text-sm transition-all hover:bg-surface-bright border border-outline-variant/10 cursor-not-allowed opacity-50">
+          Review Pending Changes
+        </button>
+<button class="w-12 h-12 flex items-center justify-center rounded-lg bg-surface-container-high text-on-surface-variant border border-outline-variant/10 hover:border-primary/50 transition-all active:scale-95">
+<span class="material-symbols-outlined">share</span>
+</button>
+</div>
+</section>
+</main>
+</body></html>

@@ -289,6 +289,23 @@ fn write_panel(session_id: &str, data: &PanelData, panel_path: &std::path::Path)
     }
 }
 
+/// Stage all changes in the given git repo.
+#[tauri::command]
+pub fn git_stage_all(cwd: String) -> Result<(), String> {
+    git_cmd(&cwd, &["add", "-A"]).map(|_| ())
+}
+
+/// Discard all working tree changes (unstaged + staged) in the given git repo.
+#[tauri::command]
+pub fn git_discard_all(cwd: String) -> Result<(), String> {
+    // Reset staged changes
+    let _ = git_cmd(&cwd, &["reset", "HEAD", "--"]);
+    // Discard unstaged changes to tracked files
+    git_cmd(&cwd, &["checkout", "--", "."])?;
+    // Remove untracked files and directories
+    git_cmd(&cwd, &["clean", "-fd"]).map(|_| ())
+}
+
 fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
         .args([&["-C", cwd], args].concat())

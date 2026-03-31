@@ -46,11 +46,15 @@
   }
 
   .terminal-container.hidden {
-    display: none;
+    visibility: hidden;
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
   }
 
   .terminal-container :global(.xterm) {
-    padding: 8px;
+    padding: var(--spacing-5) var(--spacing-5);
     height: 100%;
   }
 </style>
