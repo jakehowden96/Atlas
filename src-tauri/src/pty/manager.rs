@@ -57,7 +57,7 @@ impl PtyManager {
         cmd.env("TERM_PROGRAM_VERSION", "0.1.0");
         cmd.env("TERM", "xterm-256color");
 
-        // Add custom env vars (e.g., PARALLAX_SESSION_ID)
+        // Add custom env vars (e.g., FORGE_SESSION_ID)
         if let Some(vars) = env_vars {
             for (key, value) in vars {
                 cmd.env(key, value);

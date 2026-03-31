@@ -1,6 +1,5 @@
 <script lang="ts">
   import { tabs, activeTabId } from "../../stores/terminal";
-  import type { TerminalTab } from "../../../types/terminal";
 
   interface Props {
     onNewTab: () => void;
@@ -9,36 +8,33 @@
   }
 
   let { onNewTab, onCloseTab, onSelectTab }: Props = $props();
-
-  let tabList: TerminalTab[] = $state([]);
-  let activeId: string = $state("");
-
-  tabs.subscribe((v) => (tabList = v));
-  activeTabId.subscribe((v) => (activeId = v));
 </script>
 
 <div class="tab-bar">
   <div class="tabs">
-    {#each tabList as tab, i}
+    {#each $tabs as tab, i}
       <button
         class="tab"
-        class:active={tab.id === activeId}
+        class:active={tab.id === $activeTabId}
         onclick={() => onSelectTab(tab.id)}
         title="Ctrl+{i + 1}"
       >
         <span class="tab-index">{i + 1}</span>
         <span class="tab-title">{tab.title || `Tab ${i + 1}`}</span>
-        {#if tabList.length > 1}
-          <button
+        {#if $tabs.length > 1}
+          <span
             class="tab-close"
+            role="button"
+            tabindex="-1"
             onclick={(e) => {
               e.stopPropagation();
               onCloseTab(tab.id);
             }}
+            onkeydown={() => {}}
             title="Close"
           >
             &times;
-          </button>
+          </span>
         {/if}
       </button>
     {/each}
@@ -52,8 +48,8 @@
   .tab-bar {
     display: flex;
     align-items: center;
-    background: #13141c;
-    border-bottom: 1px solid #292d3e;
+    background: var(--bg-dark);
+    border-bottom: 1px solid var(--border);
     height: 36px;
     padding: 0 4px;
     user-select: none;
@@ -75,7 +71,7 @@
     background: transparent;
     border: none;
     border-radius: 6px 6px 0 0;
-    color: #787c99;
+    color: var(--fg-muted);
     font-size: 12px;
     font-family: inherit;
     cursor: pointer;
@@ -84,13 +80,13 @@
   }
 
   .tab:hover {
-    background: #1e2030;
-    color: #a9b1d6;
+    background: var(--bg-light);
+    color: var(--fg);
   }
 
   .tab.active {
-    background: #1a1b26;
-    color: #c0caf5;
+    background: var(--bg);
+    color: var(--fg-bright);
   }
 
   .tab-index {
@@ -113,7 +109,7 @@
     height: 16px;
     background: none;
     border: none;
-    color: #787c99;
+    color: var(--fg-muted);
     font-size: 14px;
     cursor: pointer;
     border-radius: 3px;
@@ -122,8 +118,8 @@
   }
 
   .tab-close:hover {
-    background: #f7768e33;
-    color: #f7768e;
+    background: color-mix(in srgb, var(--red) 20%, transparent);
+    color: var(--red);
   }
 
   .new-tab {
@@ -134,7 +130,7 @@
     height: 28px;
     background: none;
     border: none;
-    color: #787c99;
+    color: var(--fg-muted);
     font-size: 18px;
     cursor: pointer;
     border-radius: 4px;
@@ -142,7 +138,7 @@
   }
 
   .new-tab:hover {
-    background: #1e2030;
-    color: #a9b1d6;
+    background: var(--bg-light);
+    color: var(--fg);
   }
 </style>

@@ -3,33 +3,22 @@
   import mermaid from "mermaid";
   import type { FlowData } from "../../../types/panel";
   import { flowEdgesToMermaid } from "../../mermaid-converter";
+  import { mermaidThemeVariables } from "../../theme";
 
   interface Props {
     data: FlowData | undefined;
+    hasDiff?: boolean;
   }
 
-  let { data }: Props = $props();
-  let diagramEl: HTMLDivElement;
-  let renderCount = $state(0);
+  let { data, hasDiff = false }: Props = $props();
+  let diagramEl: HTMLDivElement = $state(null!);
+  let renderCount = 0;
 
   onMount(() => {
     mermaid.initialize({
       startOnLoad: false,
       theme: "dark",
-      themeVariables: {
-        darkMode: true,
-        primaryColor: "#7aa2f7",
-        primaryTextColor: "#a9b1d6",
-        primaryBorderColor: "#3b4261",
-        lineColor: "#444b6a",
-        secondaryColor: "#1e2030",
-        tertiaryColor: "#292d3e",
-        background: "#1a1b26",
-        mainBkg: "#1e2030",
-        nodeBorder: "#3b4261",
-        clusterBkg: "#13141c",
-        fontSize: "13px",
-      },
+      themeVariables: mermaidThemeVariables,
     });
   });
 
@@ -55,7 +44,16 @@
   {#if data}
     <div class="diagram-container" bind:this={diagramEl}></div>
   {:else}
-    <div class="empty">No flow diagram available</div>
+    <div class="empty">
+      {#if hasDiff}
+        <div class="loading">
+          <span class="loading-dot"></span>
+          Analyzing diff...
+        </div>
+      {:else}
+        No diff to analyze
+      {/if}
+    </div>
   {/if}
 </div>
 
@@ -82,12 +80,31 @@
     align-items: center;
     justify-content: center;
     height: 100%;
-    color: #787c99;
+    color: var(--fg-muted);
     font-size: 14px;
   }
 
+  .loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .loading-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--blue);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+  }
+
   .diagram-container :global(.error) {
-    color: #f7768e;
+    color: var(--red);
     font-size: 13px;
     padding: 20px;
     text-align: center;

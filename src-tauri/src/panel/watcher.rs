@@ -21,6 +21,17 @@ pub struct DiffData {
     pub files_changed: u32,
     pub lines_added: u32,
     pub lines_removed: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projects: Option<Vec<ProjectDiff>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectDiff {
+    pub name: String,
+    pub raw: String,
+    pub files_changed: u32,
+    pub lines_added: u32,
+    pub lines_removed: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,7 +92,8 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
     // Process events in a background thread
     let handle = app_handle.clone();
     std::thread::spawn(move || {
-        let mut last_emit = Instant::now();
+        let mut last_emit_per_session: std::collections::HashMap<String, Instant> =
+            std::collections::HashMap::new();
         let debounce = Duration::from_millis(200);
 
         for event in rx {
@@ -89,10 +101,21 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
                 EventKind::Create(_) | EventKind::Modify(_) => {
                     for path in &event.paths {
                         if path.file_name().map_or(false, |f| f == "panel.json") {
+                            // Extract session ID from path: .../sessions/<session_id>/panel.json
+                            let session_id = path
+                                .parent()
+                                .and_then(|p| p.file_name())
+                                .map(|f| f.to_string_lossy().to_string())
+                                .unwrap_or_default();
+
+                            let last_emit = last_emit_per_session
+                                .entry(session_id)
+                                .or_insert_with(|| Instant::now() - debounce);
+
                             if last_emit.elapsed() < debounce {
                                 continue;
                             }
-                            last_emit = Instant::now();
+                            *last_emit = Instant::now();
 
                             match std::fs::read_to_string(path) {
                                 Ok(contents) => {

@@ -3,19 +3,13 @@
   import SummaryView from "./SummaryView.svelte";
   import FlowDiagram from "./FlowDiagram.svelte";
   import { panelData, activeSection, setSection } from "../../stores/panel";
-  import type { PanelData, PanelSection } from "../../../types/panel";
+  import type { PanelSection } from "../../../types/panel";
 
   const sections: { id: PanelSection; label: string; shortcut: string }[] = [
     { id: "diff", label: "Diff", shortcut: "D" },
     { id: "summary", label: "Summary", shortcut: "S" },
     { id: "flow", label: "Flow", shortcut: "F" },
   ];
-
-  let data: PanelData | null = $state(null);
-  let currentSection: PanelSection = $state("diff");
-
-  panelData.subscribe((v) => (data = v));
-  activeSection.subscribe((v) => (currentSection = v));
 </script>
 
 <div class="side-panel">
@@ -24,7 +18,7 @@
       {#each sections as section}
         <button
           class="panel-tab"
-          class:active={currentSection === section.id}
+          class:active={$activeSection === section.id}
           onclick={() => setSection(section.id)}
           title="Ctrl+Shift+{section.shortcut}"
         >
@@ -32,20 +26,20 @@
         </button>
       {/each}
     </div>
-    {#if data}
+    {#if $panelData}
       <span class="panel-timestamp">
-        {new Date(data.timestamp).toLocaleTimeString()}
+        {new Date($panelData.timestamp).toLocaleTimeString()}
       </span>
     {/if}
   </div>
 
   <div class="panel-content">
-    {#if currentSection === "diff"}
-      <DiffViewer data={data?.diff} />
-    {:else if currentSection === "summary"}
-      <SummaryView data={data?.summary} />
-    {:else if currentSection === "flow"}
-      <FlowDiagram data={data?.flow} />
+    {#if $activeSection === "diff"}
+      <DiffViewer data={$panelData?.diff} />
+    {:else if $activeSection === "summary"}
+      <SummaryView data={$panelData?.summary} hasDiff={!!$panelData?.diff} />
+    {:else if $activeSection === "flow"}
+      <FlowDiagram data={$panelData?.flow} hasDiff={!!$panelData?.diff} />
     {/if}
   </div>
 </div>
@@ -55,8 +49,8 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: #1a1b26;
-    border-left: 1px solid #292d3e;
+    background: var(--bg);
+    border-left: 1px solid var(--border);
   }
 
   .panel-header {
@@ -65,8 +59,8 @@
     justify-content: space-between;
     padding: 0 8px;
     height: 36px;
-    background: #13141c;
-    border-bottom: 1px solid #292d3e;
+    background: var(--bg-dark);
+    border-bottom: 1px solid var(--border);
     user-select: none;
     -webkit-user-select: none;
   }
@@ -81,7 +75,7 @@
     background: transparent;
     border: none;
     border-radius: 4px;
-    color: #787c99;
+    color: var(--fg-muted);
     font-size: 12px;
     font-family: inherit;
     cursor: pointer;
@@ -89,18 +83,18 @@
   }
 
   .panel-tab:hover {
-    background: #1e2030;
-    color: #a9b1d6;
+    background: var(--bg-light);
+    color: var(--fg);
   }
 
   .panel-tab.active {
-    background: #1e2030;
-    color: #c0caf5;
+    background: var(--bg-light);
+    color: var(--fg-bright);
   }
 
   .panel-timestamp {
     font-size: 11px;
-    color: #444b6a;
+    color: var(--fg-dim);
   }
 
   .panel-content {

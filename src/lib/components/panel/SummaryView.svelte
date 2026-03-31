@@ -3,18 +3,19 @@
 
   interface Props {
     data: SummaryData | undefined;
+    hasDiff?: boolean;
   }
 
-  let { data }: Props = $props();
+  let { data, hasDiff = false }: Props = $props();
 
   function severityColor(severity: string): string {
     switch (severity) {
       case "error":
-        return "#f7768e";
+        return "var(--red)";
       case "warning":
-        return "#e0af68";
+        return "var(--yellow)";
       default:
-        return "#7aa2f7";
+        return "var(--blue)";
     }
   }
 </script>
@@ -71,7 +72,16 @@
       </div>
     {/if}
   {:else}
-    <div class="empty">No summary available</div>
+    <div class="empty">
+      {#if hasDiff}
+        <div class="loading">
+          <span class="loading-dot"></span>
+          Analyzing diff...
+        </div>
+      {:else}
+        No diff to analyze
+      {/if}
+    </div>
   {/if}
 </div>
 
@@ -91,21 +101,21 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: #787c99;
+    color: var(--fg-muted);
     margin: 0 0 8px 0;
   }
 
   .section-body {
     font-size: 13px;
     line-height: 1.6;
-    color: #a9b1d6;
+    color: var(--fg);
     margin: 0;
   }
 
   .confidence-bar {
     width: 100%;
     height: 4px;
-    background: #292d3e;
+    background: var(--border);
     border-radius: 2px;
     overflow: hidden;
     margin-bottom: 4px;
@@ -113,14 +123,14 @@
 
   .confidence-fill {
     height: 100%;
-    background: #9ece6a;
+    background: var(--green);
     border-radius: 2px;
     transition: width 0.3s;
   }
 
   .confidence-label {
     font-size: 12px;
-    color: #787c99;
+    color: var(--fg-muted);
   }
 
   .issues {
@@ -130,7 +140,7 @@
   }
 
   .issue {
-    background: #1e2030;
+    background: var(--bg-light);
     border-radius: 6px;
     padding: 10px 12px;
   }
@@ -143,14 +153,14 @@
 
   .issue-location {
     font-size: 11px;
-    color: #7aa2f7;
+    color: var(--blue);
     margin-left: 8px;
     font-family: monospace;
   }
 
   .issue-message {
     font-size: 13px;
-    color: #a9b1d6;
+    color: var(--fg);
     margin: 6px 0 0 0;
     line-height: 1.5;
   }
@@ -160,7 +170,26 @@
     align-items: center;
     justify-content: center;
     height: 100%;
-    color: #787c99;
+    color: var(--fg-muted);
     font-size: 14px;
+  }
+
+  .loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .loading-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--blue);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
   }
 </style>

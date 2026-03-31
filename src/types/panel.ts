@@ -11,11 +11,20 @@ export interface FlowEdge {
   label?: string;
 }
 
+export interface ProjectDiff {
+  name: string;
+  raw: string;
+  files_changed: number;
+  lines_added: number;
+  lines_removed: number;
+}
+
 export interface DiffData {
   raw: string;
   files_changed: number;
   lines_added: number;
   lines_removed: number;
+  projects?: ProjectDiff[];
 }
 
 export interface SummaryData {

@@ -51,6 +51,6 @@
 
   .resizer:hover,
   .resizer.active {
-    background: #7aa2f7;
+    background: var(--blue);
   }
 </style>

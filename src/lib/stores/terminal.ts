@@ -1,4 +1,4 @@
-import { writable, derived } from "svelte/store";
+import { writable, derived, get } from "svelte/store";
 import type { TerminalTab } from "../../types/terminal";
 
 export const tabs = writable<TerminalTab[]>([]);
@@ -14,24 +14,18 @@ export function addTab(tab: TerminalTab) {
 }
 
 export function removeTab(id: string) {
-  tabs.update((t) => {
-    const filtered = t.filter((tab) => tab.id !== id);
-    return filtered;
-  });
-  // Switch to the last remaining tab
-  tabs.subscribe((t) => {
-    if (t.length > 0) {
-      activeTabId.set(t[t.length - 1].id);
-    }
-  })();
+  tabs.update((t) => t.filter((tab) => tab.id !== id));
+  const remaining = get(tabs);
+  if (remaining.length > 0) {
+    activeTabId.set(remaining[remaining.length - 1].id);
+  }
 }
 
 export function switchToTab(index: number) {
-  tabs.subscribe((t) => {
-    if (index >= 0 && index < t.length) {
-      activeTabId.set(t[index].id);
-    }
-  })();
+  const t = get(tabs);
+  if (index >= 0 && index < t.length) {
+    activeTabId.set(t[index].id);
+  }
 }
 
 export function setTabTitle(id: string, title: string) {
