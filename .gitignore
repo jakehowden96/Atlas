@@ -1,0 +1,8 @@
+node_modules/
+dist/
+target/
+src-tauri/gen/
+*.lock
+pnpm-lock.yaml
+Cargo.lock
+.DS_Store
