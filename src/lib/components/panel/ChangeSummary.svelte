@@ -119,12 +119,13 @@
   async function handlePush() {
     loading = true;
     try {
-      await gitPush(effectiveCwd);
-      showToast("Pushed to remote");
+      const msg = await gitPush(effectiveCwd);
+      showToast(msg);
       await refreshStatus();
       await refreshPanelData();
     } catch (e: unknown) {
-      showToast(`Push failed: ${e}`, "error");
+      const message = typeof e === "string" ? e : (e as Error)?.message ?? "Unknown error";
+      showToast(`Push failed: ${message}`, "error");
     } finally {
       loading = false;
     }

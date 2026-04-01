@@ -10,13 +10,13 @@
 
   let { data, cwd }: Props = $props();
 
-  let diffView: "local" | "all" = $state("all");
+  let diffView: "local" | "remote" = $state("remote");
   let hasLocalToggle = $derived(!!data?.local_raw && data.local_raw !== data.raw);
 
-  // Reset to all view when data changes and local toggle becomes unavailable
+  // Reset to remote view when data changes and local toggle becomes unavailable
   $effect(() => {
-    if (!hasLocalToggle && diffView !== "all") {
-      diffView = "all";
+    if (!hasLocalToggle && diffView !== "remote") {
+      diffView = "remote";
     }
   });
 
@@ -66,9 +66,9 @@
         >Local</button>
         <button
           class="diff-toggle-pill"
-          class:active={diffView === "all"}
-          onclick={() => diffView = "all"}
-        >All</button>
+          class:active={diffView === "remote"}
+          onclick={() => diffView = "remote"}
+        >Remote</button>
       </div>
     {/if}
     {#if projectFiles.length > 0}

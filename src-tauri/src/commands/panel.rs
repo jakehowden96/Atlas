@@ -260,26 +260,21 @@ fn discover_diff(git_root: &str) -> DiffBundle {
         }
     }
 
-    // Always check deeper tiers for upstream/branch diffs to combine with local
-    let mut remote = String::new();
+    // Check for upstream/branch base ref to diff working tree against
+    let mut base_ref: Option<String> = None;
 
-    // Tier 2: Unpushed commits vs upstream tracking branch
+    // Tier 2: Upstream tracking branch
     if let Ok(upstream) = git_cmd(
         git_root,
         &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
     ) {
         if !upstream.is_empty() {
-            let range = format!("{}..HEAD", upstream);
-            if let Ok(diff) = git_cmd(git_root, &["diff", "--unified=3", &range]) {
-                if !diff.is_empty() {
-                    remote = diff;
-                }
-            }
+            base_ref = Some(upstream);
         }
     }
 
-    // Tier 3: Branch diff vs merge-base with main/master (only if Tier 2 found nothing)
-    if remote.is_empty() {
+    // Tier 3: Merge-base with main/master (only if Tier 2 found nothing)
+    if base_ref.is_none() {
         let base_branch = if git_cmd(git_root, &["rev-parse", "--verify", "main"]).is_ok() {
             Some("main")
         } else if git_cmd(git_root, &["rev-parse", "--verify", "master"]).is_ok() {
@@ -291,20 +286,22 @@ fn discover_diff(git_root: &str) -> DiffBundle {
         if let Some(base) = base_branch {
             if let Ok(merge_base) = git_cmd(git_root, &["merge-base", base, "HEAD"]) {
                 if !merge_base.is_empty() {
-                    let range = format!("{}..HEAD", merge_base);
-                    if let Ok(diff) = git_cmd(git_root, &["diff", "--unified=3", &range]) {
-                        if !diff.is_empty() {
-                            remote = diff;
-                        }
-                    }
+                    base_ref = Some(merge_base);
                 }
             }
         }
     }
 
-    // Combine: `full` is the best available (remote if it exists, otherwise local)
-    // `local` stays as-is for the toggle
-    let full = if !remote.is_empty() { remote } else { local.clone() };
+    // Build `full` diff: working tree vs upstream/base (includes both local and committed changes)
+    let full = if let Some(ref base) = base_ref {
+        // Diff working tree (including uncommitted changes) against the base ref
+        git_cmd(git_root, &["diff", "--unified=3", base])
+            .ok()
+            .filter(|d| !d.is_empty())
+            .unwrap_or_else(|| local.clone())
+    } else {
+        local.clone()
+    };
 
     DiffBundle { local, full }
 }
@@ -421,15 +418,25 @@ pub fn git_commit(cwd: String, message: String) -> Result<(), String> {
 
 /// Push to the upstream remote.
 #[tauri::command]
-pub fn git_push(cwd: String) -> Result<(), String> {
-    // Try normal push first
-    let result = git_cmd(&cwd, &["push"]);
-    if result.is_ok() {
-        return Ok(());
+pub fn git_push(cwd: String) -> Result<String, String> {
+    // Check if we have an upstream tracking branch
+    let has_upstream = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).is_ok();
+
+    if has_upstream {
+        git_cmd(&cwd, &["push"])?;
+        return Ok("Pushed to remote".to_string());
     }
-    // If no upstream set, push with -u
+
+    // No upstream — check if origin remote exists
+    let has_origin = git_cmd(&cwd, &["remote", "get-url", "origin"]).is_ok();
+    if !has_origin {
+        return Err("No remote 'origin' configured. Add a remote first.".to_string());
+    }
+
+    // Push with -u to set upstream
     let branch = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])?;
-    git_cmd(&cwd, &["push", "-u", "origin", &branch]).map(|_| ())
+    git_cmd(&cwd, &["push", "-u", "origin", &branch])?;
+    Ok("Pushed and set upstream".to_string())
 }
 
 fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {

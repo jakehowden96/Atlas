@@ -76,7 +76,7 @@ export async function gitCommit(
   return invoke("git_commit", { cwd, message });
 }
 
-export async function gitPush(cwd: string): Promise<void> {
+export async function gitPush(cwd: string): Promise<string> {
   return invoke("git_push", { cwd });
 }
 
