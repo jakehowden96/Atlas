@@ -28,12 +28,6 @@
 </script>
 
 <div class="diff-viewer">
-  <div class="diff-header">
-    <div class="diff-header-left">
-      <span class="material-symbols-outlined diff-header-icon">difference</span>
-      <span class="diff-header-title">Git Diff</span>
-    </div>
-  </div>
   {#if data}
     {#if projectFiles.length > 0}
       {#each projectFiles as project}
@@ -134,7 +128,7 @@
         </div>
       {/each}
     {/if}
-    <ChangeSummary {data} {cwd} />
+    <ChangeSummary {data} {cwd} projects={data.projects} />
   {:else}
     <div class="empty"><span class="empty-text">No diff data available</span></div>
   {/if}
@@ -144,35 +138,6 @@
   .diff-viewer {
     height: 100%;
     overflow: auto;
-  }
-
-  .diff-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem 0.75rem;
-    position: sticky;
-    top: 0;
-    background: var(--surface-container-low);
-    z-index: 2;
-  }
-
-  .diff-header-left {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .diff-header-icon {
-    color: var(--secondary);
-    font-size: 1rem;
-  }
-
-  .diff-header-title {
-    font-family: var(--font-display);
-    font-size: 0.95rem;
-    font-weight: 700;
-    color: var(--on-surface);
   }
 
   /* File section */
@@ -324,7 +289,7 @@
     padding: 10px 20px;
     background: var(--surface-container-high);
     position: sticky;
-    top: 41px;
+    top: 0;
     z-index: 1;
   }
 

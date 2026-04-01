@@ -151,9 +151,7 @@ export class TerminalSession {
     this.refreshTimer = setTimeout(async () => {
       try {
         const data = await refreshPanel(this.tabId, cwd);
-        if (data) {
-          panelData.set(data);
-        }
+        panelData.set(data);
       } catch (e) {
         showToast(`Panel refresh failed: ${e}`);
       }
@@ -172,6 +170,8 @@ export class TerminalSession {
       });
       if (this.currentCwd) {
         this.scheduleRefresh(this.currentCwd);
+      } else {
+        panelData.set(null);
       }
       setRefreshHandler(() => {
         if (this.currentCwd) this.scheduleRefresh(this.currentCwd);

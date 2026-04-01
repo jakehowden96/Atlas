@@ -1,21 +1,47 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { DiffData } from "../../../types/panel";
+  import { get } from "svelte/store";
+  import type { DiffData, ProjectDiff } from "../../../types/panel";
   import type { GitStatus } from "../../../types/panel";
-  import { gitStageAll, gitDiscardAll, getGitStatus, gitCommit, gitPush } from "../../ipc";
+  import { gitStageAll, gitDiscardAll, getGitStatus, gitCommit, gitPush, refreshPanel } from "../../ipc";
   import { panelData } from "../../stores/panel";
+  import { activeTabId } from "../../stores/terminal";
   import { showToast } from "../../stores/toast";
 
   interface Props {
     data: DiffData;
     cwd: string;
+    projects?: ProjectDiff[];
   }
 
-  let { data, cwd }: Props = $props();
+  let { data, cwd, projects }: Props = $props();
   let status: GitStatus | null = $state(null);
   let loading = $state(false);
   let commitMsg = $state("");
   let commitMsgInitialized = false;
+  let selectedProjectName: string | null = $state(null);
+
+  let showDropdown = $derived(!!projects && projects.length > 1);
+  let effectiveProject = $derived.by(() => {
+    if (!projects || projects.length === 0) return null;
+    if (projects.length === 1) return projects[0];
+    return projects.find(p => p.name === selectedProjectName) ?? projects[0];
+  });
+  let effectiveCwd = $derived(
+    effectiveProject ? `${cwd}/${effectiveProject.name}` : cwd
+  );
+
+  $effect(() => {
+    if (projects && projects.length > 0 && !selectedProjectName) {
+      selectedProjectName = projects[0].name;
+    }
+  });
+
+  // Re-fetch git status when selected project changes
+  $effect(() => {
+    void effectiveCwd;
+    refreshStatus();
+  });
 
   // Derive which action phase we're in
   let phase = $derived.by(() => {
@@ -42,10 +68,15 @@
 
   async function refreshStatus() {
     try {
-      status = await getGitStatus(cwd);
+      status = await getGitStatus(effectiveCwd);
     } catch {
       status = null;
     }
+  }
+
+  async function refreshPanelData() {
+    const data = await refreshPanel(get(activeTabId), effectiveCwd);
+    panelData.set(data);
   }
 
   onMount(() => {
@@ -55,9 +86,10 @@
   async function handleStage() {
     loading = true;
     try {
-      await gitStageAll(cwd);
+      await gitStageAll(effectiveCwd);
       showToast("Changes staged");
       await refreshStatus();
+      await refreshPanelData();
     } catch (e: unknown) {
       showToast(`Stage failed: ${e}`, "error");
     } finally {
@@ -72,10 +104,11 @@
     }
     loading = true;
     try {
-      await gitCommit(cwd, commitMsg.trim());
+      await gitCommit(effectiveCwd, commitMsg.trim());
       showToast("Changes committed");
       commitMsg = "";
       await refreshStatus();
+      await refreshPanelData();
     } catch (e: unknown) {
       showToast(`Commit failed: ${e}`, "error");
     } finally {
@@ -86,9 +119,10 @@
   async function handlePush() {
     loading = true;
     try {
-      await gitPush(cwd);
+      await gitPush(effectiveCwd);
       showToast("Pushed to remote");
       await refreshStatus();
+      await refreshPanelData();
     } catch (e: unknown) {
       showToast(`Push failed: ${e}`, "error");
     } finally {
@@ -99,9 +133,10 @@
   async function handleDiscard() {
     loading = true;
     try {
-      await gitDiscardAll(cwd);
+      await gitDiscardAll(effectiveCwd);
       showToast("Changes discarded", "warning");
       await refreshStatus();
+      await refreshPanelData();
     } catch (e: unknown) {
       showToast(`Discard failed: ${e}`, "error");
     } finally {
@@ -122,6 +157,22 @@
       <span class="code-icon">&lt;&gt;</span>
     {/if}
   </div>
+
+  {#if showDropdown}
+    <div class="repo-selector">
+      <span class="repo-label">REPOSITORY</span>
+      <select class="repo-dropdown" bind:value={selectedProjectName}>
+        {#each projects! as project}
+          <option value={project.name}>{project.name}</option>
+        {/each}
+      </select>
+    </div>
+  {:else if effectiveProject}
+    <div class="repo-indicator">
+      <span class="repo-label">REPOSITORY</span>
+      <span class="repo-name">{effectiveProject.name}</span>
+    </div>
+  {/if}
 
   <div class="stats-row">
     <div class="stat">
@@ -248,6 +299,50 @@
 
   .branch-icon {
     font-size: 14px;
+  }
+
+  .repo-selector,
+  .repo-indicator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .repo-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--on-surface-variant);
+  }
+
+  .repo-dropdown {
+    flex: 1;
+    padding: 6px 10px;
+    background: var(--surface-container-highest);
+    border: 1px solid var(--outline-variant);
+    border-radius: 6px;
+    color: var(--on-surface);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+
+  .repo-dropdown:focus {
+    border-color: var(--primary);
+  }
+
+  .repo-dropdown option {
+    background: var(--surface-container-highest);
+    color: var(--on-surface);
+  }
+
+  .repo-name {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--on-surface);
   }
 
   .stats-row {
