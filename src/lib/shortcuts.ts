@@ -1,5 +1,6 @@
-import { switchToTab } from "./stores/terminal";
+import { switchToTab, cycleTab } from "./stores/terminal";
 import { togglePanel, setSection } from "./stores/panel";
+import { openMarkdownFile } from "./file-open";
 
 // Set by TerminalTab when it knows its CWD — used for manual refresh
 export let requestPanelRefresh: (() => void) | null = null;
@@ -8,6 +9,20 @@ export function setRefreshHandler(handler: () => void) {
 }
 
 export function handleGlobalKeydown(e: KeyboardEvent): boolean {
+  // Ctrl+O: open markdown file
+  if (e.ctrlKey && !e.shiftKey && e.key === "o") {
+    e.preventDefault();
+    openMarkdownFile();
+    return true;
+  }
+
+  // Ctrl+Tab / Ctrl+Shift+Tab: cycle tabs
+  if (e.ctrlKey && e.key === "Tab") {
+    e.preventDefault();
+    cycleTab(e.shiftKey ? -1 : 1);
+    return true;
+  }
+
   // Ctrl+1-9: switch tabs
   if (e.ctrlKey && !e.shiftKey && e.key >= "1" && e.key <= "9") {
     e.preventDefault();

@@ -4,6 +4,7 @@
   import { get } from "svelte/store";
   import TabBar from "./TabBar.svelte";
   import TerminalTab from "./TerminalTab.svelte";
+  import MarkdownTabView from "./MarkdownTab.svelte";
   import {
     tabs,
     activeTabId,
@@ -12,11 +13,13 @@
   } from "../../stores/terminal";
   import { ptyKill, getSessionDir } from "../../ipc";
   import { showToast } from "../../stores/toast";
+  import { handleGlobalKeydown } from "../../shortcuts";
 
   function createTab() {
     const id = crypto.randomUUID();
     const terminal = new Terminal();
     addTab({
+      type: "terminal",
       id,
       title: "",
       ptyId: -1,
@@ -27,7 +30,7 @@
   async function closeTab(id: string) {
     const tabList = get(tabs);
     const tab = tabList.find((t) => t.id === id);
-    if (tab && tab.ptyId >= 0) {
+    if (tab && tab.type === "terminal" && tab.ptyId >= 0) {
       try {
         await ptyKill(tab.ptyId);
       } catch (e) {
@@ -46,7 +49,7 @@
 
   async function handlePtyReady(tabId: string, ptyId: number) {
     tabs.update((t) =>
-      t.map((tab) => (tab.id === tabId ? { ...tab, ptyId } : tab)),
+      t.map((tab) => (tab.id === tabId && tab.type === "terminal" ? { ...tab, ptyId } : tab)),
     );
     try {
       await getSessionDir(tabId);
@@ -62,6 +65,7 @@
   });
 
   function handleKeydown(e: KeyboardEvent) {
+    if (handleGlobalKeydown(e)) return;
     if (e.ctrlKey && !e.shiftKey && e.key === "t") {
       e.preventDefault();
       createTab();
@@ -84,11 +88,18 @@
   </div>
   <div class="terminal-panes">
     {#each $tabs as tab (tab.id)}
-      <TerminalTab
-        tabId={tab.id}
-        visible={tab.id === $activeTabId}
-        onPtyReady={(ptyId) => handlePtyReady(tab.id, ptyId)}
-      />
+      {#if tab.type === "terminal"}
+        <TerminalTab
+          tabId={tab.id}
+          visible={tab.id === $activeTabId}
+          onPtyReady={(ptyId) => handlePtyReady(tab.id, ptyId)}
+        />
+      {:else if tab.type === "markdown"}
+        <MarkdownTabView
+          {tab}
+          visible={tab.id === $activeTabId}
+        />
+      {/if}
     {/each}
   </div>
 </div>

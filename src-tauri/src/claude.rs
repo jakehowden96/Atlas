@@ -2,6 +2,7 @@ use crate::panel::watcher::{FlowData, FlowEdge, Issue, SummaryData};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone)]
 pub struct ClaudeClient {
     api_key: String,
     base_url: String,

@@ -49,4 +49,11 @@ export interface PanelData {
   flow?: FlowData;
 }
 
+export interface GitStatus {
+  has_unstaged: boolean;
+  has_staged: boolean;
+  has_unpushed: boolean;
+  branch: string;
+}
+
 export type PanelSection = "diff" | "summary" | "flow";

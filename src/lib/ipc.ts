@@ -1,6 +1,6 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { PanelData } from "../types/panel";
+import type { PanelData, GitStatus } from "../types/panel";
 
 export async function ptySpawn(
   cols: number,
@@ -63,6 +63,29 @@ export async function gitStageAll(cwd: string): Promise<void> {
 
 export async function gitDiscardAll(cwd: string): Promise<void> {
   return invoke("git_discard_all", { cwd });
+}
+
+export async function getGitStatus(cwd: string): Promise<GitStatus> {
+  return invoke("get_git_status", { cwd });
+}
+
+export async function gitCommit(
+  cwd: string,
+  message: string,
+): Promise<void> {
+  return invoke("git_commit", { cwd, message });
+}
+
+export async function gitPush(cwd: string): Promise<void> {
+  return invoke("git_push", { cwd });
+}
+
+export async function setApiKey(apiKey: string): Promise<void> {
+  return invoke("set_api_key", { apiKey });
+}
+
+export async function getApiStatus(): Promise<boolean> {
+  return invoke("get_api_status");
 }
 
 export async function onPanelUpdate(

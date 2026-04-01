@@ -4,6 +4,9 @@
   import type { FlowData } from "../../../types/panel";
   import { flowEdgesToMermaid } from "../../mermaid-converter";
   import { mermaidThemeVariables } from "../../theme";
+  import { apiKeyConfigured, checkApiStatus } from "../../stores/panel";
+  import { setApiKey } from "../../ipc";
+  import { showToast } from "../../stores/toast";
 
   interface Props {
     data: FlowData | undefined;
@@ -11,6 +14,23 @@
   }
 
   let { data, hasDiff = false }: Props = $props();
+  let apiKeyInput = $state("");
+  let saving = $state(false);
+
+  async function handleSaveKey() {
+    if (!apiKeyInput.trim()) return;
+    saving = true;
+    try {
+      await setApiKey(apiKeyInput.trim());
+      await checkApiStatus();
+      apiKeyInput = "";
+      showToast("API key saved");
+    } catch (e) {
+      showToast(`Failed to save API key: ${e}`);
+    } finally {
+      saving = false;
+    }
+  }
   let diagramEl: HTMLDivElement = $state(null!);
   let renderCount = 0;
 
@@ -66,7 +86,25 @@
     </div>
   {:else}
     <div class="empty">
-      {#if hasDiff}
+      {#if hasDiff && !$apiKeyConfigured}
+        <div class="api-key-prompt">
+          <span class="material-symbols-outlined key-icon">key</span>
+          <p class="key-title">API Key Required</p>
+          <p class="key-desc">Enter your Anthropic API key to enable AI analysis.</p>
+          <div class="key-input-row">
+            <input
+              type="password"
+              class="key-input"
+              placeholder="sk-ant-..."
+              bind:value={apiKeyInput}
+              onkeydown={(e) => { if (e.key === "Enter") handleSaveKey(); }}
+            />
+            <button class="key-save-btn" onclick={handleSaveKey} disabled={saving || !apiKeyInput.trim()}>
+              {saving ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </div>
+      {:else if hasDiff}
         <div class="loading">
           <span class="loading-dot"></span>
           Analyzing diff...
@@ -189,6 +227,82 @@
     font-size: 22px;
     font-family: var(--font-display);
     letter-spacing: -0.02em;
+  }
+
+  .api-key-prompt {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    max-width: 320px;
+    text-align: center;
+  }
+
+  .key-icon {
+    font-size: 2rem;
+    color: var(--on-surface-variant);
+    font-variation-settings: 'FILL' 0;
+  }
+
+  .key-title {
+    margin: 0;
+    font-size: 1rem;
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: var(--on-surface);
+  }
+
+  .key-desc {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--on-surface-variant);
+    line-height: 1.5;
+  }
+
+  .key-input-row {
+    display: flex;
+    gap: 0.5rem;
+    width: 100%;
+  }
+
+  .key-input {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    background: var(--surface-container-high);
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--radius-sm);
+    color: var(--on-surface);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .key-input:focus {
+    border-color: var(--primary);
+  }
+
+  .key-save-btn {
+    padding: 0.5rem 1rem;
+    background: var(--primary);
+    color: var(--on-primary);
+    border: none;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-body);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity 0.15s;
+  }
+
+  .key-save-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .key-save-btn:hover:not(:disabled) {
+    opacity: 0.9;
   }
 
   .loading {

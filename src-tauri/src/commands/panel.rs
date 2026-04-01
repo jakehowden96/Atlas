@@ -1,5 +1,5 @@
-use crate::claude::ClaudeClient;
-use crate::panel::watcher::{sessions_dir, DiffData, PanelData, ProjectDiff};
+use crate::panel::watcher::{sessions_dir, DiffData, GitStatus, PanelData, ProjectDiff};
+use crate::ClaudeState;
 use std::fs;
 use std::process::Command;
 use tauri::Manager;
@@ -51,23 +51,25 @@ pub fn refresh_panel(
     // Spawn async Claude analysis if we have a diff and an API key
     if let Some(ref data) = result {
         if let Some(ref diff) = data.diff {
-            let claude_opt: tauri::State<Option<ClaudeClient>> = app_handle.state();
-            if claude_opt.is_some() {
+            let claude_state: tauri::State<ClaudeState> = app_handle.state();
+            let has_client = claude_state.read().unwrap().is_some();
+            if has_client {
                 let raw_diff = diff.raw.clone();
                 let sid = session_id.clone();
                 let path = panel_path.clone();
-                let handle = app_handle.clone();
+                let state = claude_state.inner().clone();
 
                 tauri::async_runtime::spawn(async move {
-                    let claude_state: tauri::State<Option<ClaudeClient>> = handle.state();
-                    let client = match claude_state.as_ref() {
-                        Some(c) => c,
-                        None => return,
+                    let client = {
+                        let guard = state.read().unwrap();
+                        match guard.as_ref() {
+                            Some(c) => c.clone(),
+                            None => return,
+                        }
                     };
 
                     match client.analyze_diff(&raw_diff).await {
                         Ok((summary, flow)) => {
-                            // Read existing panel.json and merge in analysis
                             if let Ok(contents) = fs::read_to_string(&path) {
                                 if let Ok(mut panel) =
                                     serde_json::from_str::<PanelData>(&contents)
@@ -289,6 +291,27 @@ fn write_panel(session_id: &str, data: &PanelData, panel_path: &std::path::Path)
     }
 }
 
+/// Set the API key at runtime and persist to ~/.forge/config.json
+#[tauri::command]
+pub fn set_api_key(
+    app_handle: tauri::AppHandle,
+    api_key: String,
+) -> Result<(), String> {
+    crate::write_config_api_key(&api_key)?;
+    let client = crate::build_claude_client(api_key);
+    let state: tauri::State<ClaudeState> = app_handle.state();
+    *state.write().unwrap() = Some(client);
+    Ok(())
+}
+
+/// Check whether an API key is configured
+#[tauri::command]
+pub fn get_api_status(app_handle: tauri::AppHandle) -> bool {
+    let state: tauri::State<ClaudeState> = app_handle.state();
+    let guard = state.read().unwrap();
+    guard.is_some()
+}
+
 /// Stage all changes in the given git repo.
 #[tauri::command]
 pub fn git_stage_all(cwd: String) -> Result<(), String> {
@@ -304,6 +327,61 @@ pub fn git_discard_all(cwd: String) -> Result<(), String> {
     git_cmd(&cwd, &["checkout", "--", "."])?;
     // Remove untracked files and directories
     git_cmd(&cwd, &["clean", "-fd"]).map(|_| ())
+}
+
+/// Get the current git status for determining the adaptive button state.
+#[tauri::command]
+pub fn get_git_status(cwd: String) -> Result<GitStatus, String> {
+    // Check for unstaged changes (working tree vs HEAD)
+    let has_unstaged = Command::new("git")
+        .args(["-C", &cwd, "diff", "--quiet", "HEAD"])
+        .output()
+        .map(|o| !o.status.success())
+        .unwrap_or(false);
+
+    // Check for staged changes (index vs HEAD)
+    let has_staged = Command::new("git")
+        .args(["-C", &cwd, "diff", "--cached", "--quiet"])
+        .output()
+        .map(|o| !o.status.success())
+        .unwrap_or(false);
+
+    // Check for unpushed commits
+    let has_unpushed = git_cmd(&cwd, &["rev-list", "@{u}..HEAD", "--count"])
+        .map(|s| s.trim().parse::<u32>().unwrap_or(0) > 0)
+        .unwrap_or(false);
+
+    // Get current branch
+    let branch = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
+        .unwrap_or_default();
+
+    Ok(GitStatus {
+        has_unstaged,
+        has_staged,
+        has_unpushed,
+        branch,
+    })
+}
+
+/// Commit all changes with the given message. Stages everything first.
+#[tauri::command]
+pub fn git_commit(cwd: String, message: String) -> Result<(), String> {
+    git_cmd(&cwd, &["add", "-A"])?;
+    git_cmd(&cwd, &["commit", "-m", &message])?;
+    Ok(())
+}
+
+/// Push to the upstream remote.
+#[tauri::command]
+pub fn git_push(cwd: String) -> Result<(), String> {
+    // Try normal push first
+    let result = git_cmd(&cwd, &["push"]);
+    if result.is_ok() {
+        return Ok(());
+    }
+    // If no upstream set, push with -u
+    let branch = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    git_cmd(&cwd, &["push", "-u", "origin", &branch]).map(|_| ())
 }
 
 fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {

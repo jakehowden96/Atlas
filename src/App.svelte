@@ -4,7 +4,7 @@
   import SidePanel from "./lib/components/panel/SidePanel.svelte";
   import Resizer from "./lib/components/layout/Resizer.svelte";
   import Toast from "./lib/components/Toast.svelte";
-  import { panelVisible, panelData, togglePanel } from "./lib/stores/panel";
+  import { panelVisible, panelData, togglePanel, checkApiStatus } from "./lib/stores/panel";
   import { onPanelUpdate } from "./lib/ipc";
   import type { UnlistenFn } from "@tauri-apps/api/event";
 
@@ -19,6 +19,7 @@
   }
 
   onMount(async () => {
+    checkApiStatus();
     unlisten = await onPanelUpdate((data) => {
       panelData.set(data);
     });

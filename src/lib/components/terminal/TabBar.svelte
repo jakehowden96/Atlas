@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tabs, activeTabId } from "../../stores/terminal";
+  import type { TabItem } from "../../../types/terminal";
 
   interface Props {
     onNewTab: () => void;
@@ -16,9 +17,13 @@
       <button
         class="tab"
         class:active={tab.id === $activeTabId}
+        class:tab-markdown={tab.type === "markdown"}
         onclick={() => onSelectTab(tab.id)}
         title="Ctrl+{i + 1}"
       >
+        {#if tab.type === "markdown"}
+          <span class="material-symbols-outlined tab-type-icon">description</span>
+        {/if}
         <span class="tab-title">{tab.title || `Tab ${i + 1}`}</span>
         {#if $tabs.length > 1}
           <span
@@ -83,6 +88,24 @@
   .tab.active {
     background: var(--surface-container-high);
     color: var(--on-surface);
+  }
+
+  .tab-markdown {
+    color: var(--yellow);
+  }
+
+  .tab-markdown:hover {
+    color: var(--yellow);
+  }
+
+  .tab-markdown.active {
+    color: var(--yellow);
+    background: color-mix(in srgb, var(--yellow) 10%, var(--surface-container-high));
+  }
+
+  .tab-type-icon {
+    font-size: 0.8rem;
+    font-variation-settings: 'FILL' 1;
   }
 
   .tab-title {

@@ -61,6 +61,7 @@ export class TerminalSession {
   private registerKeyHandler() {
     this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       if (e.type !== "keydown") return true;
+      if (e.ctrlKey && e.key === "Tab") return false;
       if (e.ctrlKey && !e.shiftKey && e.key === "t") return false;
       if (e.ctrlKey && !e.shiftKey && e.key === "w") return false;
       if (handleGlobalKeydown(e)) return false;
@@ -164,6 +165,7 @@ export class TerminalSession {
     if (visible && this.fitAddon) {
       requestAnimationFrame(() => {
         this.fitAddon.fit();
+        this.terminal.focus();
         if (this.ptyId !== null) {
           ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
         }

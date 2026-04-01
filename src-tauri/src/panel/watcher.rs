@@ -64,6 +64,14 @@ pub struct FlowEdge {
     pub label: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitStatus {
+    pub has_unstaged: bool,
+    pub has_staged: bool,
+    pub has_unpushed: bool,
+    pub branch: String,
+}
+
 pub fn sessions_dir() -> PathBuf {
     let home = dirs::home_dir().expect("Could not determine home directory");
     home.join(".forge").join("sessions")
