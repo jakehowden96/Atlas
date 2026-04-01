@@ -4,9 +4,11 @@
   import type { FlowData } from "../../../types/panel";
   import { flowEdgesToMermaid } from "../../mermaid-converter";
   import { mermaidThemeVariables } from "../../theme";
-  import { apiKeyConfigured, checkApiStatus } from "../../stores/panel";
-  import { setApiKey } from "../../ipc";
+  import { apiKeyConfigured, checkApiStatus, panelData, analysisStatus, analysisError } from "../../stores/panel";
+  import { setApiKey, refreshPanel, resetAnalysis } from "../../ipc";
+  import { activeTabId } from "../../stores/terminal";
   import { showToast } from "../../stores/toast";
+  import { get } from "svelte/store";
 
   interface Props {
     data: FlowData | undefined;
@@ -25,14 +27,83 @@
       await checkApiStatus();
       apiKeyInput = "";
       showToast("API key saved");
+      const cwd = get(panelData)?.cwd;
+      if (cwd) {
+        refreshPanel(get(activeTabId), cwd);
+      }
     } catch (e) {
       showToast(`Failed to save API key: ${e}`);
     } finally {
       saving = false;
     }
   }
+  async function handleRetry() {
+    const tabId = get(activeTabId);
+    await resetAnalysis(tabId);
+    analysisStatus.set("idle");
+    analysisError.set(null);
+    const cwd = get(panelData)?.cwd;
+    if (cwd) {
+      refreshPanel(tabId, cwd);
+    }
+  }
+
   let diagramEl: HTMLDivElement = $state(null!);
+  let containerEl: HTMLDivElement = $state(null!);
   let renderCount = 0;
+
+  let scale = $state(1);
+  let translateX = $state(0);
+  let translateY = $state(0);
+
+  // Pan state
+  let isPanning = $state(false);
+  let panStartX = 0;
+  let panStartY = 0;
+  let panStartTransX = 0;
+  let panStartTransY = 0;
+
+  function zoomIn() {
+    scale = Math.min(scale * 1.25, 5);
+  }
+
+  function zoomOut() {
+    scale = Math.max(scale / 1.25, 0.2);
+  }
+
+  function resetView() {
+    scale = 1;
+    translateX = 0;
+    translateY = 0;
+  }
+
+  function handleWheel(e: WheelEvent) {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 1 / 1.1 : 1.1;
+      scale = Math.min(Math.max(scale * delta, 0.2), 5);
+    }
+  }
+
+  function handlePointerDown(e: PointerEvent) {
+    if (e.button !== 0) return;
+    isPanning = true;
+    panStartX = e.clientX;
+    panStartY = e.clientY;
+    panStartTransX = translateX;
+    panStartTransY = translateY;
+    containerEl.setPointerCapture(e.pointerId);
+  }
+
+  function handlePointerMove(e: PointerEvent) {
+    if (!isPanning) return;
+    translateX = panStartTransX + (e.clientX - panStartX);
+    translateY = panStartTransY + (e.clientY - panStartY);
+  }
+
+  function handlePointerUp() {
+    isPanning = false;
+  }
 
   onMount(() => {
     mermaid.initialize({
@@ -68,19 +139,34 @@
       <span class="ai-tag-label">AI Suggestion</span>
     </div>
 
-    <div class="diagram-container" bind:this={diagramEl}></div>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="diagram-viewport"
+      bind:this={containerEl}
+      onwheel={handleWheel}
+      onpointerdown={handlePointerDown}
+      onpointermove={handlePointerMove}
+      onpointerup={handlePointerUp}
+      style="cursor: {isPanning ? 'grabbing' : 'grab'}"
+    >
+      <div
+        class="diagram-container"
+        bind:this={diagramEl}
+        style="transform: translate({translateX}px, {translateY}px) scale({scale})"
+      ></div>
+    </div>
 
     <!-- Zoom Controls -->
     <div class="zoom-controls">
-      <button class="zoom-btn" title="Zoom In">
+      <button class="zoom-btn" title="Zoom In" onclick={zoomIn}>
         <span class="material-symbols-outlined">zoom_in</span>
       </button>
       <span class="zoom-divider"></span>
-      <button class="zoom-btn" title="Zoom Out">
+      <button class="zoom-btn" title="Zoom Out" onclick={zoomOut}>
         <span class="material-symbols-outlined">zoom_out</span>
       </button>
       <span class="zoom-divider"></span>
-      <button class="zoom-btn" title="Center">
+      <button class="zoom-btn" title="Center" onclick={resetView}>
         <span class="material-symbols-outlined">center_focus_weak</span>
       </button>
     </div>
@@ -103,6 +189,16 @@
               {saving ? "Saving..." : "Save"}
             </button>
           </div>
+        </div>
+      {:else if hasDiff && $analysisStatus === "error"}
+        <div class="error-state">
+          <span class="material-symbols-outlined error-icon">error</span>
+          <p class="error-title">Analysis Failed</p>
+          <p class="error-message">{$analysisError ?? "Unknown error"}</p>
+          <button class="retry-btn" onclick={handleRetry}>
+            <span class="material-symbols-outlined retry-icon">refresh</span>
+            Retry
+          </button>
         </div>
       {:else if hasDiff}
         <div class="loading">
@@ -159,17 +255,30 @@
     color: var(--tertiary);
   }
 
+  .diagram-viewport {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    touch-action: none;
+  }
+
   .diagram-container {
     display: flex;
     justify-content: center;
     align-items: center;
     min-height: 200px;
     padding: 3rem var(--spacing-5);
+    transform-origin: center center;
+    will-change: transform;
   }
 
   .diagram-container :global(svg) {
     max-width: 100%;
     height: auto;
+    pointer-events: none;
   }
 
   .zoom-controls {
@@ -303,6 +412,62 @@
 
   .key-save-btn:hover:not(:disabled) {
     opacity: 0.9;
+  }
+
+  .error-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    max-width: 320px;
+    text-align: center;
+  }
+
+  .error-icon {
+    font-size: 2rem;
+    color: var(--error);
+    font-variation-settings: 'FILL' 0;
+  }
+
+  .error-title {
+    margin: 0;
+    font-size: 1rem;
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: var(--on-surface);
+  }
+
+  .error-message {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--on-surface-variant);
+    line-height: 1.5;
+    font-family: var(--font-mono);
+    word-break: break-word;
+  }
+
+  .retry-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 1rem;
+    background: var(--surface-container-high);
+    color: var(--on-surface);
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-body);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .retry-btn:hover {
+    background: var(--surface-bright);
+  }
+
+  .retry-icon {
+    font-size: 0.9rem;
   }
 
   .loading {
