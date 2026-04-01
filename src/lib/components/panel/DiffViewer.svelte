@@ -170,7 +170,7 @@
         </div>
       {/each}
     {/if}
-    <ChangeSummary data={activeDiffData!} {cwd} projects={data.projects} />
+    <ChangeSummary data={activeDiffData!} {cwd} projects={data?.projects} />
   {:else}
     <div class="empty"><span class="empty-text">No diff data available</span></div>
   {/if}

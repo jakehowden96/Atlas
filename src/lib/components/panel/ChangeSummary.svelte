@@ -6,7 +6,6 @@
   import { gitStageAll, gitDiscardAll, getGitStatus, gitCommit, gitPush, refreshPanel } from "../../ipc";
   import { panelData } from "../../stores/panel";
   import { activeTabId } from "../../stores/terminal";
-  import { showToast } from "../../stores/toast";
 
   interface Props {
     data: DiffData;
@@ -87,30 +86,25 @@
     loading = true;
     try {
       await gitStageAll(effectiveCwd);
-      showToast("Changes staged");
       await refreshStatus();
       await refreshPanelData();
-    } catch (e: unknown) {
-      showToast(`Stage failed: ${e}`, "error");
+    } catch {
+      // stage failed silently
     } finally {
       loading = false;
     }
   }
 
   async function handleCommit() {
-    if (!commitMsg.trim()) {
-      showToast("Commit message required", "error");
-      return;
-    }
+    if (!commitMsg.trim()) return;
     loading = true;
     try {
       await gitCommit(effectiveCwd, commitMsg.trim());
-      showToast("Changes committed");
       commitMsg = "";
       await refreshStatus();
       await refreshPanelData();
-    } catch (e: unknown) {
-      showToast(`Commit failed: ${e}`, "error");
+    } catch {
+      // commit failed silently
     } finally {
       loading = false;
     }
@@ -119,13 +113,11 @@
   async function handlePush() {
     loading = true;
     try {
-      const msg = await gitPush(effectiveCwd);
-      showToast(msg);
+      await gitPush(effectiveCwd);
       await refreshStatus();
       await refreshPanelData();
-    } catch (e: unknown) {
-      const message = typeof e === "string" ? e : (e as Error)?.message ?? "Unknown error";
-      showToast(`Push failed: ${message}`, "error");
+    } catch {
+      // push failed silently
     } finally {
       loading = false;
     }
@@ -135,11 +127,10 @@
     loading = true;
     try {
       await gitDiscardAll(effectiveCwd);
-      showToast("Changes discarded", "warning");
       await refreshStatus();
       await refreshPanelData();
-    } catch (e: unknown) {
-      showToast(`Discard failed: ${e}`, "error");
+    } catch {
+      // discard failed silently
     } finally {
       loading = false;
     }
@@ -489,12 +480,12 @@
   }
 
   .btn-push {
-    background: linear-gradient(135deg, color-mix(in srgb, var(--tertiary) 20%, var(--surface-container-highest)), color-mix(in srgb, var(--tertiary) 30%, var(--surface-container-highest)));
-    color: var(--tertiary);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 20%, var(--surface-container-highest)), color-mix(in srgb, var(--primary) 30%, var(--surface-container-highest)));
+    color: var(--primary);
   }
 
   .btn-push:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--tertiary) 25%, var(--surface-container-highest));
+    background: color-mix(in srgb, var(--primary) 25%, var(--surface-container-highest));
   }
 
   .btn-clean {
