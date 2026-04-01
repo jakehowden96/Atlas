@@ -23,6 +23,7 @@ export class TerminalSession {
   private ptyId: number | null = null;
   private currentCwd = "";
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private pollInterval: ReturnType<typeof setInterval> | null = null;
   private tabId: string;
   private _visible: boolean;
 
@@ -56,6 +57,7 @@ export class TerminalSession {
     this.setupResizeObserver(opts.container, opts.visible);
     this.spawnPty(opts.onPtyReady);
     this.setupEnterRefresh();
+    if (this._visible) this.startPolling();
   }
 
   private registerKeyHandler() {
@@ -158,6 +160,22 @@ export class TerminalSession {
     }, 300);
   }
 
+  private startPolling() {
+    this.stopPolling();
+    this.pollInterval = setInterval(() => {
+      if (this._visible && this.currentCwd) {
+        this.scheduleRefresh(this.currentCwd);
+      }
+    }, 5000);
+  }
+
+  private stopPolling() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
+  }
+
   handleVisibilityChange(visible: boolean) {
     this._visible = visible;
     if (visible && this.fitAddon) {
@@ -176,11 +194,15 @@ export class TerminalSession {
       setRefreshHandler(() => {
         if (this.currentCwd) this.scheduleRefresh(this.currentCwd);
       });
+      this.startPolling();
+    } else {
+      this.stopPolling();
     }
   }
 
   destroy() {
     this.resizeObserver?.disconnect();
+    this.stopPolling();
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     if (this.ptyId !== null) {
       ptyKill(this.ptyId);

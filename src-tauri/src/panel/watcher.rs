@@ -23,6 +23,14 @@ pub struct DiffData {
     pub lines_removed: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub projects: Option<Vec<ProjectDiff>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_raw: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_files_changed: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_lines_added: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_lines_removed: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

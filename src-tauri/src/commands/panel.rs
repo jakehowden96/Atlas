@@ -98,25 +98,37 @@ fn build_panel_single(
     git_root: &str,
     panel_path: &std::path::Path,
 ) -> Result<Option<PanelData>, String> {
-    let raw_diff = discover_diff(git_root);
+    let bundle = discover_diff(git_root);
 
-    if raw_diff.is_empty() {
+    if bundle.full.is_empty() {
         let _ = fs::remove_file(panel_path);
         return Ok(None);
     }
 
-    let (files_changed, lines_added, lines_removed) = count_diff_stats(&raw_diff);
+    let (files_changed, lines_added, lines_removed) = count_diff_stats(&bundle.full);
+
+    // Only populate local_* fields when local differs from full (i.e. full includes upstream/branch changes)
+    let (local_raw, local_fc, local_la, local_lr) = if !bundle.local.is_empty() && bundle.local != bundle.full {
+        let (fc, la, lr) = count_diff_stats(&bundle.local);
+        (Some(bundle.local), Some(fc), Some(la), Some(lr))
+    } else {
+        (None, None, None, None)
+    };
 
     let data = PanelData {
         version: 1,
         timestamp: now_iso8601(),
         cwd: git_root.to_string(),
         diff: Some(DiffData {
-            raw: raw_diff,
+            raw: bundle.full,
             files_changed,
             lines_added,
             lines_removed,
             projects: None,
+            local_raw,
+            local_files_changed: local_fc,
+            local_lines_added: local_la,
+            local_lines_removed: local_lr,
         }),
         summary: None,
         flow: None,
@@ -163,25 +175,25 @@ fn build_panel_multi(
             continue;
         }
 
-        let diff = discover_diff(&child_str);
-        if diff.is_empty() {
+        let bundle = discover_diff(&child_str);
+        if bundle.full.is_empty() {
             continue;
         }
 
-        let (fc, la, lr) = count_diff_stats(&diff);
+        let (fc, la, lr) = count_diff_stats(&bundle.full);
         total_files += fc;
         total_added += la;
         total_removed += lr;
 
         projects.push(ProjectDiff {
             name: name_str.to_string(),
-            raw: diff.clone(),
+            raw: bundle.full.clone(),
             files_changed: fc,
             lines_added: la,
             lines_removed: lr,
         });
 
-        all_diffs.push(diff);
+        all_diffs.push(bundle.full);
     }
 
     if all_diffs.is_empty() {
@@ -201,6 +213,10 @@ fn build_panel_multi(
             lines_added: total_added,
             lines_removed: total_removed,
             projects: Some(projects),
+            local_raw: None,
+            local_files_changed: None,
+            local_lines_added: None,
+            local_lines_removed: None,
         }),
         summary: None,
         flow: None,
@@ -210,28 +226,42 @@ fn build_panel_multi(
     Ok(Some(data))
 }
 
-/// 3-tier diff discovery matching sift's extractBestDiff
-fn discover_diff(git_root: &str) -> String {
+struct DiffBundle {
+    /// Local working tree changes (Tier 1 only)
+    local: String,
+    /// Best available diff across all tiers (current behavior)
+    full: String,
+}
+
+/// 3-tier diff discovery matching sift's extractBestDiff.
+/// Returns both local-only changes and the full (best-tier) diff.
+fn discover_diff(git_root: &str) -> DiffBundle {
     // Tier 1: Working tree changes (staged + unstaged vs HEAD)
+    let mut local = String::new();
     if let Ok(diff) = git_cmd(git_root, &["diff", "--unified=3", "HEAD"]) {
         if !diff.is_empty() {
-            return diff;
+            local = diff;
         }
     }
-
     // Tier 1b: If HEAD doesn't exist (initial commit), try bare git diff
-    if let Ok(diff) = git_cmd(git_root, &["diff", "--unified=3"]) {
-        if !diff.is_empty() {
-            return diff;
+    if local.is_empty() {
+        if let Ok(diff) = git_cmd(git_root, &["diff", "--unified=3"]) {
+            if !diff.is_empty() {
+                local = diff;
+            }
+        }
+    }
+    // Tier 1c: Staged-only changes
+    if local.is_empty() {
+        if let Ok(diff) = git_cmd(git_root, &["diff", "--cached", "--unified=3"]) {
+            if !diff.is_empty() {
+                local = diff;
+            }
         }
     }
 
-    // Tier 1c: Staged-only changes
-    if let Ok(diff) = git_cmd(git_root, &["diff", "--cached", "--unified=3"]) {
-        if !diff.is_empty() {
-            return diff;
-        }
-    }
+    // Always check deeper tiers for upstream/branch diffs to combine with local
+    let mut remote = String::new();
 
     // Tier 2: Unpushed commits vs upstream tracking branch
     if let Ok(upstream) = git_cmd(
@@ -242,31 +272,41 @@ fn discover_diff(git_root: &str) -> String {
             let range = format!("{}..HEAD", upstream);
             if let Ok(diff) = git_cmd(git_root, &["diff", "--unified=3", &range]) {
                 if !diff.is_empty() {
-                    return diff;
+                    remote = diff;
                 }
             }
         }
     }
 
-    // Tier 3: Branch diff vs merge-base with main/master
-    let base_branch = if git_cmd(git_root, &["rev-parse", "--verify", "main"]).is_ok() {
-        "main"
-    } else if git_cmd(git_root, &["rev-parse", "--verify", "master"]).is_ok() {
-        "master"
-    } else {
-        return String::new();
-    };
+    // Tier 3: Branch diff vs merge-base with main/master (only if Tier 2 found nothing)
+    if remote.is_empty() {
+        let base_branch = if git_cmd(git_root, &["rev-parse", "--verify", "main"]).is_ok() {
+            Some("main")
+        } else if git_cmd(git_root, &["rev-parse", "--verify", "master"]).is_ok() {
+            Some("master")
+        } else {
+            None
+        };
 
-    if let Ok(merge_base) = git_cmd(git_root, &["merge-base", base_branch, "HEAD"]) {
-        if !merge_base.is_empty() {
-            let range = format!("{}..HEAD", merge_base);
-            if let Ok(diff) = git_cmd(git_root, &["diff", "--unified=3", &range]) {
-                return diff;
+        if let Some(base) = base_branch {
+            if let Ok(merge_base) = git_cmd(git_root, &["merge-base", base, "HEAD"]) {
+                if !merge_base.is_empty() {
+                    let range = format!("{}..HEAD", merge_base);
+                    if let Ok(diff) = git_cmd(git_root, &["diff", "--unified=3", &range]) {
+                        if !diff.is_empty() {
+                            remote = diff;
+                        }
+                    }
+                }
             }
         }
     }
 
-    String::new()
+    // Combine: `full` is the best available (remote if it exists, otherwise local)
+    // `local` stays as-is for the toggle
+    let full = if !remote.is_empty() { remote } else { local.clone() };
+
+    DiffBundle { local, full }
 }
 
 fn count_diff_stats(raw: &str) -> (u32, u32, u32) {
@@ -332,12 +372,20 @@ pub fn git_discard_all(cwd: String) -> Result<(), String> {
 /// Get the current git status for determining the adaptive button state.
 #[tauri::command]
 pub fn get_git_status(cwd: String) -> Result<GitStatus, String> {
-    // Check for unstaged changes (working tree vs HEAD)
-    let has_unstaged = Command::new("git")
-        .args(["-C", &cwd, "diff", "--quiet", "HEAD"])
+    // Check for unstaged changes (working tree vs index) or untracked files
+    let has_modified = Command::new("git")
+        .args(["-C", &cwd, "diff", "--quiet"])
         .output()
         .map(|o| !o.status.success())
         .unwrap_or(false);
+
+    let has_untracked = Command::new("git")
+        .args(["-C", &cwd, "ls-files", "--others", "--exclude-standard"])
+        .output()
+        .map(|o| !String::from_utf8_lossy(&o.stdout).trim().is_empty())
+        .unwrap_or(false);
+
+    let has_unstaged = has_modified || has_untracked;
 
     // Check for staged changes (index vs HEAD)
     let has_staged = Command::new("git")
@@ -540,6 +588,10 @@ diff --git a/file.rs b/file.rs
                 lines_added: 1,
                 lines_removed: 0,
                 projects: None,
+                local_raw: None,
+                local_files_changed: None,
+                local_lines_added: None,
+                local_lines_removed: None,
             }),
             summary: None,
             flow: None,

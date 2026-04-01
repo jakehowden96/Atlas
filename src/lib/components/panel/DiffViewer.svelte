@@ -10,7 +10,35 @@
 
   let { data, cwd }: Props = $props();
 
-  let files = $derived(data?.raw ? parseDiff(data.raw) : []);
+  let diffView: "local" | "all" = $state("all");
+  let hasLocalToggle = $derived(!!data?.local_raw && data.local_raw !== data.raw);
+
+  // Reset to all view when data changes and local toggle becomes unavailable
+  $effect(() => {
+    if (!hasLocalToggle && diffView !== "all") {
+      diffView = "all";
+    }
+  });
+
+  let activeRaw = $derived(
+    hasLocalToggle && diffView === "local" ? data!.local_raw! : data?.raw
+  );
+
+  let activeDiffData = $derived.by(() => {
+    if (!data) return undefined;
+    if (hasLocalToggle && diffView === "local") {
+      return {
+        ...data,
+        raw: data.local_raw!,
+        files_changed: data.local_files_changed!,
+        lines_added: data.local_lines_added!,
+        lines_removed: data.local_lines_removed!,
+      };
+    }
+    return data;
+  });
+
+  let files = $derived(activeRaw ? parseDiff(activeRaw) : []);
 
   let projectFiles = $derived(
     data?.projects?.map((p) => ({
@@ -29,6 +57,20 @@
 
 <div class="diff-viewer">
   {#if data}
+    {#if hasLocalToggle}
+      <div class="diff-toggle-bar">
+        <button
+          class="diff-toggle-pill"
+          class:active={diffView === "local"}
+          onclick={() => diffView = "local"}
+        >Local</button>
+        <button
+          class="diff-toggle-pill"
+          class:active={diffView === "all"}
+          onclick={() => diffView = "all"}
+        >All</button>
+      </div>
+    {/if}
     {#if projectFiles.length > 0}
       {#each projectFiles as project}
         <div class="project-section">
@@ -128,7 +170,7 @@
         </div>
       {/each}
     {/if}
-    <ChangeSummary {data} {cwd} projects={data.projects} />
+    <ChangeSummary data={activeDiffData!} {cwd} projects={data.projects} />
   {:else}
     <div class="empty"><span class="empty-text">No diff data available</span></div>
   {/if}
@@ -138,6 +180,41 @@
   .diff-viewer {
     height: 100%;
     overflow: auto;
+  }
+
+  .diff-toggle-bar {
+    display: flex;
+    gap: 2px;
+    padding: 8px 10px;
+    background: var(--surface-container-low);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+
+  .diff-toggle-pill {
+    padding: 4px 12px;
+    border: none;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    background: transparent;
+    color: var(--on-surface-variant);
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .diff-toggle-pill:hover {
+    background: var(--surface-container-high);
+    color: var(--on-surface);
+  }
+
+  .diff-toggle-pill.active {
+    background: var(--surface-container-highest);
+    color: var(--on-surface);
+    font-weight: 600;
   }
 
   /* File section */

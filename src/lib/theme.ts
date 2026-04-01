@@ -41,9 +41,9 @@ export const theme = {
 
   /* Named ANSI colors for xterm */
   red: "#ff716c",
-  redBright: "#ff918d",
+  redBright: "#ff847f",
   green: "#97f999",
-  greenBright: "#b2ffb4",
+  greenBright: "#a8ffaa",
   yellow: "#e8be7b",
   yellowBright: "#f5d29b",
   blue: "#72b1ff",
@@ -53,6 +53,7 @@ export const theme = {
   cyan: "#63bcc6",
   cyanBright: "#82d4dd",
   black: "#0f141a",
+  blackBright: "#525868",
   white: "#a8abb3",
   whiteBright: "#f1f3fc",
 } as const;
@@ -73,7 +74,7 @@ export const xtermTheme = {
   magenta: theme.magenta,
   cyan: theme.cyan,
   white: theme.white,
-  brightBlack: theme.surfaceBright,
+  brightBlack: theme.blackBright,
   brightRed: theme.redBright,
   brightGreen: theme.greenBright,
   brightYellow: theme.yellowBright,

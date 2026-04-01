@@ -25,6 +25,10 @@ export interface DiffData {
   lines_added: number;
   lines_removed: number;
   projects?: ProjectDiff[];
+  local_raw?: string;
+  local_files_changed?: number;
+  local_lines_added?: number;
+  local_lines_removed?: number;
 }
 
 export interface SummaryData {
