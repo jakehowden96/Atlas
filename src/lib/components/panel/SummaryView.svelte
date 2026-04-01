@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { SummaryData } from "../../../types/panel";
   import MarkdownRenderer from "./MarkdownRenderer.svelte";
+  import RepositoryClean from "./RepositoryClean.svelte";
   import { apiKeyConfigured, checkApiStatus, panelData, analysisStatus, analysisError } from "../../stores/panel";
   import { setApiKey, refreshPanel, resetAnalysis } from "../../ipc";
   import { activeTabId } from "../../stores/terminal";
@@ -201,7 +202,7 @@
           Analyzing diff...
         </div>
       {:else}
-        <span class="empty-text">No diff to analyze</span>
+        <RepositoryClean />
       {/if}
     </div>
   {/if}

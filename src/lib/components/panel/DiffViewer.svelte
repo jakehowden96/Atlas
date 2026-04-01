@@ -2,6 +2,7 @@
   import { parseDiff } from "../../diff-parser";
   import type { DiffData } from "../../../types/panel";
   import ChangeSummary from "./ChangeSummary.svelte";
+  import RepositoryClean from "./RepositoryClean.svelte";
 
   interface Props {
     data: DiffData | undefined;
@@ -262,7 +263,7 @@
     {/if}
     <ChangeSummary data={activeDiffData!} {cwd} projects={data?.projects} {selectedFiles} />
   {:else}
-    <div class="empty"><span class="empty-text">No diff data available</span></div>
+    <RepositoryClean />
   {/if}
 </div>
 

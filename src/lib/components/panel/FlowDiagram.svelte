@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import mermaid from "mermaid";
   import type { FlowData } from "../../../types/panel";
+  import RepositoryClean from "./RepositoryClean.svelte";
   import { flowEdgesToMermaid } from "../../mermaid-converter";
   import { mermaidThemeVariables } from "../../theme";
   import { apiKeyConfigured, checkApiStatus, panelData, analysisStatus, analysisError } from "../../stores/panel";
@@ -206,7 +207,7 @@
           Analyzing diff...
         </div>
       {:else}
-        <span class="empty-text">No diff to analyze</span>
+        <RepositoryClean />
       {/if}
     </div>
   {/if}
