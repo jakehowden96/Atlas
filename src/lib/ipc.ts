@@ -1,6 +1,6 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { PanelData, GitStatus } from "../types/panel";
+import type { PanelData, GitStatus, AnalysisStatusEvent } from "../types/panel";
 
 export async function ptySpawn(
   cols: number,
@@ -84,6 +84,10 @@ export async function gitPush(cwd: string): Promise<string> {
   return invoke("git_push", { cwd });
 }
 
+export async function resetAnalysis(sessionId: string): Promise<void> {
+  return invoke("reset_analysis", { sessionId });
+}
+
 export async function setApiKey(apiKey: string): Promise<void> {
   return invoke("set_api_key", { apiKey });
 }
@@ -93,9 +97,17 @@ export async function getApiStatus(): Promise<boolean> {
 }
 
 export async function onPanelUpdate(
-  callback: (data: PanelData) => void,
+  callback: (sessionId: string, data: PanelData) => void,
 ): Promise<UnlistenFn> {
-  return listen<PanelData>("panel-update", (event) => {
+  return listen<{ session_id: string; data: PanelData }>("panel-update", (event) => {
+    callback(event.payload.session_id, event.payload.data);
+  });
+}
+
+export async function onAnalysisStatus(
+  callback: (event: AnalysisStatusEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<AnalysisStatusEvent>("analysis-status", (event) => {
     callback(event.payload);
   });
 }

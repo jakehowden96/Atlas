@@ -61,3 +61,11 @@ export interface GitStatus {
 }
 
 export type PanelSection = "diff" | "summary" | "flow";
+
+export type AnalysisStatus = "idle" | "running" | "complete" | "error";
+
+export interface AnalysisStatusEvent {
+  session_id: string;
+  status: AnalysisStatus;
+  error?: string;
+}

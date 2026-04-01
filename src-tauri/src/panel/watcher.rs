@@ -80,6 +80,20 @@ pub struct GitStatus {
     pub branch: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PanelUpdateEvent {
+    pub session_id: String,
+    pub data: PanelData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalysisStatusEvent {
+    pub session_id: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 pub fn sessions_dir() -> PathBuf {
     let home = dirs::home_dir().expect("Could not determine home directory");
     home.join(".forge").join("sessions")
@@ -125,7 +139,7 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
                                 .unwrap_or_default();
 
                             let last_emit = last_emit_per_session
-                                .entry(session_id)
+                                .entry(session_id.clone())
                                 .or_insert_with(|| Instant::now() - debounce);
 
                             if last_emit.elapsed() < debounce {
@@ -138,7 +152,10 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
                                     match serde_json::from_str::<PanelData>(&contents) {
                                         Ok(data) => {
                                             let _ =
-                                                handle.emit("panel-update", data);
+                                                handle.emit("panel-update", PanelUpdateEvent {
+                                                    session_id: session_id.clone(),
+                                                    data,
+                                                });
                                         }
                                         Err(e) => {
                                             log::warn!(

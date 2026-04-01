@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { SummaryData } from "../../../types/panel";
   import MarkdownRenderer from "./MarkdownRenderer.svelte";
-  import { apiKeyConfigured, checkApiStatus } from "../../stores/panel";
-  import { setApiKey, refreshPanel } from "../../ipc";
+  import { apiKeyConfigured, checkApiStatus, panelData, analysisStatus, analysisError } from "../../stores/panel";
+  import { setApiKey, refreshPanel, resetAnalysis } from "../../ipc";
   import { activeTabId } from "../../stores/terminal";
   import { showToast } from "../../stores/toast";
   import { get } from "svelte/store";
@@ -24,10 +24,29 @@
       await checkApiStatus();
       apiKeyInput = "";
       showToast("API key saved");
+      const cwd = get(panelData)?.cwd;
+      if (cwd) {
+        await refreshPanel(get(activeTabId), cwd);
+      }
     } catch (e) {
       showToast(`Failed to save API key: ${e}`);
     } finally {
       saving = false;
+    }
+  }
+
+  async function handleRetry() {
+    const tabId = get(activeTabId);
+    await resetAnalysis(tabId);
+    analysisStatus.set("idle");
+    analysisError.set(null);
+    const cwd = get(panelData)?.cwd;
+    if (cwd) {
+      try {
+        await refreshPanel(tabId, cwd);
+      } catch (e) {
+        showToast(`Refresh failed: ${e}`);
+      }
     }
   }
 
@@ -165,6 +184,16 @@
               {saving ? "Saving..." : "Save"}
             </button>
           </div>
+        </div>
+      {:else if hasDiff && $analysisStatus === "error"}
+        <div class="error-state">
+          <span class="material-symbols-outlined error-icon">error</span>
+          <p class="error-title">Analysis Failed</p>
+          <p class="error-message">{$analysisError ?? "Unknown error"}</p>
+          <button class="retry-btn" onclick={handleRetry}>
+            <span class="material-symbols-outlined retry-icon">refresh</span>
+            Retry
+          </button>
         </div>
       {:else if hasDiff}
         <div class="loading">
@@ -507,6 +536,62 @@
 
   .key-save-btn:hover:not(:disabled) {
     opacity: 0.9;
+  }
+
+  .error-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    max-width: 320px;
+    text-align: center;
+  }
+
+  .error-icon {
+    font-size: 2rem;
+    color: var(--error);
+    font-variation-settings: 'FILL' 0;
+  }
+
+  .error-title {
+    margin: 0;
+    font-size: 1rem;
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: var(--on-surface);
+  }
+
+  .error-message {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--on-surface-variant);
+    line-height: 1.5;
+    font-family: var(--font-mono);
+    word-break: break-word;
+  }
+
+  .retry-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 1rem;
+    background: var(--surface-container-high);
+    color: var(--on-surface);
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-body);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .retry-btn:hover {
+    background: var(--surface-bright);
+  }
+
+  .retry-icon {
+    font-size: 0.9rem;
   }
 
   .loading {

@@ -1,8 +1,23 @@
-use crate::panel::watcher::{sessions_dir, DiffData, GitStatus, PanelData, ProjectDiff};
+use crate::panel::watcher::{sessions_dir, AnalysisStatusEvent, DiffData, FlowData, GitStatus, PanelData, ProjectDiff, SummaryData};
 use crate::ClaudeState;
+use std::collections::HashMap;
 use std::fs;
 use std::process::Command;
-use tauri::Manager;
+use std::sync::Mutex;
+use tauri::{Emitter, Manager};
+
+/// Tracks sessions with an analysis in-flight or completed, keyed by session ID
+/// with the diff hash as the value. When the diff changes the old entry no longer
+/// matches, allowing a new analysis to fire automatically.
+static ANALYSIS_ATTEMPTED: std::sync::LazyLock<Mutex<HashMap<String, u64>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn hash_diff(raw: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    raw.hash(&mut hasher);
+    hasher.finish()
+}
 
 #[tauri::command]
 pub fn get_session_dir(session_id: String) -> Result<String, String> {
@@ -48,18 +63,44 @@ pub fn refresh_panel(
         build_panel_multi(&session_id, &cwd, &panel_path)?
     };
 
-    // Spawn async Claude analysis if we have a diff and an API key
+    // Spawn async Claude analysis if we have a diff, an API key, and no existing analysis
     if let Some(ref data) = result {
         if let Some(ref diff) = data.diff {
+            let already_analyzed = data.summary.is_some();
+            let diff_hash = hash_diff(&diff.raw);
+            // Atomic check-and-insert: single lock acquisition prevents duplicate spawns
+            let should_analyze = if let Ok(mut map) = ANALYSIS_ATTEMPTED.lock() {
+                if already_analyzed {
+                    false
+                } else if map.get(&session_id) == Some(&diff_hash) {
+                    false // already attempted for this exact diff
+                } else {
+                    map.insert(session_id.clone(), diff_hash);
+                    true
+                }
+            } else {
+                false
+            };
             let claude_state: tauri::State<ClaudeState> = app_handle.state();
             let has_client = claude_state.read().unwrap().is_some();
-            if has_client {
+            if has_client && should_analyze {
                 let raw_diff = diff.raw.clone();
+                let expected_cwd = data.cwd.clone();
+                let expected_diff_hash = diff_hash;
                 let sid = session_id.clone();
                 let path = panel_path.clone();
                 let state = claude_state.inner().clone();
+                let handle = app_handle.clone();
 
                 tauri::async_runtime::spawn(async move {
+                    let emit_status = |status: &str, error: Option<String>| {
+                        let _ = handle.emit("analysis-status", AnalysisStatusEvent {
+                            session_id: sid.clone(),
+                            status: status.to_string(),
+                            error,
+                        });
+                    };
+
                     let client = {
                         let guard = state.read().unwrap();
                         match guard.as_ref() {
@@ -68,20 +109,29 @@ pub fn refresh_panel(
                         }
                     };
 
+                    emit_status("running", None);
+
                     match client.analyze_diff(&raw_diff).await {
                         Ok((summary, flow)) => {
                             if let Ok(contents) = fs::read_to_string(&path) {
                                 if let Ok(mut panel) =
                                     serde_json::from_str::<PanelData>(&contents)
                                 {
-                                    panel.summary = Some(summary);
-                                    panel.flow = Some(flow);
-                                    write_panel(&sid, &panel, &path);
+                                    let current_diff_hash = panel.diff.as_ref()
+                                        .map(|d| hash_diff(&d.raw))
+                                        .unwrap_or(0);
+                                    if panel.cwd == expected_cwd && current_diff_hash == expected_diff_hash {
+                                        panel.summary = Some(summary);
+                                        panel.flow = Some(flow);
+                                        write_panel(&sid, &panel, &path);
+                                        emit_status("complete", None);
+                                    }
                                 }
                             }
                         }
                         Err(e) => {
                             log::error!("Claude analysis failed: {}", e);
+                            emit_status("error", Some(e));
                         }
                     }
                 });
@@ -115,6 +165,9 @@ fn build_panel_single(
         (None, None, None, None)
     };
 
+    // Preserve existing summary/flow if the diff hasn't changed
+    let (prev_summary, prev_flow) = read_existing_analysis(panel_path, &bundle.full);
+
     let data = PanelData {
         version: 1,
         timestamp: now_iso8601(),
@@ -130,8 +183,8 @@ fn build_panel_single(
             local_lines_added: local_la,
             local_lines_removed: local_lr,
         }),
-        summary: None,
-        flow: None,
+        summary: prev_summary,
+        flow: prev_flow,
     };
 
     write_panel(session_id, &data, panel_path);
@@ -144,10 +197,12 @@ fn build_panel_multi(
     root: &str,
     panel_path: &std::path::Path,
 ) -> Result<Option<PanelData>, String> {
-    let entries = match fs::read_dir(root) {
-        Ok(e) => e,
+    let mut dir_entries: Vec<_> = match fs::read_dir(root) {
+        Ok(e) => e.flatten().collect(),
         Err(_) => return Ok(None),
     };
+    // Sort for deterministic ordering — fs::read_dir order is platform-dependent
+    dir_entries.sort_by_key(|e| e.file_name());
 
     let mut all_diffs = Vec::new();
     let mut projects = Vec::new();
@@ -155,7 +210,7 @@ fn build_panel_multi(
     let mut total_added: u32 = 0;
     let mut total_removed: u32 = 0;
 
-    for entry in entries.flatten() {
+    for entry in dir_entries {
         if !entry.file_type().map_or(false, |t| t.is_dir()) {
             continue;
         }
@@ -203,6 +258,9 @@ fn build_panel_multi(
 
     let combined = all_diffs.join("\n\n");
 
+    // Preserve existing summary/flow if the diff hasn't changed
+    let (prev_summary, prev_flow) = read_existing_analysis(panel_path, &combined);
+
     let data = PanelData {
         version: 1,
         timestamp: now_iso8601(),
@@ -218,8 +276,8 @@ fn build_panel_multi(
             local_lines_added: None,
             local_lines_removed: None,
         }),
-        summary: None,
-        flow: None,
+        summary: prev_summary,
+        flow: prev_flow,
     };
 
     write_panel(session_id, &data, panel_path);
@@ -391,11 +449,37 @@ fn count_diff_stats(raw: &str) -> (u32, u32, u32) {
     (files, added, removed)
 }
 
+/// Read the existing panel.json and return its summary/flow if the diff matches.
+/// This prevents polling from clobbering async Claude analysis results.
+fn read_existing_analysis(
+    panel_path: &std::path::Path,
+    current_diff_raw: &str,
+) -> (Option<SummaryData>, Option<FlowData>) {
+    if let Ok(contents) = fs::read_to_string(panel_path) {
+        if let Ok(existing) = serde_json::from_str::<PanelData>(&contents) {
+            if let Some(ref diff) = existing.diff {
+                if diff.raw == current_diff_raw {
+                    return (existing.summary, existing.flow);
+                }
+            }
+        }
+    }
+    (None, None)
+}
+
 fn write_panel(session_id: &str, data: &PanelData, panel_path: &std::path::Path) {
     let dir = sessions_dir().join(session_id);
     let _ = fs::create_dir_all(&dir);
     if let Ok(json) = serde_json::to_string_pretty(data) {
         let _ = fs::write(panel_path, json);
+    }
+}
+
+/// Clear the analysis-attempted flag so the next refresh retries the API call.
+#[tauri::command]
+pub fn reset_analysis(session_id: String) {
+    if let Ok(mut map) = ANALYSIS_ATTEMPTED.lock() {
+        map.remove(&session_id);
     }
 }
 
@@ -409,6 +493,10 @@ pub fn set_api_key(
     let client = crate::build_claude_client(api_key);
     let state: tauri::State<ClaudeState> = app_handle.state();
     *state.write().unwrap() = Some(client);
+    // Clear all attempted flags so analysis retries with the new key
+    if let Ok(mut map) = ANALYSIS_ATTEMPTED.lock() {
+        map.clear();
+    }
     Ok(())
 }
 

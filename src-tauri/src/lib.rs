@@ -27,6 +27,14 @@ fn read_config_api_key() -> Option<String> {
     config.get("api_key")?.as_str().map(|s| s.to_string())
 }
 
+/// Read a value from ~/.claude/settings.json env block
+fn read_claude_settings_env(key: &str) -> Option<String> {
+    let path = dirs::home_dir()?.join(".claude").join("settings.json");
+    let contents = std::fs::read_to_string(&path).ok()?;
+    let settings: serde_json::Value = serde_json::from_str(&contents).ok()?;
+    settings.get("env")?.get(key)?.as_str().map(|s| s.to_string())
+}
+
 /// Write API key to ~/.forge/config.json (preserves other fields)
 fn write_config_api_key(key: &str) -> Result<(), String> {
     let path = config_path();
@@ -44,24 +52,34 @@ fn write_config_api_key(key: &str) -> Result<(), String> {
 
 fn build_claude_client(api_key: String) -> ClaudeClient {
     let base_url = std::env::var("ANTHROPIC_BASE_URL")
-        .unwrap_or_else(|_| "https://api.anthropic.com/".to_string());
+        .ok()
+        .or_else(|| read_claude_settings_env("ANTHROPIC_BASE_URL"))
+        .unwrap_or_else(|| "https://api.anthropic.com/".to_string());
     let base_url = if base_url.ends_with('/') {
         base_url
     } else {
         format!("{}/", base_url)
     };
     let model = std::env::var("ANTHROPIC_DEFAULT_OPUS_MODEL")
-        .unwrap_or_else(|_| "claude-opus-4-20250514".to_string());
+        .ok()
+        .or_else(|| read_claude_settings_env("ANTHROPIC_DEFAULT_OPUS_MODEL"))
+        .unwrap_or_else(|| "claude-opus-4-20250514".to_string());
+    log::info!("Claude client: base_url={}, model={}", base_url, model);
     ClaudeClient::new(api_key, base_url, model)
 }
 
 pub fn run() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format_timestamp_millis()
+        .init();
+
     let pty_manager = PtyManager::new();
 
-    // Initialize Claude client: env vars take precedence, then config file
+    // Initialize Claude client: env vars > claude settings > forge config
     let api_key = std::env::var("ANTHROPIC_AUTH_TOKEN")
         .or_else(|_| std::env::var("ANTHROPIC_API_KEY"))
         .ok()
+        .or_else(|| read_claude_settings_env("ANTHROPIC_AUTH_TOKEN"))
         .or_else(read_config_api_key);
 
     let claude_state: ClaudeState = Arc::new(RwLock::new(
@@ -92,6 +110,7 @@ pub fn run() {
             commands::panel::get_git_status,
             commands::panel::git_commit,
             commands::panel::git_push,
+            commands::panel::reset_analysis,
             commands::panel::set_api_key,
             commands::panel::get_api_status,
         ])

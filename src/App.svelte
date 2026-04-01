@@ -4,12 +4,15 @@
   import SidePanel from "./lib/components/panel/SidePanel.svelte";
   import Resizer from "./lib/components/layout/Resizer.svelte";
   import Toast from "./lib/components/Toast.svelte";
-  import { panelVisible, panelData, togglePanel, checkApiStatus } from "./lib/stores/panel";
-  import { onPanelUpdate } from "./lib/ipc";
+  import { panelVisible, panelData, togglePanel, checkApiStatus, analysisStatus, analysisError } from "./lib/stores/panel";
+  import { activeTabId } from "./lib/stores/terminal";
+  import { onPanelUpdate, onAnalysisStatus } from "./lib/ipc";
+  import { get } from "svelte/store";
   import type { UnlistenFn } from "@tauri-apps/api/event";
 
   let panelWidth = $state(420);
   let unlisten: UnlistenFn | null = null;
+  let unlistenStatus: UnlistenFn | null = null;
 
   const MIN_PANEL_WIDTH = 280;
   const MAX_PANEL_WIDTH = 800;
@@ -20,13 +23,22 @@
 
   onMount(async () => {
     checkApiStatus();
-    unlisten = await onPanelUpdate((data) => {
-      panelData.set(data);
+    unlisten = await onPanelUpdate((sessionId, data) => {
+      if (sessionId === get(activeTabId)) {
+        panelData.set(data);
+      }
+    });
+    unlistenStatus = await onAnalysisStatus((event) => {
+      if (event.session_id === get(activeTabId)) {
+        analysisStatus.set(event.status);
+        analysisError.set(event.error ?? null);
+      }
     });
   });
 
   onDestroy(() => {
     unlisten?.();
+    unlistenStatus?.();
   });
 </script>
 

@@ -103,7 +103,10 @@ impl ClaudeClient {
             api_key,
             base_url,
             model,
-            http: Client::new(),
+            http: Client::builder()
+                .timeout(std::time::Duration::from_secs(60))
+                .build()
+                .expect("Failed to build HTTP client"),
         }
     }
 
