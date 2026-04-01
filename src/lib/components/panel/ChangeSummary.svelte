@@ -20,6 +20,7 @@
   let commitMsg = $state("");
   let commitMsgInitialized = false;
   let selectedProjectName: string | null = $state(null);
+  let errorMsg: string | null = $state(null);
 
   let showDropdown = $derived(!!projects && projects.length > 1);
   let effectiveProject = $derived.by(() => {
@@ -83,18 +84,38 @@
     refreshStatus();
   });
 
+  function clearError() {
+    errorMsg = null;
+  }
+
+  function showError(msg: unknown) {
+    errorMsg = typeof msg === "string" ? msg : (msg as Error)?.message ?? "Operation failed";
+  }
+
   async function handleStage() {
+    clearError();
     loading = true;
     try {
-      if (selectedFiles && selectedFiles.size > 0) {
+      if (selectedFiles && selectedFiles.size > 0 && effectiveProject) {
+        // Multi-repo: filter to selected project, strip namespace prefix
+        const prefix = effectiveProject.name + "/";
+        const projectFiles = [...selectedFiles]
+          .filter((f) => f.startsWith(prefix))
+          .map((f) => f.slice(prefix.length));
+        if (projectFiles.length > 0) {
+          await gitStageFiles(effectiveCwd, projectFiles);
+        } else {
+          await gitStageAll(effectiveCwd);
+        }
+      } else if (selectedFiles && selectedFiles.size > 0) {
         await gitStageFiles(effectiveCwd, [...selectedFiles]);
       } else {
         await gitStageAll(effectiveCwd);
       }
       await refreshStatus();
       await refreshPanelData();
-    } catch {
-      // stage failed silently
+    } catch (e) {
+      showError(e);
     } finally {
       loading = false;
     }
@@ -102,40 +123,43 @@
 
   async function handleCommit() {
     if (!commitMsg.trim()) return;
+    clearError();
     loading = true;
     try {
       await gitCommit(effectiveCwd, commitMsg.trim());
       commitMsg = "";
       await refreshStatus();
       await refreshPanelData();
-    } catch {
-      // commit failed silently
+    } catch (e) {
+      showError(e);
     } finally {
       loading = false;
     }
   }
 
   async function handlePush() {
+    clearError();
     loading = true;
     try {
       await gitPush(effectiveCwd);
       await refreshStatus();
       await refreshPanelData();
-    } catch {
-      // push failed silently
+    } catch (e) {
+      showError(e);
     } finally {
       loading = false;
     }
   }
 
   async function handleDiscard() {
+    clearError();
     loading = true;
     try {
       await gitDiscardAll(effectiveCwd);
       await refreshStatus();
       await refreshPanelData();
-    } catch {
-      // discard failed silently
+    } catch (e) {
+      showError(e);
     } finally {
       loading = false;
     }
@@ -201,6 +225,13 @@
         rows="3"
         disabled={loading}
       ></textarea>
+    </div>
+  {/if}
+
+  {#if errorMsg}
+    <div class="error-banner">
+      <span class="error-text">{errorMsg}</span>
+      <button class="error-dismiss" onclick={clearError}>&times;</button>
     </div>
   {/if}
 
@@ -438,6 +469,42 @@
 
   .commit-input:disabled {
     opacity: 0.5;
+  }
+
+  /* Error banner */
+  .error-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    background: color-mix(in srgb, var(--error) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--error) 25%, transparent);
+    border-radius: 8px;
+  }
+
+  .error-text {
+    flex: 1;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--error);
+    line-height: 1.4;
+    word-break: break-word;
+  }
+
+  .error-dismiss {
+    background: none;
+    border: none;
+    color: var(--error);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 4px;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+  }
+
+  .error-dismiss:hover {
+    opacity: 1;
   }
 
   /* Actions */

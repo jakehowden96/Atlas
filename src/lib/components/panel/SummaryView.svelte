@@ -290,14 +290,6 @@
     border-left: 2px solid color-mix(in srgb, var(--tertiary) 30%, transparent);
   }
 
-  .overview-text {
-    font-size: 0.85rem;
-    line-height: 1.65;
-    color: color-mix(in srgb, var(--on-surface) 90%, transparent);
-    margin: 0;
-    font-family: var(--font-body);
-  }
-
   .changes-list {
     display: flex;
     flex-direction: column;
@@ -332,14 +324,6 @@
     flex: 1;
   }
 
-  .change-text {
-    font-size: 0.85rem;
-    color: var(--on-surface);
-    margin: 0;
-    line-height: 1.55;
-    font-family: var(--font-body);
-  }
-
   .why-card {
     padding: 1rem;
     background: var(--surface-container-highest);
@@ -365,14 +349,6 @@
     font-weight: 700;
     color: var(--on-surface-variant);
     text-transform: uppercase;
-    font-family: var(--font-body);
-  }
-
-  .why-text {
-    font-size: 0.75rem;
-    color: var(--on-surface);
-    margin: 0;
-    line-height: 1.55;
     font-family: var(--font-body);
   }
 

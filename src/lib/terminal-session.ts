@@ -148,12 +148,18 @@ export class TerminalSession {
     });
   }
 
+  private lastPanelJson: string | null = null;
+
   private scheduleRefresh(cwd: string) {
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     this.refreshTimer = setTimeout(async () => {
       try {
         const data = await refreshPanel(this.tabId, cwd);
-        panelData.set(data);
+        const json = JSON.stringify(data);
+        if (json !== this.lastPanelJson) {
+          this.lastPanelJson = json;
+          panelData.set(data);
+        }
       } catch (e) {
         showToast(`Panel refresh failed: ${e}`);
       }

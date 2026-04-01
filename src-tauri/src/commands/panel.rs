@@ -201,7 +201,7 @@ fn build_panel_multi(
         return Ok(None);
     }
 
-    let combined = all_diffs.join("\n");
+    let combined = all_diffs.join("\n\n");
 
     let data = PanelData {
         version: 1,

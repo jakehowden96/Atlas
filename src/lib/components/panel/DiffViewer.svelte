@@ -47,13 +47,26 @@
     })) ?? [],
   );
 
+  // Flat list of namespaced file keys for multi-repo (avoids collisions like both repos having src/main.rs)
+  let allProjectFileKeys = $derived(
+    projectFiles.flatMap((p) => p.files.map((f) => `${p.name}/${f.newName}`))
+  );
+
+  let isMultiRepo = $derived(projectFiles.length > 0);
+
   // Track which files are selected for staging
   let selectedFiles: Set<string> = $state(new Set());
+  let prevFileNames: string[] = [];
 
-  // Auto-select all files when the file list changes
+  // Auto-select all files only when the actual file list changes
   $effect(() => {
-    const allNames = files.map((f) => f.newName);
-    selectedFiles = new Set(allNames);
+    const allNames = isMultiRepo ? allProjectFileKeys : files.map((f) => f.newName);
+    const key = allNames.join("\0");
+    const prevKey = prevFileNames.join("\0");
+    if (key !== prevKey) {
+      prevFileNames = allNames;
+      selectedFiles = new Set(allNames);
+    }
   });
 
   function toggleFile(name: string) {
@@ -67,7 +80,7 @@
   }
 
   function toggleAll() {
-    const allNames = files.map((f) => f.newName);
+    const allNames = isMultiRepo ? allProjectFileKeys : files.map((f) => f.newName);
     if (selectedFiles.size === allNames.length) {
       selectedFiles = new Set();
     } else {
@@ -75,7 +88,10 @@
     }
   }
 
-  let allSelected = $derived(files.length > 0 && selectedFiles.size === files.length);
+  let allSelected = $derived.by(() => {
+    const total = isMultiRepo ? allProjectFileKeys.length : files.length;
+    return total > 0 && selectedFiles.size === total;
+  });
 
   const badgeClass: Record<string, string> = {
     modified: "badge-modified",
@@ -101,7 +117,20 @@
         >Remote</button>
       </div>
     {/if}
-    {#if projectFiles.length > 0}
+    {#if isMultiRepo}
+      {#if allProjectFileKeys.length > 1}
+        <div class="select-all-bar">
+          <label class="file-checkbox-label">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onchange={toggleAll}
+              class="file-checkbox"
+            />
+            <span class="select-all-text">{allSelected ? "Deselect all" : "Select all"}</span>
+          </label>
+        </div>
+      {/if}
       {#each projectFiles as project}
         <div class="project-section">
           <div class="project-header">
@@ -116,6 +145,15 @@
             <div class="file-section">
               <div class="file-header">
                 <div class="file-header-left">
+                  <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_click_events_have_key_events -->
+                  <label class="file-checkbox-label" onclick={(e: MouseEvent) => e.stopPropagation()} onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedFiles.has(project.name + "/" + file.newName)}
+                      onchange={() => toggleFile(project.name + "/" + file.newName)}
+                      class="file-checkbox"
+                    />
+                  </label>
                   <span class="material-symbols-outlined file-icon">description</span>
                   <span class="file-name">{file.newName}</span>
                   <span class="badge {badgeClass[file.changeType]}">{file.changeType.toUpperCase()}</span>
@@ -175,7 +213,7 @@
           <div class="file-header">
             <div class="file-header-left">
               <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_click_events_have_key_events -->
-              <label class="file-checkbox-label" onclick={(e: MouseEvent) => e.stopPropagation()}>
+              <label class="file-checkbox-label" onclick={(e: MouseEvent) => e.stopPropagation()} onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
                 <input
                   type="checkbox"
                   checked={selectedFiles.has(file.newName)}
@@ -299,8 +337,10 @@
 
   /* File section */
   .file-section {
-    margin-bottom: 8px;
+    margin-bottom: 12px;
     overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--outline-variant) 15%, transparent);
+    border-radius: 6px;
   }
 
   .file-header {
@@ -436,7 +476,13 @@
 
   /* Project sections (multi-repo) */
   .project-section {
-    margin-bottom: 16px;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--outline-variant) 20%, transparent);
+  }
+
+  .project-section:last-child {
+    border-bottom: none;
   }
 
   .project-header {
