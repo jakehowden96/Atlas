@@ -3,7 +3,7 @@
   import { get } from "svelte/store";
   import type { DiffData, ProjectDiff } from "../../../types/panel";
   import type { GitStatus } from "../../../types/panel";
-  import { gitStageAll, gitDiscardAll, getGitStatus, gitCommit, gitPush, refreshPanel } from "../../ipc";
+  import { gitStageAll, gitStageFiles, gitDiscardAll, getGitStatus, gitCommit, gitPush, refreshPanel } from "../../ipc";
   import { panelData } from "../../stores/panel";
   import { activeTabId } from "../../stores/terminal";
 
@@ -11,9 +11,10 @@
     data: DiffData;
     cwd: string;
     projects?: ProjectDiff[];
+    selectedFiles?: Set<string>;
   }
 
-  let { data, cwd, projects }: Props = $props();
+  let { data, cwd, projects, selectedFiles }: Props = $props();
   let status: GitStatus | null = $state(null);
   let loading = $state(false);
   let commitMsg = $state("");
@@ -85,7 +86,11 @@
   async function handleStage() {
     loading = true;
     try {
-      await gitStageAll(effectiveCwd);
+      if (selectedFiles && selectedFiles.size > 0) {
+        await gitStageFiles(effectiveCwd, [...selectedFiles]);
+      } else {
+        await gitStageAll(effectiveCwd);
+      }
       await refreshStatus();
       await refreshPanelData();
     } catch {

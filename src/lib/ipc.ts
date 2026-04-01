@@ -61,6 +61,10 @@ export async function gitStageAll(cwd: string): Promise<void> {
   return invoke("git_stage_all", { cwd });
 }
 
+export async function gitStageFiles(cwd: string, files: string[]): Promise<void> {
+  return invoke("git_stage_files", { cwd, files });
+}
+
 export async function gitDiscardAll(cwd: string): Promise<void> {
   return invoke("git_discard_all", { cwd });
 }

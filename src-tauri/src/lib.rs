@@ -87,6 +87,7 @@ pub fn run() {
             commands::panel::get_panel_data,
             commands::panel::refresh_panel,
             commands::panel::git_stage_all,
+            commands::panel::git_stage_files,
             commands::panel::git_discard_all,
             commands::panel::get_git_status,
             commands::panel::git_commit,

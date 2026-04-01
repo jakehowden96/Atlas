@@ -47,6 +47,36 @@
     })) ?? [],
   );
 
+  // Track which files are selected for staging
+  let selectedFiles: Set<string> = $state(new Set());
+
+  // Auto-select all files when the file list changes
+  $effect(() => {
+    const allNames = files.map((f) => f.newName);
+    selectedFiles = new Set(allNames);
+  });
+
+  function toggleFile(name: string) {
+    const next = new Set(selectedFiles);
+    if (next.has(name)) {
+      next.delete(name);
+    } else {
+      next.add(name);
+    }
+    selectedFiles = next;
+  }
+
+  function toggleAll() {
+    const allNames = files.map((f) => f.newName);
+    if (selectedFiles.size === allNames.length) {
+      selectedFiles = new Set();
+    } else {
+      selectedFiles = new Set(allNames);
+    }
+  }
+
+  let allSelected = $derived(files.length > 0 && selectedFiles.size === files.length);
+
   const badgeClass: Record<string, string> = {
     modified: "badge-modified",
     added: "badge-added",
@@ -127,10 +157,32 @@
         </div>
       {/each}
     {:else}
+      {#if files.length > 1}
+        <div class="select-all-bar">
+          <label class="file-checkbox-label">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onchange={toggleAll}
+              class="file-checkbox"
+            />
+            <span class="select-all-text">{allSelected ? "Deselect all" : "Select all"}</span>
+          </label>
+        </div>
+      {/if}
       {#each files as file}
         <div class="file-section">
           <div class="file-header">
             <div class="file-header-left">
+              <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_click_events_have_key_events -->
+              <label class="file-checkbox-label" onclick={(e: MouseEvent) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={selectedFiles.has(file.newName)}
+                  onchange={() => toggleFile(file.newName)}
+                  class="file-checkbox"
+                />
+              </label>
               <span class="material-symbols-outlined file-icon">description</span>
               <span class="file-name">{file.newName}</span>
               <span class="badge {badgeClass[file.changeType]}">{file.changeType.toUpperCase()}</span>
@@ -170,7 +222,7 @@
         </div>
       {/each}
     {/if}
-    <ChangeSummary data={activeDiffData!} {cwd} projects={data?.projects} />
+    <ChangeSummary data={activeDiffData!} {cwd} projects={data?.projects} {selectedFiles} />
   {:else}
     <div class="empty"><span class="empty-text">No diff data available</span></div>
   {/if}
@@ -215,6 +267,34 @@
     background: var(--surface-container-highest);
     color: var(--on-surface);
     font-weight: 600;
+  }
+
+  /* Select all bar */
+  .select-all-bar {
+    padding: 6px 10px;
+    background: var(--surface-container-low);
+    border-bottom: 1px solid color-mix(in srgb, var(--outline-variant) 10%, transparent);
+  }
+
+  .file-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+
+  .file-checkbox {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--primary);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .select-all-text {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--on-surface-variant);
   }
 
   /* File section */

@@ -73,7 +73,7 @@
     border: none;
     border-radius: var(--radius-sm);
     color: var(--on-surface-variant);
-    font-size: 11px;
+    font-size: 13px;
     font-family: var(--font-mono);
     cursor: pointer;
     white-space: nowrap;

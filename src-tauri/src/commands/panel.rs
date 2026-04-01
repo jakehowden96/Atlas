@@ -233,9 +233,64 @@ struct DiffBundle {
     full: String,
 }
 
+/// Generate synthetic unified diff output for untracked files.
+/// Reads each file's contents and produces diff format identical to what
+/// `git diff` would show after `git add`.
+fn generate_untracked_diffs(git_root: &str) -> String {
+    let file_list = match git_cmd(git_root, &["ls-files", "--others", "--exclude-standard"]) {
+        Ok(list) if !list.is_empty() => list,
+        _ => return String::new(),
+    };
+
+    let root = std::path::Path::new(git_root);
+    let mut result = String::new();
+
+    for rel_path in file_list.lines() {
+        let rel_path = rel_path.trim();
+        if rel_path.is_empty() {
+            continue;
+        }
+
+        let abs_path = root.join(rel_path);
+        let content = match fs::read(&abs_path) {
+            Ok(bytes) => bytes,
+            Err(_) => continue,
+        };
+
+        // Skip binary files (null byte in first 8KB)
+        let check_len = content.len().min(8192);
+        if content[..check_len].contains(&0) {
+            continue;
+        }
+
+        let text = match String::from_utf8(content) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+
+        let lines: Vec<&str> = text.lines().collect();
+        let line_count = lines.len().max(1);
+
+        result.push_str(&format!("diff --git a/{path} b/{path}\n", path = rel_path));
+        result.push_str("new file mode 100644\n");
+        result.push_str("--- /dev/null\n");
+        result.push_str(&format!("+++ b/{}\n", rel_path));
+        result.push_str(&format!("@@ -0,0 +1,{} @@\n", line_count));
+        for line in &lines {
+            result.push('+');
+            result.push_str(line);
+            result.push('\n');
+        }
+    }
+
+    result
+}
+
 /// 3-tier diff discovery matching sift's extractBestDiff.
 /// Returns both local-only changes and the full (best-tier) diff.
 fn discover_diff(git_root: &str) -> DiffBundle {
+    let untracked = generate_untracked_diffs(git_root);
+
     // Tier 1: Working tree changes (staged + unstaged vs HEAD)
     let mut local = String::new();
     if let Ok(diff) = git_cmd(git_root, &["diff", "--unified=3", "HEAD"]) {
@@ -258,6 +313,14 @@ fn discover_diff(git_root: &str) -> DiffBundle {
                 local = diff;
             }
         }
+    }
+
+    // Append untracked file diffs to local
+    if !untracked.is_empty() {
+        if !local.is_empty() && !local.ends_with('\n') {
+            local.push('\n');
+        }
+        local.push_str(&untracked);
     }
 
     // Check for upstream/branch base ref to diff working tree against
@@ -293,7 +356,7 @@ fn discover_diff(git_root: &str) -> DiffBundle {
     }
 
     // Build `full` diff: working tree vs upstream/base (includes both local and committed changes)
-    let full = if let Some(ref base) = base_ref {
+    let mut full = if let Some(ref base) = base_ref {
         // Diff working tree (including uncommitted changes) against the base ref
         git_cmd(git_root, &["diff", "--unified=3", base])
             .ok()
@@ -302,6 +365,14 @@ fn discover_diff(git_root: &str) -> DiffBundle {
     } else {
         local.clone()
     };
+
+    // Append untracked file diffs to full (if full came from base-ref diff, it won't have them)
+    if base_ref.is_some() && !untracked.is_empty() {
+        if !full.is_empty() && !full.ends_with('\n') {
+            full.push('\n');
+        }
+        full.push_str(&untracked);
+    }
 
     DiffBundle { local, full }
 }
@@ -353,6 +424,18 @@ pub fn get_api_status(app_handle: tauri::AppHandle) -> bool {
 #[tauri::command]
 pub fn git_stage_all(cwd: String) -> Result<(), String> {
     git_cmd(&cwd, &["add", "-A"]).map(|_| ())
+}
+
+/// Stage specific files in the given git repo.
+#[tauri::command]
+pub fn git_stage_files(cwd: String, files: Vec<String>) -> Result<(), String> {
+    if files.is_empty() {
+        return Ok(());
+    }
+    let mut args = vec!["add", "--"];
+    let refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
+    args.extend(refs);
+    git_cmd(&cwd, &args).map(|_| ())
 }
 
 /// Discard all working tree changes (unstaged + staged) in the given git repo.
