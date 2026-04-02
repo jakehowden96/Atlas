@@ -216,6 +216,7 @@ fn build_panel_multi(
     let mut total_files: u32 = 0;
     let mut total_added: u32 = 0;
     let mut total_removed: u32 = 0;
+    let mut found_any_repo = false;
 
     for entry in dir_entries {
         if !entry.file_type().map_or(false, |t| t.is_dir()) {
@@ -236,6 +237,8 @@ fn build_panel_multi(
         if git_cmd(&child_str, &["rev-parse", "--show-toplevel"]).is_err() {
             continue;
         }
+
+        found_any_repo = true;
 
         let bundle = discover_diff(&child_str);
         if bundle.full.is_empty() {
@@ -260,6 +263,9 @@ fn build_panel_multi(
 
     if all_diffs.is_empty() {
         let _ = fs::remove_file(panel_path);
+        if !found_any_repo {
+            return Ok(None);
+        }
         return Ok(Some(PanelData {
             version: 1,
             timestamp: now_iso8601(),

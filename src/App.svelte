@@ -14,6 +14,15 @@
   let unlisten: UnlistenFn | null = null;
   let unlistenStatus: UnlistenFn | null = null;
 
+  // Auto-show/hide panel based on whether a repo is detected
+  $effect(() => {
+    if ($panelData) {
+      panelVisible.set(true);
+    } else {
+      panelVisible.set(false);
+    }
+  });
+
   const MIN_PANEL_WIDTH = 280;
   const MAX_PANEL_WIDTH = 800;
 
