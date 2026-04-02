@@ -211,6 +211,7 @@ fn build_panel_multi(
     // Sort for deterministic ordering — fs::read_dir order is platform-dependent
     dir_entries.sort_by_key(|e| e.file_name());
 
+    let excluded = crate::read_config_excluded_folders();
     let mut all_diffs = Vec::new();
     let mut projects = Vec::new();
     let mut total_files: u32 = 0;
@@ -223,10 +224,9 @@ fn build_panel_multi(
             continue;
         }
 
-        // Skip hidden dirs and common non-repo dirs
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
-        if name_str.starts_with('.') || name_str == "node_modules" || name_str == "target" {
+        if should_skip_dir(&name_str, &excluded) {
             continue;
         }
 
@@ -533,6 +533,16 @@ pub fn get_api_status(app_handle: tauri::AppHandle) -> bool {
     guard.is_some()
 }
 
+#[tauri::command]
+pub fn get_excluded_folders() -> Vec<String> {
+    crate::read_config_excluded_folders()
+}
+
+#[tauri::command]
+pub fn set_excluded_folders(folders: Vec<String>) -> Result<(), String> {
+    crate::write_config_excluded_folders(&folders)
+}
+
 /// Stage all changes in the given git repo.
 #[tauri::command]
 pub fn git_stage_all(cwd: String) -> Result<(), String> {
@@ -665,6 +675,7 @@ pub fn get_child_repos(cwd: String) -> Result<Vec<RepoInfo>, String> {
     };
     entries.sort_by_key(|e| e.file_name());
 
+    let excluded = crate::read_config_excluded_folders();
     let mut repos = Vec::new();
     for entry in entries {
         if !entry.file_type().map_or(false, |t| t.is_dir()) {
@@ -672,7 +683,7 @@ pub fn get_child_repos(cwd: String) -> Result<Vec<RepoInfo>, String> {
         }
         let name = entry.file_name();
         let name_str = name.to_string_lossy().to_string();
-        if name_str.starts_with('.') || name_str == "node_modules" || name_str == "target" {
+        if should_skip_dir(&name_str, &excluded) {
             continue;
         }
         let child = entry.path().to_string_lossy().to_string();
@@ -687,6 +698,10 @@ pub fn get_child_repos(cwd: String) -> Result<Vec<RepoInfo>, String> {
         repos.push(RepoInfo { name: name_str, branch, commits_behind });
     }
     Ok(repos)
+}
+
+fn should_skip_dir(name: &str, excluded: &[String]) -> bool {
+    name.starts_with('.') || name == "node_modules" || name == "target" || excluded.iter().any(|e| e == name)
 }
 
 fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {

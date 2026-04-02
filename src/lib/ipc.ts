@@ -108,6 +108,14 @@ export async function getApiStatus(): Promise<boolean> {
   return invoke("get_api_status");
 }
 
+export async function getExcludedFolders(): Promise<string[]> {
+  return invoke("get_excluded_folders");
+}
+
+export async function setExcludedFolders(folders: string[]): Promise<void> {
+  return invoke("set_excluded_folders", { folders });
+}
+
 export async function onPanelUpdate(
   callback: (sessionId: string, data: PanelData) => void,
 ): Promise<UnlistenFn> {

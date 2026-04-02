@@ -2,7 +2,9 @@
   import DiffViewer from "./DiffViewer.svelte";
   import SummaryView from "./SummaryView.svelte";
   import FlowDiagram from "./FlowDiagram.svelte";
+  import SettingsModal from "./SettingsModal.svelte";
   import { panelData, activeSection, setSection, togglePanel } from "../../stores/panel";
+  import { settingsOpen } from "../../stores/settings";
   import type { PanelSection } from "../../../types/panel";
 
   const navItems: { id: PanelSection; label: string; icon: string }[] = [
@@ -26,9 +28,14 @@
         </button>
       {/each}
     </div>
-    <button class="panel-close-btn" onclick={togglePanel} title="Close Panel">
-      <span class="material-symbols-outlined">right_panel_close</span>
-    </button>
+    <div class="tabs-right">
+      <button class="panel-close-btn" onclick={() => settingsOpen.set(true)} title="Settings">
+        <span class="material-symbols-outlined">settings</span>
+      </button>
+      <button class="panel-close-btn" onclick={togglePanel} title="Close Panel">
+        <span class="material-symbols-outlined">right_panel_close</span>
+      </button>
+    </div>
   </div>
   <div class="panel-content">
     {#if $activeSection === "diff"}
@@ -39,6 +46,7 @@
       <FlowDiagram data={$panelData?.flow} hasDiff={!!$panelData?.diff} />
     {/if}
   </div>
+  <SettingsModal />
 </div>
 
 <style>
@@ -62,6 +70,12 @@
   }
 
   .tabs-left {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .tabs-right {
     display: flex;
     align-items: center;
     gap: 2px;
