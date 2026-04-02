@@ -20,7 +20,9 @@ notify = "8"
 uuid = { version = "1", features = ["v4"] }
 dirs = "6"
 tokio = { version = "1", features = ["sync", "rt", "rt-multi-thread", "macros"] }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+tokio-util = { version = "0.7", features = ["io"] }
+futures-util = "0.3"
 log = "0.4"
 env_logger = "0.11"
 tauri-plugin-dialog = "2.6.0"

@@ -1,4 +1,4 @@
-use crate::panel::watcher::{sessions_dir, AnalysisStatusEvent, DiffData, FlowData, GitStatus, PanelData, ProjectDiff, RepoInfo, SummaryData};
+use crate::panel::watcher::{sessions_dir, AnalysisStatusEvent, DiffData, FlowData, GitStatus, PanelData, PanelUpdateEvent, ProjectDiff, RepoInfo, SummaryData};
 use crate::ClaudeState;
 use std::collections::HashMap;
 use std::fs;
@@ -124,6 +124,11 @@ pub fn refresh_panel(
                                         panel.summary = Some(summary);
                                         panel.flow = Some(flow);
                                         write_panel(&sid, &panel, &path);
+                                        // Emit directly to frontend — bypasses file-watcher latency
+                                        let _ = handle.emit("panel-update", PanelUpdateEvent {
+                                            session_id: sid.clone(),
+                                            data: panel,
+                                        });
                                         emit_status("complete", None);
                                     }
                                 }

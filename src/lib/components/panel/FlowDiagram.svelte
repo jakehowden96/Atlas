@@ -52,6 +52,7 @@
   let diagramEl: HTMLDivElement = $state(null!);
   let containerEl: HTMLDivElement = $state(null!);
   let renderCount = 0;
+  let lastRenderedSyntax = "";
 
   let scale = $state(1);
   let translateX = $state(0);
@@ -98,8 +99,9 @@
 
   function handlePointerMove(e: PointerEvent) {
     if (!isPanning) return;
-    translateX = panStartTransX + (e.clientX - panStartX);
-    translateY = panStartTransY + (e.clientY - panStartY);
+    // Divide by scale because translate operates in the zoomed coordinate space
+    translateX = panStartTransX + (e.clientX - panStartX) / scale;
+    translateY = panStartTransY + (e.clientY - panStartY) / scale;
   }
 
   function handlePointerUp() {
@@ -117,16 +119,19 @@
   $effect(() => {
     if (data && diagramEl) {
       const mermaidSyntax = data.mermaid || flowEdgesToMermaid(data.edges);
+      if (mermaidSyntax === lastRenderedSyntax) return;
+      lastRenderedSyntax = mermaidSyntax;
       renderCount++;
       const id = `flow-${renderCount}`;
 
+      // mermaid.render returns sanitized SVG from its own syntax — safe to inject
       mermaid
         .render(id, mermaidSyntax)
         .then(({ svg }) => {
           diagramEl.innerHTML = svg;
         })
         .catch((err) => {
-          diagramEl.innerHTML = `<div class="error">Failed to render diagram: ${err.message}</div>`;
+          diagramEl.textContent = `Failed to render diagram: ${err.message}`;
         });
     }
   });
@@ -153,7 +158,7 @@
       <div
         class="diagram-container"
         bind:this={diagramEl}
-        style="transform: translate({translateX}px, {translateY}px) scale({scale})"
+        style="transform: translate({translateX}px, {translateY}px); zoom: {scale}"
       ></div>
     </div>
 
@@ -273,12 +278,9 @@
     min-height: 200px;
     padding: 3rem var(--spacing-5);
     transform-origin: center center;
-    will-change: transform;
   }
 
   .diagram-container :global(svg) {
-    max-width: 100%;
-    height: auto;
     pointer-events: none;
   }
 

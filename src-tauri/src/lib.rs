@@ -97,10 +97,10 @@ fn build_claude_client(api_key: String) -> ClaudeClient {
     } else {
         format!("{}/", base_url)
     };
-    let model = std::env::var("ANTHROPIC_DEFAULT_OPUS_MODEL")
+    let model = std::env::var("ANTHROPIC_MODEL")
         .ok()
-        .or_else(|| read_claude_settings_env("ANTHROPIC_DEFAULT_OPUS_MODEL"))
-        .unwrap_or_else(|| "claude-opus-4-20250514".to_string());
+        .or_else(|| read_claude_settings_env("ANTHROPIC_MODEL"))
+        .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
     log::info!("Claude client: base_url={}, model={}", base_url, model);
     ClaudeClient::new(api_key, base_url, model)
 }

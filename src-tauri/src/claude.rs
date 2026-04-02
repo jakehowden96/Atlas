@@ -1,6 +1,9 @@
 use crate::panel::watcher::{FlowData, FlowEdge, Issue, SummaryData};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use tokio::io::AsyncBufReadExt;
+use tokio_util::io::StreamReader;
+use futures_util::TryStreamExt;
 
 #[derive(Clone)]
 pub struct ClaudeClient {
@@ -14,6 +17,7 @@ pub struct ClaudeClient {
 struct ApiRequest {
     model: String,
     max_tokens: u32,
+    stream: bool,
     messages: Vec<Message>,
 }
 
@@ -24,12 +28,12 @@ struct Message {
 }
 
 #[derive(Deserialize)]
-struct ApiResponse {
-    content: Vec<ContentBlock>,
+struct ContentBlockDelta {
+    delta: Option<DeltaContent>,
 }
 
 #[derive(Deserialize)]
-struct ContentBlock {
+struct DeltaContent {
     text: Option<String>,
 }
 
@@ -104,7 +108,7 @@ impl ClaudeClient {
             base_url,
             model,
             http: Client::builder()
-                .timeout(std::time::Duration::from_secs(60))
+                .timeout(std::time::Duration::from_secs(120))
                 .build()
                 .expect("Failed to build HTTP client"),
         }
@@ -126,6 +130,7 @@ impl ClaudeClient {
         let request = ApiRequest {
             model: self.model.clone(),
             max_tokens: 2048,
+            stream: true,
             messages: vec![Message {
                 role: "user".to_string(),
                 content: prompt,
@@ -151,23 +156,39 @@ impl ClaudeClient {
             return Err(format!("Claude API error {}: {}", status, body));
         }
 
-        let api_response: ApiResponse = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse API response: {}", e))?;
+        // Stream SSE events and accumulate text
+        let mut accumulated_text = String::new();
+        let byte_stream = response
+            .bytes_stream()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
+        let stream_reader = StreamReader::new(byte_stream);
+        let mut lines = stream_reader.lines();
 
-        let text = api_response
-            .content
-            .first()
-            .and_then(|b| b.text.as_ref())
-            .ok_or_else(|| "Empty response from Claude".to_string())?;
+        while let Some(line) = lines.next_line().await.map_err(|e| format!("Stream read error: {}", e))? {
+            if let Some(data) = line.strip_prefix("data: ") {
+                if data == "[DONE]" {
+                    break;
+                }
+                if let Ok(block) = serde_json::from_str::<ContentBlockDelta>(data) {
+                    if let Some(delta) = block.delta {
+                        if let Some(text) = delta.text {
+                            accumulated_text.push_str(&text);
+                        }
+                    }
+                }
+            }
+        }
+
+        if accumulated_text.is_empty() {
+            return Err("Empty response from Claude".to_string());
+        }
 
         // Strip any markdown code fences if present
-        let json_text = text
+        let json_text = accumulated_text
             .trim()
             .strip_prefix("```json")
-            .or_else(|| text.trim().strip_prefix("```"))
-            .unwrap_or(text.trim());
+            .or_else(|| accumulated_text.trim().strip_prefix("```"))
+            .unwrap_or(accumulated_text.trim());
         let json_text = json_text.strip_suffix("```").unwrap_or(json_text).trim();
 
         let analysis: AnalysisResponse = serde_json::from_str(json_text)
