@@ -1,28 +1,60 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { panelData } from "../../stores/panel";
   import { activeTabId } from "../../stores/terminal";
-  import { getGitStatus, refreshPanel } from "../../ipc";
+  import { getGitStatus, getChildRepos, gitFetch, gitPull, refreshPanel } from "../../ipc";
   import { showToast } from "../../stores/toast";
   import { get } from "svelte/store";
-  import type { GitStatus } from "../../../types/panel";
+  import type { GitStatus, RepoInfo } from "../../../types/panel";
 
   let status: GitStatus | null = $state(null);
+  let childRepos: RepoInfo[] = $state([]);
+  let isMultiRepo = $state(false);
   let checking = $state(false);
+  let pulling = $state(false);
+  let pullSuccess = $state(false);
+  let pullFadingOut = $state(false);
 
   let cwd = $derived($panelData?.cwd ?? "");
+  let hasBehind = $derived(
+    isMultiRepo
+      ? childRepos.some((r) => r.commits_behind > 0)
+      : (status?.commits_behind ?? 0) > 0
+  );
+  let totalBehind = $derived(
+    isMultiRepo
+      ? childRepos.reduce((sum, r) => sum + r.commits_behind, 0)
+      : (status?.commits_behind ?? 0)
+  );
   let projectName = $derived(cwd.split("/").pop() ?? "workspace");
 
-  onMount(() => {
-    fetchStatus();
+  $effect(() => {
+    if (cwd) {
+      fetchStatus();
+    }
   });
 
   async function fetchStatus() {
     if (!cwd) return;
     try {
       status = await getGitStatus(cwd);
+      isMultiRepo = false;
+      childRepos = [];
     } catch {
+      // Not a git repo — try multi-repo (parent of repos)
       status = null;
+      try {
+        const repos = await getChildRepos(cwd);
+        if (repos.length > 0) {
+          isMultiRepo = true;
+          childRepos = repos;
+        } else {
+          isMultiRepo = false;
+          childRepos = [];
+        }
+      } catch {
+        isMultiRepo = false;
+        childRepos = [];
+      }
     }
   }
 
@@ -30,13 +62,43 @@
     if (!cwd) return;
     checking = true;
     try {
-      await refreshPanel(get(activeTabId), cwd);
+      if (isMultiRepo) {
+        await Promise.all(childRepos.map((r) => gitFetch(`${cwd}/${r.name}`)));
+      } else {
+        await gitFetch(cwd);
+      }
       await fetchStatus();
-      showToast("Already up to date");
+      if (!hasBehind) {
+        showToast("Already up to date");
+      }
     } catch (e) {
       showToast(`Check failed: ${e}`);
     } finally {
       checking = false;
+    }
+  }
+
+  async function handlePull() {
+    if (!cwd) return;
+    pulling = true;
+    pullSuccess = false;
+    pullFadingOut = false;
+    try {
+      if (isMultiRepo) {
+        const behind = childRepos.filter((r) => r.commits_behind > 0);
+        await Promise.all(behind.map((r) => gitPull(`${cwd}/${r.name}`)));
+      } else {
+        await gitPull(cwd);
+      }
+      await refreshPanel(get(activeTabId), cwd);
+      await fetchStatus();
+      pulling = false;
+      pullSuccess = true;
+      setTimeout(() => { pullFadingOut = true; }, 800);
+      setTimeout(() => { pullSuccess = false; pullFadingOut = false; }, 1400);
+    } catch (e) {
+      showToast(`Pull failed: ${e}`);
+      pulling = false;
     }
   }
 </script>
@@ -48,33 +110,80 @@
 
   <h2 class="clean-title">Repository Clean</h2>
   <p class="clean-subtitle">
-    No local changes detected in <code class="project-code">{projectName}</code>. Your workspace is perfectly synchronized with the remote head.
+    No local changes detected in
+    <code class="project-code">{projectName}</code>
   </p>
 
-  <div class="info-row">
-    <div class="info-pill">
-      <span class="info-label">Active Branch</span>
-      <span class="info-value">
-        <span class="material-symbols-outlined info-icon">fork_right</span>
-        {status?.branch ?? "..."}
-      </span>
+  {#if isMultiRepo}
+    <div class="repo-list">
+      <span class="info-label">Repositories</span>
+      {#each childRepos as repo}
+        <div class="repo-row">
+          <span class="material-symbols-outlined info-icon">fork_right</span>
+          <span class="repo-name">{repo.name}</span>
+          <span class="repo-branch">{repo.branch}</span>
+        </div>
+      {/each}
     </div>
-    <div class="info-pill">
-      <span class="info-label">Sync Status</span>
-      <span class="info-value synced">
-        <span class="material-symbols-outlined info-icon">cloud_done</span>
-        Up to date
-      </span>
+  {:else}
+    <div class="info-row">
+      <div class="info-pill">
+        <span class="info-label">Active Branch</span>
+        <span class="info-value">
+          <span class="material-symbols-outlined info-icon">fork_right</span>
+          {status?.branch ?? "..."}
+        </span>
+      </div>
+      <div class="info-pill">
+        <span class="info-label">Sync Status</span>
+        {#if (status?.commits_behind ?? 0) > 0}
+          <span class="info-value behind">
+            <span class="material-symbols-outlined info-icon">cloud_download</span>
+            {status?.commits_behind} behind
+          </span>
+        {:else}
+          <span class="info-value synced">
+            <span class="material-symbols-outlined info-icon">cloud_done</span>
+            Up to date
+          </span>
+        {/if}
+      </div>
     </div>
-  </div>
+  {/if}
 
-  <button
-    class="check-btn"
-    onclick={handleCheckForUpdates}
-    disabled={checking}
-  >
-    {checking ? "Checking..." : "Check for Updates"}
-  </button>
+  <div class="btn-row">
+    <button
+      class="check-btn"
+      onclick={handleCheckForUpdates}
+      disabled={checking || pulling}
+    >
+      {#if checking}
+        <span class="material-symbols-outlined spinner">progress_activity</span>
+        Fetching...
+      {:else}
+        Check for Updates
+      {/if}
+    </button>
+    {#if hasBehind || pullSuccess}
+      <button
+        class="pull-btn"
+        class:pull-success={pullSuccess}
+        class:pull-fade-out={pullFadingOut}
+        onclick={handlePull}
+        disabled={pulling || checking || pullSuccess}
+      >
+        {#if pullSuccess}
+          <span class="material-symbols-outlined pull-check">check_circle</span>
+        {:else if pulling}
+          <span class="material-symbols-outlined spinner">progress_activity</span>
+          Pulling...
+        {:else}
+          <span class="material-symbols-outlined pull-icon">cloud_download</span>
+          Pull {totalBehind} update{totalBehind !== 1 ? "s" : ""}
+        {/if}
+      </button>
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -125,19 +234,58 @@
   }
 
   .project-code {
-    padding: 1px 6px;
+    display: block;
+    margin-top: 0.35rem;
+    padding: 2px 8px;
     background: color-mix(in srgb, var(--primary) 10%, transparent);
     border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
     border-radius: 4px;
     font-family: var(--font-mono);
     font-size: 0.75rem;
     color: var(--primary);
+    word-break: break-all;
   }
 
   .info-row {
     display: flex;
     gap: 1.5rem;
     margin-top: 0.75rem;
+  }
+
+  .repo-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-top: 0.75rem;
+    width: 100%;
+    max-width: 320px;
+  }
+
+  .repo-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--on-surface);
+    padding: 0.3rem 0.5rem;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--surface-container-high) 60%, transparent);
+  }
+
+  .repo-name {
+    flex-shrink: 0;
+    color: var(--on-surface);
+    font-weight: 500;
+  }
+
+  .repo-branch {
+    color: var(--on-surface-variant);
+    margin-left: auto;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .info-pill {
@@ -173,8 +321,75 @@
     font-size: 0.9rem;
   }
 
-  .check-btn {
+  .info-value.behind {
+    color: var(--primary);
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 0.5rem;
     margin-top: 1rem;
+    align-items: center;
+  }
+
+  .pull-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.6rem 1.5rem;
+    background: var(--primary);
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: var(--on-primary);
+    font-family: var(--font-body);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+  }
+
+  .pull-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .pull-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .pull-icon {
+    font-size: 0.9rem;
+  }
+
+  .pull-check {
+    font-size: 1.1rem;
+    font-variation-settings: 'FILL' 1;
+  }
+
+  .pull-btn.pull-success {
+    background: var(--secondary);
+    padding: 0.6rem 1rem;
+    transition: background 0.3s, opacity 0.5s, padding 0.3s;
+  }
+
+  .pull-btn.pull-fade-out {
+    opacity: 0;
+  }
+
+  .spinner {
+    font-size: 0.9rem;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .check-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
     padding: 0.6rem 1.5rem;
     background: var(--surface-container-high);
     border: 1px solid color-mix(in srgb, var(--outline-variant) 30%, transparent);

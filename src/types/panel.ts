@@ -57,7 +57,14 @@ export interface GitStatus {
   has_unstaged: boolean;
   has_staged: boolean;
   has_unpushed: boolean;
+  commits_behind: number;
   branch: string;
+}
+
+export interface RepoInfo {
+  name: string;
+  branch: string;
+  commits_behind: number;
 }
 
 export type PanelSection = "diff" | "summary" | "flow";

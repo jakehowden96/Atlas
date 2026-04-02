@@ -1,4 +1,4 @@
-use crate::panel::watcher::{sessions_dir, AnalysisStatusEvent, DiffData, FlowData, GitStatus, PanelData, ProjectDiff, SummaryData};
+use crate::panel::watcher::{sessions_dir, AnalysisStatusEvent, DiffData, FlowData, GitStatus, PanelData, ProjectDiff, RepoInfo, SummaryData};
 use crate::ClaudeState;
 use std::collections::HashMap;
 use std::fs;
@@ -152,7 +152,14 @@ fn build_panel_single(
 
     if bundle.full.is_empty() {
         let _ = fs::remove_file(panel_path);
-        return Ok(None);
+        return Ok(Some(PanelData {
+            version: 1,
+            timestamp: now_iso8601(),
+            cwd: git_root.to_string(),
+            diff: None,
+            summary: None,
+            flow: None,
+        }));
     }
 
     let (files_changed, lines_added, lines_removed) = count_diff_stats(&bundle.full);
@@ -253,7 +260,14 @@ fn build_panel_multi(
 
     if all_diffs.is_empty() {
         let _ = fs::remove_file(panel_path);
-        return Ok(None);
+        return Ok(Some(PanelData {
+            version: 1,
+            timestamp: now_iso8601(),
+            cwd: root.to_string(),
+            diff: None,
+            summary: None,
+            flow: None,
+        }));
     }
 
     let combined = all_diffs.join("\n\n");
@@ -384,13 +398,18 @@ fn discover_diff(git_root: &str) -> DiffBundle {
     // Check for upstream/branch base ref to diff working tree against
     let mut base_ref: Option<String> = None;
 
-    // Tier 2: Upstream tracking branch
+    // Tier 2: Upstream tracking branch (use merge-base so we only show
+    // local work, not incoming remote changes when upstream is ahead)
     if let Ok(upstream) = git_cmd(
         git_root,
         &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
     ) {
         if !upstream.is_empty() {
-            base_ref = Some(upstream);
+            if let Ok(mb) = git_cmd(git_root, &["merge-base", &upstream, "HEAD"]) {
+                if !mb.is_empty() {
+                    base_ref = Some(mb);
+                }
+            }
         }
     }
 
@@ -540,6 +559,9 @@ pub fn git_discard_all(cwd: String) -> Result<(), String> {
 /// Get the current git status for determining the adaptive button state.
 #[tauri::command]
 pub fn get_git_status(cwd: String) -> Result<GitStatus, String> {
+    // Verify this is actually a git repository
+    git_cmd(&cwd, &["rev-parse", "--git-dir"])?;
+
     // Check for unstaged changes (working tree vs index) or untracked files
     let has_modified = Command::new("git")
         .args(["-C", &cwd, "diff", "--quiet"])
@@ -567,6 +589,11 @@ pub fn get_git_status(cwd: String) -> Result<GitStatus, String> {
         .map(|s| s.trim().parse::<u32>().unwrap_or(0) > 0)
         .unwrap_or(false);
 
+    // Check for commits behind upstream
+    let commits_behind = git_cmd(&cwd, &["rev-list", "HEAD..@{u}", "--count"])
+        .map(|s| s.trim().parse::<u32>().unwrap_or(0))
+        .unwrap_or(0);
+
     // Get current branch
     let branch = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
         .unwrap_or_default();
@@ -575,6 +602,7 @@ pub fn get_git_status(cwd: String) -> Result<GitStatus, String> {
         has_unstaged,
         has_staged,
         has_unpushed,
+        commits_behind,
         branch,
     })
 }
@@ -608,6 +636,51 @@ pub fn git_push(cwd: String) -> Result<String, String> {
     let branch = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])?;
     git_cmd(&cwd, &["push", "-u", "origin", &branch])?;
     Ok("Pushed and set upstream".to_string())
+}
+
+/// Fetch from remote with prune.
+#[tauri::command]
+pub fn git_fetch(cwd: String) -> Result<(), String> {
+    git_cmd(&cwd, &["fetch", "--prune"]).map(|_| ())
+}
+
+/// Pull from remote.
+#[tauri::command]
+pub fn git_pull(cwd: String) -> Result<(), String> {
+    git_cmd(&cwd, &["pull"]).map(|_| ())
+}
+
+/// List child git repos with their current branch names.
+#[tauri::command]
+pub fn get_child_repos(cwd: String) -> Result<Vec<RepoInfo>, String> {
+    let mut entries: Vec<_> = match fs::read_dir(&cwd) {
+        Ok(e) => e.flatten().collect(),
+        Err(_) => return Ok(Vec::new()),
+    };
+    entries.sort_by_key(|e| e.file_name());
+
+    let mut repos = Vec::new();
+    for entry in entries {
+        if !entry.file_type().map_or(false, |t| t.is_dir()) {
+            continue;
+        }
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy().to_string();
+        if name_str.starts_with('.') || name_str == "node_modules" || name_str == "target" {
+            continue;
+        }
+        let child = entry.path().to_string_lossy().to_string();
+        if git_cmd(&child, &["rev-parse", "--show-toplevel"]).is_err() {
+            continue;
+        }
+        let branch = git_cmd(&child, &["rev-parse", "--abbrev-ref", "HEAD"])
+            .unwrap_or_default();
+        let commits_behind = git_cmd(&child, &["rev-list", "HEAD..@{u}", "--count"])
+            .map(|s| s.trim().parse::<u32>().unwrap_or(0))
+            .unwrap_or(0);
+        repos.push(RepoInfo { name: name_str, branch, commits_behind });
+    }
+    Ok(repos)
 }
 
 fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
