@@ -1,10 +1,9 @@
 # Atlas
 
+A desktop terminal with an intelligent side panel that automatically detects git changes and shows diffs, AI-generated summaries, and flow diagrams. Built with Tauri v2 and Svelte 5. Named after my dog.
 <p align="center">
-  <img src="dog.png" alt="Atlas mascot" width="200">
+  <img src="dog.png" alt="Atlas mascot" width="100">
 </p>
-
-A desktop terminal with an intelligent side panel that automatically detects git changes and shows diffs, AI-generated summaries, and flow diagrams. Built with Tauri v2 and Svelte 5.
 
 ## Install
 
