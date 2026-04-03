@@ -29,12 +29,18 @@
           <span
             class="tab-close"
             role="button"
-            tabindex="-1"
+            tabindex="0"
             onclick={(e) => {
               e.stopPropagation();
               onCloseTab(tab.id);
             }}
-            onkeydown={() => {}}
+            onkeydown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                onCloseTab(tab.id);
+              }
+            }}
             title="Close"
           >
             &times;

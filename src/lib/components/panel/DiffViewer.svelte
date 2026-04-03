@@ -100,6 +100,28 @@
     deleted: "badge-deleted",
     renamed: "badge-renamed",
   };
+
+  // Virtualization: collapse files with > MAX_VISIBLE_LINES behind a toggle
+  const MAX_VISIBLE_LINES = 500;
+  let expandedFiles: Set<string> = $state(new Set());
+
+  function totalLines(file: { hunks: { lines: { type: string }[] }[] }): number {
+    return file.hunks.reduce((sum, h) => sum + h.lines.length, 0);
+  }
+
+  function toggleExpand(key: string) {
+    const next = new Set(expandedFiles);
+    if (next.has(key)) {
+      next.delete(key);
+    } else {
+      next.add(key);
+    }
+    expandedFiles = next;
+  }
+
+  function shouldCollapse(file: { hunks: { lines: { type: string }[] }[] }, key: string): boolean {
+    return totalLines(file) > MAX_VISIBLE_LINES && !expandedFiles.has(key);
+  }
 </script>
 
 <div class="diff-viewer">
@@ -143,6 +165,8 @@
             </span>
           </div>
           {#each project.files as file}
+            {@const fileKey = project.name + "/" + file.newName}
+            {@const collapsed = shouldCollapse(file, fileKey)}
             <div class="file-section">
               <div class="file-header">
                 <div class="file-header-left">
@@ -150,8 +174,8 @@
                   <label class="file-checkbox-label" onclick={(e: MouseEvent) => e.stopPropagation()} onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
                     <input
                       type="checkbox"
-                      checked={selectedFiles.has(project.name + "/" + file.newName)}
-                      onchange={() => toggleFile(project.name + "/" + file.newName)}
+                      checked={selectedFiles.has(fileKey)}
+                      onchange={() => toggleFile(fileKey)}
                       class="file-checkbox"
                     />
                   </label>
@@ -160,37 +184,45 @@
                   <span class="badge {badgeClass[file.changeType]}">{file.changeType.toUpperCase()}</span>
                 </div>
               </div>
-              <div class="file-lines">
-                {#each file.hunks as hunk}
-                  {#each hunk.lines as line}
-                    {#if line.type === "hunk-header"}
-                      <div class="diff-line hunk-info">
-                        <div class="line-num"></div>
-                        <div class="line-num"></div>
-                        <div class="line-content">{hunk.header}</div>
-                      </div>
-                    {:else if line.type === "add"}
-                      <div class="diff-line line-add">
-                        <div class="line-num"></div>
-                        <div class="line-num num-add">{line.newNum}</div>
-                        <div class="line-content content-add"><span class="prefix">+</span><span>{line.content}</span></div>
-                      </div>
-                    {:else if line.type === "remove"}
-                      <div class="diff-line line-remove">
-                        <div class="line-num num-remove">{line.oldNum}</div>
-                        <div class="line-num"></div>
-                        <div class="line-content content-remove"><span class="prefix">-</span><span>{line.content}</span></div>
-                      </div>
-                    {:else}
-                      <div class="diff-line">
-                        <div class="line-num">{line.oldNum}</div>
-                        <div class="line-num">{line.newNum}</div>
-                        <div class="line-content">{line.content}</div>
-                      </div>
-                    {/if}
+              {#if collapsed}
+                <div class="collapsed-notice">
+                  <button class="expand-btn" onclick={() => toggleExpand(fileKey)}>
+                    Show {totalLines(file)} lines
+                  </button>
+                </div>
+              {:else}
+                <div class="file-lines">
+                  {#each file.hunks as hunk}
+                    {#each hunk.lines as line}
+                      {#if line.type === "hunk-header"}
+                        <div class="diff-line hunk-info">
+                          <div class="line-num"></div>
+                          <div class="line-num"></div>
+                          <div class="line-content">{hunk.header}</div>
+                        </div>
+                      {:else if line.type === "add"}
+                        <div class="diff-line line-add">
+                          <div class="line-num"></div>
+                          <div class="line-num num-add">{line.newNum}</div>
+                          <div class="line-content content-add"><span class="prefix">+</span><span>{line.content}</span></div>
+                        </div>
+                      {:else if line.type === "remove"}
+                        <div class="diff-line line-remove">
+                          <div class="line-num num-remove">{line.oldNum}</div>
+                          <div class="line-num"></div>
+                          <div class="line-content content-remove"><span class="prefix">-</span><span>{line.content}</span></div>
+                        </div>
+                      {:else}
+                        <div class="diff-line">
+                          <div class="line-num">{line.oldNum}</div>
+                          <div class="line-num">{line.newNum}</div>
+                          <div class="line-content">{line.content}</div>
+                        </div>
+                      {/if}
+                    {/each}
                   {/each}
-                {/each}
-              </div>
+                </div>
+              {/if}
             </div>
           {/each}
         </div>
@@ -210,6 +242,7 @@
         </div>
       {/if}
       {#each files as file}
+        {@const collapsed = shouldCollapse(file, file.newName)}
         <div class="file-section">
           <div class="file-header">
             <div class="file-header-left">
@@ -227,37 +260,45 @@
               <span class="badge {badgeClass[file.changeType]}">{file.changeType.toUpperCase()}</span>
             </div>
           </div>
-          <div class="file-lines">
-            {#each file.hunks as hunk}
-              {#each hunk.lines as line}
-                {#if line.type === "hunk-header"}
-                  <div class="diff-line hunk-info">
-                    <div class="line-num"></div>
-                    <div class="line-num"></div>
-                    <div class="line-content">{hunk.header}</div>
-                  </div>
-                {:else if line.type === "add"}
-                  <div class="diff-line line-add">
-                    <div class="line-num"></div>
-                    <div class="line-num num-add">{line.newNum}</div>
-                    <div class="line-content content-add"><span class="prefix">+</span><span>{line.content}</span></div>
-                  </div>
-                {:else if line.type === "remove"}
-                  <div class="diff-line line-remove">
-                    <div class="line-num num-remove">{line.oldNum}</div>
-                    <div class="line-num"></div>
-                    <div class="line-content content-remove"><span class="prefix">-</span><span>{line.content}</span></div>
-                  </div>
-                {:else}
-                  <div class="diff-line">
-                    <div class="line-num">{line.oldNum}</div>
-                    <div class="line-num">{line.newNum}</div>
-                    <div class="line-content">{line.content}</div>
-                  </div>
-                {/if}
+          {#if collapsed}
+            <div class="collapsed-notice">
+              <button class="expand-btn" onclick={() => toggleExpand(file.newName)}>
+                Show {totalLines(file)} lines
+              </button>
+            </div>
+          {:else}
+            <div class="file-lines">
+              {#each file.hunks as hunk}
+                {#each hunk.lines as line}
+                  {#if line.type === "hunk-header"}
+                    <div class="diff-line hunk-info">
+                      <div class="line-num"></div>
+                      <div class="line-num"></div>
+                      <div class="line-content">{hunk.header}</div>
+                    </div>
+                  {:else if line.type === "add"}
+                    <div class="diff-line line-add">
+                      <div class="line-num"></div>
+                      <div class="line-num num-add">{line.newNum}</div>
+                      <div class="line-content content-add"><span class="prefix">+</span><span>{line.content}</span></div>
+                    </div>
+                  {:else if line.type === "remove"}
+                    <div class="diff-line line-remove">
+                      <div class="line-num num-remove">{line.oldNum}</div>
+                      <div class="line-num"></div>
+                      <div class="line-content content-remove"><span class="prefix">-</span><span>{line.content}</span></div>
+                    </div>
+                  {:else}
+                    <div class="diff-line">
+                      <div class="line-num">{line.oldNum}</div>
+                      <div class="line-num">{line.newNum}</div>
+                      <div class="line-content">{line.content}</div>
+                    </div>
+                  {/if}
+                {/each}
               {/each}
-            {/each}
-          </div>
+            </div>
+          {/if}
         </div>
       {/each}
     {/if}
@@ -398,6 +439,32 @@
   .badge-renamed {
     background: color-mix(in srgb, var(--tertiary) 15%, var(--surface-container-highest));
     color: var(--tertiary);
+  }
+
+  /* Collapsed file notice */
+  .collapsed-notice {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    background: var(--surface);
+  }
+
+  .expand-btn {
+    padding: 4px 12px;
+    background: var(--surface-container-high);
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--radius-sm);
+    color: var(--on-surface-variant);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .expand-btn:hover {
+    background: var(--surface-bright);
+    color: var(--on-surface);
   }
 
   /* Diff lines */

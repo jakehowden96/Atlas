@@ -123,7 +123,7 @@ export class TerminalSession {
         this.terminal.rows,
         (data) => this.terminal.write(data),
         undefined,
-        { FORGE_SESSION_ID: this.tabId },
+        { ATLAS_SESSION_ID: this.tabId },
       );
       onPtyReady(this.ptyId);
     } catch (e) {

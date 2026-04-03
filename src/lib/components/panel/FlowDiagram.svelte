@@ -30,7 +30,7 @@
       showToast("API key saved");
       const cwd = get(panelData)?.cwd;
       if (cwd) {
-        refreshPanel(get(activeTabId), cwd);
+        await refreshPanel(get(activeTabId), cwd);
       }
     } catch (e) {
       showToast(`Failed to save API key: ${e}`);
@@ -40,12 +40,20 @@
   }
   async function handleRetry() {
     const tabId = get(activeTabId);
-    await resetAnalysis(tabId);
+    try {
+      await resetAnalysis(tabId);
+    } catch (e) {
+      showToast(`Reset failed: ${e}`);
+    }
     analysisStatus.set("idle");
     analysisError.set(null);
     const cwd = get(panelData)?.cwd;
     if (cwd) {
-      refreshPanel(tabId, cwd);
+      try {
+        await refreshPanel(tabId, cwd);
+      } catch (e) {
+        showToast(`Refresh failed: ${e}`);
+      }
     }
   }
 
@@ -112,6 +120,7 @@
     mermaid.initialize({
       startOnLoad: false,
       theme: "dark",
+      securityLevel: "strict",
       themeVariables: mermaidThemeVariables,
     });
   });

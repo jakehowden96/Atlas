@@ -1,17 +1,16 @@
 <script lang="ts">
   import { settingsOpen, excludedFolders, loadExcludedFolders, saveExcludedFolders } from "../../stores/settings";
+  import { open } from "@tauri-apps/plugin-dialog";
 
   let newFolder = $state("");
-  let folders: string[] = $state([]);
-
-  $effect(() => {
-    const unsub = excludedFolders.subscribe((v) => (folders = [...v]));
-    return unsub;
-  });
+  let folders = $derived<string[]>([...$excludedFolders]);
+  let modalEl: HTMLDivElement | null = $state(null);
 
   $effect(() => {
     if ($settingsOpen) {
       loadExcludedFolders();
+      // Focus the modal when it opens
+      requestAnimationFrame(() => modalEl?.focus());
     }
   });
 
@@ -26,6 +25,14 @@
     newFolder = "";
   }
 
+  async function browseFolder() {
+    const selected = await open({ directory: true, multiple: false });
+    if (!selected) return;
+    const path = typeof selected === "string" ? selected : String(selected);
+    if (!path || folders.includes(path)) return;
+    saveExcludedFolders([...folders, path]);
+  }
+
   function removeFolder(name: string) {
     const updated = folders.filter((f) => f !== name);
     saveExcludedFolders(updated);
@@ -37,6 +44,12 @@
     }
   }
 
+  function handleModalKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      close();
+    }
+  }
+
   function close() {
     settingsOpen.set(false);
   }
@@ -45,11 +58,17 @@
 {#if $settingsOpen}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="settings-overlay" onclick={close} role="presentation">
-    <!-- svelte-ignore a11y_interactive_supports_focus -->
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="settings-modal" onclick={(e) => e.stopPropagation()} role="dialog">
+    <div
+      class="settings-modal"
+      bind:this={modalEl}
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={handleModalKeydown}
+      role="dialog"
+      aria-labelledby="settings-title"
+      tabindex="-1"
+    >
       <div class="settings-header">
-        <span class="settings-title">Settings</span>
+        <span class="settings-title" id="settings-title">Settings</span>
         <button class="close-btn" onclick={close}>
           <span class="material-symbols-outlined">close</span>
         </button>
@@ -65,7 +84,13 @@
           <div class="folder-list">
             {#each folders as folder}
               <div class="folder-item">
-                <span class="folder-name">{folder}</span>
+                <span class="material-symbols-outlined folder-icon">{folder.includes("/") ? "folder" : "folder_off"}</span>
+                <div class="folder-info">
+                  <span class="folder-name">{folder.includes("/") ? folder.split("/").pop() : folder}</span>
+                  {#if folder.includes("/")}
+                    <span class="folder-path" title={folder}>{folder}</span>
+                  {/if}
+                </div>
                 <button class="remove-btn" onclick={() => removeFolder(folder)} title="Remove">
                   <span class="material-symbols-outlined">close</span>
                 </button>
@@ -73,17 +98,28 @@
             {/each}
           </div>
 
-          <div class="add-row">
-            <input
-              type="text"
-              class="folder-input"
-              bind:value={newFolder}
-              onkeydown={handleKeydown}
-              placeholder="e.g. vendor"
-            />
-            <button class="add-btn" onclick={addFolder} disabled={!newFolder.trim()}>
-              Add
+          <div class="add-actions">
+            <button class="browse-btn" onclick={browseFolder}>
+              <span class="material-symbols-outlined browse-icon">folder_open</span>
+              Browse...
             </button>
+            <div class="add-divider">
+              <span class="divider-line"></span>
+              <span class="divider-text">or type a name</span>
+              <span class="divider-line"></span>
+            </div>
+            <div class="add-row">
+              <input
+                type="text"
+                class="folder-input"
+                bind:value={newFolder}
+                onkeydown={handleKeydown}
+                placeholder="e.g. vendor"
+              />
+              <button class="add-btn" onclick={addFolder} disabled={!newFolder.trim()}>
+                Add
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -185,16 +221,41 @@
   .folder-item {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 0.5rem;
     padding: 0.35rem 0.5rem;
     background: var(--surface-container-high);
     border-radius: var(--radius-sm);
+  }
+
+  .folder-icon {
+    font-size: 0.85rem;
+    color: var(--on-surface-variant);
+    flex-shrink: 0;
+  }
+
+  .folder-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
   }
 
   .folder-name {
     font-size: 12px;
     font-family: var(--font-mono);
     color: var(--on-surface);
+    font-weight: 500;
+  }
+
+  .folder-path {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--on-surface-variant);
+    opacity: 0.6;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .remove-btn {
@@ -219,6 +280,61 @@
 
   .remove-btn :global(.material-symbols-outlined) {
     font-size: 0.85rem;
+  }
+
+  .add-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .browse-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    width: 100%;
+    padding: 0.5rem;
+    background: var(--surface-container-highest);
+    border: 1px dashed var(--outline-variant);
+    border-radius: var(--radius-sm);
+    color: var(--on-surface);
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--font-body);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .browse-btn:hover {
+    background: var(--surface-bright);
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+
+  .browse-icon {
+    font-size: 0.9rem;
+  }
+
+  .add-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .divider-line {
+    flex: 1;
+    height: 1px;
+    background: var(--outline-variant);
+    opacity: 0.3;
+  }
+
+  .divider-text {
+    font-size: 10px;
+    color: var(--on-surface-variant);
+    opacity: 0.5;
+    font-family: var(--font-body);
+    white-space: nowrap;
   }
 
   .add-row {

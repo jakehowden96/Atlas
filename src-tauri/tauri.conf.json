@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegui/nicegui/main/tauri/tauri.conf.json",
-  "productName": "Forge",
+  "productName": "Atlas",
   "version": "0.1.0",
-  "identifier": "com.forge.dev",
+  "identifier": "com.atlas.dev",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -23,7 +23,7 @@
     "withGlobalTauri": false,
     "windows": [
       {
-        "title": "Forge",
+        "title": "Atlas",
         "width": 1400,
         "height": 900,
         "resizable": true,
@@ -33,7 +33,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' ipc: http://ipc.localhost; worker-src 'self' blob:"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' ipc: http://ipc.localhost; worker-src 'self'"
     }
   },
   "plugins": {

@@ -1,12 +1,7 @@
 <script lang="ts">
   import { toasts, dismissToast, type Toast } from "../stores/toast";
 
-  let items: Toast[] = $state([]);
-
-  $effect(() => {
-    const unsub = toasts.subscribe((v) => (items = v));
-    return unsub;
-  });
+  let items = $derived<Toast[]>($toasts);
 
   function typeColor(type: Toast["type"]): string {
     switch (type) {
@@ -46,6 +41,8 @@
     flex-direction: column;
     gap: 10px;
     max-width: 400px;
+    max-height: 80vh;
+    overflow-y: auto;
   }
 
   .toast {

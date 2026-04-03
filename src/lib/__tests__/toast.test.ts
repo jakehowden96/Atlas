@@ -44,4 +44,41 @@ describe("toast store", () => {
     vi.advanceTimersByTime(5000);
     expect(get(toasts)).toHaveLength(0);
   });
+
+  it("cancels auto-dismiss timer on manual dismiss", () => {
+    showToast("Manual dismiss");
+    const items = get(toasts);
+    const id = items[0].id;
+
+    // Manually dismiss before timeout
+    dismissToast(id);
+    expect(get(toasts)).toHaveLength(0);
+
+    // Advance past the auto-dismiss time — should not throw or re-remove
+    vi.advanceTimersByTime(5000);
+    expect(get(toasts)).toHaveLength(0);
+  });
+
+  it("handles dismissing a non-existent toast gracefully", () => {
+    showToast("Exists");
+    expect(get(toasts)).toHaveLength(1);
+
+    // Dismiss a toast that doesn't exist
+    dismissToast("non-existent-id");
+    expect(get(toasts)).toHaveLength(1);
+  });
+
+  it("can show multiple toasts and dismiss them independently", () => {
+    showToast("First", "error");
+    showToast("Second", "info");
+    showToast("Third", "warning");
+    expect(get(toasts)).toHaveLength(3);
+
+    const items = get(toasts);
+    dismissToast(items[1].id); // dismiss "Second"
+    const remaining = get(toasts);
+    expect(remaining).toHaveLength(2);
+    expect(remaining[0].message).toBe("First");
+    expect(remaining[1].message).toBe("Third");
+  });
 });

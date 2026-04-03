@@ -82,7 +82,7 @@ pub fn refresh_panel(
                 false
             };
             let claude_state: tauri::State<ClaudeState> = app_handle.state();
-            let has_client = claude_state.read().unwrap().is_some();
+            let has_client = claude_state.read().map(|g| g.is_some()).unwrap_or(false);
             if has_client && should_analyze {
                 let raw_diff = diff.raw.clone();
                 let expected_cwd = data.cwd.clone();
@@ -102,7 +102,10 @@ pub fn refresh_panel(
                     };
 
                     let client = {
-                        let guard = state.read().unwrap();
+                        let guard = match state.read() {
+                            Ok(g) => g,
+                            Err(_) => return,
+                        };
                         match guard.as_ref() {
                             Some(c) => c.clone(),
                             None => return,
@@ -231,12 +234,11 @@ fn build_panel_multi(
 
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
-        if should_skip_dir(&name_str, &excluded) {
-            continue;
-        }
-
         let child_path = entry.path();
         let child_str = child_path.to_string_lossy().to_string();
+        if should_skip_dir(&name_str, &child_str, &excluded) {
+            continue;
+        }
 
         // Check if this child is a git repo
         if git_cmd(&child_str, &["rev-parse", "--show-toplevel"]).is_err() {
@@ -499,9 +501,17 @@ fn read_existing_analysis(
 
 fn write_panel(session_id: &str, data: &PanelData, panel_path: &std::path::Path) {
     let dir = sessions_dir().join(session_id);
-    let _ = fs::create_dir_all(&dir);
-    if let Ok(json) = serde_json::to_string_pretty(data) {
-        let _ = fs::write(panel_path, json);
+    if let Err(e) = fs::create_dir_all(&dir) {
+        log::warn!("Failed to create session dir: {}", e);
+        return;
+    }
+    match serde_json::to_string_pretty(data) {
+        Ok(json) => {
+            if let Err(e) = fs::write(panel_path, json) {
+                log::warn!("Failed to write panel.json: {}", e);
+            }
+        }
+        Err(e) => log::warn!("Failed to serialize panel data: {}", e),
     }
 }
 
@@ -513,7 +523,7 @@ pub fn reset_analysis(session_id: String) {
     }
 }
 
-/// Set the API key at runtime and persist to ~/.forge/config.json
+/// Set the API key at runtime and persist to ~/.atlas/config.json
 #[tauri::command]
 pub fn set_api_key(
     app_handle: tauri::AppHandle,
@@ -522,7 +532,9 @@ pub fn set_api_key(
     crate::write_config_api_key(&api_key)?;
     let client = crate::build_claude_client(api_key);
     let state: tauri::State<ClaudeState> = app_handle.state();
-    *state.write().unwrap() = Some(client);
+    let mut guard = state.write().map_err(|e| format!("Lock poisoned: {}", e))?;
+    *guard = Some(client);
+    drop(guard);
     // Clear all attempted flags so analysis retries with the new key
     if let Ok(mut map) = ANALYSIS_ATTEMPTED.lock() {
         map.clear();
@@ -534,8 +546,7 @@ pub fn set_api_key(
 #[tauri::command]
 pub fn get_api_status(app_handle: tauri::AppHandle) -> bool {
     let state: tauri::State<ClaudeState> = app_handle.state();
-    let guard = state.read().unwrap();
-    guard.is_some()
+    state.read().map(|g| g.is_some()).unwrap_or(false)
 }
 
 #[tauri::command]
@@ -688,10 +699,10 @@ pub fn get_child_repos(cwd: String) -> Result<Vec<RepoInfo>, String> {
         }
         let name = entry.file_name();
         let name_str = name.to_string_lossy().to_string();
-        if should_skip_dir(&name_str, &excluded) {
+        let child = entry.path().to_string_lossy().to_string();
+        if should_skip_dir(&name_str, &child, &excluded) {
             continue;
         }
-        let child = entry.path().to_string_lossy().to_string();
         if git_cmd(&child, &["rev-parse", "--show-toplevel"]).is_err() {
             continue;
         }
@@ -705,8 +716,17 @@ pub fn get_child_repos(cwd: String) -> Result<Vec<RepoInfo>, String> {
     Ok(repos)
 }
 
-fn should_skip_dir(name: &str, excluded: &[String]) -> bool {
-    name.starts_with('.') || name == "node_modules" || name == "target" || excluded.iter().any(|e| e == name)
+/// Check whether a directory should be skipped during repo scanning.
+/// `name` is the directory basename, `abs_path` is the full absolute path.
+/// Excluded entries can be simple names (e.g. "vendor") or absolute paths
+/// (e.g. "/Users/jake/repos/legacy") from the folder browser.
+fn should_skip_dir(name: &str, abs_path: &str, excluded: &[String]) -> bool {
+    if name.starts_with('.') || name == "node_modules" || name == "target" {
+        return true;
+    }
+    excluded.iter().any(|e| {
+        e == name || e == abs_path || abs_path.starts_with(&format!("{}/", e))
+    })
 }
 
 fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
@@ -750,12 +770,58 @@ fn now_iso8601() -> String {
     let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
     let month_days = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let mut m = 0usize;
-    for days_in_month in &month_days {
+    for (i, days_in_month) in month_days.iter().enumerate() {
         if remaining < *days_in_month as i64 {
             break;
         }
         remaining -= *days_in_month as i64;
-        m += 1;
+        m = i + 1;
+    }
+    // Clamp to valid month range (0..=11) to prevent overflow from edge cases
+    if m > 11 {
+        m = 11;
+        remaining = 0;
+    }
+
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        y, m + 1, remaining + 1, hours, minutes, seconds
+    )
+}
+
+/// Convert a Unix timestamp (seconds since epoch) to ISO 8601 string.
+/// Extracted for testability.
+#[cfg(test)]
+fn unix_to_iso8601(secs: u64) -> String {
+    let days = secs / 86400;
+    let time_of_day = secs % 86400;
+    let hours = time_of_day / 3600;
+    let minutes = (time_of_day % 3600) / 60;
+    let seconds = time_of_day % 60;
+
+    let mut y = 1970i64;
+    let mut remaining = days as i64;
+    loop {
+        let days_in_year = if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 366 } else { 365 };
+        if remaining < days_in_year {
+            break;
+        }
+        remaining -= days_in_year;
+        y += 1;
+    }
+    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+    let month_days = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let mut m = 0usize;
+    for (i, days_in_month) in month_days.iter().enumerate() {
+        if remaining < *days_in_month as i64 {
+            break;
+        }
+        remaining -= *days_in_month as i64;
+        m = i + 1;
+    }
+    if m > 11 {
+        m = 11;
+        remaining = 0;
     }
 
     format!(
@@ -886,5 +952,121 @@ diff --git a/file.rs b/file.rs
         assert_eq!(diff.lines_removed, 0);
         assert!(parsed.summary.is_none());
         assert!(parsed.flow.is_none());
+    }
+
+    // --- unix_to_iso8601 boundary tests ---
+
+    #[test]
+    fn iso8601_epoch() {
+        assert_eq!(unix_to_iso8601(0), "1970-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn iso8601_jan1_2024() {
+        // 2024-01-01 00:00:00 UTC = 1704067200
+        assert_eq!(unix_to_iso8601(1704067200), "2024-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn iso8601_leap_year_feb29() {
+        // 2024-02-29 12:00:00 UTC = 1709208000
+        assert_eq!(unix_to_iso8601(1709208000), "2024-02-29T12:00:00Z");
+    }
+
+    #[test]
+    fn iso8601_dec31_end_of_year() {
+        // 2024-12-31 23:59:59 UTC = 1735689599
+        assert_eq!(unix_to_iso8601(1735689599), "2024-12-31T23:59:59Z");
+    }
+
+    #[test]
+    fn iso8601_non_leap_year_mar1() {
+        // 2023-03-01 00:00:00 UTC = 1677628800
+        assert_eq!(unix_to_iso8601(1677628800), "2023-03-01T00:00:00Z");
+    }
+
+    #[test]
+    fn iso8601_month_never_exceeds_12() {
+        // Test a wide range of timestamps to ensure month is always 1-12
+        for secs in (0..2_000_000_000u64).step_by(86400 * 37) {
+            let ts = unix_to_iso8601(secs);
+            let parts: Vec<&str> = ts.split('T').collect();
+            let date_parts: Vec<&str> = parts[0].split('-').collect();
+            let month: u32 = date_parts[1].parse().unwrap();
+            let day: u32 = date_parts[2].parse().unwrap();
+            assert!(month >= 1 && month <= 12, "Invalid month {} in {}", month, ts);
+            assert!(day >= 1 && day <= 31, "Invalid day {} in {}", day, ts);
+        }
+    }
+
+    // --- should_skip_dir tests ---
+
+    #[test]
+    fn skip_hidden_dirs() {
+        assert!(should_skip_dir(".git", "/workspace/.git", &[]));
+        assert!(should_skip_dir(".hidden", "/workspace/.hidden", &[]));
+    }
+
+    #[test]
+    fn skip_node_modules_and_target() {
+        assert!(should_skip_dir("node_modules", "/workspace/node_modules", &[]));
+        assert!(should_skip_dir("target", "/workspace/target", &[]));
+    }
+
+    #[test]
+    fn skip_excluded_by_name() {
+        let excluded = vec!["vendor".to_string(), "dist".to_string()];
+        assert!(should_skip_dir("vendor", "/workspace/vendor", &excluded));
+        assert!(should_skip_dir("dist", "/workspace/dist", &excluded));
+        assert!(!should_skip_dir("src", "/workspace/src", &excluded));
+    }
+
+    #[test]
+    fn skip_excluded_by_absolute_path() {
+        let excluded = vec!["/Users/jake/repos/legacy".to_string()];
+        assert!(should_skip_dir("legacy", "/Users/jake/repos/legacy", &excluded));
+        assert!(!should_skip_dir("legacy", "/Users/jake/repos/other-legacy", &excluded));
+    }
+
+    #[test]
+    fn skip_excluded_by_parent_path() {
+        // If the user excludes a parent directory, children under it should also be skipped
+        let excluded = vec!["/Users/jake/repos/legacy".to_string()];
+        assert!(should_skip_dir("project-a", "/Users/jake/repos/legacy/project-a", &excluded));
+    }
+
+    #[test]
+    fn allow_normal_dirs() {
+        assert!(!should_skip_dir("src", "/workspace/src", &[]));
+        assert!(!should_skip_dir("my-project", "/workspace/my-project", &[]));
+    }
+
+    // --- hash_diff tests ---
+
+    #[test]
+    fn hash_diff_deterministic() {
+        let diff = "some diff content";
+        assert_eq!(hash_diff(diff), hash_diff(diff));
+    }
+
+    #[test]
+    fn hash_diff_different_inputs() {
+        assert_ne!(hash_diff("diff a"), hash_diff("diff b"));
+    }
+
+    // --- git_cmd error handling ---
+
+    #[test]
+    fn git_cmd_nonexistent_dir() {
+        let result = git_cmd("/nonexistent/path/that/should/not/exist", &["status"]);
+        assert!(result.is_err());
+    }
+
+    // --- generate_untracked_diffs on non-git dir ---
+
+    #[test]
+    fn untracked_diffs_non_git_dir() {
+        let result = generate_untracked_diffs("/tmp");
+        assert!(result.is_empty());
     }
 }

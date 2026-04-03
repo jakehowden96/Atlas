@@ -1,19 +1,24 @@
 #!/bin/bash
-# Forge panel updater — Claude Code Stop hook
+# Atlas panel updater — Claude Code Stop hook
 # Discovers diff using sift-style 3-tier strategy and writes panel.json.
 # Matches the logic in sift/src/core/repo.ts:extractBestDiff()
 
 INPUT=$(cat)
 
-CWD=$(echo "$INPUT" | jq -r '.cwd // ""')
+CWD=$(echo "$INPUT" | jq -r '.cwd // ""' 2>/dev/null)
 if [ -z "$CWD" ]; then
   exit 0
 fi
 
-# Need a session ID from the Forge terminal
-SESSION_ID="${FORGE_SESSION_ID:-}"
+# Need a session ID from the Atlas terminal
+SESSION_ID="${ATLAS_SESSION_ID:-}"
 if [ -z "$SESSION_ID" ]; then
   exit 0
+fi
+
+# Validate SESSION_ID to prevent path traversal
+if ! echo "$SESSION_ID" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+  exit 1
 fi
 
 # Resolve to git repository root (CWD may be a subdirectory)
@@ -23,7 +28,7 @@ if [ -z "$GIT_ROOT" ]; then
 fi
 
 # Session directory
-SESSION_DIR="$HOME/.forge/sessions/$SESSION_ID"
+SESSION_DIR="$HOME/.atlas/sessions/$SESSION_ID"
 mkdir -p "$SESSION_DIR"
 
 # === 3-tier diff discovery (mirrors sift's extractBestDiff) ===

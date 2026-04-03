@@ -103,8 +103,10 @@ pub struct AnalysisStatusEvent {
 }
 
 pub fn sessions_dir() -> PathBuf {
-    let home = dirs::home_dir().expect("Could not determine home directory");
-    home.join(".forge").join("sessions")
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .join(".atlas")
+        .join("sessions")
 }
 
 pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String> {

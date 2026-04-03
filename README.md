@@ -1,4 +1,4 @@
-# Forge
+# Atlas
 
 A terminal app with a smart side panel that shows git diffs, summaries, and flow diagrams. Built with Tauri v2 (Rust backend) and Svelte 5 (TypeScript frontend).
 
@@ -68,7 +68,7 @@ src-tauri/                    # Rust backend
 
 - **PTY management in Rust** — `portable-pty` for cross-platform terminal handling. Each tab gets its own PTY session with an incrementing ID.
 - **Git diff discovery** — 3-tier fallback: working tree changes, unpushed commits, branch diff vs main/master.
-- **File-based panel updates** — Panel data stored in `~/.forge/sessions/<id>/panel.json`. A file watcher debounces changes per session and emits Tauri events.
+- **File-based panel updates** — Panel data stored in `~/.atlas/sessions/<id>/panel.json`. A file watcher debounces changes per session and emits Tauri events.
 - **Theme system** — Tokyo Night palette defined once in `src/lib/theme.ts` and `app.css` CSS custom properties. Components reference `var(--color)` in styles and import the TS object for JS-side config (xterm, mermaid).
 
 ## Keyboard Shortcuts

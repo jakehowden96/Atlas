@@ -56,15 +56,17 @@
     <div class="terminal-section">
       <TerminalContainer />
     </div>
-    {#if $panelVisible}
-      <Resizer onResize={handleResize} />
-      <div class="panel-section" style="width: {panelWidth}px">
-        <SidePanel />
-      </div>
-    {:else}
-      <button class="panel-open-tab" onclick={togglePanel} title="Open Panel">
-        <span class="material-symbols-outlined">left_panel_open</span>
-      </button>
+    {#if $panelData}
+      {#if $panelVisible}
+        <Resizer onResize={handleResize} />
+        <div class="panel-section" style="width: {panelWidth}px">
+          <SidePanel />
+        </div>
+      {:else}
+        <button class="panel-open-tab" onclick={togglePanel} title="Open Panel">
+          <span class="material-symbols-outlined">left_panel_open</span>
+        </button>
+      {/if}
     {/if}
   </div>
 </div>
@@ -188,13 +190,12 @@
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    background: var(--surface);
   }
 
   .panel-section {
     flex-shrink: 0;
     overflow: hidden;
-    background: var(--surface-container-low);
+    border-left: 1px solid var(--outline-variant);
   }
 
   .panel-open-tab {

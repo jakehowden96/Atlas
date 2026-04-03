@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
+
   interface Props {
     onResize: (delta: number) => void;
   }
@@ -30,14 +32,33 @@
     document.body.style.cursor = "";
     document.body.style.userSelect = "";
   }
+
+  function handleKeydown(e: KeyboardEvent) {
+    const step = e.shiftKey ? 50 : 10;
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      onResize(-step);
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      onResize(step);
+    }
+  }
+
+  onDestroy(() => {
+    document.removeEventListener("mousemove", handleMouseMove);
+    document.removeEventListener("mouseup", handleMouseUp);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  });
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
   class="resizer"
   class:active={isDragging}
   onmousedown={handleMouseDown}
+  onkeydown={handleKeydown}
   role="separator"
+  tabindex="0"
   aria-orientation="vertical"
   aria-label="Resize panel"
 ></div>

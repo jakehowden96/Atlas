@@ -10,6 +10,8 @@
   let childRepos: RepoInfo[] = $state([]);
   let isMultiRepo = $state(false);
   let checking = $state(false);
+  let checkDone = $state(false);
+  let checkFadingOut = $state(false);
   let pulling = $state(false);
   let pullSuccess = $state(false);
   let pullFadingOut = $state(false);
@@ -61,6 +63,8 @@
   async function handleCheckForUpdates() {
     if (!cwd) return;
     checking = true;
+    checkDone = false;
+    checkFadingOut = false;
     try {
       if (isMultiRepo) {
         await Promise.all(childRepos.map((r) => gitFetch(`${cwd}/${r.name}`)));
@@ -68,12 +72,14 @@
         await gitFetch(cwd);
       }
       await fetchStatus();
+      checking = false;
       if (!hasBehind) {
-        showToast("Already up to date");
+        checkDone = true;
+        setTimeout(() => { checkFadingOut = true; }, 800);
+        setTimeout(() => { checkDone = false; checkFadingOut = false; }, 1400);
       }
     } catch (e) {
       showToast(`Check failed: ${e}`);
-    } finally {
       checking = false;
     }
   }
@@ -154,13 +160,19 @@
   <div class="btn-row">
     <button
       class="check-btn"
+      class:check-done={checkDone}
+      class:check-fade-out={checkFadingOut}
       onclick={handleCheckForUpdates}
-      disabled={checking || pulling}
+      disabled={checking || pulling || checkDone}
     >
       {#if checking}
         <span class="material-symbols-outlined spinner">progress_activity</span>
-        Fetching...
+        Checking...
+      {:else if checkDone}
+        <span class="material-symbols-outlined check-done-icon">check_circle</span>
+        Up to date
       {:else}
+        <span class="material-symbols-outlined check-icon">sync</span>
         Check for Updates
       {/if}
     </button>
@@ -410,5 +422,25 @@
   .check-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .check-icon {
+    font-size: 0.9rem;
+  }
+
+  .check-btn.check-done {
+    background: var(--secondary);
+    color: var(--on-secondary);
+    border-color: transparent;
+    transition: background 0.3s, opacity 0.5s;
+  }
+
+  .check-btn.check-fade-out {
+    opacity: 0;
+  }
+
+  .check-done-icon {
+    font-size: 0.95rem;
+    font-variation-settings: 'FILL' 1;
   }
 </style>

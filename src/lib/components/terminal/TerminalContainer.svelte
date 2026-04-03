@@ -119,6 +119,7 @@
     padding: 0 0.5rem;
     height: 36px;
     background: var(--surface-container-low);
+    border-bottom: 1px solid var(--outline-variant);
     flex-shrink: 0;
     user-select: none;
     -webkit-user-select: none;

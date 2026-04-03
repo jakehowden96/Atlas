@@ -8,8 +8,12 @@ pub struct PtySession {
     pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
 }
 
-// Safety: All fields are wrapped in Mutex, so concurrent access is synchronized.
-// MasterPty is Send but not Sync; wrapping in Mutex makes it safe for shared access.
+// SAFETY: PtySession fields are all wrapped in `Mutex`, which provides interior
+// mutability with exclusive access guarantees. `MasterPty` is `Send` but not `Sync`;
+// since every access goes through `Mutex::lock()` (which ensures only one thread
+// touches the inner value at a time), the composite type is safe to share across
+// threads. The same reasoning applies to `Box<dyn Write + Send>` in `writer`.
+// Invariant: no code path accesses the inner values without first acquiring the lock.
 unsafe impl Sync for PtySession {}
 
 impl PtySession {
