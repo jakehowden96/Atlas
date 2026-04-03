@@ -17,7 +17,7 @@ A desktop terminal with an intelligent side panel that automatically detects git
 
 ## Installation
 
-Download the latest release from the [Releases](https://github.com/jakehowden96/forge/releases) page.
+Download the latest release from the [Releases](https://github.com/jakehowden96/atlas/releases) page.
 
 - **macOS**: Download the `.dmg`, open it, and drag Atlas to Applications
 - **Windows**: Download the `.exe` installer and run it
