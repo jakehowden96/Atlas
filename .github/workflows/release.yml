@@ -16,7 +16,7 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             bundles: dmg
-          - os: macos-13
+          - os: macos-latest
             target: x86_64-apple-darwin
             bundles: dmg
           - os: windows-latest
@@ -59,4 +59,4 @@ jobs:
             **Downloads**: macOS (Apple Silicon .dmg, Intel .dmg), Windows (.exe installer, .msi)
           releaseDraft: false
           prerelease: false
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
