@@ -195,7 +195,6 @@
   .panel-section {
     flex-shrink: 0;
     overflow: hidden;
-    border-left: 1px solid var(--outline-variant);
   }
 
   .panel-open-tab {
@@ -206,6 +205,7 @@
     background: var(--surface-container-low);
     border: none;
     border-left: 1px solid var(--outline-variant);
+    margin-left: -1px;
     color: var(--on-surface-variant);
     cursor: pointer;
     padding: 0;

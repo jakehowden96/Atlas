@@ -65,11 +65,21 @@
 
 <style>
   .resizer {
-    width: 6px;
+    width: 1px;
     cursor: col-resize;
-    background: transparent;
-    transition: background 0.15s;
+    background: var(--outline-variant);
     flex-shrink: 0;
+    position: relative;
+  }
+
+  /* Wider invisible hit area for easier grabbing */
+  .resizer::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -3px;
+    right: -3px;
   }
 
   .resizer:hover,

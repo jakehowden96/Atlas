@@ -54,7 +54,7 @@
   }
 
   .terminal-container :global(.xterm) {
-    padding: 0;
+    padding: 0 0 0 6px;
     height: 100%;
   }
 </style>
