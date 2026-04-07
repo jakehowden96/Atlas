@@ -1,6 +1,6 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { PanelData, GitStatus, RepoInfo, AnalysisStatusEvent } from "../types/panel";
+import type { PanelData, GitStatus, RepoInfo, BranchInfo, AnalysisStatusEvent } from "../types/panel";
 
 export async function ptySpawn(
   cols: number,
@@ -114,6 +114,14 @@ export async function getExcludedFolders(): Promise<string[]> {
 
 export async function setExcludedFolders(folders: string[]): Promise<void> {
   return invoke("set_excluded_folders", { folders });
+}
+
+export async function gitListBranches(cwd: string): Promise<BranchInfo[]> {
+  return invoke("git_list_branches", { cwd });
+}
+
+export async function gitCheckoutBranch(cwd: string, branch: string): Promise<void> {
+  return invoke("git_checkout_branch", { cwd, branch });
 }
 
 export async function onPanelUpdate(

@@ -67,6 +67,11 @@ export interface RepoInfo {
   commits_behind: number;
 }
 
+export interface BranchInfo {
+  name: string;
+  is_current: boolean;
+}
+
 export type PanelSection = "diff" | "summary" | "flow";
 
 export type AnalysisStatus = "idle" | "running" | "complete" | "error";

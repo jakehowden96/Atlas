@@ -3,6 +3,7 @@
   import mermaid from "mermaid";
   import type { FlowData } from "../../../types/panel";
   import RepositoryClean from "./RepositoryClean.svelte";
+  import ActionButton from "./ActionButton.svelte";
   import { flowEdgesToMermaid } from "../../mermaid-converter";
   import { mermaidThemeVariables } from "../../theme";
   import { apiKeyConfigured, checkApiStatus, panelData, analysisStatus, analysisError } from "../../stores/panel";
@@ -200,9 +201,14 @@
               bind:value={apiKeyInput}
               onkeydown={(e) => { if (e.key === "Enter") handleSaveKey(); }}
             />
-            <button class="key-save-btn" onclick={handleSaveKey} disabled={saving || !apiKeyInput.trim()}>
-              {saving ? "Saving..." : "Save"}
-            </button>
+            <ActionButton
+              label="Save"
+              loadingLabel="Saving..."
+              variant="primary"
+              loading={saving}
+              disabled={!apiKeyInput.trim()}
+              onclick={handleSaveKey}
+            />
           </div>
         </div>
       {:else if hasDiff && $analysisStatus === "error"}
@@ -210,10 +216,12 @@
           <span class="material-symbols-outlined error-icon">error</span>
           <p class="error-title">Analysis Failed</p>
           <p class="error-message">{$analysisError ?? "Unknown error"}</p>
-          <button class="retry-btn" onclick={handleRetry}>
-            <span class="material-symbols-outlined retry-icon">refresh</span>
-            Retry
-          </button>
+          <ActionButton
+            label="Retry"
+            icon="refresh"
+            variant="surface"
+            onclick={handleRetry}
+          />
         </div>
       {:else if hasDiff}
         <div class="loading">
@@ -398,29 +406,6 @@
     border-color: var(--primary);
   }
 
-  .key-save-btn {
-    padding: 0.5rem 1rem;
-    background: var(--primary);
-    color: var(--on-primary);
-    border: none;
-    border-radius: var(--radius-sm);
-    font-family: var(--font-body);
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: opacity 0.15s;
-  }
-
-  .key-save-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .key-save-btn:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
   .error-state {
     display: flex;
     flex-direction: column;
@@ -451,30 +436,6 @@
     line-height: 1.5;
     font-family: var(--font-mono);
     word-break: break-word;
-  }
-
-  .retry-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.5rem 1rem;
-    background: var(--surface-container-high);
-    color: var(--on-surface);
-    border: 1px solid var(--outline-variant);
-    border-radius: var(--radius-sm);
-    font-family: var(--font-body);
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.15s;
-  }
-
-  .retry-btn:hover {
-    background: var(--surface-bright);
-  }
-
-  .retry-icon {
-    font-size: 0.9rem;
   }
 
   .loading {

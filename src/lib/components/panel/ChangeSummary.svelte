@@ -6,6 +6,8 @@
   import { gitStageAll, gitStageFiles, gitDiscardAll, getGitStatus, gitCommit, gitPush, refreshPanel } from "../../ipc";
   import { panelData } from "../../stores/panel";
   import { activeTabId } from "../../stores/terminal";
+  import ActionButton from "./ActionButton.svelte";
+  import BranchSwitcher from "./BranchSwitcher.svelte";
 
   interface Props {
     data: DiffData;
@@ -38,9 +40,11 @@
     }
   });
 
-  // Re-fetch git status when selected project changes
+  // Re-fetch git status when selected project or panelData changes
+  // (panelData updates after git checkout in terminal triggers a refresh)
   $effect(() => {
     void effectiveCwd;
+    void $panelData;
     refreshStatus();
   });
 
@@ -164,16 +168,22 @@
       loading = false;
     }
   }
+
+  async function handleBranchSwitch() {
+    await refreshStatus();
+    await refreshPanelData();
+  }
 </script>
 
 <div class="change-summary">
   <div class="summary-header">
     <h3 class="summary-title">Change Summary</h3>
     {#if status?.branch}
-      <span class="branch-badge">
-        <span class="material-symbols-outlined branch-icon">fork_right</span>
-        {status.branch}
-      </span>
+      <BranchSwitcher
+        cwd={effectiveCwd}
+        currentBranch={status.branch}
+        onSwitch={handleBranchSwitch}
+      />
     {:else}
       <span class="code-icon">&lt;&gt;</span>
     {/if}
@@ -237,47 +247,53 @@
 
   <div class="actions">
     {#if phase === "stage"}
-      <button
-        class="btn btn-stage"
+      <ActionButton
+        label="STAGE CHANGES"
+        loadingLabel="STAGING..."
+        variant="secondary"
+        {loading}
         onclick={handleStage}
-        disabled={loading}
-      >
-        {loading ? "STAGING..." : "STAGE CHANGES"}
-      </button>
+      />
     {:else if phase === "commit"}
-      <button
-        class="btn btn-commit"
+      <ActionButton
+        label="COMMIT"
+        loadingLabel="COMMITTING..."
+        variant="primary"
+        {loading}
+        disabled={!commitMsg.trim()}
         onclick={handleCommit}
-        disabled={loading || !commitMsg.trim()}
-      >
-        {loading ? "COMMITTING..." : "COMMIT"}
-      </button>
+      />
     {:else if phase === "push"}
-      <button
-        class="btn btn-push"
+      <ActionButton
+        label="PUSH"
+        loadingLabel="PUSHING..."
+        variant="primary"
+        {loading}
         onclick={handlePush}
-        disabled={loading}
-      >
-        {loading ? "PUSHING..." : "PUSH"}
-      </button>
+      />
     {:else if phase === "clean"}
-      <button class="btn btn-clean" disabled>
-        UP TO DATE
-      </button>
+      <ActionButton
+        label="UP TO DATE"
+        variant="surface"
+        disabled={true}
+      />
     {:else}
-      <button class="btn btn-stage" disabled title="Loading">
-        <span class="loading-dot"></span>
-      </button>
+      <ActionButton
+        label=""
+        variant="secondary"
+        loading={true}
+        loadingLabel=""
+      />
     {/if}
 
     {#if phase !== "clean" && phase !== "push" && phase !== "loading"}
-      <button
-        class="btn btn-discard"
+      <ActionButton
+        label="DISCARD ALL"
+        loadingLabel="..."
+        variant="danger"
+        {loading}
         onclick={handleDiscard}
-        disabled={loading}
-      >
-        {loading ? "..." : "DISCARD ALL"}
-      </button>
+      />
     {/if}
   </div>
 </div>
@@ -310,23 +326,6 @@
     font-size: 24px;
     color: var(--on-surface-variant);
     opacity: 0.5;
-  }
-
-  .branch-badge {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 10px;
-    background: color-mix(in srgb, var(--primary) 10%, transparent);
-    border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
-    border-radius: 9999px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--primary);
-  }
-
-  .branch-icon {
-    font-size: 14px;
   }
 
   .repo-selector,
@@ -511,80 +510,5 @@
   .actions {
     display: flex;
     gap: 10px;
-  }
-
-  .btn {
-    padding: 10px 20px;
-    border: none;
-    border-radius: 8px;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    cursor: pointer;
-    transition: opacity 0.15s, background 0.15s;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-stage {
-    background: linear-gradient(135deg, var(--secondary-container), color-mix(in srgb, var(--secondary-container) 80%, var(--secondary)));
-    color: var(--secondary);
-  }
-
-  .btn-stage:hover:not(:disabled) {
-    background: var(--secondary-container);
-  }
-
-  .btn-commit {
-    background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 20%, var(--surface-container-highest)), color-mix(in srgb, var(--primary) 30%, var(--surface-container-highest)));
-    color: var(--primary);
-  }
-
-  .btn-commit:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--primary) 25%, var(--surface-container-highest));
-  }
-
-  .btn-push {
-    background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 20%, var(--surface-container-highest)), color-mix(in srgb, var(--primary) 30%, var(--surface-container-highest)));
-    color: var(--primary);
-  }
-
-  .btn-push:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--primary) 25%, var(--surface-container-highest));
-  }
-
-  .btn-clean {
-    background: var(--surface-container-highest);
-    color: var(--on-surface-variant);
-  }
-
-  .btn-discard {
-    background: var(--surface-container-highest);
-    color: var(--on-surface-variant);
-  }
-
-  .btn-discard:hover:not(:disabled) {
-    background: var(--surface-bright);
-    color: var(--on-surface);
-  }
-
-  .loading-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--on-surface-variant);
-    animation: pulse 1.4s ease-in-out infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 0.3; }
-    50% { opacity: 1; }
   }
 </style>

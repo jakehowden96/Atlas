@@ -2,7 +2,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel } from "./ipc";
+import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel, getPanelData } from "./ipc";
 import { setTabTitle, activeTabId } from "./stores/terminal";
 import { panelData, analysisStatus, analysisError } from "./stores/panel";
 import { updateSessionLabelByTabId } from "./stores/workspace";
@@ -236,6 +236,15 @@ export class TerminalSession {
         }
       });
       if (this.currentCwd) {
+        // Immediately load cached panel data so the panel swaps instantly on tab switch,
+        // then schedule a background refresh for fresh data.
+        getPanelData(this.tabId).then((cached) => {
+          if (get(activeTabId) === this.tabId && cached) {
+            const json = JSON.stringify(cached);
+            this.lastPanelJson = json;
+            panelData.set(cached);
+          }
+        }).catch(() => {});
         this.scheduleRefresh(this.currentCwd);
       } else {
         panelData.set(null);

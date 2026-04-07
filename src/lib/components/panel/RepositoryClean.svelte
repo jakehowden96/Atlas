@@ -5,16 +5,16 @@
   import { showToast } from "../../stores/toast";
   import { get } from "svelte/store";
   import type { GitStatus, RepoInfo } from "../../../types/panel";
+  import ActionButton from "./ActionButton.svelte";
+  import BranchSwitcher from "./BranchSwitcher.svelte";
 
   let status: GitStatus | null = $state(null);
   let childRepos = $state<RepoInfo[]>([]);
   let isMultiRepo = $state<boolean>(false);
   let checking = $state(false);
   let checkDone = $state(false);
-  let checkFadingOut = $state(false);
   let pulling = $state(false);
-  let pullSuccess = $state(false);
-  let pullFadingOut = $state(false);
+  let pullDone = $state(false);
 
   let cwd = $derived($panelData?.cwd ?? "");
   let hasBehind = $derived.by(() => {
@@ -31,7 +31,9 @@
   });
   let projectName = $derived(cwd.split("/").pop() ?? "workspace");
 
+  // Re-fetch status when panelData updates (e.g. after git checkout in terminal)
   $effect(() => {
+    void $panelData;
     if (cwd) {
       fetchStatus();
     }
@@ -71,7 +73,6 @@
     if (!cwd) return;
     checking = true;
     checkDone = false;
-    checkFadingOut = false;
     try {
       if (isMultiRepo) {
         await Promise.all(childRepos.map((r) => gitFetch(`${cwd}/${r.name}`)));
@@ -83,8 +84,6 @@
       checking = false;
       if (!hasBehind) {
         checkDone = true;
-        setTimeout(() => { checkFadingOut = true; }, 800);
-        setTimeout(() => { checkDone = false; checkFadingOut = false; }, 1400);
       }
     } catch (e) {
       showToast(`Check failed: ${e}`);
@@ -95,8 +94,7 @@
   async function handlePull() {
     if (!cwd) return;
     pulling = true;
-    pullSuccess = false;
-    pullFadingOut = false;
+    pullDone = false;
     try {
       if (isMultiRepo) {
         const behind = childRepos.filter((r) => r.commits_behind > 0);
@@ -107,13 +105,16 @@
       await refreshPanelData();
       await fetchStatus();
       pulling = false;
-      pullSuccess = true;
-      setTimeout(() => { pullFadingOut = true; }, 800);
-      setTimeout(() => { pullSuccess = false; pullFadingOut = false; }, 1400);
+      pullDone = true;
     } catch (e) {
       showToast(`Pull failed: ${e}`);
       pulling = false;
     }
+  }
+
+  async function handleBranchSwitch() {
+    await fetchStatus();
+    await refreshPanelData();
   }
 </script>
 
@@ -143,10 +144,11 @@
     <div class="info-row">
       <div class="info-pill">
         <span class="info-label">Active Branch</span>
-        <span class="info-value">
-          <span class="material-symbols-outlined info-icon">fork_right</span>
-          {status?.branch ?? "..."}
-        </span>
+        <BranchSwitcher
+          cwd={cwd}
+          currentBranch={status?.branch ?? "..."}
+          onSwitch={handleBranchSwitch}
+        />
       </div>
       <div class="info-pill">
         <span class="info-label">Sync Status</span>
@@ -166,42 +168,28 @@
   {/if}
 
   <div class="btn-row">
-    <button
-      class="check-btn"
-      class:check-done={checkDone}
-      class:check-fade-out={checkFadingOut}
+    <ActionButton
+      label="Check for Updates"
+      loadingLabel="Checking..."
+      variant="surface"
+      loading={checking}
+      done={checkDone}
+      fadeWhenDone={true}
+      disabled={pulling}
       onclick={handleCheckForUpdates}
-      disabled={checking || pulling || checkDone}
-    >
-      {#if checking}
-        <span class="material-symbols-outlined spinner">progress_activity</span>
-        Checking...
-      {:else if checkDone}
-        <span class="material-symbols-outlined check-done-icon">check_circle</span>
-        Up to date
-      {:else}
-        <span class="material-symbols-outlined check-icon">sync</span>
-        Check for Updates
-      {/if}
-    </button>
-    {#if hasBehind || pullSuccess}
-      <button
-        class="pull-btn"
-        class:pull-success={pullSuccess}
-        class:pull-fade-out={pullFadingOut}
+    />
+    {#if hasBehind || pullDone}
+      <ActionButton
+        label="Pull {totalBehind} update{totalBehind !== 1 ? 's' : ''}"
+        loadingLabel="Pulling..."
+        icon="cloud_download"
+        variant="primary"
+        loading={pulling}
+        done={pullDone}
+        fadeWhenDone={true}
+        disabled={checking}
         onclick={handlePull}
-        disabled={pulling || checking || pullSuccess}
-      >
-        {#if pullSuccess}
-          <span class="material-symbols-outlined pull-check">check_circle</span>
-        {:else if pulling}
-          <span class="material-symbols-outlined spinner">progress_activity</span>
-          Pulling...
-        {:else}
-          <span class="material-symbols-outlined pull-icon">cloud_download</span>
-          Pull {totalBehind} update{totalBehind !== 1 ? "s" : ""}
-        {/if}
-      </button>
+      />
     {/if}
   </div>
 </div>
@@ -350,105 +338,5 @@
     gap: 0.5rem;
     margin-top: 1rem;
     align-items: center;
-  }
-
-  .pull-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.6rem 1.5rem;
-    background: var(--primary);
-    border: 1px solid transparent;
-    border-radius: 8px;
-    color: var(--on-primary);
-    font-family: var(--font-body);
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.15s, opacity 0.15s;
-  }
-
-  .pull-btn:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .pull-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .pull-icon {
-    font-size: 0.9rem;
-  }
-
-  .pull-check {
-    font-size: 1.1rem;
-    font-variation-settings: 'FILL' 1;
-  }
-
-  .pull-btn.pull-success {
-    background: var(--secondary);
-    padding: 0.6rem 1rem;
-    transition: background 0.3s, opacity 0.5s, padding 0.3s;
-  }
-
-  .pull-btn.pull-fade-out {
-    opacity: 0;
-  }
-
-  .spinner {
-    font-size: 0.9rem;
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
-
-  .check-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.6rem 1.5rem;
-    background: var(--surface-container-high);
-    border: 1px solid color-mix(in srgb, var(--outline-variant) 30%, transparent);
-    border-radius: 8px;
-    color: var(--on-surface);
-    font-family: var(--font-body);
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.15s, border-color 0.15s;
-  }
-
-  .check-btn:hover:not(:disabled) {
-    background: var(--surface-container-highest);
-    border-color: color-mix(in srgb, var(--outline-variant) 50%, transparent);
-  }
-
-  .check-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .check-icon {
-    font-size: 0.9rem;
-  }
-
-  .check-btn.check-done {
-    background: var(--secondary);
-    color: var(--on-secondary);
-    border-color: transparent;
-    transition: background 0.3s, opacity 0.5s;
-  }
-
-  .check-btn.check-fade-out {
-    opacity: 0;
-  }
-
-  .check-done-icon {
-    font-size: 0.95rem;
-    font-variation-settings: 'FILL' 1;
   }
 </style>

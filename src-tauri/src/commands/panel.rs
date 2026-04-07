@@ -720,6 +720,33 @@ pub fn get_child_repos(cwd: String) -> Result<Vec<RepoInfo>, String> {
 /// `name` is the directory basename, `abs_path` is the full absolute path.
 /// Excluded entries can be simple names (e.g. "vendor") or absolute paths
 /// (e.g. "/Users/jake/repos/legacy") from the folder browser.
+/// List local branches with the current branch marked.
+#[tauri::command]
+pub fn git_list_branches(cwd: String) -> Result<Vec<crate::panel::watcher::BranchInfo>, String> {
+    let output = git_cmd(&cwd, &["branch", "--format=%(refname:short)\t%(HEAD)"])?;
+    let branches = output
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.splitn(2, '\t').collect();
+            if parts.len() == 2 {
+                Some(crate::panel::watcher::BranchInfo {
+                    name: parts[0].trim().to_string(),
+                    is_current: parts[1].trim() == "*",
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+    Ok(branches)
+}
+
+/// Checkout an existing local branch.
+#[tauri::command]
+pub fn git_checkout_branch(cwd: String, branch: String) -> Result<(), String> {
+    git_cmd(&cwd, &["checkout", &branch]).map(|_| ())
+}
+
 fn should_skip_dir(name: &str, abs_path: &str, excluded: &[String]) -> bool {
     if name.starts_with('.') || name == "node_modules" || name == "target" {
         return true;
