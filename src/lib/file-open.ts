@@ -15,9 +15,9 @@ export async function openMarkdownFile() {
       ],
     });
 
-    if (!selected) return;
+    if (typeof selected !== "string") return;
 
-    const filePath = typeof selected === "string" ? selected : selected.path;
+    const filePath = selected;
     const fileName = filePath.split("/").pop() ?? filePath;
     const content = await readTextFile(filePath);
     addMarkdownTab(fileName, content, filePath);

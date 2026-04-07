@@ -1,9 +1,11 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
+  import { settingsOpen } from "../../stores/settings";
 
   const dispatch = createEventDispatcher<{
     newSession: { workspacePath: string };
     selectSession: { workspacePath: string; sessionId: string };
+    deleteSession: { workspacePath: string; sessionId: string };
     selectWorkspace: { workspacePath: string };
     addWorkspace: void;
   }>();
@@ -13,6 +15,7 @@
     label: string;
     status: "complete" | "running" | "error" | "idle";
     age: string;
+    terminalTabId: string | null;
   }
 
   interface Workspace {
@@ -25,11 +28,17 @@
     workspaces = [] as Workspace[],
     activeWorkspacePath = "",
     activeSessionId = "",
+    openTabIds = new Set<string>(),
   }: {
     workspaces?: Workspace[];
     activeWorkspacePath?: string;
     activeSessionId?: string;
+    openTabIds?: Set<string>;
   } = $props();
+
+  function isSessionOpen(session: Session): boolean {
+    return !!session.terminalTabId && openTabIds.has(session.terminalTabId);
+  }
 
   let filterText = $state("");
   let expandedPaths = $state<string[]>([]);
@@ -81,19 +90,19 @@
       : workspaces,
   );
 
-  const statusIcon: Record<Session["status"], string> = {
-    complete: "check_circle",
-    running: "progress_activity",
-    error: "error",
-    idle: "history",
-  };
+  function sessionIcon(session: Session): string {
+    if (session.status === "error") return "error";
+    return isSessionOpen(session) ? "circle" : "circle";
+  }
 
-  const statusColor: Record<Session["status"], string> = {
-    complete: "var(--secondary)",
-    running: "var(--primary)",
-    error: "var(--error)",
-    idle: "var(--on-surface-variant)",
-  };
+  function sessionIconColor(session: Session): string {
+    if (session.status === "error") return "var(--error)";
+    return isSessionOpen(session) ? "var(--secondary)" : "var(--on-surface-variant)";
+  }
+
+  function sessionIconFill(session: Session): number {
+    return isSessionOpen(session) ? 1 : 0;
+  }
 </script>
 
 <aside class="agent-manager">
@@ -112,13 +121,22 @@
   <nav class="workspace-tree">
     <div class="tree-header">
       <span class="tree-label">Workspaces</span>
-      <button
-        class="add-workspace-btn"
-        title="Add workspace folder"
-        onclick={() => dispatch("addWorkspace")}
-      >
-        <span class="material-symbols-outlined">create_new_folder</span>
-      </button>
+      <div class="tree-header-actions">
+        <button
+          class="settings-btn"
+          title="Settings"
+          onclick={() => settingsOpen.set(true)}
+        >
+          <span class="material-symbols-outlined">settings</span>
+        </button>
+        <button
+          class="add-workspace-btn"
+          title="Add workspace folder"
+          onclick={() => dispatch("addWorkspace")}
+        >
+          <span class="material-symbols-outlined">create_new_folder</span>
+        </button>
+      </div>
     </div>
 
     {#each filteredWorkspaces as workspace (workspace.path)}
@@ -161,26 +179,50 @@
         {#if isExpanded}
           <div class="session-list">
             {#each workspace.sessions as session (session.id)}
-              <button
+              <div
                 class="session-row"
                 class:active={session.id === activeSessionId}
+                role="button"
+                tabindex="0"
                 onclick={() =>
                   dispatch("selectSession", {
                     workspacePath: workspace.path,
                     sessionId: session.id,
                   })}
+                onkeydown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    dispatch("selectSession", {
+                      workspacePath: workspace.path,
+                      sessionId: session.id,
+                    });
+                  }
+                }}
               >
                 <div class="session-info">
                   <span
                     class="material-symbols-outlined session-status-icon"
-                    style="color: {statusColor[session.status]}"
+                    style="color: {sessionIconColor(session)}; font-variation-settings: 'FILL' {sessionIconFill(session)}"
                   >
-                    {statusIcon[session.status]}
+                    {sessionIcon(session)}
                   </span>
-                  <span class="session-label">{session.label}</span>
+                  <span class="session-label" class:session-open={isSessionOpen(session)}>{session.label}</span>
                 </div>
                 <span class="session-age">{session.age}</span>
-              </button>
+                <button
+                  class="delete-session-btn"
+                  title="Delete session"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    dispatch("deleteSession", {
+                      workspacePath: workspace.path,
+                      sessionId: session.id,
+                    });
+                  }}
+                >
+                  <span class="material-symbols-outlined">close</span>
+                </button>
+              </div>
             {/each}
           </div>
         {/if}
@@ -193,12 +235,10 @@
   .agent-manager {
     display: flex;
     flex-direction: column;
-    width: 280px;
-    min-width: 240px;
+    width: 100%;
     height: 100%;
     background: var(--surface-container-low);
     border-right: 1px solid var(--outline-variant);
-    flex-shrink: 0;
     user-select: none;
     -webkit-user-select: none;
     font-family: var(--font-body);
@@ -268,6 +308,13 @@
     opacity: 0.7;
   }
 
+  .tree-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .settings-btn,
   .add-workspace-btn {
     background: none;
     border: none;
@@ -280,10 +327,12 @@
     transition: color 0.15s;
   }
 
+  .settings-btn:hover,
   .add-workspace-btn:hover {
     color: var(--primary);
   }
 
+  .settings-btn :global(.material-symbols-outlined),
   .add-workspace-btn :global(.material-symbols-outlined) {
     font-size: 1.15rem;
   }
@@ -458,6 +507,10 @@
     text-overflow: ellipsis;
   }
 
+  .session-label.session-open {
+    color: var(--on-surface);
+  }
+
   .session-age {
     font-size: 0.55rem;
     color: var(--on-surface-variant);
@@ -468,6 +521,32 @@
 
   .session-row:hover .session-age {
     opacity: 1;
+  }
+
+  .delete-session-btn {
+    background: none;
+    border: none;
+    color: var(--on-surface-variant);
+    cursor: pointer;
+    padding: 0.15rem;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+  }
+
+  .session-row:hover .delete-session-btn {
+    opacity: 1;
+  }
+
+  .delete-session-btn:hover {
+    color: var(--error);
+  }
+
+  .delete-session-btn :global(.material-symbols-outlined) {
+    font-size: 0.8rem;
   }
 
 </style>

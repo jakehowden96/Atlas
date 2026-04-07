@@ -5,10 +5,12 @@
   import Resizer from "./lib/components/layout/Resizer.svelte";
   import AgentManager from "./lib/components/layout/AgentManager.svelte";
   import Toast from "./lib/components/Toast.svelte";
+  import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
   import { Terminal } from "@xterm/xterm";
-  import { panelVisible, panelData, togglePanel, checkApiStatus, analysisStatus, analysisError } from "./lib/stores/panel";
-  import { tabs, activeTabId, addTab } from "./lib/stores/terminal";
-  import { onPanelUpdate, onAnalysisStatus, ptyWrite } from "./lib/ipc";
+  import { panelVisible, panelData, checkApiStatus, analysisStatus, analysisError } from "./lib/stores/panel";
+  import { tabs, activeTabId, addTab, removeTab } from "./lib/stores/terminal";
+  import { onPanelUpdate, onAnalysisStatus, ptyWrite, ptyKill } from "./lib/ipc";
+  import { skipPermissions, loadSettings } from "./lib/stores/settings";
   import {
     workspaces,
     activeWorkspacePath,
@@ -17,13 +19,15 @@
     addWorkspace as storeAddWorkspace,
     addSession,
     setClaudeSessionId,
-    updateSessionStatus,
+    removeSession,
+    resumeSession,
   } from "./lib/stores/workspace";
   import { open } from "@tauri-apps/plugin-dialog";
   import { get } from "svelte/store";
   import type { UnlistenFn } from "@tauri-apps/api/event";
 
   let panelWidth = $state(420);
+  let sidebarWidth = $state(280);
   let unlisten: UnlistenFn | null = null;
   let unlistenStatus: UnlistenFn | null = null;
 
@@ -34,14 +38,21 @@
 
   const MIN_PANEL_WIDTH = 280;
   const MAX_PANEL_WIDTH = 800;
+  const MIN_SIDEBAR_WIDTH = 200;
+  const MAX_SIDEBAR_WIDTH = 480;
 
   function handleResize(delta: number) {
     panelWidth = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, panelWidth + delta));
   }
 
+  function handleSidebarResize(delta: number) {
+    sidebarWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, sidebarWidth - delta));
+  }
+
   onMount(async () => {
     checkApiStatus();
-    loadWorkspaces();
+    await loadWorkspaces();
+    await loadSettings();
     unlisten = await onPanelUpdate((sessionId, data) => {
       if (sessionId === get(activeTabId)) {
         panelData.set(data);
@@ -65,11 +76,16 @@
    * (or `claude --resume <id>` for existing sessions), and capture the
    * Claude session ID from stdout so the session can be resumed later.
    */
-  function spawnClaudeSession(workspacePath: string, resumeId?: string) {
+  async function spawnClaudeSession(workspacePath: string, resumeId?: string, existingSessionId?: string) {
     const tabId = crypto.randomUUID();
     const terminal = new Terminal();
-    const label = resumeId ? `Resumed session` : `New session`;
-    const session = addSession(workspacePath, label, tabId);
+    let session: { id: string };
+    if (existingSessionId) {
+      await resumeSession(existingSessionId, tabId);
+      session = { id: existingSessionId };
+    } else {
+      session = await addSession(workspacePath, `New session`, tabId);
+    }
 
     // Buffer PTY output to detect the Claude session ID.
     // Claude Code prints a line like:  Session: <uuid>
@@ -101,7 +117,8 @@
       const tab = currentTabs.find((t) => t.id === tabId);
       if (tab && tab.type === "terminal" && tab.ptyId >= 0) {
         clearInterval(poll);
-        const cmd = resumeId ? `claude --resume ${resumeId}\n` : `claude\n`;
+        const skip = get(skipPermissions) ? " --dangerously-skip-permissions" : "";
+        const cmd = resumeId ? `claude --resume ${resumeId}${skip}\n` : `claude${skip}\n`;
         // Small delay to let the shell prompt render
         setTimeout(() => ptyWrite(tab.ptyId, cmd), 300);
       }
@@ -112,13 +129,15 @@
 </script>
 
 <div class="app">
+  <div class="sidebar" style="width: {sidebarWidth}px">
   <AgentManager
     workspaces={$workspaces}
     activeWorkspacePath={$activeWorkspacePath}
     activeSessionId={$activeSessionId}
+    openTabIds={new Set($tabs.map(t => t.id))}
     on:addWorkspace={async () => {
       const selected = await open({ directory: true, multiple: false, title: "Select workspace folder" });
-      if (typeof selected === "string") storeAddWorkspace(selected);
+      if (typeof selected === "string") await storeAddWorkspace(selected);
     }}
     on:newSession={(e) => {
       spawnClaudeSession(e.detail.workspacePath);
@@ -126,17 +145,41 @@
     on:selectSession={(e) => {
       activeWorkspacePath.set(e.detail.workspacePath);
       activeSessionId.set(e.detail.sessionId);
-      // Find the session and resume it if it has a Claude session ID
       const ws = get(workspaces).find((w) => w.path === e.detail.workspacePath);
       const session = ws?.sessions.find((s) => s.id === e.detail.sessionId);
-      if (session?.claudeSessionId && session.status !== "running") {
-        spawnClaudeSession(e.detail.workspacePath, session.claudeSessionId);
+      // If the session is running and has a terminal tab, switch to it
+      if (session?.terminalTabId && session.status === "running") {
+        const existing = get(tabs).find((t) => t.id === session.terminalTabId);
+        if (existing) {
+          activeTabId.set(existing.id);
+          return;
+        }
       }
+      // Otherwise resume it if it has a Claude session ID
+      if (session?.claudeSessionId && session.status !== "running") {
+        spawnClaudeSession(e.detail.workspacePath, session.claudeSessionId, session.id);
+      }
+    }}
+    on:deleteSession={async (e) => {
+      const { workspacePath, sessionId } = e.detail;
+      const ws = get(workspaces).find((w) => w.path === workspacePath);
+      const session = ws?.sessions.find((s) => s.id === sessionId);
+      // Close the terminal tab if the session is open
+      if (session?.terminalTabId) {
+        const tab = get(tabs).find((t) => t.id === session.terminalTabId);
+        if (tab && tab.type === "terminal" && tab.ptyId >= 0) {
+          try { await ptyKill(tab.ptyId); } catch {}
+        }
+        if (tab) removeTab(tab.id);
+      }
+      await removeSession(workspacePath, sessionId);
     }}
     on:selectWorkspace={(e) => {
       activeWorkspacePath.set(e.detail.workspacePath);
     }}
   />
+  </div>
+  <Resizer onResize={handleSidebarResize} />
   <div class="main-stage">
     <div class="terminal-section">
       <TerminalContainer />
@@ -149,6 +192,7 @@
     {/if}
   </div>
 </div>
+<SettingsModal />
 <Toast />
 
 <style>
@@ -266,6 +310,12 @@
     display: flex;
     height: 100vh;
     width: 100vw;
+  }
+
+  .sidebar {
+    flex-shrink: 0;
+    height: 100%;
+    overflow: hidden;
   }
 
   .main-stage {

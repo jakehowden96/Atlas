@@ -5,6 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel } from "./ipc";
 import { setTabTitle, activeTabId } from "./stores/terminal";
 import { panelData, analysisStatus, analysisError } from "./stores/panel";
+import { updateSessionLabelByTabId } from "./stores/workspace";
 import { get } from "svelte/store";
 import { showToast } from "./stores/toast";
 import { handleGlobalKeydown, setRefreshHandler } from "./shortcuts";
@@ -82,10 +83,12 @@ export class TerminalSession {
     // OSC 0 & 2: tab title
     this.terminal.parser.registerOscHandler(0, (data) => {
       setTabTitle(this.tabId, data);
+      updateSessionLabelByTabId(this.tabId, data);
       return true;
     });
     this.terminal.parser.registerOscHandler(2, (data) => {
       setTabTitle(this.tabId, data);
+      updateSessionLabelByTabId(this.tabId, data);
       return true;
     });
 

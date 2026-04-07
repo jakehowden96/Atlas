@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Terminal } from "@xterm/xterm";
-  import { onMount } from "svelte";
   import { get } from "svelte/store";
   import TabBar from "./TabBar.svelte";
   import TerminalTab from "./TerminalTab.svelte";

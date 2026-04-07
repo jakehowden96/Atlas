@@ -7,8 +7,8 @@
   import type { GitStatus, RepoInfo } from "../../../types/panel";
 
   let status: GitStatus | null = $state(null);
-  let childRepos: RepoInfo[] = $state([]);
-  let isMultiRepo = $state(false);
+  let childRepos = $state<RepoInfo[]>([]);
+  let isMultiRepo = $state<boolean>(false);
   let checking = $state(false);
   let checkDone = $state(false);
   let checkFadingOut = $state(false);
@@ -17,16 +17,18 @@
   let pullFadingOut = $state(false);
 
   let cwd = $derived($panelData?.cwd ?? "");
-  let hasBehind = $derived(
-    isMultiRepo
-      ? childRepos.some((r) => r.commits_behind > 0)
-      : (status?.commits_behind ?? 0) > 0
-  );
-  let totalBehind = $derived(
-    isMultiRepo
-      ? childRepos.reduce((sum, r) => sum + r.commits_behind, 0)
-      : (status?.commits_behind ?? 0)
-  );
+  let hasBehind = $derived.by(() => {
+    if (isMultiRepo) {
+      return childRepos.some((r) => r.commits_behind > 0);
+    }
+    return (status?.commits_behind ?? 0) > 0;
+  });
+  let totalBehind = $derived.by(() => {
+    if (isMultiRepo) {
+      return childRepos.reduce((sum, r) => sum + r.commits_behind, 0);
+    }
+    return status?.commits_behind ?? 0;
+  });
   let projectName = $derived(cwd.split("/").pop() ?? "workspace");
 
   $effect(() => {
@@ -60,6 +62,11 @@
     }
   }
 
+  async function refreshPanelData() {
+    const data = await refreshPanel(get(activeTabId), cwd);
+    panelData.set(data);
+  }
+
   async function handleCheckForUpdates() {
     if (!cwd) return;
     checking = true;
@@ -71,6 +78,7 @@
       } else {
         await gitFetch(cwd);
       }
+      await refreshPanelData();
       await fetchStatus();
       checking = false;
       if (!hasBehind) {
@@ -96,7 +104,7 @@
       } else {
         await gitPull(cwd);
       }
-      await refreshPanel(get(activeTabId), cwd);
+      await refreshPanelData();
       await fetchStatus();
       pulling = false;
       pullSuccess = true;

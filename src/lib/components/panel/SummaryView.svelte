@@ -457,11 +457,6 @@
     color: var(--on-surface-variant);
   }
 
-  .empty-text {
-    font-size: 22px;
-    font-family: var(--font-display);
-    letter-spacing: -0.02em;
-  }
 
   .api-key-prompt {
     display: flex;

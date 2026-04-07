@@ -11,7 +11,7 @@
 
   let { data, cwd }: Props = $props();
 
-  let diffView: "local" | "remote" = $state("remote");
+  let diffView = $state<"local" | "remote">("remote");
   let hasLocalToggle = $derived(!!data?.local_raw && data.local_raw !== data.raw);
 
   // Reset to remote view when data changes and local toggle becomes unavailable

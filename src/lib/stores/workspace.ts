@@ -17,6 +17,13 @@ export interface Workspace {
   sessions: WorkspaceSession[];
 }
 
+function formatLabel(raw: string): string {
+  return raw
+    .split(/[\s\-_]+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
 const STORAGE_DIR = ".atlas";
 const STORAGE_FILE = ".atlas/workspaces.json";
 
@@ -62,7 +69,7 @@ async function persist() {
   }
 }
 
-export function addWorkspace(path: string): boolean {
+export async function addWorkspace(path: string): Promise<boolean> {
   const current = get(workspaces);
   if (current.some((w) => w.path === path)) {
     activeWorkspacePath.set(path);
@@ -71,23 +78,23 @@ export function addWorkspace(path: string): boolean {
   const name = path.split("/").filter(Boolean).pop() ?? path;
   workspaces.set([...current, { path, name, sessions: [] }]);
   activeWorkspacePath.set(path);
-  persist();
+  await persist();
   return true;
 }
 
-export function removeWorkspace(path: string) {
+export async function removeWorkspace(path: string) {
   workspaces.update((ws) => ws.filter((w) => w.path !== path));
-  persist();
+  await persist();
 }
 
-export function addSession(
+export async function addSession(
   workspacePath: string,
   label: string,
   terminalTabId: string,
-): WorkspaceSession {
+): Promise<WorkspaceSession> {
   const session: WorkspaceSession = {
     id: crypto.randomUUID(),
-    label,
+    label: formatLabel(label),
     status: "running",
     age: "now",
     claudeSessionId: null,
@@ -102,11 +109,11 @@ export function addSession(
     ),
   );
   activeSessionId.set(session.id);
-  persist();
+  await persist();
   return session;
 }
 
-export function setClaudeSessionId(
+export async function setClaudeSessionId(
   sessionId: string,
   claudeSessionId: string,
 ) {
@@ -118,10 +125,26 @@ export function setClaudeSessionId(
       ),
     })),
   );
-  persist();
+  await persist();
 }
 
-export function updateSessionStatus(
+export async function resumeSession(
+  sessionId: string,
+  terminalTabId: string,
+) {
+  workspaces.update((ws) =>
+    ws.map((w) => ({
+      ...w,
+      sessions: w.sessions.map((s) =>
+        s.id === sessionId ? { ...s, status: "running" as const, terminalTabId } : s,
+      ),
+    })),
+  );
+  activeSessionId.set(sessionId);
+  await persist();
+}
+
+export async function updateSessionStatus(
   sessionId: string,
   status: WorkspaceSession["status"],
 ) {
@@ -133,7 +156,39 @@ export function updateSessionStatus(
       ),
     })),
   );
-  persist();
+  await persist();
+}
+
+export async function updateSessionLabelByTabId(tabId: string, label: string) {
+  const formatted = formatLabel(label);
+  let changed = false;
+  workspaces.update((ws) =>
+    ws.map((w) => ({
+      ...w,
+      sessions: w.sessions.map((s) => {
+        if (s.terminalTabId === tabId && s.label !== formatted) {
+          changed = true;
+          return { ...s, label: formatted };
+        }
+        return s;
+      }),
+    })),
+  );
+  if (changed) await persist();
+}
+
+export async function removeSession(workspacePath: string, sessionId: string) {
+  workspaces.update((ws) =>
+    ws.map((w) =>
+      w.path === workspacePath
+        ? { ...w, sessions: w.sessions.filter((s) => s.id !== sessionId) }
+        : w,
+    ),
+  );
+  if (get(activeSessionId) === sessionId) {
+    activeSessionId.set("");
+  }
+  await persist();
 }
 
 export function updateSessionAge(sessionId: string, age: string) {

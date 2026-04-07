@@ -49,7 +49,7 @@
     return result;
   });
 
-  const labeledGroups = $derived(groups.filter((g) => g.label));
+
 </script>
 
 <div class="tab-bar">
@@ -177,10 +177,6 @@
     align-items: center;
     opacity: 0;
     transition: opacity 0.15s, color 0.15s;
-  }
-
-  .group-badge:hover .group-close {
-    opacity: 1;
   }
 
   .group-close:hover {

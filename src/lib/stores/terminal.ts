@@ -1,5 +1,6 @@
 import { writable, derived, get } from "svelte/store";
-import type { TerminalTab, MarkdownTab, TabItem } from "../../types/terminal";
+import type { Terminal } from "@xterm/xterm";
+import type { MarkdownTab, TabItem } from "../../types/terminal";
 
 export const tabs = writable<TabItem[]>([]);
 export const activeTabId = writable<string>("");

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { settingsOpen, excludedFolders, loadExcludedFolders, saveExcludedFolders } from "../../stores/settings";
+  import { settingsOpen, excludedFolders, loadExcludedFolders, saveExcludedFolders, skipPermissions, setSkipPermissions } from "../../stores/settings";
   import { open } from "@tauri-apps/plugin-dialog";
 
   let newFolder = $state("");
@@ -75,6 +75,22 @@
       </div>
 
       <div class="settings-body">
+        <div class="section danger-section">
+          <div class="section-label danger-label">Danger Zone</div>
+          <label class="toggle-row danger-toggle">
+            <div class="toggle-text">
+              <span class="toggle-title danger-text">Skip Permissions</span>
+              <span class="toggle-desc danger-desc">Launch all Claude sessions with <code>--dangerously-skip-permissions</code></span>
+            </div>
+            <input
+              type="checkbox"
+              class="danger-checkbox"
+              checked={$skipPermissions}
+              onchange={(e) => setSkipPermissions(e.currentTarget.checked)}
+            />
+          </label>
+        </div>
+
         <div class="section">
           <div class="section-label">Excluded Folders</div>
           <p class="section-desc">
@@ -384,5 +400,100 @@
   .add-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+
+  /* ── Danger zone ── */
+  .danger-section {
+    border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .danger-label {
+    color: #ef4444;
+  }
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    cursor: pointer;
+  }
+
+  .toggle-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .toggle-title {
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--font-body);
+    color: var(--on-surface);
+  }
+
+  .danger-text {
+    color: #ef4444;
+  }
+
+  .toggle-desc {
+    font-size: 11px;
+    color: var(--on-surface-variant);
+    font-family: var(--font-body);
+    opacity: 0.7;
+    line-height: 1.35;
+  }
+
+  .toggle-desc code {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    background: var(--surface-container-high);
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: #ef4444;
+  }
+
+  .danger-desc {
+    color: color-mix(in srgb, #ef4444 70%, var(--on-surface-variant));
+  }
+
+  .danger-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 36px;
+    height: 20px;
+    background: var(--surface-container-highest);
+    border: 1px solid var(--outline-variant);
+    border-radius: 10px;
+    position: relative;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.2s, border-color 0.2s;
+  }
+
+  .danger-checkbox::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    background: var(--on-surface-variant);
+    border-radius: 50%;
+    transition: transform 0.2s, background 0.2s;
+  }
+
+  .danger-checkbox:checked {
+    background: #ef4444;
+    border-color: #ef4444;
+  }
+
+  .danger-checkbox:checked::after {
+    transform: translateX(16px);
+    background: white;
   }
 </style>
