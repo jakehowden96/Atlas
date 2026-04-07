@@ -6,6 +6,8 @@ export interface TerminalTab {
   title: string;
   ptyId: number;
   terminal: Terminal;
+  cwd?: string;
+  onData?: (data: string) => void;
 }
 
 export interface MarkdownTab {

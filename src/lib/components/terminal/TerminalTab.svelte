@@ -7,9 +7,11 @@
     tabId: string;
     visible: boolean;
     onPtyReady: (ptyId: number) => void;
+    cwd?: string;
+    onData?: (data: string) => void;
   }
 
-  let { tabId, visible, onPtyReady }: Props = $props();
+  let { tabId, visible, onPtyReady, cwd, onData }: Props = $props();
 
   let containerEl: HTMLDivElement;
   let session: TerminalSession | null = null;
@@ -20,6 +22,8 @@
       container: containerEl,
       visible,
       onPtyReady,
+      cwd,
+      onData,
     });
   });
 
@@ -56,5 +60,6 @@
   .terminal-container :global(.xterm) {
     padding: 0 0 0 6px;
     height: 100%;
+    margin-top: 2px;
   }
 </style>

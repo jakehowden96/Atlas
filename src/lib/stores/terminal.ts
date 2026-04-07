@@ -13,6 +13,13 @@ export function addTab(tab: TabItem) {
   activeTabId.set(tab.id);
 }
 
+/** Create a terminal tab pre-configured with a working directory. */
+export function createTerminalTabWithCwd(terminal: Terminal, cwd: string): string {
+  const id = crypto.randomUUID();
+  addTab({ type: "terminal", id, title: "", ptyId: -1, terminal, cwd });
+  return id;
+}
+
 export function addMarkdownTab(title: string, content: string, filePath?: string) {
   const tab: MarkdownTab = {
     type: "markdown",
@@ -61,4 +68,17 @@ export function setTabTitle(id: string, title: string) {
   tabs.update((t) =>
     t.map((tab) => (tab.id === id ? { ...tab, title } : tab)),
   );
+}
+
+/** Return tab IDs grouped by workspace cwd. Tabs with no cwd go under "". */
+export function getTabsByWorkspace(): Map<string, TabItem[]> {
+  const t = get(tabs);
+  const groups = new Map<string, TabItem[]>();
+  for (const tab of t) {
+    const key = (tab.type === "terminal" ? tab.cwd : undefined) ?? "";
+    const list = groups.get(key) ?? [];
+    list.push(tab);
+    groups.set(key, list);
+  }
+  return groups;
 }

@@ -3,10 +3,23 @@
   import TerminalContainer from "./lib/components/terminal/TerminalContainer.svelte";
   import SidePanel from "./lib/components/panel/SidePanel.svelte";
   import Resizer from "./lib/components/layout/Resizer.svelte";
+  import AgentManager from "./lib/components/layout/AgentManager.svelte";
   import Toast from "./lib/components/Toast.svelte";
+  import { Terminal } from "@xterm/xterm";
   import { panelVisible, panelData, togglePanel, checkApiStatus, analysisStatus, analysisError } from "./lib/stores/panel";
-  import { activeTabId } from "./lib/stores/terminal";
-  import { onPanelUpdate, onAnalysisStatus } from "./lib/ipc";
+  import { tabs, activeTabId, addTab } from "./lib/stores/terminal";
+  import { onPanelUpdate, onAnalysisStatus, ptyWrite } from "./lib/ipc";
+  import {
+    workspaces,
+    activeWorkspacePath,
+    activeSessionId,
+    loadWorkspaces,
+    addWorkspace as storeAddWorkspace,
+    addSession,
+    setClaudeSessionId,
+    updateSessionStatus,
+  } from "./lib/stores/workspace";
+  import { open } from "@tauri-apps/plugin-dialog";
   import { get } from "svelte/store";
   import type { UnlistenFn } from "@tauri-apps/api/event";
 
@@ -14,13 +27,9 @@
   let unlisten: UnlistenFn | null = null;
   let unlistenStatus: UnlistenFn | null = null;
 
-  // Auto-show/hide panel based on whether a repo is detected
+  // Show panel when there's panel data AND active sessions
   $effect(() => {
-    if ($panelData) {
-      panelVisible.set(true);
-    } else {
-      panelVisible.set(false);
-    }
+    panelVisible.set(!!$panelData && $tabs.length > 0);
   });
 
   const MIN_PANEL_WIDTH = 280;
@@ -32,6 +41,7 @@
 
   onMount(async () => {
     checkApiStatus();
+    loadWorkspaces();
     unlisten = await onPanelUpdate((sessionId, data) => {
       if (sessionId === get(activeTabId)) {
         panelData.set(data);
@@ -49,24 +59,93 @@
     unlisten?.();
     unlistenStatus?.();
   });
+
+  /**
+   * Spawn a terminal tab in the given workspace directory, run `claude`
+   * (or `claude --resume <id>` for existing sessions), and capture the
+   * Claude session ID from stdout so the session can be resumed later.
+   */
+  function spawnClaudeSession(workspacePath: string, resumeId?: string) {
+    const tabId = crypto.randomUUID();
+    const terminal = new Terminal();
+    const label = resumeId ? `Resumed session` : `New session`;
+    const session = addSession(workspacePath, label, tabId);
+
+    // Buffer PTY output to detect the Claude session ID.
+    // Claude Code prints a line like:  Session: <uuid>
+    let captured = false;
+    let outputBuf = "";
+
+    const onData = (data: string) => {
+      if (captured) return;
+      outputBuf += data;
+      // Claude Code outputs the session id in the format "session: <id>" early on
+      const match = outputBuf.match(/(?:session:\s+|Session ID:\s+|--resume\s+)([a-f0-9-]{36})/i);
+      if (match) {
+        captured = true;
+        setClaudeSessionId(session.id, match[1]);
+      }
+      // Stop buffering after 8 KB to avoid unbounded memory
+      if (outputBuf.length > 8192) {
+        captured = true;
+      }
+    };
+
+    addTab({ type: "terminal", id: tabId, title: "", ptyId: -1, terminal, cwd: workspacePath, onData });
+
+    // Once the PTY is ready, send the claude command.
+    // We watch for the ptyId to become available via a short poll since
+    // handlePtyReady fires inside TerminalContainer.
+    const poll = setInterval(async () => {
+      const currentTabs = get(tabs);
+      const tab = currentTabs.find((t) => t.id === tabId);
+      if (tab && tab.type === "terminal" && tab.ptyId >= 0) {
+        clearInterval(poll);
+        const cmd = resumeId ? `claude --resume ${resumeId}\n` : `claude\n`;
+        // Small delay to let the shell prompt render
+        setTimeout(() => ptyWrite(tab.ptyId, cmd), 300);
+      }
+    }, 100);
+
+    return session;
+  }
 </script>
 
 <div class="app">
+  <AgentManager
+    workspaces={$workspaces}
+    activeWorkspacePath={$activeWorkspacePath}
+    activeSessionId={$activeSessionId}
+    on:addWorkspace={async () => {
+      const selected = await open({ directory: true, multiple: false, title: "Select workspace folder" });
+      if (typeof selected === "string") storeAddWorkspace(selected);
+    }}
+    on:newSession={(e) => {
+      spawnClaudeSession(e.detail.workspacePath);
+    }}
+    on:selectSession={(e) => {
+      activeWorkspacePath.set(e.detail.workspacePath);
+      activeSessionId.set(e.detail.sessionId);
+      // Find the session and resume it if it has a Claude session ID
+      const ws = get(workspaces).find((w) => w.path === e.detail.workspacePath);
+      const session = ws?.sessions.find((s) => s.id === e.detail.sessionId);
+      if (session?.claudeSessionId && session.status !== "running") {
+        spawnClaudeSession(e.detail.workspacePath, session.claudeSessionId);
+      }
+    }}
+    on:selectWorkspace={(e) => {
+      activeWorkspacePath.set(e.detail.workspacePath);
+    }}
+  />
   <div class="main-stage">
     <div class="terminal-section">
       <TerminalContainer />
     </div>
-    {#if $panelData}
-      {#if $panelVisible}
-        <Resizer onResize={handleResize} />
-        <div class="panel-section" style="width: {panelWidth}px">
-          <SidePanel />
-        </div>
-      {:else}
-        <button class="panel-open-tab" onclick={togglePanel} title="Open Panel">
-          <span class="material-symbols-outlined">left_panel_open</span>
-        </button>
-      {/if}
+    {#if $panelVisible}
+      <Resizer onResize={handleResize} />
+      <div class="panel-section" style="width: {panelWidth}px">
+        <SidePanel />
+      </div>
     {/if}
   </div>
 </div>
@@ -109,6 +188,9 @@
     /* Named colors */
     --yellow: #e8be7b;
 
+    /* Chrome bar height (shared between terminal + panel) */
+    --chrome-height: 52px;
+
     /* Radius */
     --radius: 8px;
     --radius-sm: 6px;
@@ -127,6 +209,13 @@
     --font-display: "Space Grotesk Variable", "Space Grotesk", sans-serif;
     --font-body: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --font-mono: "JetBrains Mono Variable", "JetBrains Mono", "Fira Code", Menlo, monospace;
+
+    font-size: 115%;
+  }
+
+  /* Keep terminal at its own font size — xterm manages this internally */
+  :global(.xterm) {
+    font-size: initial;
   }
 
   :global(body) {
@@ -184,6 +273,19 @@
     display: flex;
     min-width: 0;
     overflow: hidden;
+    position: relative;
+  }
+
+  .main-stage::after {
+    content: "";
+    position: absolute;
+    top: var(--chrome-height);
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--outline-variant);
+    z-index: 5;
+    pointer-events: none;
   }
 
   .terminal-section {
@@ -195,30 +297,7 @@
   .panel-section {
     flex-shrink: 0;
     overflow: hidden;
-  }
-
-  .panel-open-tab {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    background: var(--surface-container-low);
-    border: none;
     border-left: 1px solid var(--outline-variant);
-    margin-left: -1px;
-    color: var(--on-surface-variant);
-    cursor: pointer;
-    padding: 0;
-    flex-shrink: 0;
-    transition: background 0.15s, color 0.15s;
   }
 
-  .panel-open-tab:hover {
-    background: var(--surface-container-high);
-    color: var(--on-surface);
-  }
-
-  .panel-open-tab :global(.material-symbols-outlined) {
-    font-size: 1rem;
-  }
 </style>

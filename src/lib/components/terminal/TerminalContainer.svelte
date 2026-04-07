@@ -38,8 +38,23 @@
       }
     }
     removeTab(id);
-    if (get(tabs).length === 0) {
-      createTab();
+  }
+
+  async function closeGroup(cwd: string) {
+    const tabList = get(tabs);
+    const toClose = tabList.filter((t) => {
+      const tabCwd = t.type === "terminal" ? t.cwd ?? "" : "";
+      return tabCwd === cwd;
+    });
+    for (const tab of toClose) {
+      if (tab.type === "terminal" && tab.ptyId >= 0) {
+        try {
+          await ptyKill(tab.ptyId);
+        } catch (e) {
+          showToast(`Failed to kill terminal: ${e}`);
+        }
+      }
+      removeTab(tab.id);
     }
   }
 
@@ -57,12 +72,6 @@
       showToast(`Failed to create session directory: ${e}`);
     }
   }
-
-  onMount(() => {
-    if (get(tabs).length === 0) {
-      createTab();
-    }
-  });
 
   function handleKeydown(e: KeyboardEvent) {
     if (handleGlobalKeydown(e)) return;
@@ -83,25 +92,34 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="terminal-area">
-  <div class="terminal-chrome">
-    <TabBar onNewTab={createTab} onCloseTab={closeTab} onSelectTab={selectTab} />
-  </div>
-  <div class="terminal-panes">
-    {#each $tabs as tab (tab.id)}
-      {#if tab.type === "terminal"}
-        <TerminalTab
-          tabId={tab.id}
-          visible={tab.id === $activeTabId}
-          onPtyReady={(ptyId) => handlePtyReady(tab.id, ptyId)}
-        />
-      {:else if tab.type === "markdown"}
-        <MarkdownTabView
-          {tab}
-          visible={tab.id === $activeTabId}
-        />
-      {/if}
-    {/each}
-  </div>
+  {#if $tabs.length > 0}
+    <div class="terminal-chrome">
+      <TabBar onCloseTab={closeTab} onSelectTab={selectTab} onCloseGroup={closeGroup} />
+    </div>
+    <div class="terminal-panes">
+      {#each $tabs as tab (tab.id)}
+        {#if tab.type === "terminal"}
+          <TerminalTab
+            tabId={tab.id}
+            visible={tab.id === $activeTabId}
+            cwd={tab.cwd}
+            onData={tab.onData}
+            onPtyReady={(ptyId) => handlePtyReady(tab.id, ptyId)}
+          />
+        {:else if tab.type === "markdown"}
+          <MarkdownTabView
+            {tab}
+            visible={tab.id === $activeTabId}
+          />
+        {/if}
+      {/each}
+    </div>
+  {:else}
+    <div class="empty-state">
+      <span class="material-symbols-outlined empty-icon">terminal</span>
+      <p class="empty-text">Create a session from a workspace to get started</p>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -115,12 +133,12 @@
 
   .terminal-chrome {
     display: flex;
-    align-items: center;
-    padding: 0 0.5rem;
-    height: 36px;
+    align-items: stretch;
+    height: var(--chrome-height);
+    padding: 2px 0.25rem;
     background: var(--surface-container-low);
-    border-bottom: 1px solid var(--outline-variant);
     flex-shrink: 0;
+    overflow: hidden;
     user-select: none;
     -webkit-user-select: none;
   }
@@ -130,5 +148,27 @@
     position: relative;
     overflow: hidden;
     background: var(--surface);
+  }
+
+  .empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    opacity: 0.4;
+  }
+
+  .empty-icon {
+    font-size: 2.5rem !important;
+    color: var(--on-surface-variant);
+  }
+
+  .empty-text {
+    font-size: 0.8rem;
+    color: var(--on-surface-variant);
+    font-family: var(--font-body);
+    margin: 0;
   }
 </style>

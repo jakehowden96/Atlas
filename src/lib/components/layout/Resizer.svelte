@@ -65,9 +65,9 @@
 
 <style>
   .resizer {
-    width: 1px;
+    width: 0;
     cursor: col-resize;
-    background: var(--outline-variant);
+    background: transparent;
     flex-shrink: 0;
     position: relative;
   }

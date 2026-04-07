@@ -15,6 +15,8 @@ export interface TerminalSessionOptions {
   container: HTMLDivElement;
   visible: boolean;
   onPtyReady: (ptyId: number) => void;
+  cwd?: string;
+  onData?: (data: string) => void;
 }
 
 export class TerminalSession {
@@ -27,10 +29,14 @@ export class TerminalSession {
   private pollInterval: ReturnType<typeof setInterval> | null = null;
   private tabId: string;
   private _visible: boolean;
+  private initialCwd?: string;
+  private externalOnData?: (data: string) => void;
 
   constructor(opts: TerminalSessionOptions) {
     this.tabId = opts.tabId;
     this._visible = opts.visible;
+    this.initialCwd = opts.cwd;
+    this.externalOnData = opts.onData;
 
     this.terminal = new Terminal({
       cursorBlink: true,
@@ -121,8 +127,14 @@ export class TerminalSession {
       this.ptyId = await ptySpawn(
         this.terminal.cols,
         this.terminal.rows,
-        (data) => this.terminal.write(data),
-        undefined,
+        (data) => {
+          this.terminal.write(data);
+          if (this.externalOnData) {
+            const decoder = new TextDecoder();
+            this.externalOnData(decoder.decode(data));
+          }
+        },
+        this.initialCwd ?? undefined,
         { ATLAS_SESSION_ID: this.tabId },
       );
       onPtyReady(this.ptyId);
@@ -136,6 +148,13 @@ export class TerminalSession {
         ptyWrite(this.ptyId, data);
       }
     });
+  }
+
+  /** Write a string to the PTY (e.g. to run a command). */
+  async writeCommand(cmd: string) {
+    if (this.ptyId !== null) {
+      await ptyWrite(this.ptyId, cmd);
+    }
   }
 
   private setupEnterRefresh() {
