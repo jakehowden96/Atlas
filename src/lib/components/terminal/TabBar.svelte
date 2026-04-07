@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tabs, activeTabId } from "../../stores/terminal";
+  import { workspaces } from "../../stores/workspace";
   import type { TabItem } from "../../../types/terminal";
 
   const WORKSPACE_COLORS = [
@@ -42,7 +43,10 @@
     let colorIdx = 0;
     for (const [cwd, groupTabs] of map) {
       const label = cwd ? cwd.split("/").filter(Boolean).pop() ?? cwd : "";
-      const color = label ? WORKSPACE_COLORS[colorIdx % WORKSPACE_COLORS.length] : "";
+      const ws = $workspaces.find((w) => w.path === cwd);
+      const color = label
+        ? ws?.color ?? WORKSPACE_COLORS[colorIdx % WORKSPACE_COLORS.length]
+        : "";
       if (label) colorIdx++;
       result.push({ cwd, label, color, tabs: groupTabs });
     }

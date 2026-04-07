@@ -2,14 +2,22 @@
   import { settingsOpen, excludedFolders, loadExcludedFolders, saveExcludedFolders, skipPermissions, setSkipPermissions } from "../../stores/settings";
   import { open } from "@tauri-apps/plugin-dialog";
 
+  type Tab = "general" | "danger";
+
+  let activeTab = $state<Tab>("general");
   let newFolder = $state("");
   let folders = $derived<string[]>([...$excludedFolders]);
   let modalEl: HTMLDivElement | null = $state(null);
 
+  const tabs: { id: Tab; label: string; icon: string }[] = [
+    { id: "general", label: "General", icon: "tune" },
+    { id: "danger", label: "Danger Zone", icon: "warning" },
+  ];
+
   $effect(() => {
     if ($settingsOpen) {
       loadExcludedFolders();
-      // Focus the modal when it opens
+      activeTab = "general";
       requestAnimationFrame(() => modalEl?.focus());
     }
   });
@@ -74,69 +82,87 @@
         </button>
       </div>
 
-      <div class="settings-body">
-        <div class="section danger-section">
-          <div class="section-label danger-label">Danger Zone</div>
-          <label class="toggle-row danger-toggle">
-            <div class="toggle-text">
-              <span class="toggle-title danger-text">Skip Permissions</span>
-              <span class="toggle-desc danger-desc">Launch all Claude sessions with <code>--dangerously-skip-permissions</code></span>
-            </div>
-            <input
-              type="checkbox"
-              class="danger-checkbox"
-              checked={$skipPermissions}
-              onchange={(e) => setSkipPermissions(e.currentTarget.checked)}
-            />
-          </label>
-        </div>
-
-        <div class="section">
-          <div class="section-label">Excluded Folders</div>
-          <p class="section-desc">
-            Folder names to skip when discovering repos below the current directory.
-          </p>
-
-          <div class="folder-list">
-            {#each folders as folder}
-              <div class="folder-item">
-                <span class="material-symbols-outlined folder-icon">{folder.includes("/") ? "folder" : "folder_off"}</span>
-                <div class="folder-info">
-                  <span class="folder-name">{folder.includes("/") ? folder.split("/").pop() : folder}</span>
-                  {#if folder.includes("/")}
-                    <span class="folder-path" title={folder}>{folder}</span>
-                  {/if}
-                </div>
-                <button class="remove-btn" onclick={() => removeFolder(folder)} title="Remove">
-                  <span class="material-symbols-outlined">close</span>
-                </button>
-              </div>
-            {/each}
-          </div>
-
-          <div class="add-actions">
-            <button class="browse-btn" onclick={browseFolder}>
-              <span class="material-symbols-outlined browse-icon">folder_open</span>
-              Browse...
+      <div class="settings-layout">
+        <nav class="settings-sidebar">
+          {#each tabs as tab}
+            <button
+              class="sidebar-tab"
+              class:active={activeTab === tab.id}
+              class:danger-tab={tab.id === "danger"}
+              onclick={() => activeTab = tab.id}
+            >
+              <span class="material-symbols-outlined tab-icon" class:danger-icon={tab.id === "danger"}>{tab.icon}</span>
+              <span class="tab-label">{tab.label}</span>
             </button>
-            <div class="add-divider">
-              <span class="divider-line"></span>
-              <span class="divider-text">or type a name</span>
-              <span class="divider-line"></span>
+          {/each}
+        </nav>
+
+        <div class="settings-content">
+          {#if activeTab === "general"}
+            <div class="section">
+              <div class="section-label">Excluded Folders</div>
+              <p class="section-desc">
+                Folder names to skip when discovering repos below the current directory.
+              </p>
+
+              <div class="folder-list">
+                {#each folders as folder}
+                  <div class="folder-item">
+                    <span class="material-symbols-outlined folder-icon">{folder.includes("/") ? "folder" : "folder_off"}</span>
+                    <div class="folder-info">
+                      <span class="folder-name">{folder.includes("/") ? folder.split("/").pop() : folder}</span>
+                      {#if folder.includes("/")}
+                        <span class="folder-path" title={folder}>{folder}</span>
+                      {/if}
+                    </div>
+                    <button class="remove-btn" onclick={() => removeFolder(folder)} title="Remove">
+                      <span class="material-symbols-outlined">close</span>
+                    </button>
+                  </div>
+                {/each}
+              </div>
+
+              <div class="add-actions">
+                <button class="browse-btn" onclick={browseFolder}>
+                  <span class="material-symbols-outlined browse-icon">folder_open</span>
+                  Browse...
+                </button>
+                <div class="add-divider">
+                  <span class="divider-line"></span>
+                  <span class="divider-text">or type a name</span>
+                  <span class="divider-line"></span>
+                </div>
+                <div class="add-row">
+                  <input
+                    type="text"
+                    class="folder-input"
+                    bind:value={newFolder}
+                    onkeydown={handleKeydown}
+                    placeholder="e.g. vendor"
+                  />
+                  <button class="add-btn" onclick={addFolder} disabled={!newFolder.trim()}>
+                    Add
+                  </button>
+                </div>
+              </div>
             </div>
-            <div class="add-row">
-              <input
-                type="text"
-                class="folder-input"
-                bind:value={newFolder}
-                onkeydown={handleKeydown}
-                placeholder="e.g. vendor"
-              />
-              <button class="add-btn" onclick={addFolder} disabled={!newFolder.trim()}>
-                Add
-              </button>
+          {:else if activeTab === "danger"}
+            <div class="section danger-section">
+              <div class="section-label danger-label">Danger Zone</div>
+              <label class="toggle-row danger-toggle">
+                <div class="toggle-text">
+                  <span class="toggle-title danger-text">Skip Permissions</span>
+                  <span class="toggle-desc danger-desc">Launch all Claude sessions with <code>--dangerously-skip-permissions</code></span>
+                </div>
+                <input
+                  type="checkbox"
+                  class="danger-checkbox"
+                  checked={$skipPermissions}
+                  onchange={(e) => setSkipPermissions(e.currentTarget.checked)}
+                />
+              </label>
             </div>
-          </div>
+          {/if}
         </div>
       </div>
     </div>
@@ -157,7 +183,7 @@
 
   .settings-modal {
     width: 100%;
-    max-width: 360px;
+    max-width: 480px;
     background: var(--surface-container-low);
     border: 1px solid var(--outline-variant);
     border-radius: var(--radius-lg);
@@ -204,10 +230,77 @@
     font-size: 1rem;
   }
 
-  .settings-body {
-    padding: 1rem;
+  /* ── Tabbed layout ── */
+  .settings-layout {
+    display: flex;
+    min-height: 280px;
   }
 
+  .settings-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0.5rem;
+    border-right: 1px solid var(--outline-variant);
+    background: var(--surface);
+    width: 140px;
+    flex-shrink: 0;
+  }
+
+  .sidebar-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.6rem;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--on-surface-variant);
+    font-size: 12px;
+    font-weight: 500;
+    font-family: var(--font-body);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .sidebar-tab:hover {
+    background: var(--surface-container-high);
+    color: var(--on-surface);
+  }
+
+  .sidebar-tab.active {
+    background: var(--surface-container-high);
+    color: var(--on-surface);
+    font-weight: 600;
+  }
+
+  .sidebar-tab.danger-tab:hover,
+  .sidebar-tab.danger-tab.active {
+    color: #ef4444;
+  }
+
+  .tab-icon {
+    font-size: 1rem;
+  }
+
+  .danger-icon {
+    color: #ef4444;
+  }
+
+  .tab-label {
+    line-height: 1;
+  }
+
+  .settings-content {
+    flex: 1;
+    padding: 1rem;
+    overflow-y: auto;
+    min-width: 0;
+  }
+
+  /* ── Sections ── */
   .section-label {
     font-size: 11px;
     font-weight: 700;
@@ -407,7 +500,6 @@
     border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
     border-radius: var(--radius-sm);
     padding: 0.75rem;
-    margin-bottom: 0.75rem;
   }
 
   .danger-label {

@@ -7,8 +7,22 @@
     selectSession: { workspacePath: string; sessionId: string };
     deleteSession: { workspacePath: string; sessionId: string };
     selectWorkspace: { workspacePath: string };
+    setWorkspaceColor: { workspacePath: string; color: string };
     addWorkspace: void;
   }>();
+
+  const WORKSPACE_COLORS = [
+    "#72b1ff", // blue
+    "#97f999", // green
+    "#ff7167", // coral
+    "#e8be7b", // yellow
+    "#c48eed", // purple
+    "#63bcc6", // cyan
+    "#ff9288", // salmon
+    "#89ea8d", // lime
+    "#94c5ff", // light blue
+    "#d8abff", // lavender
+  ];
 
   interface Session {
     id: string;
@@ -21,6 +35,7 @@
   interface Workspace {
     path: string;
     name: string;
+    color?: string;
     sessions: Session[];
   }
 
@@ -43,6 +58,22 @@
   let filterText = $state("");
   let expandedPaths = $state<string[]>([]);
   let selectedPath = $state("");
+  let colorPickerPath = $state<string | null>(null);
+
+  function toggleColorPicker(e: Event, path: string) {
+    e.stopPropagation();
+    colorPickerPath = colorPickerPath === path ? null : path;
+  }
+
+  function pickColor(e: Event, workspacePath: string, color: string) {
+    e.stopPropagation();
+    dispatch("setWorkspaceColor", { workspacePath, color });
+    colorPickerPath = null;
+  }
+
+  function handleWindowClick() {
+    if (colorPickerPath) colorPickerPath = null;
+  }
 
   // Sync selected path from prop when it changes externally
   $effect(() => {
@@ -104,6 +135,8 @@
     return isSessionOpen(session) ? 1 : 0;
   }
 </script>
+
+<svelte:window onclick={handleWindowClick} />
 
 <aside class="agent-manager">
   <div class="header">
@@ -167,6 +200,31 @@
               {workspace.name}
             </span>
           </button>
+          <div class="color-picker-wrap">
+            <button
+              class="color-dot-btn"
+              title="Set workspace color"
+              onclick={(e) => toggleColorPicker(e, workspace.path)}
+            >
+              <span
+                class="ws-color-dot"
+                style="background: {workspace.color ?? WORKSPACE_COLORS[0]}"
+              ></span>
+            </button>
+            {#if colorPickerPath === workspace.path}
+              <div class="color-dropdown" onclick={(e) => e.stopPropagation()}>
+                {#each WORKSPACE_COLORS as color}
+                  <button
+                    class="color-swatch"
+                    class:active={workspace.color === color}
+                    style="background: {color}"
+                    title={color}
+                    onclick={(e) => pickColor(e, workspace.path, color)}
+                  ></button>
+                {/each}
+              </div>
+            {/if}
+          </div>
           <button
             class="new-session-inline"
             title="New session"
@@ -453,6 +511,69 @@
 
   .new-session-inline :global(.material-symbols-outlined) {
     font-size: 1rem;
+  }
+
+  /* ── Color picker ── */
+  .color-picker-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .color-dot-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.3rem;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .workspace-row:hover .color-dot-btn {
+    opacity: 1;
+  }
+
+  .ws-color-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .color-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+    padding: 6px;
+    background: var(--surface-container-highest);
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  }
+
+  .color-swatch {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: transform 0.1s, border-color 0.1s;
+    padding: 0;
+  }
+
+  .color-swatch:hover {
+    transform: scale(1.2);
+  }
+
+  .color-swatch.active {
+    border-color: var(--on-surface);
   }
 
   /* ── Session list ── */

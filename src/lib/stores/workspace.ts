@@ -14,6 +14,7 @@ export interface WorkspaceSession {
 export interface Workspace {
   path: string;
   name: string;
+  color?: string;
   sessions: WorkspaceSession[];
 }
 
@@ -84,6 +85,13 @@ export async function addWorkspace(path: string): Promise<boolean> {
 
 export async function removeWorkspace(path: string) {
   workspaces.update((ws) => ws.filter((w) => w.path !== path));
+  await persist();
+}
+
+export async function setWorkspaceColor(path: string, color: string) {
+  workspaces.update((ws) =>
+    ws.map((w) => (w.path === path ? { ...w, color } : w)),
+  );
   await persist();
 }
 
