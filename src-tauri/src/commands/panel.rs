@@ -639,9 +639,17 @@ pub fn get_git_status(cwd: String) -> Result<GitStatus, String> {
         .unwrap_or(false);
 
     // Check for unpushed commits
-    let has_unpushed = git_cmd(&cwd, &["rev-list", "@{u}..HEAD", "--count"])
-        .map(|s| s.trim().parse::<u32>().unwrap_or(0) > 0)
-        .unwrap_or(false);
+    let has_unpushed = match git_cmd(&cwd, &["rev-list", "@{u}..HEAD", "--count"]) {
+        Ok(s) => s.trim().parse::<u32>().unwrap_or(0) > 0,
+        Err(_) => {
+            // No upstream tracking branch — treat any local commits as unpushed
+            // if a remote 'origin' exists (i.e. there's somewhere to push to).
+            git_cmd(&cwd, &["remote", "get-url", "origin"]).is_ok()
+                && git_cmd(&cwd, &["rev-list", "HEAD", "--count"])
+                    .map(|s| s.trim().parse::<u32>().unwrap_or(0) > 0)
+                    .unwrap_or(false)
+        }
+    };
 
     // Check for commits behind upstream
     let commits_behind = git_cmd(&cwd, &["rev-list", "HEAD..@{u}", "--count"])
