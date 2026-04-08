@@ -24,6 +24,19 @@
   let pushDone = $state(false);
   let transitioning = $state(false);
 
+  const MIN_LOADING_MS = 600;
+
+  /** Run an async operation with a minimum visible loading time. */
+  async function withMinLoading<T>(fn: () => Promise<T>): Promise<T> {
+    const start = Date.now();
+    const result = await fn();
+    const elapsed = Date.now() - start;
+    if (elapsed < MIN_LOADING_MS) {
+      await new Promise((r) => setTimeout(r, MIN_LOADING_MS - elapsed));
+    }
+    return result;
+  }
+
   let commitMsg = $state("");
   let commitMsgInitialized = false;
   let selectedProjectName: string | null = $state(null);
@@ -128,22 +141,23 @@
     stageDone = false;
     await tick();
     try {
-      if (selectedFiles && selectedFiles.size > 0 && effectiveProject) {
-        // Multi-repo: filter to selected project, strip namespace prefix
-        const prefix = effectiveProject.name + "/";
-        const projectFiles = [...selectedFiles]
-          .filter((f) => f.startsWith(prefix))
-          .map((f) => f.slice(prefix.length));
-        if (projectFiles.length > 0) {
-          await gitStageFiles(effectiveCwd, projectFiles);
+      await withMinLoading(async () => {
+        if (selectedFiles && selectedFiles.size > 0 && effectiveProject) {
+          const prefix = effectiveProject.name + "/";
+          const projectFiles = [...selectedFiles]
+            .filter((f) => f.startsWith(prefix))
+            .map((f) => f.slice(prefix.length));
+          if (projectFiles.length > 0) {
+            await gitStageFiles(effectiveCwd, projectFiles);
+          } else {
+            await gitStageAll(effectiveCwd);
+          }
+        } else if (selectedFiles && selectedFiles.size > 0) {
+          await gitStageFiles(effectiveCwd, [...selectedFiles]);
         } else {
           await gitStageAll(effectiveCwd);
         }
-      } else if (selectedFiles && selectedFiles.size > 0) {
-        await gitStageFiles(effectiveCwd, [...selectedFiles]);
-      } else {
-        await gitStageAll(effectiveCwd);
-      }
+      });
       loading = false;
       stageDone = true;
       transitioning = true;
@@ -162,7 +176,7 @@
     commitDone = false;
     await tick();
     try {
-      await gitCommit(effectiveCwd, commitMsg.trim());
+      await withMinLoading(() => gitCommit(effectiveCwd, commitMsg.trim()));
       commitMsg = "";
       loading = false;
       commitDone = true;
@@ -181,7 +195,7 @@
     pushDone = false;
     await tick();
     try {
-      await gitPush(effectiveCwd);
+      await withMinLoading(() => gitPush(effectiveCwd));
       loading = false;
       pushDone = true;
       transitioning = true;
