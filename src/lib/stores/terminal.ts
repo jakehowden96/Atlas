@@ -46,6 +46,8 @@ export function removeTab(id: string) {
   const remaining = get(tabs);
   if (remaining.length > 0) {
     activeTabId.set(remaining[remaining.length - 1].id);
+  } else {
+    activeTabId.set("");
   }
 }
 

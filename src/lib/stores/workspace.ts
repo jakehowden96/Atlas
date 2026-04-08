@@ -21,6 +21,7 @@ export interface Workspace {
 function formatLabel(raw: string): string {
   return raw
     .split(/[\s\-_]+/)
+    .filter(Boolean)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(" ");
 }

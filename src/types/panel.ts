@@ -48,6 +48,7 @@ export interface PanelData {
   version: number;
   timestamp: string;
   cwd: string;
+  is_git: boolean;
   diff?: DiffData;
   summary?: SummaryData;
   flow?: FlowData;

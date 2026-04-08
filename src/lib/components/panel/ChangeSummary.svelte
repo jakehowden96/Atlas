@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { get } from "svelte/store";
   import type { DiffData, ProjectDiff } from "../../../types/panel";
   import type { GitStatus } from "../../../types/panel";
@@ -19,6 +19,9 @@
   let { data, cwd, projects, selectedFiles }: Props = $props();
   let status: GitStatus | null = $state(null);
   let loading = $state(false);
+  let stageDone = $state(false);
+  let commitDone = $state(false);
+  let pushDone = $state(false);
   let commitMsg = $state("");
   let commitMsgInitialized = false;
   let selectedProjectName: string | null = $state(null);
@@ -99,6 +102,8 @@
   async function handleStage() {
     clearError();
     loading = true;
+    stageDone = false;
+    await tick();
     try {
       if (selectedFiles && selectedFiles.size > 0 && effectiveProject) {
         // Multi-repo: filter to selected project, strip namespace prefix
@@ -116,11 +121,12 @@
       } else {
         await gitStageAll(effectiveCwd);
       }
+      loading = false;
+      stageDone = true;
       await refreshStatus();
       await refreshPanelData();
     } catch (e) {
       showError(e);
-    } finally {
       loading = false;
     }
   }
@@ -129,14 +135,17 @@
     if (!commitMsg.trim()) return;
     clearError();
     loading = true;
+    commitDone = false;
+    await tick();
     try {
       await gitCommit(effectiveCwd, commitMsg.trim());
       commitMsg = "";
+      loading = false;
+      commitDone = true;
       await refreshStatus();
       await refreshPanelData();
     } catch (e) {
       showError(e);
-    } finally {
       loading = false;
     }
   }
@@ -144,13 +153,16 @@
   async function handlePush() {
     clearError();
     loading = true;
+    pushDone = false;
+    await tick();
     try {
       await gitPush(effectiveCwd);
+      loading = false;
+      pushDone = true;
       await refreshStatus();
       await refreshPanelData();
     } catch (e) {
       showError(e);
-    } finally {
       loading = false;
     }
   }
@@ -158,6 +170,7 @@
   async function handleDiscard() {
     clearError();
     loading = true;
+    await tick();
     try {
       await gitDiscardAll(effectiveCwd);
       await refreshStatus();
@@ -252,6 +265,8 @@
         loadingLabel="STAGING..."
         variant="secondary"
         {loading}
+        done={stageDone}
+        fadeWhenDone={true}
         onclick={handleStage}
       />
     {:else if phase === "commit"}
@@ -260,6 +275,8 @@
         loadingLabel="COMMITTING..."
         variant="primary"
         {loading}
+        done={commitDone}
+        fadeWhenDone={true}
         disabled={!commitMsg.trim()}
         onclick={handleCommit}
       />
@@ -269,6 +286,8 @@
         loadingLabel="PUSHING..."
         variant="primary"
         {loading}
+        done={pushDone}
+        fadeWhenDone={true}
         onclick={handlePush}
       />
     {:else if phase === "clean"}

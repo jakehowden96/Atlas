@@ -164,6 +164,7 @@ fn build_panel_single(
             version: 1,
             timestamp: now_iso8601(),
             cwd: git_root.to_string(),
+            is_git: true,
             diff: None,
             summary: None,
             flow: None,
@@ -187,6 +188,7 @@ fn build_panel_single(
         version: 1,
         timestamp: now_iso8601(),
         cwd: git_root.to_string(),
+        is_git: true,
         diff: Some(DiffData {
             raw: bundle.full,
             files_changed,
@@ -277,6 +279,7 @@ fn build_panel_multi(
             version: 1,
             timestamp: now_iso8601(),
             cwd: root.to_string(),
+            is_git: true,
             diff: None,
             summary: None,
             flow: None,
@@ -292,6 +295,7 @@ fn build_panel_multi(
         version: 1,
         timestamp: now_iso8601(),
         cwd: root.to_string(),
+        is_git: true,
         diff: Some(DiffData {
             raw: combined,
             files_changed: total_files,
@@ -747,6 +751,12 @@ pub fn git_checkout_branch(cwd: String, branch: String) -> Result<(), String> {
     git_cmd(&cwd, &["checkout", &branch]).map(|_| ())
 }
 
+/// Create and switch to a new branch via `git checkout -b`.
+#[tauri::command]
+pub fn git_create_branch(cwd: String, branch: String) -> Result<(), String> {
+    git_cmd(&cwd, &["checkout", "-b", &branch]).map(|_| ())
+}
+
 fn should_skip_dir(name: &str, abs_path: &str, excluded: &[String]) -> bool {
     if name.starts_with('.') || name == "node_modules" || name == "target" {
         return true;
@@ -952,6 +962,7 @@ diff --git a/file.rs b/file.rs
             version: 1,
             timestamp: "2024-01-01T00:00:00Z".to_string(),
             cwd: "/tmp/test".to_string(),
+            is_git: true,
             diff: Some(DiffData {
                 raw: "diff --git a/f b/f\n+added".to_string(),
                 files_changed: 1,

@@ -162,6 +162,7 @@ pub fn run() {
             commands::panel::set_excluded_folders,
             commands::panel::git_list_branches,
             commands::panel::git_checkout_branch,
+            commands::panel::git_create_branch,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { panelData } from "../../stores/panel";
   import { activeTabId } from "../../stores/terminal";
   import { getGitStatus, getChildRepos, gitFetch, gitPull, refreshPanel } from "../../ipc";
@@ -12,7 +13,6 @@
   let childRepos = $state<RepoInfo[]>([]);
   let isMultiRepo = $state<boolean>(false);
   let checking = $state(false);
-  let checkDone = $state(false);
   let pulling = $state(false);
   let pullDone = $state(false);
 
@@ -72,7 +72,7 @@
   async function handleCheckForUpdates() {
     if (!cwd) return;
     checking = true;
-    checkDone = false;
+    await tick();
     try {
       if (isMultiRepo) {
         await Promise.all(childRepos.map((r) => gitFetch(`${cwd}/${r.name}`)));
@@ -82,9 +82,6 @@
       await refreshPanelData();
       await fetchStatus();
       checking = false;
-      if (!hasBehind) {
-        checkDone = true;
-      }
     } catch (e) {
       showToast(`Check failed: ${e}`);
       checking = false;
@@ -95,6 +92,7 @@
     if (!cwd) return;
     pulling = true;
     pullDone = false;
+    await tick();
     try {
       if (isMultiRepo) {
         const behind = childRepos.filter((r) => r.commits_behind > 0);
@@ -136,7 +134,11 @@
         <div class="repo-row">
           <span class="material-symbols-outlined info-icon">fork_right</span>
           <span class="repo-name">{repo.name}</span>
-          <span class="repo-branch">{repo.branch}</span>
+          <BranchSwitcher
+            cwd="{cwd}/{repo.name}"
+            currentBranch={repo.branch}
+            onSwitch={handleBranchSwitch}
+          />
         </div>
       {/each}
     </div>
@@ -173,8 +175,6 @@
       loadingLabel="Checking..."
       variant="surface"
       loading={checking}
-      done={checkDone}
-      fadeWhenDone={true}
       disabled={pulling}
       onclick={handleCheckForUpdates}
     />
@@ -282,15 +282,9 @@
   }
 
   .repo-name {
-    flex-shrink: 0;
+    flex: 1;
     color: var(--on-surface);
     font-weight: 500;
-  }
-
-  .repo-branch {
-    color: var(--on-surface-variant);
-    margin-left: auto;
-    text-align: right;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

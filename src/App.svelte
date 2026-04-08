@@ -20,6 +20,7 @@
     addSession,
     setClaudeSessionId,
     removeSession,
+    removeWorkspace,
     resumeSession,
     setWorkspaceColor,
   } from "./lib/stores/workspace";
@@ -33,9 +34,9 @@
   let unlistenStatus: UnlistenFn | null = null;
   const spawningSessionIds = new Set<string>();
 
-  // Show panel when there's panel data AND active sessions
+  // Show panel only when inside a git workspace
   $effect(() => {
-    panelVisible.set(!!$panelData && $tabs.length > 0);
+    panelVisible.set(!!$panelData?.is_git && $tabs.length > 0);
   });
 
   const MIN_PANEL_WIDTH = 280;
@@ -91,7 +92,10 @@
       // Generate a Claude session ID upfront so we can pass it via --session-id
       // and store it immediately — no need to capture it from terminal output.
       claudeSessionId = crypto.randomUUID();
-      session = await addSession(workspacePath, `New session`, tabId);
+      const wsName = get(workspaces).find((w) => w.path === workspacePath)?.name
+        ?? workspacePath.split("/").filter(Boolean).pop()
+        ?? "New session";
+      session = await addSession(workspacePath, wsName, tabId);
       await setClaudeSessionId(session.id, claudeSessionId);
     }
 
@@ -100,10 +104,17 @@
     // Once the PTY is ready, send the claude command.
     // We watch for the ptyId to become available via a short poll since
     // handlePtyReady fires inside TerminalContainer.
+    let pollAttempts = 0;
     const poll = setInterval(async () => {
+      pollAttempts++;
       const currentTabs = get(tabs);
       const tab = currentTabs.find((t) => t.id === tabId);
-      if (tab && tab.type === "terminal" && tab.ptyId >= 0) {
+      // Stop polling if the tab was removed or we've exceeded a reasonable timeout (10s)
+      if (!tab || pollAttempts > 100) {
+        clearInterval(poll);
+        return;
+      }
+      if (tab.type === "terminal" && tab.ptyId >= 0) {
         clearInterval(poll);
         const skip = get(skipPermissions) ? " --dangerously-skip-permissions" : "";
         let cmd: string;
@@ -180,6 +191,26 @@
     }}
     on:setWorkspaceColor={(e) => {
       setWorkspaceColor(e.detail.workspacePath, e.detail.color);
+    }}
+    on:deleteWorkspace={async (e) => {
+      const { workspacePath } = e.detail;
+      const ws = get(workspaces).find((w) => w.path === workspacePath);
+      if (ws) {
+        for (const session of ws.sessions) {
+          if (session.terminalTabId) {
+            const tab = get(tabs).find((t) => t.id === session.terminalTabId);
+            if (tab && tab.type === "terminal" && tab.ptyId >= 0) {
+              try { await ptyKill(tab.ptyId); } catch {}
+            }
+            if (tab) removeTab(tab.id);
+          }
+        }
+      }
+      await removeWorkspace(workspacePath);
+      if (get(activeWorkspacePath) === workspacePath) {
+        activeWorkspacePath.set("");
+        activeSessionId.set("");
+      }
     }}
   />
   </div>

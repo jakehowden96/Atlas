@@ -10,6 +10,9 @@ pub struct PanelData {
     pub version: u32,
     pub timestamp: String,
     pub cwd: String,
+    /// Whether the CWD is inside (or a parent of) a git repository.
+    #[serde(default)]
+    pub is_git: bool,
     pub diff: Option<DiffData>,
     pub summary: Option<SummaryData>,
     pub flow: Option<FlowData>,

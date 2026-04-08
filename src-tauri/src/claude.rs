@@ -118,9 +118,13 @@ impl ClaudeClient {
         &self,
         raw_diff: &str,
     ) -> Result<(SummaryData, FlowData), String> {
-        // Truncate very large diffs to avoid token limits
+        // Truncate very large diffs to avoid token limits (char-boundary safe)
         let diff_text = if raw_diff.len() > 30_000 {
-            &raw_diff[..30_000]
+            let mut end = 30_000;
+            while !raw_diff.is_char_boundary(end) {
+                end -= 1;
+            }
+            &raw_diff[..end]
         } else {
             raw_diff
         };

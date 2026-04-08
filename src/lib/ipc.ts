@@ -124,6 +124,10 @@ export async function gitCheckoutBranch(cwd: string, branch: string): Promise<vo
   return invoke("git_checkout_branch", { cwd, branch });
 }
 
+export async function gitCreateBranch(cwd: string, branch: string): Promise<void> {
+  return invoke("git_create_branch", { cwd, branch });
+}
+
 export async function onPanelUpdate(
   callback: (sessionId: string, data: PanelData) => void,
 ): Promise<UnlistenFn> {

@@ -6,6 +6,7 @@
     newSession: { workspacePath: string };
     selectSession: { workspacePath: string; sessionId: string };
     deleteSession: { workspacePath: string; sessionId: string };
+    deleteWorkspace: { workspacePath: string };
     selectWorkspace: { workspacePath: string };
     setWorkspaceColor: { workspacePath: string; color: string };
     addWorkspace: void;
@@ -123,7 +124,7 @@
 
   function sessionIcon(session: Session): string {
     if (session.status === "error") return "error";
-    return isSessionOpen(session) ? "circle" : "circle";
+    return isSessionOpen(session) ? "circle" : "radio_button_unchecked";
   }
 
   function sessionIconColor(session: Session): string {
@@ -231,6 +232,16 @@
             onclick={() => dispatch("newSession", { workspacePath: workspace.path })}
           >
             <span class="material-symbols-outlined">add</span>
+          </button>
+          <button
+            class="delete-workspace-btn"
+            title="Remove workspace"
+            onclick={(e) => {
+              e.stopPropagation();
+              dispatch("deleteWorkspace", { workspacePath: workspace.path });
+            }}
+          >
+            <span class="material-symbols-outlined">close</span>
           </button>
         </div>
 
@@ -511,6 +522,32 @@
 
   .new-session-inline :global(.material-symbols-outlined) {
     font-size: 1rem;
+  }
+
+  .delete-workspace-btn {
+    background: none;
+    border: none;
+    color: var(--on-surface-variant);
+    cursor: pointer;
+    padding: 0.3rem;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+  }
+
+  .workspace-row:hover .delete-workspace-btn {
+    opacity: 1;
+  }
+
+  .delete-workspace-btn:hover {
+    color: var(--error);
+  }
+
+  .delete-workspace-btn :global(.material-symbols-outlined) {
+    font-size: 0.85rem;
   }
 
   /* ── Color picker ── */

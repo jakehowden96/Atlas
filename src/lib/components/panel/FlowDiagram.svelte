@@ -138,10 +138,11 @@
       mermaid
         .render(id, mermaidSyntax)
         .then(({ svg }) => {
-          diagramEl.innerHTML = svg;
+          // mermaid.render returns sanitized SVG (securityLevel: "strict") — safe to inject
+          if (diagramEl) diagramEl.innerHTML = svg; // eslint-disable-line no-unsanitized/property
         })
         .catch((err) => {
-          diagramEl.textContent = `Failed to render diagram: ${err.message}`;
+          if (diagramEl) diagramEl.textContent = `Failed to render diagram: ${err.message}`;
         });
     }
   });

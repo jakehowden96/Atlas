@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { gitListBranches, gitCheckoutBranch } from "../../ipc";
+  import { gitListBranches, gitCheckoutBranch, gitCreateBranch } from "../../ipc";
   import { showToast } from "../../stores/toast";
   import type { BranchInfo } from "../../../types/panel";
 
@@ -15,7 +15,10 @@
   let branches = $state<BranchInfo[]>([]);
   let loadingBranches = $state(false);
   let switching = $state<string | null>(null);
+  let creating = $state(false);
+  let newBranchName = $state("");
   let dropdownEl: HTMLDivElement = $state(null!);
+  let newBranchInput: HTMLInputElement = $state(null!);
 
   async function toggleDropdown() {
     if (open) {
@@ -51,8 +54,46 @@
     }
   }
 
+  function showCreateForm() {
+    creating = true;
+    newBranchName = "";
+    requestAnimationFrame(() => newBranchInput?.focus());
+  }
+
+  async function handleCreate() {
+    const name = newBranchName.trim();
+    if (!name) return;
+    switching = name;
+    try {
+      await gitCreateBranch(cwd, name);
+      creating = false;
+      newBranchName = "";
+      open = false;
+      onSwitch?.();
+    } catch (e) {
+      showToast(`Create branch failed: ${e}`);
+    } finally {
+      switching = null;
+    }
+  }
+
+  function handleCreateKeydown(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleCreate();
+    } else if (e.key === "Escape") {
+      creating = false;
+    }
+  }
+
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") open = false;
+    if (e.key === "Escape") {
+      if (creating) {
+        creating = false;
+      } else {
+        open = false;
+      }
+    }
   }
 
   function handleClickOutside(e: MouseEvent) {
@@ -107,6 +148,36 @@
         {/each}
         {#if branches.length === 0}
           <div class="branch-empty">No branches found</div>
+        {/if}
+        <div class="create-divider"></div>
+        {#if creating}
+          <div class="create-form">
+            <input
+              bind:this={newBranchInput}
+              class="create-input"
+              type="text"
+              placeholder="branch-name"
+              bind:value={newBranchName}
+              onkeydown={handleCreateKeydown}
+              disabled={switching !== null}
+            />
+            <button
+              class="create-confirm"
+              disabled={!newBranchName.trim() || switching !== null}
+              onclick={handleCreate}
+            >
+              {#if switching}
+                <span class="material-symbols-outlined spinner" style="font-size:12px">progress_activity</span>
+              {:else}
+                <span class="material-symbols-outlined" style="font-size:14px">check</span>
+              {/if}
+            </button>
+          </div>
+        {:else}
+          <button class="branch-item create-btn" onclick={showCreateForm} disabled={switching !== null}>
+            <span class="material-symbols-outlined item-icon create-icon">add</span>
+            <span class="item-name">New branch</span>
+          </button>
         {/if}
       {/if}
     </div>
@@ -238,6 +309,74 @@
   .spinner {
     font-size: 14px;
     animation: spin 1s linear infinite;
+  }
+
+  .create-divider {
+    height: 1px;
+    background: var(--outline-variant);
+    margin: 4px 0;
+  }
+
+  .create-btn {
+    color: var(--primary);
+  }
+
+  .create-icon {
+    color: var(--primary);
+  }
+
+  .create-form {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .create-input {
+    flex: 1;
+    min-width: 0;
+    padding: 5px 8px;
+    background: var(--surface-container-low);
+    border: 1px solid var(--outline-variant);
+    border-radius: 6px;
+    color: var(--on-surface);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .create-input:focus {
+    border-color: var(--primary);
+  }
+
+  .create-input::placeholder {
+    color: var(--on-surface-variant);
+    opacity: 0.5;
+  }
+
+  .create-confirm {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    color: var(--primary);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.1s;
+  }
+
+  .create-confirm:hover:not(:disabled) {
+    background: var(--surface-bright);
+  }
+
+  .create-confirm:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   @keyframes spin {
