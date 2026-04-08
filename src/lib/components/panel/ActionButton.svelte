@@ -7,7 +7,6 @@
     disabled?: boolean;
     loading?: boolean;
     done?: boolean;
-    fadeWhenDone?: boolean;
     onclick?: () => void;
   }
 
@@ -19,53 +18,30 @@
     disabled = false,
     loading = false,
     done = false,
-    fadeWhenDone = false,
     onclick,
   }: Props = $props();
-
-  let fadingOut = $state(false);
-  let hidden = $state(false);
-
-  $effect(() => {
-    if (done && fadeWhenDone) {
-      fadingOut = false;
-      hidden = false;
-      const fadeTimer = setTimeout(() => { fadingOut = true; }, 400);
-      const hideTimer = setTimeout(() => { hidden = true; fadingOut = false; }, 900);
-      return () => {
-        clearTimeout(fadeTimer);
-        clearTimeout(hideTimer);
-      };
-    } else if (!done) {
-      fadingOut = false;
-      hidden = false;
-    }
-  });
 </script>
 
-{#if !hidden}
-  <button
-    class="action-btn variant-{variant}"
-    class:is-loading={loading}
-    class:is-done={done}
-    class:is-fading={fadingOut}
-    disabled={disabled || loading || done}
-    {onclick}
-  >
-    {#if loading}
-      <span class="material-symbols-outlined spinner">progress_activity</span>
-      {loadingLabel ?? label}
-    {:else if done}
-      <span class="material-symbols-outlined done-icon">check_circle</span>
-      {label}
-    {:else}
-      {#if icon}
-        <span class="material-symbols-outlined btn-icon">{icon}</span>
-      {/if}
-      {label}
+<button
+  class="action-btn variant-{variant}"
+  class:is-loading={loading}
+  class:is-done={done}
+  disabled={disabled || loading || done}
+  {onclick}
+>
+  {#if loading}
+    <span class="material-symbols-outlined spinner">progress_activity</span>
+    {loadingLabel ?? label}
+  {:else if done}
+    <span class="material-symbols-outlined done-icon">check_circle</span>
+    {label}
+  {:else}
+    {#if icon}
+      <span class="material-symbols-outlined btn-icon">{icon}</span>
     {/if}
-  </button>
-{/if}
+    {label}
+  {/if}
+</button>
 
 <style>
   .action-btn {
@@ -82,14 +58,8 @@
     font-weight: 600;
     letter-spacing: 0.06em;
     cursor: pointer;
-    transition: background 0.3s ease, opacity 0.3s ease, color 0.3s ease, border-color 0.3s ease, transform 0.3s ease;
+    transition: background 0.3s ease, opacity 0.3s ease, color 0.3s ease, border-color 0.3s ease;
     white-space: nowrap;
-    animation: btn-enter 0.35s ease both;
-  }
-
-  @keyframes btn-enter {
-    from { opacity: 0; transform: scale(0.92); }
-    to { opacity: 1; transform: scale(1); }
   }
 
   .action-btn:disabled {
@@ -111,14 +81,8 @@
     background: var(--secondary) !important;
     color: var(--on-primary) !important;
     border-color: transparent !important;
-    transition: background 0.3s ease, opacity 0.4s ease, color 0.3s ease;
-  }
-
-  /* Fade out */
-  .action-btn.is-fading {
-    opacity: 0 !important;
-    transform: scale(0.9);
-    transition: opacity 0.5s ease, transform 0.5s ease;
+    opacity: 1 !important;
+    transition: background 0.3s ease, color 0.3s ease;
   }
 
   /* --- Variants --- */

@@ -85,12 +85,12 @@
     const next = phase;
     if (next === visiblePhase) return;
     if (phaseTimer) clearTimeout(phaseTimer);
-    // If we're showing a done state, delay so the fade finishes first
+    // If we're in a done state, wait for the phase-out animation (500ms) to finish
     if (transitioning) {
       phaseTimer = setTimeout(() => {
         visiblePhase = next;
         transitioning = false;
-      }, 1000);
+      }, 550);
     } else {
       visiblePhase = next;
     }
@@ -273,87 +273,86 @@
     </div>
   </div>
 
-  {#if visiblePhase === "commit"}
-    <div class="commit-section">
-      <div class="commit-label-row">
-        <span class="commit-label">COMMIT MESSAGE</span>
-        {#if $panelData?.summary?.summary && commitMsg === $panelData.summary.summary}
-          <span class="ai-badge">AI</span>
-        {/if}
+  <div class="phase-group" class:phase-fading={transitioning}>
+    {#if visiblePhase === "commit"}
+      <div class="commit-section">
+        <div class="commit-label-row">
+          <span class="commit-label">COMMIT MESSAGE</span>
+          {#if $panelData?.summary?.summary && commitMsg === $panelData.summary.summary}
+            <span class="ai-badge">AI</span>
+          {/if}
+        </div>
+        <textarea
+          class="commit-input"
+          bind:value={commitMsg}
+          placeholder="Describe your changes..."
+          rows="3"
+          disabled={loading}
+        ></textarea>
       </div>
-      <textarea
-        class="commit-input"
-        bind:value={commitMsg}
-        placeholder="Describe your changes..."
-        rows="3"
-        disabled={loading}
-      ></textarea>
-    </div>
-  {/if}
-
-  {#if errorMsg}
-    <div class="error-banner">
-      <span class="error-text">{errorMsg}</span>
-      <button class="error-dismiss" onclick={clearError}>&times;</button>
-    </div>
-  {/if}
-
-  <div class="actions">
-    {#if visiblePhase === "stage"}
-      <ActionButton
-        label="STAGE CHANGES"
-        loadingLabel="STAGING..."
-        variant="secondary"
-        {loading}
-        done={stageDone}
-        fadeWhenDone={true}
-        onclick={handleStage}
-      />
-    {:else if visiblePhase === "commit"}
-      <ActionButton
-        label="COMMIT"
-        loadingLabel="COMMITTING..."
-        variant="primary"
-        {loading}
-        done={commitDone}
-        fadeWhenDone={true}
-        disabled={!commitMsg.trim()}
-        onclick={handleCommit}
-      />
-    {:else if visiblePhase === "push"}
-      <ActionButton
-        label="PUSH"
-        loadingLabel="PUSHING..."
-        variant="primary"
-        {loading}
-        done={pushDone}
-        fadeWhenDone={true}
-        onclick={handlePush}
-      />
-    {:else if visiblePhase === "clean"}
-      <ActionButton
-        label="UP TO DATE"
-        variant="surface"
-        disabled={true}
-      />
-    {:else}
-      <ActionButton
-        label=""
-        variant="secondary"
-        loading={true}
-        loadingLabel=""
-      />
     {/if}
 
-    {#if visiblePhase !== "clean" && visiblePhase !== "push" && visiblePhase !== "loading"}
-      <ActionButton
-        label="DISCARD ALL"
-        loadingLabel="..."
-        variant="danger"
-        {loading}
-        onclick={handleDiscard}
-      />
+    {#if errorMsg}
+      <div class="error-banner">
+        <span class="error-text">{errorMsg}</span>
+        <button class="error-dismiss" onclick={clearError}>&times;</button>
+      </div>
     {/if}
+
+    <div class="actions">
+      {#if visiblePhase === "stage"}
+        <ActionButton
+          label="STAGE CHANGES"
+          loadingLabel="STAGING..."
+          variant="secondary"
+          {loading}
+          done={stageDone}
+          onclick={handleStage}
+        />
+      {:else if visiblePhase === "commit"}
+        <ActionButton
+          label="COMMIT"
+          loadingLabel="COMMITTING..."
+          variant="primary"
+          {loading}
+          done={commitDone}
+          disabled={!commitMsg.trim()}
+          onclick={handleCommit}
+        />
+      {:else if visiblePhase === "push"}
+        <ActionButton
+          label="PUSH"
+          loadingLabel="PUSHING..."
+          variant="primary"
+          {loading}
+          done={pushDone}
+          onclick={handlePush}
+        />
+      {:else if visiblePhase === "clean"}
+        <ActionButton
+          label="UP TO DATE"
+          variant="surface"
+          disabled={true}
+        />
+      {:else}
+        <ActionButton
+          label=""
+          variant="secondary"
+          loading={true}
+          loadingLabel=""
+        />
+      {/if}
+
+      {#if visiblePhase !== "clean" && visiblePhase !== "push" && visiblePhase !== "loading"}
+        <ActionButton
+          label="DISCARD ALL"
+          loadingLabel="..."
+          variant="danger"
+          {loading}
+          onclick={handleDiscard}
+        />
+      {/if}
+    </div>
   </div>
 </div>
 
@@ -563,6 +562,25 @@
 
   .error-dismiss:hover {
     opacity: 1;
+  }
+
+  /* Phase group: fades the commit section + actions together */
+  .phase-group {
+    animation: phase-in 0.4s ease both;
+  }
+
+  .phase-group.phase-fading {
+    animation: phase-out 0.5s ease both;
+  }
+
+  @keyframes phase-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes phase-out {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(-4px); }
   }
 
   /* Actions */

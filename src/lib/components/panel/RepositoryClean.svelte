@@ -186,7 +186,6 @@
         variant="primary"
         loading={pulling}
         done={pullDone}
-        fadeWhenDone={true}
         disabled={checking}
         onclick={handlePull}
       />
