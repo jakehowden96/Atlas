@@ -207,9 +207,11 @@
     }
   }
 
+  let discarding = $state(false);
+
   async function handleDiscard() {
     clearError();
-    loading = true;
+    discarding = true;
     await tick();
     try {
       await gitDiscardAll(effectiveCwd);
@@ -218,7 +220,7 @@
     } catch (e) {
       showError(e);
     } finally {
-      loading = false;
+      discarding = false;
     }
   }
 
@@ -348,7 +350,7 @@
           label="DISCARD ALL"
           loadingLabel="..."
           variant="danger"
-          {loading}
+          loading={discarding}
           onclick={handleDiscard}
         />
       {/if}
