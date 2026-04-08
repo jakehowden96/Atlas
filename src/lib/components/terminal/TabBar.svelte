@@ -86,7 +86,9 @@
             class:has-color={!!group.color}
             onclick={() => onSelectTab(tab.id)}
           >
-            {#if tab.type === "markdown"}
+            {#if tab.type === "terminal" && tab.needsInput && tab.id !== $activeTabId}
+              <span class="needs-input-dot"></span>
+            {:else if tab.type === "markdown"}
               <span class="material-symbols-outlined tab-type-icon">description</span>
             {/if}
             <span class="tab-title">{tab.title || `Tab ${i + 1}`}</span>
@@ -235,6 +237,21 @@
   .tab-markdown.active {
     color: var(--yellow);
     background: color-mix(in srgb, var(--yellow) 10%, var(--surface-container-high));
+  }
+
+  .needs-input-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--yellow);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--yellow) 60%, transparent);
+    animation: pulse-glow 2s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { opacity: 1; box-shadow: 0 0 6px color-mix(in srgb, var(--yellow) 60%, transparent); }
+    50% { opacity: 0.4; box-shadow: 0 0 2px color-mix(in srgb, var(--yellow) 30%, transparent); }
   }
 
   .tab-type-icon {

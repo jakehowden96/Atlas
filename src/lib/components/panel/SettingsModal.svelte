@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { settingsOpen, excludedFolders, loadExcludedFolders, saveExcludedFolders, skipPermissions, setSkipPermissions } from "../../stores/settings";
+  import { settingsOpen, excludedFolders, loadExcludedFolders, saveExcludedFolders, skipPermissions, setSkipPermissions, enableNotifications, setEnableNotifications } from "../../stores/settings";
   import { open } from "@tauri-apps/plugin-dialog";
 
   type Tab = "general" | "danger";
@@ -145,6 +145,21 @@
                   </button>
                 </div>
               </div>
+            </div>
+            <div class="section" style="margin-top: 1rem;">
+              <div class="section-label">Notifications</div>
+              <label class="toggle-row">
+                <div class="toggle-text">
+                  <span class="toggle-title">System Notifications</span>
+                  <span class="toggle-desc">Show OS notifications when Claude needs input in a background tab</span>
+                </div>
+                <input
+                  type="checkbox"
+                  class="settings-checkbox"
+                  checked={$enableNotifications}
+                  onchange={(e) => setEnableNotifications(e.currentTarget.checked)}
+                />
+              </label>
             </div>
           {:else if activeTab === "danger"}
             <div class="section danger-section">
@@ -493,6 +508,43 @@
   .add-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+
+  /* ── Settings checkbox (neutral toggle) ── */
+  .settings-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 36px;
+    height: 20px;
+    background: var(--surface-container-highest);
+    border: 1px solid var(--outline-variant);
+    border-radius: 10px;
+    position: relative;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.2s, border-color 0.2s;
+  }
+
+  .settings-checkbox::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    background: var(--on-surface-variant);
+    border-radius: 50%;
+    transition: transform 0.2s, background 0.2s;
+  }
+
+  .settings-checkbox:checked {
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+
+  .settings-checkbox:checked::after {
+    transform: translateX(16px);
+    background: white;
   }
 
   /* ── Danger zone ── */

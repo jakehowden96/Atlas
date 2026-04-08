@@ -5,12 +5,14 @@ import { getExcludedFolders, setExcludedFolders } from "../ipc";
 export const excludedFolders = writable<string[]>([]);
 export const settingsOpen = writable(false);
 export const skipPermissions = writable(false);
+export const enableNotifications = writable(true);
 
 const SETTINGS_DIR = ".atlas";
 const SETTINGS_FILE = ".atlas/settings.json";
 
 interface PersistedSettings {
   skipPermissions?: boolean;
+  enableNotifications?: boolean;
 }
 
 async function ensureDir() {
@@ -27,6 +29,7 @@ export async function loadSettings() {
     const raw = await readTextFile(SETTINGS_FILE, { baseDir: BaseDirectory.Home });
     const data = JSON.parse(raw) as PersistedSettings;
     if (data.skipPermissions) skipPermissions.set(true);
+    if (data.enableNotifications === false) enableNotifications.set(false);
   } catch {
     // No file or corrupted — use defaults
   }
@@ -35,7 +38,10 @@ export async function loadSettings() {
 async function persistSettings() {
   try {
     await ensureDir();
-    const data: PersistedSettings = { skipPermissions: get(skipPermissions) };
+    const data: PersistedSettings = {
+      skipPermissions: get(skipPermissions),
+      enableNotifications: get(enableNotifications),
+    };
     await writeTextFile(SETTINGS_FILE, JSON.stringify(data, null, 2), {
       baseDir: BaseDirectory.Home,
     });
@@ -46,6 +52,11 @@ async function persistSettings() {
 
 export async function setSkipPermissions(value: boolean) {
   skipPermissions.set(value);
+  await persistSettings();
+}
+
+export async function setEnableNotifications(value: boolean) {
+  enableNotifications.set(value);
   await persistSettings();
 }
 

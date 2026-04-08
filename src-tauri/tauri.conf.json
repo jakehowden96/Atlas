@@ -17,6 +17,9 @@
       "icons/icon.icns",
       "icons/icon.ico",
       "icons/icon.png"
+    ],
+    "resources": [
+      "../scripts/atlas-notify-hook.sh"
     ]
   },
   "app": {

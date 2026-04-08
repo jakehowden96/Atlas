@@ -3,7 +3,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel, getPanelData } from "./ipc";
-import { setTabTitle, activeTabId } from "./stores/terminal";
+import { setTabTitle, activeTabId, setTabNeedsInput } from "./stores/terminal";
 import { panelData, analysisStatus, analysisError } from "./stores/panel";
 import { updateSessionLabelByTabId } from "./stores/workspace";
 import { get } from "svelte/store";
@@ -150,6 +150,7 @@ export class TerminalSession {
       if (this.ptyId !== null) {
         ptyWrite(this.ptyId, data);
       }
+      setTabNeedsInput(this.tabId, false);
     });
   }
 

@@ -8,9 +8,10 @@
   import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
   import { Terminal } from "@xterm/xterm";
   import { panelVisible, panelData, checkApiStatus, analysisStatus, analysisError } from "./lib/stores/panel";
-  import { tabs, activeTabId, addTab, removeTab } from "./lib/stores/terminal";
-  import { onPanelUpdate, onAnalysisStatus, ptyWrite, ptyKill } from "./lib/ipc";
-  import { skipPermissions, loadSettings } from "./lib/stores/settings";
+  import { tabs, activeTabId, addTab, removeTab, setTabNeedsInput } from "./lib/stores/terminal";
+  import { onPanelUpdate, onAnalysisStatus, onClaudeNotification, ptyWrite, ptyKill } from "./lib/ipc";
+  import { skipPermissions, enableNotifications, loadSettings } from "./lib/stores/settings";
+  import { sendNotification, isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
   import {
     workspaces,
     activeWorkspacePath,
@@ -32,11 +33,19 @@
   let sidebarWidth = $state(280);
   let unlisten: UnlistenFn | null = null;
   let unlistenStatus: UnlistenFn | null = null;
+  let unlistenNotification: UnlistenFn | null = null;
   const spawningSessionIds = new Set<string>();
 
   // Show panel only when inside a git workspace
   $effect(() => {
     panelVisible.set(!!$panelData?.is_git && $tabs.length > 0);
+  });
+
+  // Clear needsInput when switching to a tab
+  $effect(() => {
+    if ($activeTabId) {
+      setTabNeedsInput($activeTabId, false);
+    }
   });
 
   const MIN_PANEL_WIDTH = 280;
@@ -67,11 +76,39 @@
         analysisError.set(event.error ?? null);
       }
     });
+    unlistenNotification = await onClaudeNotification(async (event) => {
+      const { session_id, notification } = event;
+      // Only mark as needing input for interactive notification types
+      const inputTypes = ["permission_prompt", "idle_prompt", "elicitation_dialog"];
+      if (!inputTypes.includes(notification.notification_type)) return;
+
+      setTabNeedsInput(session_id, true);
+
+      // Send OS notification if enabled and tab is not active
+      if (get(activeTabId) !== session_id && get(enableNotifications)) {
+        try {
+          let granted = await isPermissionGranted();
+          if (!granted) {
+            const permission = await requestPermission();
+            granted = permission === "granted";
+          }
+          if (granted) {
+            sendNotification({
+              title: notification.title || "Claude needs input",
+              body: notification.message || "A Claude session is waiting for your response",
+            });
+          }
+        } catch (e) {
+          console.warn("Failed to send notification:", e);
+        }
+      }
+    });
   });
 
   onDestroy(() => {
     unlisten?.();
     unlistenStatus?.();
+    unlistenNotification?.();
   });
 
   /**

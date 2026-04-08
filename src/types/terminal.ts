@@ -8,6 +8,7 @@ export interface TerminalTab {
   terminal: Terminal;
   cwd?: string;
   onData?: (data: string) => void;
+  needsInput?: boolean;
 }
 
 export interface MarkdownTab {

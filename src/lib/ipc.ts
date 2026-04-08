@@ -143,3 +143,23 @@ export async function onAnalysisStatus(
     callback(event.payload);
   });
 }
+
+export interface ClaudeNotification {
+  notification_type: string;
+  title: string;
+  message: string;
+  timestamp: string;
+}
+
+export interface ClaudeNotificationEvent {
+  session_id: string;
+  notification: ClaudeNotification;
+}
+
+export async function onClaudeNotification(
+  callback: (event: ClaudeNotificationEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<ClaudeNotificationEvent>("claude-notification", (event) => {
+    callback(event.payload);
+  });
+}

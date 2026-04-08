@@ -73,6 +73,14 @@ export function setTabTitle(id: string, title: string) {
   );
 }
 
+export function setTabNeedsInput(id: string, needsInput: boolean) {
+  tabs.update((t) =>
+    t.map((tab) =>
+      tab.id === id && tab.type === "terminal" ? { ...tab, needsInput } : tab,
+    ),
+  );
+}
+
 /** Return tab IDs grouped by workspace cwd. Tabs with no cwd go under "". */
 export function getTabsByWorkspace(): Map<string, TabItem[]> {
   const t = get(tabs);

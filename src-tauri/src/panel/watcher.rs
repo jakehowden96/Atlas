@@ -111,6 +111,20 @@ pub struct AnalysisStatusEvent {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaudeNotification {
+    pub notification_type: String,
+    pub title: String,
+    pub message: String,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaudeNotificationEvent {
+    pub session_id: String,
+    pub notification: ClaudeNotification,
+}
+
 pub fn sessions_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("/tmp"))
@@ -186,6 +200,39 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
                                 }
                                 Err(e) => {
                                     log::warn!("Failed to read panel.json: {}", e);
+                                }
+                            }
+                        } else if path.file_name().map_or(false, |f| f == "notification.json") {
+                            let session_id = path
+                                .parent()
+                                .and_then(|p| p.file_name())
+                                .map(|f| f.to_string_lossy().to_string())
+                                .unwrap_or_default();
+
+                            match std::fs::read_to_string(path) {
+                                Ok(contents) => {
+                                    // Delete the file immediately — it's a one-shot signal
+                                    let _ = std::fs::remove_file(path);
+                                    match serde_json::from_str::<ClaudeNotification>(&contents) {
+                                        Ok(notification) => {
+                                            let _ = handle.emit(
+                                                "claude-notification",
+                                                ClaudeNotificationEvent {
+                                                    session_id,
+                                                    notification,
+                                                },
+                                            );
+                                        }
+                                        Err(e) => {
+                                            log::warn!(
+                                                "Failed to parse notification.json: {}",
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to read notification.json: {}", e);
                                 }
                             }
                         }
