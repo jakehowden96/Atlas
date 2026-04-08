@@ -22,6 +22,10 @@
   let stageDone = $state(false);
   let commitDone = $state(false);
   let pushDone = $state(false);
+
+  function delay(ms: number) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
   let commitMsg = $state("");
   let commitMsgInitialized = false;
   let selectedProjectName: string | null = $state(null);
@@ -123,6 +127,7 @@
       }
       loading = false;
       stageDone = true;
+      await delay(900);
       await refreshStatus();
       await refreshPanelData();
     } catch (e) {
@@ -142,6 +147,7 @@
       commitMsg = "";
       loading = false;
       commitDone = true;
+      await delay(900);
       await refreshStatus();
       await refreshPanelData();
     } catch (e) {
@@ -159,6 +165,7 @@
       await gitPush(effectiveCwd);
       loading = false;
       pushDone = true;
+      await delay(900);
       await refreshStatus();
       await refreshPanelData();
     } catch (e) {
@@ -529,5 +536,7 @@
   .actions {
     display: flex;
     gap: 10px;
+    min-height: 40px;
+    align-items: center;
   }
 </style>

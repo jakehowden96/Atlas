@@ -30,8 +30,8 @@
     if (done && fadeWhenDone) {
       fadingOut = false;
       hidden = false;
-      const fadeTimer = setTimeout(() => { fadingOut = true; }, 800);
-      const hideTimer = setTimeout(() => { hidden = true; fadingOut = false; }, 1400);
+      const fadeTimer = setTimeout(() => { fadingOut = true; }, 400);
+      const hideTimer = setTimeout(() => { hidden = true; fadingOut = false; }, 900);
       return () => {
         clearTimeout(fadeTimer);
         clearTimeout(hideTimer);
@@ -68,11 +68,12 @@
 
 <style>
   .action-btn {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.35rem;
     padding: 0.6rem 1.5rem;
+    min-width: 0;
     border: none;
     border-radius: 8px;
     font-family: var(--font-mono);
@@ -80,7 +81,7 @@
     font-weight: 600;
     letter-spacing: 0.06em;
     cursor: pointer;
-    transition: background 0.25s, opacity 0.25s, padding 0.25s, color 0.25s, border-color 0.25s;
+    transition: background 0.3s ease, opacity 0.3s ease, color 0.3s ease, border-color 0.3s ease, transform 0.3s ease;
     white-space: nowrap;
   }
 
@@ -93,23 +94,25 @@
     opacity: 0.9;
   }
 
-  /* Loading: grow padding */
+  /* Loading state */
   .action-btn.is-loading {
-    padding: 0.6rem 1.8rem;
+    opacity: 0.85;
   }
 
-  /* Done: shrink, green bg */
+  /* Done: green bg, gentle scale */
   .action-btn.is-done {
     background: var(--secondary) !important;
     color: var(--on-primary) !important;
     border-color: transparent !important;
-    padding: 0.6rem 1rem;
-    transition: background 0.3s, opacity 0.5s, padding 0.3s, color 0.3s;
+    transform: scale(0.95);
+    transition: background 0.3s ease, opacity 0.4s ease, color 0.3s ease, transform 0.3s ease;
   }
 
   /* Fade out */
   .action-btn.is-fading {
     opacity: 0 !important;
+    transform: scale(0.9);
+    transition: opacity 0.5s ease, transform 0.5s ease;
   }
 
   /* --- Variants --- */
