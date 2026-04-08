@@ -82,10 +82,27 @@
     scale = Math.max(scale / 1.25, 0.2);
   }
 
-  function resetView() {
-    scale = 1;
+  function fitToView() {
+    if (!containerEl || !diagramEl) return;
+    const svg = diagramEl.querySelector("svg");
+    if (!svg) return;
+    const vp = containerEl.getBoundingClientRect();
+    const sw = svg.width.baseVal.value || svg.getBoundingClientRect().width;
+    const sh = svg.height.baseVal.value || svg.getBoundingClientRect().height;
+    if (!sw || !sh) return;
+    const padding = 80;
+    const fitScale = Math.min(
+      (vp.width - padding) / sw,
+      (vp.height - padding) / sh,
+      2,
+    );
+    scale = Math.max(fitScale, 0.2);
     translateX = 0;
     translateY = 0;
+  }
+
+  function resetView() {
+    fitToView();
   }
 
   function handleWheel(e: WheelEvent) {
@@ -139,7 +156,10 @@
         .render(id, mermaidSyntax)
         .then(({ svg }) => {
           // mermaid.render returns sanitized SVG (securityLevel: "strict") — safe to inject
-          if (diagramEl) diagramEl.innerHTML = svg; // eslint-disable-line no-unsanitized/property
+          if (diagramEl) {
+            diagramEl.innerHTML = svg; // eslint-disable-line no-unsanitized/property
+            requestAnimationFrame(() => fitToView());
+          }
         })
         .catch((err) => {
           if (diagramEl) diagramEl.textContent = `Failed to render diagram: ${err.message}`;
