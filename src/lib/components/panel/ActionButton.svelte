@@ -83,6 +83,12 @@
     cursor: pointer;
     transition: background 0.3s ease, opacity 0.3s ease, color 0.3s ease, border-color 0.3s ease, transform 0.3s ease;
     white-space: nowrap;
+    animation: btn-enter 0.35s ease both;
+  }
+
+  @keyframes btn-enter {
+    from { opacity: 0; transform: scale(0.92); }
+    to { opacity: 1; transform: scale(1); }
   }
 
   .action-btn:disabled {

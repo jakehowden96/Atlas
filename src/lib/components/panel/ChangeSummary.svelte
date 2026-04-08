@@ -22,10 +22,8 @@
   let stageDone = $state(false);
   let commitDone = $state(false);
   let pushDone = $state(false);
+  let transitioning = $state(false);
 
-  function delay(ms: number) {
-    return new Promise((r) => setTimeout(r, ms));
-  }
   let commitMsg = $state("");
   let commitMsgInitialized = false;
   let selectedProjectName: string | null = $state(null);
@@ -62,6 +60,27 @@
     if (status.has_staged) return "commit" as const;
     if (status.has_unpushed) return "push" as const;
     return "clean" as const;
+  });
+
+  // Visible phase lags behind the real phase so the done/fade animation
+  // can finish before the next button appears.
+  type Phase = "loading" | "stage" | "commit" | "push" | "clean";
+  let visiblePhase = $state<Phase>("loading");
+  let phaseTimer: ReturnType<typeof setTimeout> | null = null;
+
+  $effect(() => {
+    const next = phase;
+    if (next === visiblePhase) return;
+    if (phaseTimer) clearTimeout(phaseTimer);
+    // If we're showing a done state, delay so the fade finishes first
+    if (transitioning) {
+      phaseTimer = setTimeout(() => {
+        visiblePhase = next;
+        transitioning = false;
+      }, 1000);
+    } else {
+      visiblePhase = next;
+    }
   });
 
   // Pre-fill commit message from AI summary when entering commit phase
@@ -127,7 +146,7 @@
       }
       loading = false;
       stageDone = true;
-      await delay(900);
+      transitioning = true;
       await refreshStatus();
       await refreshPanelData();
     } catch (e) {
@@ -147,7 +166,7 @@
       commitMsg = "";
       loading = false;
       commitDone = true;
-      await delay(900);
+      transitioning = true;
       await refreshStatus();
       await refreshPanelData();
     } catch (e) {
@@ -165,7 +184,7 @@
       await gitPush(effectiveCwd);
       loading = false;
       pushDone = true;
-      await delay(900);
+      transitioning = true;
       await refreshStatus();
       await refreshPanelData();
     } catch (e) {
@@ -240,7 +259,7 @@
     </div>
   </div>
 
-  {#if phase === "commit"}
+  {#if visiblePhase === "commit"}
     <div class="commit-section">
       <div class="commit-label-row">
         <span class="commit-label">COMMIT MESSAGE</span>
@@ -266,7 +285,7 @@
   {/if}
 
   <div class="actions">
-    {#if phase === "stage"}
+    {#if visiblePhase === "stage"}
       <ActionButton
         label="STAGE CHANGES"
         loadingLabel="STAGING..."
@@ -276,7 +295,7 @@
         fadeWhenDone={true}
         onclick={handleStage}
       />
-    {:else if phase === "commit"}
+    {:else if visiblePhase === "commit"}
       <ActionButton
         label="COMMIT"
         loadingLabel="COMMITTING..."
@@ -287,7 +306,7 @@
         disabled={!commitMsg.trim()}
         onclick={handleCommit}
       />
-    {:else if phase === "push"}
+    {:else if visiblePhase === "push"}
       <ActionButton
         label="PUSH"
         loadingLabel="PUSHING..."
@@ -297,7 +316,7 @@
         fadeWhenDone={true}
         onclick={handlePush}
       />
-    {:else if phase === "clean"}
+    {:else if visiblePhase === "clean"}
       <ActionButton
         label="UP TO DATE"
         variant="surface"
@@ -312,7 +331,7 @@
       />
     {/if}
 
-    {#if phase !== "clean" && phase !== "push" && phase !== "loading"}
+    {#if visiblePhase !== "clean" && visiblePhase !== "push" && visiblePhase !== "loading"}
       <ActionButton
         label="DISCARD ALL"
         loadingLabel="..."
