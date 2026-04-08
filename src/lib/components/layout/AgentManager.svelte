@@ -462,7 +462,7 @@
     background: none;
     border: none;
     color: var(--on-surface-variant);
-    font-size: 0.75rem;
+    font-size: 0.8rem;
     font-family: var(--font-body);
     cursor: pointer;
     padding: 0.4rem 0.25rem;
@@ -474,7 +474,7 @@
   }
 
   .folder-icon {
-    font-size: 0.95rem !important;
+    font-size: 1.05rem !important;
     flex-shrink: 0;
   }
 
@@ -521,7 +521,7 @@
   }
 
   .new-session-inline :global(.material-symbols-outlined) {
-    font-size: 1rem;
+    font-size: 1.1rem;
   }
 
   .delete-workspace-btn {
@@ -653,7 +653,7 @@
   }
 
   .session-status-icon {
-    font-size: 0.65rem !important;
+    font-size: 0.75rem !important;
     flex-shrink: 0;
   }
 

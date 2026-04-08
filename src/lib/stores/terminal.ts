@@ -67,10 +67,17 @@ export function cycleTab(direction: 1 | -1) {
   activeTabId.set(t[nextIndex].id);
 }
 
+const titleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 export function setTabTitle(id: string, title: string) {
-  tabs.update((t) =>
-    t.map((tab) => (tab.id === id ? { ...tab, title } : tab)),
-  );
+  const existing = titleTimers.get(id);
+  if (existing) clearTimeout(existing);
+  titleTimers.set(id, setTimeout(() => {
+    titleTimers.delete(id);
+    tabs.update((t) =>
+      t.map((tab) => (tab.id === id ? { ...tab, title } : tab)),
+    );
+  }, 100));
 }
 
 export function setTabNeedsInput(id: string, needsInput: boolean) {

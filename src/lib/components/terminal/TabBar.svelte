@@ -84,11 +84,10 @@
             class:active={tab.id === $activeTabId}
             class:tab-markdown={tab.type === "markdown"}
             class:has-color={!!group.color}
+            class:needs-input={tab.type === "terminal" && tab.needsInput && tab.id !== $activeTabId}
             onclick={() => onSelectTab(tab.id)}
           >
-            {#if tab.type === "terminal" && tab.needsInput && tab.id !== $activeTabId}
-              <span class="needs-input-dot"></span>
-            {:else if tab.type === "markdown"}
+            {#if tab.type === "markdown"}
               <span class="material-symbols-outlined tab-type-icon">description</span>
             {/if}
             <span class="tab-title">{tab.title || `Tab ${i + 1}`}</span>
@@ -155,15 +154,15 @@
   }
 
   .color-dot {
-    width: 6px;
-    height: 6px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     background: var(--group-color);
     flex-shrink: 0;
   }
 
   .group-label {
-    font-size: 10px;
+    font-size: 11px;
     font-family: var(--font-display);
     font-weight: 600;
     color: var(--group-color);
@@ -191,7 +190,7 @@
   }
 
   .group-close :global(.material-symbols-outlined) {
-    font-size: 0.75rem;
+    font-size: 0.85rem;
   }
 
   /* ── Individual tabs ── */
@@ -205,7 +204,7 @@
     border-left: 2px solid transparent;
     border-radius: var(--radius-sm);
     color: var(--on-surface-variant);
-    font-size: 13px;
+    font-size: 14px;
     font-family: var(--font-mono);
     cursor: pointer;
     white-space: nowrap;
@@ -239,23 +238,25 @@
     background: color-mix(in srgb, var(--yellow) 10%, var(--surface-container-high));
   }
 
-  .needs-input-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--yellow);
-    box-shadow: 0 0 6px color-mix(in srgb, var(--yellow) 60%, transparent);
-    animation: pulse-glow 2s ease-in-out infinite;
-    flex-shrink: 0;
+  .tab.needs-input {
+    background: color-mix(in srgb, var(--yellow) 15%, transparent);
+    color: var(--yellow);
+    border-left-color: var(--yellow);
+    animation: pulse-bg 2s ease-in-out infinite;
   }
 
-  @keyframes pulse-glow {
-    0%, 100% { opacity: 1; box-shadow: 0 0 6px color-mix(in srgb, var(--yellow) 60%, transparent); }
-    50% { opacity: 0.4; box-shadow: 0 0 2px color-mix(in srgb, var(--yellow) 30%, transparent); }
+  .tab.needs-input:hover {
+    background: color-mix(in srgb, var(--yellow) 22%, transparent);
+    color: var(--yellow);
+  }
+
+  @keyframes pulse-bg {
+    0%, 100% { background: color-mix(in srgb, var(--yellow) 15%, transparent); }
+    50% { background: color-mix(in srgb, var(--yellow) 8%, transparent); }
   }
 
   .tab-type-icon {
-    font-size: 0.8rem;
+    font-size: 0.95rem;
     font-variation-settings: 'FILL' 1;
   }
 

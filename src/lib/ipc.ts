@@ -23,8 +23,9 @@ export async function ptySpawn(
   });
 }
 
+const encoder = new TextEncoder();
+
 export async function ptyWrite(id: number, data: string): Promise<void> {
-  const encoder = new TextEncoder();
   return invoke("pty_write", { id, data: Array.from(encoder.encode(data)) });
 }
 

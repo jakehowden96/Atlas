@@ -24,6 +24,7 @@
     removeWorkspace,
     resumeSession,
     setWorkspaceColor,
+    stripBundleExtension,
   } from "./lib/stores/workspace";
   import { open } from "@tauri-apps/plugin-dialog";
   import { get } from "svelte/store";
@@ -35,6 +36,8 @@
   let unlistenStatus: UnlistenFn | null = null;
   let unlistenNotification: UnlistenFn | null = null;
   const spawningSessionIds = new Set<string>();
+
+  let openTabIds = $derived(new Set($tabs.map(t => t.id)));
 
   // Show panel only when inside a git workspace
   $effect(() => {
@@ -130,8 +133,7 @@
       // and store it immediately — no need to capture it from terminal output.
       claudeSessionId = crypto.randomUUID();
       const wsName = get(workspaces).find((w) => w.path === workspacePath)?.name
-        ?? workspacePath.split("/").filter(Boolean).pop()
-        ?? "New session";
+        ?? stripBundleExtension(workspacePath.split("/").filter(Boolean).pop() ?? "New session");
       session = await addSession(workspacePath, wsName, tabId);
       await setClaudeSessionId(session.id, claudeSessionId);
     }
@@ -175,7 +177,7 @@
     workspaces={$workspaces}
     activeWorkspacePath={$activeWorkspacePath}
     activeSessionId={$activeSessionId}
-    openTabIds={new Set($tabs.map(t => t.id))}
+    {openTabIds}
     on:addWorkspace={async () => {
       const selected = await open({ directory: true, multiple: false, title: "Select workspace folder" });
       if (typeof selected === "string") await storeAddWorkspace(selected);

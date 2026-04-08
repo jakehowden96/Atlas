@@ -28,7 +28,7 @@ pub fn get_session_dir(session_id: String) -> Result<String, String> {
         .ok_or_else(|| "Invalid path".to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_panel_data(session_id: String) -> Result<Option<PanelData>, String> {
     let path = sessions_dir().join(&session_id).join("panel.json");
     if !path.exists() {
@@ -44,7 +44,7 @@ pub fn get_panel_data(session_id: String) -> Result<Option<PanelData>, String> {
 /// If CWD is inside a git repo → discover diff for that repo.
 /// If CWD is NOT a git repo → scan child directories for git repos,
 /// collect diffs from all repos with changes (like sift's scanForRepos).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn refresh_panel(
     app_handle: tauri::AppHandle,
     session_id: String,
@@ -325,7 +325,13 @@ struct DiffBundle {
 /// Generate synthetic unified diff output for untracked files.
 /// Reads each file's contents and produces diff format identical to what
 /// `git diff` would show after `git add`.
+///
+/// Caps individual files at 100 KB and total output at 1 MB to avoid
+/// stalling on large untracked assets (images, data files, build artifacts).
 fn generate_untracked_diffs(git_root: &str) -> String {
+    const MAX_FILE_SIZE: u64 = 100 * 1024;       // 100 KB per file
+    const MAX_TOTAL_SIZE: usize = 1024 * 1024;    // 1 MB total output
+
     let file_list = match git_cmd(git_root, &["ls-files", "--others", "--exclude-standard"]) {
         Ok(list) if !list.is_empty() => list,
         _ => return String::new(),
@@ -341,6 +347,14 @@ fn generate_untracked_diffs(git_root: &str) -> String {
         }
 
         let abs_path = root.join(rel_path);
+
+        // Skip files that are too large
+        if let Ok(meta) = fs::metadata(&abs_path) {
+            if meta.len() > MAX_FILE_SIZE {
+                continue;
+            }
+        }
+
         let content = match fs::read(&abs_path) {
             Ok(bytes) => bytes,
             Err(_) => continue,
@@ -369,6 +383,10 @@ fn generate_untracked_diffs(git_root: &str) -> String {
             result.push('+');
             result.push_str(line);
             result.push('\n');
+        }
+
+        if result.len() > MAX_TOTAL_SIZE {
+            break;
         }
     }
 
@@ -564,13 +582,13 @@ pub fn set_excluded_folders(folders: Vec<String>) -> Result<(), String> {
 }
 
 /// Stage all changes in the given git repo.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn git_stage_all(cwd: String) -> Result<(), String> {
     git_cmd(&cwd, &["add", "-A"]).map(|_| ())
 }
 
 /// Stage specific files in the given git repo.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn git_stage_files(cwd: String, files: Vec<String>) -> Result<(), String> {
     if files.is_empty() {
         return Ok(());
@@ -582,7 +600,7 @@ pub fn git_stage_files(cwd: String, files: Vec<String>) -> Result<(), String> {
 }
 
 /// Discard all working tree changes (unstaged + staged) in the given git repo.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn git_discard_all(cwd: String) -> Result<(), String> {
     // Reset staged changes
     let _ = git_cmd(&cwd, &["reset", "HEAD", "--"]);
@@ -593,7 +611,7 @@ pub fn git_discard_all(cwd: String) -> Result<(), String> {
 }
 
 /// Get the current git status for determining the adaptive button state.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_git_status(cwd: String) -> Result<GitStatus, String> {
     // Verify this is actually a git repository
     git_cmd(&cwd, &["rev-parse", "--git-dir"])?;
@@ -644,7 +662,7 @@ pub fn get_git_status(cwd: String) -> Result<GitStatus, String> {
 }
 
 /// Commit all changes with the given message. Stages everything first.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn git_commit(cwd: String, message: String) -> Result<(), String> {
     git_cmd(&cwd, &["add", "-A"])?;
     git_cmd(&cwd, &["commit", "-m", &message])?;
@@ -652,7 +670,7 @@ pub fn git_commit(cwd: String, message: String) -> Result<(), String> {
 }
 
 /// Push to the upstream remote.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn git_push(cwd: String) -> Result<String, String> {
     // Check if we have an upstream tracking branch
     let has_upstream = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).is_ok();
@@ -675,19 +693,19 @@ pub fn git_push(cwd: String) -> Result<String, String> {
 }
 
 /// Fetch from remote with prune.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn git_fetch(cwd: String) -> Result<(), String> {
     git_cmd(&cwd, &["fetch", "--prune"]).map(|_| ())
 }
 
 /// Pull from remote.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn git_pull(cwd: String) -> Result<(), String> {
     git_cmd(&cwd, &["pull"]).map(|_| ())
 }
 
 /// List child git repos with their current branch names.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_child_repos(cwd: String) -> Result<Vec<RepoInfo>, String> {
     let mut entries: Vec<_> = match fs::read_dir(&cwd) {
         Ok(e) => e.flatten().collect(),
@@ -725,7 +743,7 @@ pub fn get_child_repos(cwd: String) -> Result<Vec<RepoInfo>, String> {
 /// Excluded entries can be simple names (e.g. "vendor") or absolute paths
 /// (e.g. "/Users/jake/repos/legacy") from the folder browser.
 /// List local branches with the current branch marked.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn git_list_branches(cwd: String) -> Result<Vec<crate::panel::watcher::BranchInfo>, String> {
     let output = git_cmd(&cwd, &["branch", "--format=%(refname:short)\t%(HEAD)"])?;
     let branches = output
@@ -746,13 +764,13 @@ pub fn git_list_branches(cwd: String) -> Result<Vec<crate::panel::watcher::Branc
 }
 
 /// Checkout an existing local branch.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn git_checkout_branch(cwd: String, branch: String) -> Result<(), String> {
     git_cmd(&cwd, &["checkout", &branch]).map(|_| ())
 }
 
 /// Create and switch to a new branch via `git checkout -b`.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn git_create_branch(cwd: String, branch: String) -> Result<(), String> {
     git_cmd(&cwd, &["checkout", "-b", &branch]).map(|_| ())
 }

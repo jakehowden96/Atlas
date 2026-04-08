@@ -18,6 +18,12 @@ export interface Workspace {
   sessions: WorkspaceSession[];
 }
 
+const MACOS_BUNDLE_EXTENSIONS = /\.(app|framework|bundle|plugin|kext|xpc)$/i;
+
+export function stripBundleExtension(name: string): string {
+  return name.replace(MACOS_BUNDLE_EXTENSIONS, "");
+}
+
 function formatLabel(raw: string): string {
   return raw
     .split(/[\s\-_]+/)
@@ -77,7 +83,7 @@ export async function addWorkspace(path: string): Promise<boolean> {
     activeWorkspacePath.set(path);
     return false;
   }
-  const name = path.split("/").filter(Boolean).pop() ?? path;
+  const name = stripBundleExtension(path.split("/").filter(Boolean).pop() ?? path);
   workspaces.set([...current, { path, name, sessions: [] }]);
   activeWorkspacePath.set(path);
   await persist();
@@ -168,22 +174,29 @@ export async function updateSessionStatus(
   await persist();
 }
 
-export async function updateSessionLabelByTabId(tabId: string, label: string) {
-  const formatted = formatLabel(label);
-  let changed = false;
-  workspaces.update((ws) =>
-    ws.map((w) => ({
-      ...w,
-      sessions: w.sessions.map((s) => {
-        if (s.terminalTabId === tabId && s.label !== formatted) {
-          changed = true;
-          return { ...s, label: formatted };
-        }
-        return s;
-      }),
-    })),
-  );
-  if (changed) await persist();
+const labelTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+export function updateSessionLabelByTabId(tabId: string, label: string) {
+  const existing = labelTimers.get(tabId);
+  if (existing) clearTimeout(existing);
+  labelTimers.set(tabId, setTimeout(async () => {
+    labelTimers.delete(tabId);
+    const formatted = formatLabel(label);
+    let changed = false;
+    workspaces.update((ws) =>
+      ws.map((w) => ({
+        ...w,
+        sessions: w.sessions.map((s) => {
+          if (s.terminalTabId === tabId && s.label !== formatted) {
+            changed = true;
+            return { ...s, label: formatted };
+          }
+          return s;
+        }),
+      })),
+    );
+    if (changed) await persist();
+  }, 300));
 }
 
 export async function removeSession(workspacePath: string, sessionId: string) {

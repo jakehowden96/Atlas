@@ -216,7 +216,7 @@ export class TerminalSession {
       if (this._visible && this.currentCwd) {
         this.scheduleRefresh(this.currentCwd);
       }
-    }, 5000);
+    }, 30000);
   }
 
   private stopPolling() {
@@ -240,10 +240,14 @@ export class TerminalSession {
         // Immediately load cached panel data so the panel swaps instantly on tab switch,
         // then schedule a background refresh for fresh data.
         getPanelData(this.tabId).then((cached) => {
-          if (get(activeTabId) === this.tabId && cached) {
+          if (get(activeTabId) !== this.tabId) return;
+          if (cached) {
             const json = JSON.stringify(cached);
             this.lastPanelJson = json;
             panelData.set(cached);
+          } else {
+            this.lastPanelJson = null;
+            panelData.set(null);
           }
         }).catch(() => {});
         this.scheduleRefresh(this.currentCwd);

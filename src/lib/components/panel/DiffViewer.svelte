@@ -39,14 +39,28 @@
     return data;
   });
 
-  let files = $derived(activeRaw ? parseDiff(activeRaw) : []);
+  // Memoize parseDiff — only re-parse when the raw string actually changes
+  let lastRaw = "";
+  let lastFiles: ReturnType<typeof parseDiff> = [];
+  let files = $derived.by(() => {
+    const raw = activeRaw ?? "";
+    if (raw === lastRaw) return lastFiles;
+    lastRaw = raw;
+    lastFiles = raw ? parseDiff(raw) : [];
+    return lastFiles;
+  });
 
-  let projectFiles = $derived(
-    data?.projects?.map((p) => ({
-      ...p,
-      files: parseDiff(p.raw),
-    })) ?? [],
-  );
+  let lastProjectsKey = "";
+  let lastProjectFiles: { name: string; raw: string; files_changed: number; lines_added: number; lines_removed: number; files: ReturnType<typeof parseDiff> }[] = [];
+  let projectFiles = $derived.by(() => {
+    const projects = data?.projects;
+    if (!projects) return [];
+    const key = projects.map((p) => p.raw).join("\0");
+    if (key === lastProjectsKey) return lastProjectFiles;
+    lastProjectsKey = key;
+    lastProjectFiles = projects.map((p) => ({ ...p, files: parseDiff(p.raw) }));
+    return lastProjectFiles;
+  });
 
   // Flat list of namespaced file keys for multi-repo (avoids collisions like both repos having src/main.rs)
   let allProjectFileKeys = $derived(
