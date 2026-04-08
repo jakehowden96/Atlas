@@ -32,6 +32,7 @@
 
   let panelWidth = $state(420);
   let sidebarWidth = $state(280);
+  let isResizing = $state(false);
   let unlisten: UnlistenFn | null = null;
   let unlistenStatus: UnlistenFn | null = null;
   let unlistenNotification: UnlistenFn | null = null;
@@ -39,9 +40,15 @@
 
   let openTabIds = $derived(new Set($tabs.map(t => t.id)));
 
-  // Show panel only when inside a git workspace
+  // Show panel only when inside a git workspace.
+  // When panelData is null (e.g. during tab switch), keep the current
+  // visibility to avoid the panel collapsing and immediately reopening.
   $effect(() => {
-    panelVisible.set(!!$panelData?.is_git && $tabs.length > 0);
+    if ($tabs.length === 0) {
+      panelVisible.set(false);
+    } else if ($panelData !== null) {
+      panelVisible.set(!!$panelData.is_git);
+    }
   });
 
   // Clear needsInput when switching to a tab
@@ -63,6 +70,9 @@
   function handleSidebarResize(delta: number) {
     sidebarWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, sidebarWidth - delta));
   }
+
+  function handleResizeStart() { isResizing = true; }
+  function handleResizeEnd() { isResizing = false; }
 
   onMount(async () => {
     checkApiStatus();
@@ -259,8 +269,8 @@
       <TerminalContainer />
     </div>
     {#if $panelVisible}
-      <Resizer onResize={handleResize} />
-      <div class="panel-section" style="width: {panelWidth}px">
+      <Resizer onResize={handleResize} onDragStart={handleResizeStart} onDragEnd={handleResizeEnd} />
+      <div class="panel-section" class:resizing={isResizing} style="width: {panelWidth}px">
         <SidePanel />
       </div>
     {/if}
@@ -422,6 +432,12 @@
     flex-shrink: 0;
     overflow: hidden;
     border-left: 1px solid var(--outline-variant);
+    contain: inline-size layout style;
+  }
+
+  .panel-section.resizing {
+    pointer-events: none;
+    will-change: width;
   }
 
 </style>

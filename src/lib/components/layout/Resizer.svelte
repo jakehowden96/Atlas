@@ -3,15 +3,21 @@
 
   interface Props {
     onResize: (delta: number) => void;
+    onDragStart?: () => void;
+    onDragEnd?: () => void;
   }
 
-  let { onResize }: Props = $props();
+  let { onResize, onDragStart, onDragEnd }: Props = $props();
   let isDragging = $state(false);
   let startX = 0;
+  let pendingDelta = 0;
+  let rafId = 0;
 
   function handleMouseDown(e: MouseEvent) {
     isDragging = true;
     startX = e.clientX;
+    pendingDelta = 0;
+    onDragStart?.();
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
     document.body.style.cursor = "col-resize";
@@ -20,17 +26,33 @@
 
   function handleMouseMove(e: MouseEvent) {
     if (!isDragging) return;
-    const delta = startX - e.clientX;
+    pendingDelta += startX - e.clientX;
     startX = e.clientX;
-    onResize(delta);
+    if (!rafId) {
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        const delta = pendingDelta;
+        pendingDelta = 0;
+        onResize(delta);
+      });
+    }
   }
 
   function handleMouseUp() {
     isDragging = false;
+    if (rafId) {
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+    }
+    if (pendingDelta) {
+      onResize(pendingDelta);
+      pendingDelta = 0;
+    }
     document.removeEventListener("mousemove", handleMouseMove);
     document.removeEventListener("mouseup", handleMouseUp);
     document.body.style.cursor = "";
     document.body.style.userSelect = "";
+    onDragEnd?.();
   }
 
   function handleKeydown(e: KeyboardEvent) {

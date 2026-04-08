@@ -83,7 +83,6 @@
             class="tab"
             class:active={tab.id === $activeTabId}
             class:tab-markdown={tab.type === "markdown"}
-            class:has-color={!!group.color}
             class:needs-input={tab.type === "terminal" && tab.needsInput && tab.id !== $activeTabId}
             onclick={() => onSelectTab(tab.id)}
           >
@@ -133,10 +132,7 @@
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
-  }
-
-  .workspace-section + .workspace-section {
-    border-left: 1px solid color-mix(in srgb, var(--outline-variant) 25%, transparent);
+    border-right: 2px solid var(--group-color, transparent);
   }
 
   .section-header {
@@ -201,18 +197,12 @@
     padding: 4px 12px;
     background: transparent;
     border: none;
-    border-left: 2px solid transparent;
     border-radius: var(--radius-sm);
     color: var(--on-surface-variant);
     font-size: 14px;
     font-family: var(--font-mono);
     cursor: pointer;
     white-space: nowrap;
-    transition: background 0.15s, color 0.15s;
-  }
-
-  .tab.has-color {
-    border-left-color: var(--group-color);
   }
 
   .tab:hover {
@@ -241,7 +231,6 @@
   .tab.needs-input {
     background: color-mix(in srgb, var(--yellow) 15%, transparent);
     color: var(--yellow);
-    border-left-color: var(--yellow);
     animation: pulse-bg 2s ease-in-out infinite;
   }
 

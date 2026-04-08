@@ -397,6 +397,8 @@
     overflow: hidden;
     border: 1px solid color-mix(in srgb, var(--outline-variant) 15%, transparent);
     border-radius: 6px;
+    content-visibility: auto;
+    contain-intrinsic-size: auto none;
   }
 
   .file-header {
@@ -488,6 +490,7 @@
     line-height: 24px;
     overflow-x: auto;
     background: var(--surface);
+    contain: content;
   }
 
   .diff-line {

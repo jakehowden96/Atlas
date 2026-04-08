@@ -194,8 +194,8 @@
     align-items: center;
     gap: 4px;
     padding: 3px 10px;
-    background: color-mix(in srgb, var(--primary) 10%, transparent);
-    border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
+    background: color-mix(in srgb, var(--primary) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
     border-radius: 9999px;
     font-family: var(--font-mono);
     font-size: 11px;
@@ -205,8 +205,8 @@
   }
 
   .branch-trigger:hover {
-    background: color-mix(in srgb, var(--primary) 16%, transparent);
-    border-color: color-mix(in srgb, var(--primary) 35%, transparent);
+    background: color-mix(in srgb, var(--primary) 25%, transparent);
+    border-color: color-mix(in srgb, var(--primary) 50%, transparent);
   }
 
   .branch-icon {

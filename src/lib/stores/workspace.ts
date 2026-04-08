@@ -77,6 +77,24 @@ async function persist() {
   }
 }
 
+const WORKSPACE_COLORS = [
+  "#72b1ff", // blue
+  "#97f999", // green
+  "#ff7167", // coral
+  "#e8be7b", // yellow
+  "#c48eed", // purple
+  "#63bcc6", // cyan
+  "#ff9288", // salmon
+  "#89ea8d", // lime
+  "#94c5ff", // light blue
+  "#d8abff", // lavender
+];
+
+export function nextAvailableColor(existing: Workspace[]): string {
+  const used = new Set(existing.map((w) => w.color).filter(Boolean));
+  return WORKSPACE_COLORS.find((c) => !used.has(c)) ?? WORKSPACE_COLORS[0];
+}
+
 export async function addWorkspace(path: string): Promise<boolean> {
   const current = get(workspaces);
   if (current.some((w) => w.path === path)) {
@@ -84,7 +102,8 @@ export async function addWorkspace(path: string): Promise<boolean> {
     return false;
   }
   const name = stripBundleExtension(path.split("/").filter(Boolean).pop() ?? path);
-  workspaces.set([...current, { path, name, sessions: [] }]);
+  const color = nextAvailableColor(current);
+  workspaces.set([...current, { path, name, color, sessions: [] }]);
   activeWorkspacePath.set(path);
   await persist();
   return true;

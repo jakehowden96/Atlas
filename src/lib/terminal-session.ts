@@ -5,6 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel, getPanelData } from "./ipc";
 import { setTabTitle, activeTabId, setTabNeedsInput } from "./stores/terminal";
 import { panelData, analysisStatus, analysisError } from "./stores/panel";
+import type { PanelData } from "../types/panel";
 import { updateSessionLabelByTabId } from "./stores/workspace";
 import { get } from "svelte/store";
 import { showToast } from "./stores/toast";
@@ -172,7 +173,20 @@ export class TerminalSession {
     });
   }
 
-  private lastPanelJson: string | null = null;
+  private lastPanelVersion = -1;
+  private lastPanelDiffRaw: string | null = null;
+
+  /** Cheap identity check: compare version + diff raw string instead of full JSON. */
+  private panelChanged(data: PanelData | null): boolean {
+    if (!data) return this.lastPanelVersion !== -1;
+    if (data.version !== this.lastPanelVersion) return true;
+    return (data.diff?.raw ?? null) !== this.lastPanelDiffRaw;
+  }
+
+  private updatePanelFingerprint(data: PanelData | null) {
+    this.lastPanelVersion = data?.version ?? -1;
+    this.lastPanelDiffRaw = data?.diff?.raw ?? null;
+  }
 
   private scheduleRefresh(cwd: string) {
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
@@ -199,9 +213,8 @@ export class TerminalSession {
           analysisError.set(null);
         }
 
-        const json = JSON.stringify(data);
-        if (json !== this.lastPanelJson) {
-          this.lastPanelJson = json;
+        if (this.panelChanged(data)) {
+          this.updatePanelFingerprint(data);
           panelData.set(data);
         }
       } catch (e) {
@@ -227,40 +240,47 @@ export class TerminalSession {
   }
 
   handleVisibilityChange(visible: boolean) {
+    const wasVisible = this._visible;
     this._visible = visible;
-    if (visible && this.fitAddon) {
-      requestAnimationFrame(() => {
-        this.fitAddon.fit();
-        this.terminal.focus();
-        if (this.ptyId !== null) {
-          ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
-        }
-      });
-      if (this.currentCwd) {
-        // Immediately load cached panel data so the panel swaps instantly on tab switch,
-        // then schedule a background refresh for fresh data.
-        getPanelData(this.tabId).then((cached) => {
-          if (get(activeTabId) !== this.tabId) return;
-          if (cached) {
-            const json = JSON.stringify(cached);
-            this.lastPanelJson = json;
-            panelData.set(cached);
-          } else {
-            this.lastPanelJson = null;
-            panelData.set(null);
-          }
-        }).catch(() => {});
-        this.scheduleRefresh(this.currentCwd);
-      } else {
-        panelData.set(null);
-      }
-      setRefreshHandler(() => {
-        if (this.currentCwd) this.scheduleRefresh(this.currentCwd);
-      });
-      this.startPolling();
-    } else {
+
+    if (!visible) {
       this.stopPolling();
+      return;
     }
+
+    // No-op if already visible (e.g. duplicate effect fire)
+    if (wasVisible) return;
+
+    // First rAF: fit terminal and focus (lightweight, runs in the next paint)
+    requestAnimationFrame(() => {
+      if (!this._visible) return;
+      this.fitAddon.fit();
+      this.terminal.focus();
+      if (this.ptyId !== null) {
+        ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
+      }
+
+      // Second rAF: guarantees a paint between tab highlight and the heavier panel data work
+      requestAnimationFrame(() => {
+        if (!this._visible) return;
+        if (this.currentCwd) {
+          getPanelData(this.tabId).then((cached) => {
+            if (get(activeTabId) !== this.tabId) return;
+            if (this.panelChanged(cached)) {
+              this.updatePanelFingerprint(cached);
+              panelData.set(cached);
+            }
+          }).catch(() => {});
+          this.scheduleRefresh(this.currentCwd);
+        } else {
+          panelData.set(null);
+        }
+        setRefreshHandler(() => {
+          if (this.currentCwd) this.scheduleRefresh(this.currentCwd);
+        });
+        this.startPolling();
+      });
+    });
   }
 
   destroy() {
