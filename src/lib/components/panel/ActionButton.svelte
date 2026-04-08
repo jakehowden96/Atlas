@@ -57,6 +57,7 @@
       {loadingLabel ?? label}
     {:else if done}
       <span class="material-symbols-outlined done-icon">check_circle</span>
+      {label}
     {:else}
       {#if icon}
         <span class="material-symbols-outlined btn-icon">{icon}</span>
@@ -105,13 +106,12 @@
     opacity: 0.85;
   }
 
-  /* Done: green bg, gentle scale */
+  /* Done: green bg */
   .action-btn.is-done {
     background: var(--secondary) !important;
     color: var(--on-primary) !important;
     border-color: transparent !important;
-    transform: scale(0.95);
-    transition: background 0.3s ease, opacity 0.4s ease, color 0.3s ease, transform 0.3s ease;
+    transition: background 0.3s ease, opacity 0.4s ease, color 0.3s ease;
   }
 
   /* Fade out */
