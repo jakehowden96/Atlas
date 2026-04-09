@@ -23,7 +23,6 @@
   let commitDone = $state(false);
   let pushDone = $state(false);
   let commitMsg = $state("");
-  let commitMsgInitialized = false;
   let selectedProjectName: string | null = $state(null);
   let errorMsg: string | null = $state(null);
 
@@ -60,17 +59,14 @@
     return "clean" as const;
   });
 
-  // Pre-fill commit message from AI summary when entering commit phase
+  // Pre-fill commit message from AI summary when entering commit phase,
+  // or when the summary arrives while already in the commit phase.
   $effect(() => {
-    if (phase === "commit" && !commitMsgInitialized) {
+    if (phase === "commit") {
       const summary = $panelData?.summary?.summary;
-      if (summary) {
+      if (summary && !commitMsg.trim()) {
         commitMsg = summary;
       }
-      commitMsgInitialized = true;
-    }
-    if (phase !== "commit") {
-      commitMsgInitialized = false;
     }
   });
 
