@@ -80,7 +80,7 @@
     font-weight: 600;
     letter-spacing: 0.06em;
     cursor: pointer;
-    transition: background 0.25s, opacity 0.25s, padding 0.25s, color 0.25s, border-color 0.25s;
+    transition: background 0.25s, opacity 0.25s, color 0.25s, border-color 0.25s;
     white-space: nowrap;
   }
 
@@ -93,18 +93,12 @@
     opacity: 0.9;
   }
 
-  /* Loading: grow padding */
-  .action-btn.is-loading {
-    padding: 0.6rem 1.8rem;
-  }
-
-  /* Done: shrink, green bg */
+  /* Done: green bg */
   .action-btn.is-done {
     background: var(--secondary) !important;
     color: var(--on-primary) !important;
     border-color: transparent !important;
-    padding: 0.6rem 1rem;
-    transition: background 0.3s, opacity 0.5s, padding 0.3s, color 0.3s;
+    transition: background 0.3s, opacity 0.5s, color 0.3s;
   }
 
   /* Fade out */
