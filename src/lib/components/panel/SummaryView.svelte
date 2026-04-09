@@ -82,7 +82,7 @@
     <div class="summary-body">
       <!-- Overview -->
       <div class="section">
-        <div class="section-header tertiary">
+        <div class="section-header muted">
           <span class="material-symbols-outlined section-icon">analytics</span>
           <span class="section-label">Overview</span>
         </div>
@@ -293,8 +293,8 @@
     gap: 0.5rem;
   }
 
-  .section-header.tertiary {
-    color: var(--tertiary);
+  .section-header.muted {
+    color: var(--on-surface-variant);
   }
 
   .section-header.primary {
@@ -325,7 +325,7 @@
     background: var(--surface-container-high);
     padding: 1.25rem;
     border-radius: var(--radius);
-    border-left: 2px solid color-mix(in srgb, var(--tertiary) 30%, transparent);
+    border-left: 2px solid color-mix(in srgb, var(--on-surface-variant) 30%, transparent);
   }
 
   .changes-list {

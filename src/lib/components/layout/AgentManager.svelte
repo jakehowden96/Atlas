@@ -28,7 +28,7 @@
   interface Session {
     id: string;
     label: string;
-    status: "complete" | "running" | "error" | "idle";
+    status: "complete" | "running" | "error" | "idle" | "starting";
     age: string;
     terminalTabId: string | null;
   }
@@ -277,7 +277,11 @@
                   </span>
                   <span class="session-label" class:session-open={isSessionOpen(session)}>{session.label}</span>
                 </div>
-                <span class="session-age">{session.age}</span>
+                {#if session.status === "starting"}
+                  <span class="material-symbols-outlined session-spinner">progress_activity</span>
+                {:else}
+                  <span class="session-age">{session.age}</span>
+                {/if}
                 <button
                   class="delete-session-btn"
                   title="Delete session"
@@ -679,6 +683,18 @@
 
   .session-row:hover .session-age {
     opacity: 1;
+  }
+
+  .session-spinner {
+    font-size: 0.7rem;
+    color: var(--primary);
+    flex-shrink: 0;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
   }
 
   .delete-session-btn {

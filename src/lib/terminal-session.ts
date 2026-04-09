@@ -3,7 +3,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel, getPanelData } from "./ipc";
-import { setTabTitle, activeTabId, setTabNeedsInput } from "./stores/terminal";
+import { setTabTitle, activeTabId, setTabNeedsInput, setTabReady, tabs } from "./stores/terminal";
 import { panelData, analysisStatus, analysisError } from "./stores/panel";
 import type { PanelData } from "../types/panel";
 import { updateSessionLabelByTabId } from "./stores/workspace";
@@ -63,6 +63,7 @@ export class TerminalSession {
     this.fitAddon.fit();
     this.registerKeyHandler();
     this.registerOscHandlers();
+    this.registerReadinessHandler();
     this.setupResizeObserver(opts.container, opts.visible);
     this.spawnPty(opts.onPtyReady);
     this.setupEnterRefresh();
@@ -80,15 +81,28 @@ export class TerminalSession {
     });
   }
 
+  private checkOscReadiness() {
+    const tab = get(tabs).find(t => t.id === this.tabId);
+    if (tab?.type === "terminal" && tab.commandWrittenAt && !tab.ready) {
+      // 300ms gate: shell preexec hooks fire within ~50ms of command entry;
+      // Claude Code's title arrives 500ms+ later. This cleanly separates them.
+      if (Date.now() - tab.commandWrittenAt > 300) {
+        setTabReady(this.tabId);
+      }
+    }
+  }
+
   private registerOscHandlers() {
-    // OSC 0 & 2: tab title
+    // OSC 0 & 2: tab title — also triggers readiness after the command gate
     this.terminal.parser.registerOscHandler(0, (data) => {
       setTabTitle(this.tabId, data);
+      this.checkOscReadiness();
       updateSessionLabelByTabId(this.tabId, data);
       return true;
     });
     this.terminal.parser.registerOscHandler(2, (data) => {
       setTabTitle(this.tabId, data);
+      this.checkOscReadiness();
       updateSessionLabelByTabId(this.tabId, data);
       return true;
     });
@@ -111,6 +125,39 @@ export class TerminalSession {
         }
       }
       return true;
+    });
+  }
+
+  /**
+   * Detect when a TUI app (Claude Code) activates the alternate screen buffer
+   * via CSI ? 1049 h. This is a deterministic signal that the TUI has started,
+   * unlike OSC title sequences which shells also emit.
+   */
+  private registerReadinessHandler() {
+    this.terminal.parser.registerCsiHandler({ final: "h", prefix: "?" }, (params) => {
+      if (params.includes(1049)) {
+        const tab = get(tabs).find(t => t.id === this.tabId);
+        if (tab?.type === "terminal" && tab.ready === false) {
+          setTabReady(this.tabId);
+        }
+      }
+      return false; // don't consume — let xterm process the sequence normally
+    });
+  }
+
+  /** Re-fit the terminal and sync PTY dimensions. Call after layout changes. */
+  fitTerminal() {
+    // Double rAF: first lets the browser recalculate layout after CSS class
+    // changes (hidden → visible), second ensures paint has completed before
+    // we measure the container and fit xterm to it.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        this.fitAddon.fit();
+        this.terminal.focus();
+        if (this.ptyId !== null) {
+          ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
+        }
+      });
     });
   }
 

@@ -1,8 +1,6 @@
 import { writable, get } from "svelte/store";
 import { BaseDirectory, readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs";
-import { getExcludedFolders, setExcludedFolders } from "../ipc";
 
-export const excludedFolders = writable<string[]>([]);
 export const settingsOpen = writable(false);
 export const skipPermissions = writable(false);
 export const enableNotifications = writable(true);
@@ -60,12 +58,3 @@ export async function setEnableNotifications(value: boolean) {
   await persistSettings();
 }
 
-export async function loadExcludedFolders() {
-  const folders = await getExcludedFolders();
-  excludedFolders.set(folders);
-}
-
-export async function saveExcludedFolders(folders: string[]) {
-  await setExcludedFolders(folders);
-  excludedFolders.set(folders);
-}

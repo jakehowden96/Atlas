@@ -101,6 +101,7 @@
           <TerminalTab
             tabId={tab.id}
             visible={tab.id === $activeTabId}
+            ready={tab.ready !== false}
             cwd={tab.cwd}
             onData={tab.onData}
             onPtyReady={(ptyId) => handlePtyReady(tab.id, ptyId)}

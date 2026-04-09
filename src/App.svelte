@@ -8,7 +8,7 @@
   import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
   import { Terminal } from "@xterm/xterm";
   import { panelVisible, panelData, checkApiStatus, analysisStatus, analysisError } from "./lib/stores/panel";
-  import { tabs, activeTabId, addTab, removeTab, setTabNeedsInput } from "./lib/stores/terminal";
+  import { tabs, activeTabId, addTab, removeTab, setTabNeedsInput, setTabReady } from "./lib/stores/terminal";
   import { onPanelUpdate, onAnalysisStatus, onClaudeNotification, ptyWrite, ptyKill } from "./lib/ipc";
   import { skipPermissions, enableNotifications, loadSettings } from "./lib/stores/settings";
   import { sendNotification, isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
@@ -23,6 +23,7 @@
     removeSession,
     removeWorkspace,
     resumeSession,
+    updateSessionStatus,
     setWorkspaceColor,
     stripBundleExtension,
   } from "./lib/stores/workspace";
@@ -148,7 +149,7 @@
       await setClaudeSessionId(session.id, claudeSessionId);
     }
 
-    addTab({ type: "terminal", id: tabId, title: "", ptyId: -1, terminal, cwd: workspacePath });
+    addTab({ type: "terminal", id: tabId, title: "", ptyId: -1, terminal, cwd: workspacePath, ready: false });
 
     // Once the PTY is ready, send the claude command.
     // We watch for the ptyId to become available via a short poll since
@@ -173,7 +174,22 @@
           cmd = `claude --session-id ${claudeSessionId}${skip}\n`;
         }
         // Small delay to let the shell prompt render
-        setTimeout(() => ptyWrite(tab.ptyId, cmd), 300);
+        setTimeout(() => {
+          ptyWrite(tab.ptyId, cmd);
+          tabs.update((t) =>
+            t.map((x) => (x.id === tabId && x.type === "terminal" ? { ...x, commandWrittenAt: Date.now() } : x)),
+          );
+          updateSessionStatus(session.id, "running");
+          // Readiness is triggered by TerminalSession detecting Claude Code's
+          // OSC title (after a 300ms gate to skip shell-emitted titles) or
+          // alternate screen buffer activation. Safety fallback after 5s.
+          setTimeout(() => {
+            const current = get(tabs).find((t) => t.id === tabId);
+            if (current?.type === "terminal" && current.ready === false) {
+              setTabReady(tabId);
+            }
+          }, 5000);
+        }, 300);
       }
     }, 100);
 

@@ -80,6 +80,14 @@ export function setTabTitle(id: string, title: string) {
   }, 100));
 }
 
+export function setTabReady(id: string) {
+  tabs.update((t) =>
+    t.map((tab) =>
+      tab.id === id && tab.type === "terminal" ? { ...tab, ready: true } : tab,
+    ),
+  );
+}
+
 export function setTabNeedsInput(id: string, needsInput: boolean) {
   const t = get(tabs);
   const tab = t.find((x) => x.id === id);

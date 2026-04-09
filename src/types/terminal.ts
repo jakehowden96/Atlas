@@ -9,6 +9,8 @@ export interface TerminalTab {
   cwd?: string;
   onData?: (data: string) => void;
   needsInput?: boolean;
+  ready?: boolean;
+  commandWrittenAt?: number;
 }
 
 export interface MarkdownTab {

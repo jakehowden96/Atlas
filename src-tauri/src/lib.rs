@@ -49,48 +49,6 @@ fn write_config_api_key(key: &str) -> Result<(), String> {
     std::fs::write(&path, json).map_err(|e| e.to_string())
 }
 
-/// Read excluded folders from ~/.atlas/config.json
-pub fn read_config_excluded_folders() -> Vec<String> {
-    let path = match config_path() {
-        Some(p) => p,
-        None => return Vec::new(),
-    };
-    let contents = match std::fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-    let config: serde_json::Value = match serde_json::from_str(&contents) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-    config
-        .get("excluded_folders")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// Write excluded folders to ~/.atlas/config.json (preserves other fields)
-pub fn write_config_excluded_folders(folders: &[String]) -> Result<(), String> {
-    let path = config_path().ok_or("Could not determine home directory")?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-
-    let mut config: serde_json::Value = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_else(|| serde_json::json!({}));
-
-    config["excluded_folders"] = serde_json::json!(folders);
-    let json = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
-    std::fs::write(&path, json).map_err(|e| e.to_string())
-}
-
 fn build_claude_client(api_key: String) -> ClaudeClient {
     let base_url = std::env::var("ANTHROPIC_BASE_URL")
         .ok()
@@ -244,8 +202,6 @@ pub fn run() {
             commands::panel::reset_analysis,
             commands::panel::set_api_key,
             commands::panel::get_api_status,
-            commands::panel::get_excluded_folders,
-            commands::panel::set_excluded_folders,
             commands::panel::git_list_branches,
             commands::panel::git_checkout_branch,
             commands::panel::git_create_branch,

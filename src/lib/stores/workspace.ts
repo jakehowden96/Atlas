@@ -4,7 +4,7 @@ import { BaseDirectory, readTextFile, writeTextFile, mkdir, exists } from "@taur
 export interface WorkspaceSession {
   id: string;
   label: string;
-  status: "complete" | "running" | "error" | "idle";
+  status: "complete" | "running" | "error" | "idle" | "starting";
   age: string;
   claudeSessionId: string | null;
   terminalTabId: string | null;
@@ -55,7 +55,7 @@ export async function loadWorkspaces() {
     // Mark any previously running sessions as idle on load
     for (const ws of data) {
       for (const s of ws.sessions) {
-        if (s.status === "running") s.status = "idle";
+        if (s.status === "running" || s.status === "starting") s.status = "idle";
         s.terminalTabId = null;
       }
     }
@@ -129,8 +129,8 @@ export async function addSession(
   const session: WorkspaceSession = {
     id: crypto.randomUUID(),
     label: formatLabel(label),
-    status: "running",
-    age: "now",
+    status: "starting",
+    age: "",
     claudeSessionId: null,
     terminalTabId,
     createdAt: new Date().toISOString(),

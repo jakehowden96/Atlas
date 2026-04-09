@@ -108,9 +108,8 @@
 
   function handlePointerMove(e: PointerEvent) {
     if (!isPanning) return;
-    // Divide by scale because translate operates in the zoomed coordinate space
-    translateX = panStartTransX + (e.clientX - panStartX) / scale;
-    translateY = panStartTransY + (e.clientY - panStartY) / scale;
+    translateX = panStartTransX + (e.clientX - panStartX);
+    translateY = panStartTransY + (e.clientY - panStartY);
   }
 
   function handlePointerUp() {
@@ -150,12 +149,6 @@
 
 <div class="flow-diagram">
   {#if data}
-    <!-- AI Suggestion Tag -->
-    <div class="ai-tag">
-      <span class="ai-tag-dot"></span>
-      <span class="ai-tag-label">AI Suggestion</span>
-    </div>
-
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="diagram-viewport"
@@ -169,7 +162,7 @@
       <div
         class="diagram-container"
         bind:this={diagramEl}
-        style="transform: translate({translateX}px, {translateY}px); zoom: {scale}"
+        style="transform: translate({translateX}px, {translateY}px) scale({scale})"
       ></div>
     </div>
 
@@ -244,39 +237,6 @@
     background-image: radial-gradient(var(--surface-container-high) 1px, transparent 1px);
     background-size: 24px 24px;
     background-color: var(--surface);
-  }
-
-  .ai-tag {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.3rem 0.75rem;
-    background: color-mix(in srgb, var(--tertiary) 10%, transparent);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid color-mix(in srgb, var(--tertiary) 30%, transparent);
-    border-radius: 9999px;
-  }
-
-  .ai-tag-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--tertiary);
-    animation: pulse 1.4s ease-in-out infinite;
-  }
-
-  .ai-tag-label {
-    font-size: 10px;
-    font-family: var(--font-body);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--tertiary);
   }
 
   .diagram-viewport {

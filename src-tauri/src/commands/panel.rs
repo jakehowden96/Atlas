@@ -221,7 +221,6 @@ fn build_panel_multi(
     // Sort for deterministic ordering — fs::read_dir order is platform-dependent
     dir_entries.sort_by_key(|e| e.file_name());
 
-    let excluded = crate::read_config_excluded_folders();
     let mut all_diffs = Vec::new();
     let mut projects = Vec::new();
     let mut total_files: u32 = 0;
@@ -238,7 +237,7 @@ fn build_panel_multi(
         let name_str = name.to_string_lossy();
         let child_path = entry.path();
         let child_str = child_path.to_string_lossy().to_string();
-        if should_skip_dir(&name_str, &child_str, &excluded) {
+        if should_skip_dir(&name_str) {
             continue;
         }
 
@@ -571,16 +570,6 @@ pub fn get_api_status(app_handle: tauri::AppHandle) -> bool {
     state.read().map(|g| g.is_some()).unwrap_or(false)
 }
 
-#[tauri::command]
-pub fn get_excluded_folders() -> Vec<String> {
-    crate::read_config_excluded_folders()
-}
-
-#[tauri::command]
-pub fn set_excluded_folders(folders: Vec<String>) -> Result<(), String> {
-    crate::write_config_excluded_folders(&folders)
-}
-
 /// Stage all changes in the given git repo.
 #[tauri::command(async)]
 pub fn git_stage_all(cwd: String) -> Result<(), String> {
@@ -713,7 +702,6 @@ pub fn get_child_repos(cwd: String) -> Result<Vec<RepoInfo>, String> {
     };
     entries.sort_by_key(|e| e.file_name());
 
-    let excluded = crate::read_config_excluded_folders();
     let mut repos = Vec::new();
     for entry in entries {
         if !entry.file_type().map_or(false, |t| t.is_dir()) {
@@ -722,7 +710,7 @@ pub fn get_child_repos(cwd: String) -> Result<Vec<RepoInfo>, String> {
         let name = entry.file_name();
         let name_str = name.to_string_lossy().to_string();
         let child = entry.path().to_string_lossy().to_string();
-        if should_skip_dir(&name_str, &child, &excluded) {
+        if should_skip_dir(&name_str) {
             continue;
         }
         if git_cmd(&child, &["rev-parse", "--show-toplevel"]).is_err() {
@@ -746,7 +734,7 @@ pub fn get_child_repos(cwd: String) -> Result<Vec<RepoInfo>, String> {
 #[tauri::command(async)]
 pub fn git_list_branches(cwd: String) -> Result<Vec<crate::panel::watcher::BranchInfo>, String> {
     let output = git_cmd(&cwd, &["branch", "--format=%(refname:short)\t%(HEAD)"])?;
-    let branches = output
+    let mut branches: Vec<crate::panel::watcher::BranchInfo> = output
         .lines()
         .filter_map(|line| {
             let parts: Vec<&str> = line.splitn(2, '\t').collect();
@@ -760,6 +748,24 @@ pub fn git_list_branches(cwd: String) -> Result<Vec<crate::panel::watcher::Branc
             }
         })
         .collect();
+
+    // If main/master aren't in local branches, check remote tracking branches
+    let local_names: std::collections::HashSet<String> =
+        branches.iter().map(|b| b.name.clone()).collect();
+    for default_branch in &["main", "master"] {
+        if !local_names.contains(*default_branch) {
+            let remote_ref = format!("origin/{}", default_branch);
+            if git_cmd(&cwd, &["rev-parse", "--verify", &format!("refs/remotes/{}", remote_ref)])
+                .is_ok()
+            {
+                branches.push(crate::panel::watcher::BranchInfo {
+                    name: default_branch.to_string(),
+                    is_current: false,
+                });
+            }
+        }
+    }
+
     Ok(branches)
 }
 
@@ -775,13 +781,8 @@ pub fn git_create_branch(cwd: String, branch: String) -> Result<(), String> {
     git_cmd(&cwd, &["checkout", "-b", &branch]).map(|_| ())
 }
 
-fn should_skip_dir(name: &str, abs_path: &str, excluded: &[String]) -> bool {
-    if name.starts_with('.') || name == "node_modules" || name == "target" {
-        return true;
-    }
-    excluded.iter().any(|e| {
-        e == name || e == abs_path || abs_path.starts_with(&format!("{}/", e))
-    })
+fn should_skip_dir(name: &str) -> bool {
+    name.starts_with('.') || name == "node_modules" || name == "target"
 }
 
 fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
@@ -1059,42 +1060,20 @@ diff --git a/file.rs b/file.rs
 
     #[test]
     fn skip_hidden_dirs() {
-        assert!(should_skip_dir(".git", "/workspace/.git", &[]));
-        assert!(should_skip_dir(".hidden", "/workspace/.hidden", &[]));
+        assert!(should_skip_dir(".git"));
+        assert!(should_skip_dir(".hidden"));
     }
 
     #[test]
     fn skip_node_modules_and_target() {
-        assert!(should_skip_dir("node_modules", "/workspace/node_modules", &[]));
-        assert!(should_skip_dir("target", "/workspace/target", &[]));
-    }
-
-    #[test]
-    fn skip_excluded_by_name() {
-        let excluded = vec!["vendor".to_string(), "dist".to_string()];
-        assert!(should_skip_dir("vendor", "/workspace/vendor", &excluded));
-        assert!(should_skip_dir("dist", "/workspace/dist", &excluded));
-        assert!(!should_skip_dir("src", "/workspace/src", &excluded));
-    }
-
-    #[test]
-    fn skip_excluded_by_absolute_path() {
-        let excluded = vec!["/Users/jake/repos/legacy".to_string()];
-        assert!(should_skip_dir("legacy", "/Users/jake/repos/legacy", &excluded));
-        assert!(!should_skip_dir("legacy", "/Users/jake/repos/other-legacy", &excluded));
-    }
-
-    #[test]
-    fn skip_excluded_by_parent_path() {
-        // If the user excludes a parent directory, children under it should also be skipped
-        let excluded = vec!["/Users/jake/repos/legacy".to_string()];
-        assert!(should_skip_dir("project-a", "/Users/jake/repos/legacy/project-a", &excluded));
+        assert!(should_skip_dir("node_modules"));
+        assert!(should_skip_dir("target"));
     }
 
     #[test]
     fn allow_normal_dirs() {
-        assert!(!should_skip_dir("src", "/workspace/src", &[]));
-        assert!(!should_skip_dir("my-project", "/workspace/my-project", &[]));
+        assert!(!should_skip_dir("src"));
+        assert!(!should_skip_dir("my-project"));
     }
 
     // --- hash_diff tests ---
