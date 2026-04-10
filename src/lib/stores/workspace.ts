@@ -232,6 +232,15 @@ export async function removeSession(workspacePath: string, sessionId: string) {
   await persist();
 }
 
+export function cycleWorkspace(direction: 1 | -1) {
+  const ws = get(workspaces);
+  if (ws.length < 2) return;
+  const currentPath = get(activeWorkspacePath);
+  const currentIndex = ws.findIndex((w) => w.path === currentPath);
+  const nextIndex = (currentIndex + direction + ws.length) % ws.length;
+  activeWorkspacePath.set(ws[nextIndex].path);
+}
+
 export function updateSessionAge(sessionId: string, age: string) {
   workspaces.update((ws) =>
     ws.map((w) => ({

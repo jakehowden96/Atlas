@@ -9,13 +9,19 @@ vi.mock("../stores/panel", () => ({
   setSection: vi.fn(),
   panelData: { set: vi.fn(), subscribe: vi.fn(() => () => {}) },
 }));
+vi.mock("../stores/workspace", () => ({
+  cycleWorkspace: vi.fn(),
+  activeWorkspacePath: { subscribe: vi.fn(() => () => {}) },
+  workspaces: { subscribe: vi.fn(() => () => {}) },
+}));
 vi.mock("../file-open", () => ({
   openMarkdownFile: vi.fn(),
 }));
 
-import { handleGlobalKeydown, setRefreshHandler, requestPanelRefresh } from "../shortcuts";
+import { handleGlobalKeydown, setRefreshHandler } from "../shortcuts";
 import { switchToTab, cycleTab } from "../stores/terminal";
 import { togglePanel, setSection } from "../stores/panel";
+import { cycleWorkspace } from "../stores/workspace";
 import { openMarkdownFile } from "../file-open";
 
 function makeKeyEvent(overrides: Partial<KeyboardEvent> = {}): KeyboardEvent {
@@ -102,6 +108,22 @@ describe("handleGlobalKeydown", () => {
     const handled = handleGlobalKeydown(e);
     expect(handled).toBe(true);
     expect(handler).toHaveBeenCalled();
+  });
+
+  it("Ctrl+Shift+[ cycles workspace backward", () => {
+    const e = makeKeyEvent({ ctrlKey: true, shiftKey: true, key: "[" });
+    const handled = handleGlobalKeydown(e);
+    expect(handled).toBe(true);
+    expect(cycleWorkspace).toHaveBeenCalledWith(-1);
+    expect(e.preventDefault).toHaveBeenCalled();
+  });
+
+  it("Ctrl+Shift+] cycles workspace forward", () => {
+    const e = makeKeyEvent({ ctrlKey: true, shiftKey: true, key: "]" });
+    const handled = handleGlobalKeydown(e);
+    expect(handled).toBe(true);
+    expect(cycleWorkspace).toHaveBeenCalledWith(1);
+    expect(e.preventDefault).toHaveBeenCalled();
   });
 
   it("returns false for unhandled keys", () => {

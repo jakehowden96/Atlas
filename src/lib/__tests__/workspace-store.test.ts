@@ -22,6 +22,7 @@ import {
   addSession,
   removeSession,
   loadWorkspaces,
+  cycleWorkspace,
 } from "../stores/workspace";
 import { exists, readTextFile } from "@tauri-apps/plugin-fs";
 
@@ -115,6 +116,47 @@ describe("workspace store", () => {
       activeSessionId.set(sessions[0].id);
       await removeSession("/a", sessions[1].id);
       expect(get(activeSessionId)).toBe(sessions[0].id);
+    });
+  });
+
+  describe("cycleWorkspace", () => {
+    it("cycles forward", async () => {
+      await addWorkspace("/a");
+      await addWorkspace("/b");
+      activeWorkspacePath.set("/a");
+      cycleWorkspace(1);
+      expect(get(activeWorkspacePath)).toBe("/b");
+    });
+
+    it("cycles backward", async () => {
+      await addWorkspace("/a");
+      await addWorkspace("/b");
+      activeWorkspacePath.set("/b");
+      cycleWorkspace(-1);
+      expect(get(activeWorkspacePath)).toBe("/a");
+    });
+
+    it("wraps around forward", async () => {
+      await addWorkspace("/a");
+      await addWorkspace("/b");
+      activeWorkspacePath.set("/b");
+      cycleWorkspace(1);
+      expect(get(activeWorkspacePath)).toBe("/a");
+    });
+
+    it("wraps around backward", async () => {
+      await addWorkspace("/a");
+      await addWorkspace("/b");
+      activeWorkspacePath.set("/a");
+      cycleWorkspace(-1);
+      expect(get(activeWorkspacePath)).toBe("/b");
+    });
+
+    it("no-op with fewer than 2 workspaces", async () => {
+      await addWorkspace("/a");
+      activeWorkspacePath.set("/a");
+      cycleWorkspace(1);
+      expect(get(activeWorkspacePath)).toBe("/a");
     });
   });
 

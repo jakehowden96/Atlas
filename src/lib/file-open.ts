@@ -1,6 +1,8 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
+import { get } from "svelte/store";
 import { addMarkdownTab } from "./stores/terminal";
+import { activeWorkspacePath } from "./stores/workspace";
 import { showToast } from "./stores/toast";
 
 export async function openMarkdownFile() {
@@ -20,7 +22,8 @@ export async function openMarkdownFile() {
     const filePath = selected;
     const fileName = filePath.split("/").pop() ?? filePath;
     const content = await readTextFile(filePath);
-    addMarkdownTab(fileName, content, filePath);
+    const wsPath = get(activeWorkspacePath);
+    addMarkdownTab(fileName, content, filePath, wsPath || undefined);
   } catch (e) {
     showToast(`Failed to open file: ${e}`);
   }

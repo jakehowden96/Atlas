@@ -9,7 +9,9 @@
     activeTabId,
     addTab,
     removeTab,
+    getTabWorkspacePath,
   } from "../../stores/terminal";
+  import { activeWorkspacePath } from "../../stores/workspace";
   import { ptyKill, getSessionDir } from "../../ipc";
   import { showToast } from "../../stores/toast";
   import { handleGlobalKeydown } from "../../shortcuts";
@@ -17,12 +19,14 @@
   function createTab() {
     const id = crypto.randomUUID();
     const terminal = new Terminal();
+    const wsPath = get(activeWorkspacePath);
     addTab({
       type: "terminal",
       id,
       title: "",
       ptyId: -1,
       terminal,
+      cwd: wsPath || undefined,
     });
   }
 
@@ -42,8 +46,7 @@
   async function closeGroup(cwd: string) {
     const tabList = get(tabs);
     const toClose = tabList.filter((t) => {
-      const tabCwd = t.type === "terminal" ? t.cwd ?? "" : "";
-      return tabCwd === cwd;
+      return getTabWorkspacePath(t) === cwd;
     });
     for (const tab of toClose) {
       if (tab.type === "terminal" && tab.ptyId >= 0) {
@@ -59,6 +62,11 @@
 
   function selectTab(id: string) {
     activeTabId.set(id);
+  }
+
+  function selectWorkspace(path: string) {
+    // Tab restoration is handled by the activeWorkspacePath subscriber in the terminal store
+    activeWorkspacePath.set(path);
   }
 
   async function handlePtyReady(tabId: string, ptyId: number) {
@@ -93,7 +101,12 @@
 <div class="terminal-area">
   {#if $tabs.length > 0}
     <div class="terminal-chrome">
-      <TabBar onCloseTab={closeTab} onSelectTab={selectTab} onCloseGroup={closeGroup} />
+      <TabBar
+        onCloseTab={closeTab}
+        onSelectTab={selectTab}
+        onCloseGroup={closeGroup}
+        onSelectWorkspace={selectWorkspace}
+      />
     </div>
     <div class="terminal-panes">
       {#each $tabs as tab (tab.id)}
@@ -134,8 +147,6 @@
   .terminal-chrome {
     display: flex;
     align-items: stretch;
-    height: var(--chrome-height);
-    padding: 2px 0.25rem;
     background: var(--surface-container-low);
     flex-shrink: 0;
     overflow: hidden;

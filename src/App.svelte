@@ -78,6 +78,10 @@
   onMount(async () => {
     checkApiStatus();
     await loadWorkspaces();
+    const ws = get(workspaces);
+    if (ws.length > 0 && !get(activeWorkspacePath)) {
+      activeWorkspacePath.set(ws[0].path);
+    }
     await loadSettings();
     unlisten = await onPanelUpdate((sessionId, data) => {
       if (sessionId === get(activeTabId)) {
@@ -207,7 +211,8 @@
     on:newTerminal={() => {
       const id = crypto.randomUUID();
       const terminal = new Terminal();
-      addTab({ type: "terminal", id, title: "Terminal", ptyId: -1, terminal });
+      const wsPath = get(activeWorkspacePath);
+      addTab({ type: "terminal", id, title: "Terminal", ptyId: -1, terminal, cwd: wsPath || undefined });
     }}
     on:addWorkspace={async () => {
       const selected = await open({ directory: true, multiple: false, title: "Select workspace folder" });
@@ -339,7 +344,7 @@
     --cyan: #63bcc6;
 
     /* Chrome bar height (shared between terminal + panel) */
-    --chrome-height: 52px;
+    --chrome-height: 64px;
 
     /* Radius */
     --radius: 8px;
