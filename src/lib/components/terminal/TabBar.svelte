@@ -62,8 +62,8 @@
       class="workspace-section"
       style={group.color ? `--group-color: ${group.color}` : ""}
     >
-      {#if group.label}
-        <div class="section-header">
+      <div class="section-header" class:section-header-empty={!group.label}>
+        {#if group.label}
           <span class="color-dot"></span>
           <span class="group-label">{group.label}</span>
           {#if group.tabs.length > 1}
@@ -75,8 +75,8 @@
               <span class="material-symbols-outlined">close</span>
             </button>
           {/if}
-        </div>
-      {/if}
+        {/if}
+      </div>
       <div class="section-tabs">
         {#each group.tabs as tab, i (tab.id)}
           <button
@@ -140,6 +140,11 @@
     align-items: center;
     gap: 4px;
     padding: 3px 8px 0;
+    min-height: 18px;
+  }
+
+  .section-header-empty {
+    /* Reserve the same vertical space as a labelled header */
   }
 
   .section-tabs {
@@ -216,16 +221,27 @@
   }
 
   .tab-markdown {
-    color: var(--yellow);
+    color: var(--on-surface-variant);
+    opacity: 0.85;
+  }
+
+  .tab-markdown .tab-type-icon {
+    color: var(--cyan);
   }
 
   .tab-markdown:hover {
-    color: var(--yellow);
+    color: var(--on-surface);
+    opacity: 1;
   }
 
   .tab-markdown.active {
-    color: var(--yellow);
-    background: color-mix(in srgb, var(--yellow) 10%, var(--surface-container-high));
+    color: var(--on-surface);
+    opacity: 1;
+    background: color-mix(in srgb, var(--cyan) 8%, var(--surface-container-high));
+  }
+
+  .tab-markdown.active .tab-type-icon {
+    color: var(--cyan);
   }
 
   .tab.needs-input {

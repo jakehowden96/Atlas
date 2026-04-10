@@ -9,6 +9,12 @@ describe("theme", () => {
     expect(theme.green).toMatch(/^#[0-9a-f]{6}$/);
     expect(theme.blue).toMatch(/^#[0-9a-f]{6}$/);
     expect(theme.yellow).toMatch(/^#[0-9a-f]{6}$/);
+    expect(theme.cyan).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  it("has distinct colors for document tabs vs awaiting tabs", () => {
+    // cyan (document tabs) must differ from yellow (needs-input tabs)
+    expect(theme.cyan).not.toBe(theme.yellow);
   });
 });
 

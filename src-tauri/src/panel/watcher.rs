@@ -125,15 +125,14 @@ pub struct ClaudeNotificationEvent {
     pub notification: ClaudeNotification,
 }
 
-pub fn sessions_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(".atlas")
-        .join("sessions")
+pub fn sessions_dir() -> Result<PathBuf, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not determine home directory".to_string())?;
+    Ok(home.join(".atlas").join("sessions"))
 }
 
 pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String> {
-    let sessions = sessions_dir();
+    let sessions = sessions_dir()?;
     std::fs::create_dir_all(&sessions).map_err(|e| e.to_string())?;
 
     let (tx, rx) = mpsc::channel();

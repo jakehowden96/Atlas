@@ -146,4 +146,54 @@ describe("parseDiff", () => {
     expect(lines[3].oldNum).toBe(26);
     expect(lines[3].newNum).toBe(26);
   });
+
+  it("handles binary file diff (no hunks)", () => {
+    const diff = `diff --git a/image.png b/image.png
+new file mode 100644
+Binary files /dev/null and b/image.png differ`;
+    const files = parseDiff(diff);
+    expect(files).toHaveLength(1);
+    expect(files[0].hunks).toHaveLength(0);
+  });
+
+  it("handles mode change only", () => {
+    const diff = `diff --git a/script.sh b/script.sh
+old mode 100644
+new mode 100755`;
+    const files = parseDiff(diff);
+    expect(files).toHaveLength(1);
+    expect(files[0].changeType).toBe("modified");
+    expect(files[0].hunks).toHaveLength(0);
+  });
+
+  it("handles file with spaces in path", () => {
+    const diff = `diff --git a/my file.ts b/my file.ts
+--- a/my file.ts
++++ b/my file.ts
+@@ -1,1 +1,1 @@
+-old
++new`;
+    const files = parseDiff(diff);
+    expect(files).toHaveLength(1);
+    expect(files[0].newName).toBe("my file.ts");
+  });
+
+  it("handles multiple hunks in a single file", () => {
+    const diff = `diff --git a/file.ts b/file.ts
+--- a/file.ts
++++ b/file.ts
+@@ -1,3 +1,3 @@
+ context
+-old1
++new1
+ context
+@@ -10,3 +10,3 @@
+ context
+-old2
++new2
+ context`;
+    const files = parseDiff(diff);
+    expect(files).toHaveLength(1);
+    expect(files[0].hunks).toHaveLength(2);
+  });
 });

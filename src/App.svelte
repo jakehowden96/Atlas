@@ -204,6 +204,11 @@
     activeWorkspacePath={$activeWorkspacePath}
     activeSessionId={$activeSessionId}
     {openTabIds}
+    on:newTerminal={() => {
+      const id = crypto.randomUUID();
+      const terminal = new Terminal();
+      addTab({ type: "terminal", id, title: "Terminal", ptyId: -1, terminal });
+    }}
     on:addWorkspace={async () => {
       const selected = await open({ directory: true, multiple: false, title: "Select workspace folder" });
       if (typeof selected === "string") await storeAddWorkspace(selected);
@@ -331,6 +336,7 @@
 
     /* Named colors */
     --yellow: #e8be7b;
+    --cyan: #63bcc6;
 
     /* Chrome bar height (shared between terminal + panel) */
     --chrome-height: 52px;

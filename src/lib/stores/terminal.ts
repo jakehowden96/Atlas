@@ -1,6 +1,7 @@
 import { writable, derived, get } from "svelte/store";
 import type { Terminal } from "@xterm/xterm";
 import type { MarkdownTab, TabItem } from "../../types/terminal";
+import { panelData } from "./panel";
 
 export const tabs = writable<TabItem[]>([]);
 export const activeTabId = writable<string>("");
@@ -42,12 +43,17 @@ export function updateMarkdownContent(id: string, content: string) {
 }
 
 export function removeTab(id: string) {
+  const wasActive = get(activeTabId) === id;
   tabs.update((t) => t.filter((tab) => tab.id !== id));
   const remaining = get(tabs);
   if (remaining.length > 0) {
     activeTabId.set(remaining[remaining.length - 1].id);
   } else {
     activeTabId.set("");
+  }
+  // Clear stale panel data when the closed tab was the active one
+  if (wasActive) {
+    panelData.set(null);
   }
 }
 
