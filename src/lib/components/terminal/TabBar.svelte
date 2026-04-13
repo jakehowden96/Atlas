@@ -225,19 +225,19 @@
   }
 
   .tab.needs-input {
-    background: color-mix(in srgb, var(--yellow) 15%, transparent);
-    color: var(--yellow);
+    background: color-mix(in srgb, var(--amber) 15%, transparent);
+    color: var(--amber);
     animation: pulse-bg 2s ease-in-out infinite;
   }
 
   .tab.needs-input:hover {
-    background: color-mix(in srgb, var(--yellow) 22%, transparent);
-    color: var(--yellow);
+    background: color-mix(in srgb, var(--amber) 22%, transparent);
+    color: var(--amber);
   }
 
   @keyframes pulse-bg {
-    0%, 100% { background: color-mix(in srgb, var(--yellow) 15%, transparent); }
-    50% { background: color-mix(in srgb, var(--yellow) 8%, transparent); }
+    0%, 100% { background: color-mix(in srgb, var(--amber) 15%, transparent); }
+    50% { background: color-mix(in srgb, var(--amber) 8%, transparent); }
   }
 
   .tab-type-icon {

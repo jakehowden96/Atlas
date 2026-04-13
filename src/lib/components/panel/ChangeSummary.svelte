@@ -59,6 +59,13 @@
     return "clean" as const;
   });
 
+  // Reset "done" flags when the phase cycles back due to new changes arriving
+  $effect(() => {
+    if (phase === "stage") stageDone = false;
+    if (phase === "commit") commitDone = false;
+    if (phase === "push") pushDone = false;
+  });
+
   // Pre-fill commit message from AI summary when entering commit phase,
   // or when the summary arrives while already in the commit phase.
   $effect(() => {

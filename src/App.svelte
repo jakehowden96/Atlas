@@ -344,6 +344,7 @@
     /* Named colors */
     --yellow: #e8be7b;
     --cyan: #63bcc6;
+    --amber: #FFA726;
 
     /* Chrome bar height (shared between terminal + panel) */
     --chrome-height: 64px;
