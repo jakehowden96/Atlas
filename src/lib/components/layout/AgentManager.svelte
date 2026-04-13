@@ -10,6 +10,7 @@
     selectWorkspace: { workspacePath: string };
     setWorkspaceColor: { workspacePath: string; color: string };
     addWorkspace: void;
+    newTerminal: void;
   }>();
 
   const WORKSPACE_COLORS = [
@@ -156,6 +157,13 @@
     <div class="tree-header">
       <span class="tree-label">Workspaces</span>
       <div class="tree-header-actions">
+        <button
+          class="settings-btn"
+          title="Open terminal"
+          onclick={() => dispatch("newTerminal")}
+        >
+          <span class="material-symbols-outlined">terminal</span>
+        </button>
         <button
           class="settings-btn"
           title="Settings"

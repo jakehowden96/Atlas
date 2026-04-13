@@ -1,5 +1,6 @@
 import { switchToTab, cycleTab } from "./stores/terminal";
 import { togglePanel, setSection } from "./stores/panel";
+import { cycleWorkspace } from "./stores/workspace";
 import { openMarkdownFile } from "./file-open";
 
 // Set by TerminalTab when it knows its CWD — used for manual refresh
@@ -55,6 +56,20 @@ export function handleGlobalKeydown(e: KeyboardEvent): boolean {
   if (e.ctrlKey && e.shiftKey && e.key === "F") {
     e.preventDefault();
     setSection("flow");
+    return true;
+  }
+
+  // Ctrl+Shift+[: previous workspace
+  if (e.ctrlKey && e.shiftKey && e.key === "[") {
+    e.preventDefault();
+    cycleWorkspace(-1);
+    return true;
+  }
+
+  // Ctrl+Shift+]: next workspace
+  if (e.ctrlKey && e.shiftKey && e.key === "]") {
+    e.preventDefault();
+    cycleWorkspace(1);
     return true;
   }
 

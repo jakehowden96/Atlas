@@ -46,4 +46,35 @@ describe("flowEdgesToMermaid", () => {
     expect(result).toContain('"A\\"B"');
     expect(result).toContain('"C<D>"');
   });
+
+  it("starts with valid mermaid graph LR directive", () => {
+    const result = flowEdgesToMermaid([{ from: "X", to: "Y" }]);
+    expect(result.startsWith("graph LR")).toBe(true);
+  });
+
+  it("handles self-loop (same from and to)", () => {
+    const result = flowEdgesToMermaid([{ from: "A", to: "A" }]);
+    expect(result).toContain("-->");
+    // Same node ID should appear on both sides
+    const match = result.match(/N0/g);
+    expect(match).not.toBeNull();
+    expect(match!.length).toBe(2);
+  });
+
+  it("handles large number of edges", () => {
+    const edges = Array.from({ length: 15 }, (_, i) => ({
+      from: `node${i}`,
+      to: `node${i + 1}`,
+    }));
+    const result = flowEdgesToMermaid(edges);
+    const lines = result.split("\n");
+    // header + 15 edges
+    expect(lines.length).toBe(16);
+  });
+
+  it("handles Unicode characters in node names", () => {
+    const result = flowEdgesToMermaid([{ from: "función", to: "処理" }]);
+    expect(result).toContain("función");
+    expect(result).toContain("処理");
+  });
 });

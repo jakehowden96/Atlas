@@ -102,16 +102,12 @@ Diff:
 "#;
 
 impl ClaudeClient {
-    pub fn new(api_key: String, base_url: String, model: String) -> Self {
-        Self {
-            api_key,
-            base_url,
-            model,
-            http: Client::builder()
-                .timeout(std::time::Duration::from_secs(120))
-                .build()
-                .expect("Failed to build HTTP client"),
-        }
+    pub fn new(api_key: String, base_url: String, model: String) -> Result<Self, String> {
+        let http = Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+        Ok(Self { api_key, base_url, model, http })
     }
 
     pub async fn analyze_diff(

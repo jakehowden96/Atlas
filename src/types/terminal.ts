@@ -19,6 +19,7 @@ export interface MarkdownTab {
   title: string;
   content: string;
   filePath?: string;
+  workspacePath?: string;
 }
 
 export type TabItem = TerminalTab | MarkdownTab;

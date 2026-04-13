@@ -78,6 +78,10 @@
   onMount(async () => {
     checkApiStatus();
     await loadWorkspaces();
+    const ws = get(workspaces);
+    if (ws.length > 0 && !get(activeWorkspacePath)) {
+      activeWorkspacePath.set(ws[0].path);
+    }
     await loadSettings();
     unlisten = await onPanelUpdate((sessionId, data) => {
       if (sessionId === get(activeTabId)) {
@@ -92,8 +96,10 @@
     });
     unlistenNotification = await onClaudeNotification(async (event) => {
       const { session_id, notification } = event;
-      // Only mark as needing input for interactive notification types
-      const inputTypes = ["permission_prompt", "idle_prompt", "elicitation_dialog"];
+      // Only mark as needing input for notification types that require user action.
+      // Excludes idle_prompt — that fires when Claude finishes work and returns to
+      // its prompt, which doesn't require user input.
+      const inputTypes = ["permission_prompt", "elicitation_dialog"];
       if (!inputTypes.includes(notification.notification_type)) return;
 
       setTabNeedsInput(session_id, true);
@@ -204,6 +210,12 @@
     activeWorkspacePath={$activeWorkspacePath}
     activeSessionId={$activeSessionId}
     {openTabIds}
+    on:newTerminal={() => {
+      const id = crypto.randomUUID();
+      const terminal = new Terminal();
+      const wsPath = get(activeWorkspacePath);
+      addTab({ type: "terminal", id, title: "Terminal", ptyId: -1, terminal, cwd: wsPath || undefined });
+    }}
     on:addWorkspace={async () => {
       const selected = await open({ directory: true, multiple: false, title: "Select workspace folder" });
       if (typeof selected === "string") await storeAddWorkspace(selected);
@@ -331,9 +343,10 @@
 
     /* Named colors */
     --yellow: #e8be7b;
+    --cyan: #63bcc6;
 
     /* Chrome bar height (shared between terminal + panel) */
-    --chrome-height: 52px;
+    --chrome-height: 64px;
 
     /* Radius */
     --radius: 8px;

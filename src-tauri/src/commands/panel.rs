@@ -3,7 +3,7 @@ use crate::ClaudeState;
 use std::collections::HashMap;
 use std::fs;
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 
 /// Tracks sessions with an analysis in-flight or completed, keyed by session ID
@@ -11,6 +11,98 @@ use tauri::{Emitter, Manager};
 /// matches, allowing a new analysis to fire automatically.
 static ANALYSIS_ATTEMPTED: std::sync::LazyLock<Mutex<HashMap<String, u64>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Per-session mutex to serialize panel.json read-modify-write operations.
+static PANEL_LOCKS: std::sync::LazyLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn panel_lock(session_id: &str) -> Arc<Mutex<()>> {
+    let mut map = PANEL_LOCKS.lock().unwrap_or_else(|e| e.into_inner());
+    map.entry(session_id.to_string())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone()
+}
+
+// --- Input validation ---
+
+fn validate_session_id(id: &str) -> Result<(), String> {
+    if id.is_empty() {
+        return Err("Session ID cannot be empty".to_string());
+    }
+    if id.contains('/') || id.contains('\\') || id.contains("..") {
+        return Err("Session ID contains invalid characters".to_string());
+    }
+    // Allow UUID format and simple alphanumeric-hyphen IDs
+    if !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        return Err("Session ID contains invalid characters".to_string());
+    }
+    Ok(())
+}
+
+fn validate_cwd(cwd: &str) -> Result<(), String> {
+    if cwd.is_empty() {
+        return Err("Working directory cannot be empty".to_string());
+    }
+    let path = std::path::Path::new(cwd);
+    if !path.is_absolute() {
+        return Err("Working directory must be an absolute path".to_string());
+    }
+    if !path.is_dir() {
+        return Err(format!("Working directory does not exist: {}", cwd));
+    }
+    Ok(())
+}
+
+fn validate_branch_name(branch: &str) -> Result<(), String> {
+    if branch.is_empty() {
+        return Err("Branch name cannot be empty".to_string());
+    }
+    if branch.starts_with('-') {
+        return Err("Branch name cannot start with '-'".to_string());
+    }
+    if branch.contains("..") {
+        return Err("Branch name cannot contain '..'".to_string());
+    }
+    if branch.ends_with(".lock") {
+        return Err("Branch name cannot end with '.lock'".to_string());
+    }
+    let invalid_chars = [' ', '~', '^', ':', '?', '*', '[', '\\', '\x7f'];
+    for ch in invalid_chars {
+        if branch.contains(ch) {
+            return Err(format!("Branch name contains invalid character '{}'", ch));
+        }
+    }
+    if branch.bytes().any(|b| b < 0x20 || b == 0x7f) {
+        return Err("Branch name contains control characters".to_string());
+    }
+    Ok(())
+}
+
+fn validate_file_paths(cwd: &str, files: &[String]) -> Result<(), String> {
+    let base = match std::fs::canonicalize(cwd) {
+        Ok(p) => p,
+        Err(_) => return Err(format!("Cannot resolve working directory: {}", cwd)),
+    };
+    for file in files {
+        if file.is_empty() {
+            return Err("File path cannot be empty".to_string());
+        }
+        if std::path::Path::new(file).is_absolute() {
+            return Err(format!("File path must be relative: {}", file));
+        }
+        // Reject any path containing .. components to prevent traversal
+        if file.split('/').any(|c| c == "..") || file.split('\\').any(|c| c == "..") {
+            return Err(format!("File path contains '..': {}", file));
+        }
+        let resolved = base.join(file);
+        let normalized = resolved.to_string_lossy();
+        let base_str = base.to_string_lossy();
+        if !normalized.starts_with(base_str.as_ref()) {
+            return Err(format!("File path escapes repository: {}", file));
+        }
+    }
+    Ok(())
+}
 
 fn hash_diff(raw: &str) -> u64 {
     use std::hash::{Hash, Hasher};
@@ -21,7 +113,8 @@ fn hash_diff(raw: &str) -> u64 {
 
 #[tauri::command]
 pub fn get_session_dir(session_id: String) -> Result<String, String> {
-    let dir = sessions_dir().join(&session_id);
+    validate_session_id(&session_id)?;
+    let dir = sessions_dir()?.join(&session_id);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     dir.to_str()
         .map(|s| s.to_string())
@@ -30,7 +123,8 @@ pub fn get_session_dir(session_id: String) -> Result<String, String> {
 
 #[tauri::command(async)]
 pub fn get_panel_data(session_id: String) -> Result<Option<PanelData>, String> {
-    let path = sessions_dir().join(&session_id).join("panel.json");
+    validate_session_id(&session_id)?;
+    let path = sessions_dir()?.join(&session_id).join("panel.json");
     if !path.exists() {
         return Ok(None);
     }
@@ -50,7 +144,9 @@ pub fn refresh_panel(
     session_id: String,
     cwd: String,
 ) -> Result<Option<PanelData>, String> {
-    let panel_path = sessions_dir().join(&session_id).join("panel.json");
+    validate_session_id(&session_id)?;
+    validate_cwd(&cwd)?;
+    let panel_path = sessions_dir()?.join(&session_id).join("panel.json");
 
     // Try: is CWD itself inside a git repo?
     let result = if let Ok(git_root) = git_cmd(&cwd, &["rev-parse", "--show-toplevel"]) {
@@ -116,25 +212,42 @@ pub fn refresh_panel(
 
                     match client.analyze_diff(&raw_diff).await {
                         Ok((summary, flow)) => {
-                            if let Ok(contents) = fs::read_to_string(&path) {
-                                if let Ok(mut panel) =
-                                    serde_json::from_str::<PanelData>(&contents)
-                                {
-                                    let current_diff_hash = panel.diff.as_ref()
-                                        .map(|d| hash_diff(&d.raw))
-                                        .unwrap_or(0);
-                                    if panel.cwd == expected_cwd && current_diff_hash == expected_diff_hash {
-                                        panel.summary = Some(summary);
-                                        panel.flow = Some(flow);
-                                        write_panel(&sid, &panel, &path);
-                                        // Emit directly to frontend — bypasses file-watcher latency
-                                        let _ = handle.emit("panel-update", PanelUpdateEvent {
-                                            session_id: sid.clone(),
-                                            data: panel,
-                                        });
-                                        emit_status("complete", None);
+                            // Acquire panel lock for atomic read-check-write
+                            let lock = panel_lock(&sid);
+                            let emit_panel = {
+                                let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+
+                                let mut result = None;
+                                if let Ok(contents) = fs::read_to_string(&path) {
+                                    if let Ok(mut panel) =
+                                        serde_json::from_str::<PanelData>(&contents)
+                                    {
+                                        let current_diff_hash = panel.diff.as_ref()
+                                            .map(|d| hash_diff(&d.raw))
+                                            .unwrap_or(0);
+                                        if panel.cwd == expected_cwd && current_diff_hash == expected_diff_hash {
+                                            panel.summary = Some(summary);
+                                            panel.flow = Some(flow);
+                                            if let Ok(dir) = sessions_dir() {
+                                                let dir = dir.join(&sid);
+                                                let _ = fs::create_dir_all(&dir);
+                                                if let Ok(json) = serde_json::to_string_pretty(&panel) {
+                                                    let _ = fs::write(&path, json);
+                                                }
+                                            }
+                                            result = Some(panel);
+                                        }
                                     }
                                 }
+                                result
+                            }; // _guard dropped here — lock released before emit
+
+                            if let Some(panel) = emit_panel {
+                                let _ = handle.emit("panel-update", PanelUpdateEvent {
+                                    session_id: sid.clone(),
+                                    data: panel,
+                                });
+                                emit_status("complete", None);
                             }
                         }
                         Err(e) => {
@@ -521,7 +634,13 @@ fn read_existing_analysis(
 }
 
 fn write_panel(session_id: &str, data: &PanelData, panel_path: &std::path::Path) {
-    let dir = sessions_dir().join(session_id);
+    let lock = panel_lock(session_id);
+    let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+
+    let dir = match sessions_dir() {
+        Ok(d) => d.join(session_id),
+        Err(e) => { log::warn!("Failed to resolve sessions dir: {}", e); return; }
+    };
     if let Err(e) = fs::create_dir_all(&dir) {
         log::warn!("Failed to create session dir: {}", e);
         return;
@@ -538,10 +657,12 @@ fn write_panel(session_id: &str, data: &PanelData, panel_path: &std::path::Path)
 
 /// Clear the analysis-attempted flag so the next refresh retries the API call.
 #[tauri::command]
-pub fn reset_analysis(session_id: String) {
+pub fn reset_analysis(session_id: String) -> Result<(), String> {
+    validate_session_id(&session_id)?;
     if let Ok(mut map) = ANALYSIS_ATTEMPTED.lock() {
         map.remove(&session_id);
     }
+    Ok(())
 }
 
 /// Set the API key at runtime and persist to ~/.atlas/config.json
@@ -551,7 +672,7 @@ pub fn set_api_key(
     api_key: String,
 ) -> Result<(), String> {
     crate::write_config_api_key(&api_key)?;
-    let client = crate::build_claude_client(api_key);
+    let client = crate::build_claude_client(api_key)?;
     let state: tauri::State<ClaudeState> = app_handle.state();
     let mut guard = state.write().map_err(|e| format!("Lock poisoned: {}", e))?;
     *guard = Some(client);
@@ -572,158 +693,178 @@ pub fn get_api_status(app_handle: tauri::AppHandle) -> bool {
 
 /// Stage all changes in the given git repo.
 #[tauri::command(async)]
-pub fn git_stage_all(cwd: String) -> Result<(), String> {
-    git_cmd(&cwd, &["add", "-A"]).map(|_| ())
+pub async fn git_stage_all(cwd: String) -> Result<(), String> {
+    validate_cwd(&cwd)?;
+    tokio::task::spawn_blocking(move || {
+        git_cmd(&cwd, &["add", "-A"]).map(|_| ())
+    }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Stage specific files in the given git repo.
 #[tauri::command(async)]
-pub fn git_stage_files(cwd: String, files: Vec<String>) -> Result<(), String> {
+pub async fn git_stage_files(cwd: String, files: Vec<String>) -> Result<(), String> {
+    validate_cwd(&cwd)?;
     if files.is_empty() {
         return Ok(());
     }
-    let mut args = vec!["add", "--"];
-    let refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
-    args.extend(refs);
-    git_cmd(&cwd, &args).map(|_| ())
+    validate_file_paths(&cwd, &files)?;
+    tokio::task::spawn_blocking(move || {
+        let mut args = vec!["add", "-A", "--"];
+        let refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
+        args.extend(refs);
+        git_cmd(&cwd, &args).map(|_| ())
+    }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Discard all working tree changes (unstaged + staged) in the given git repo.
 #[tauri::command(async)]
-pub fn git_discard_all(cwd: String) -> Result<(), String> {
-    // Reset staged changes
-    let _ = git_cmd(&cwd, &["reset", "HEAD", "--"]);
-    // Discard unstaged changes to tracked files
-    git_cmd(&cwd, &["checkout", "--", "."])?;
-    // Remove untracked files and directories
-    git_cmd(&cwd, &["clean", "-fd"]).map(|_| ())
+pub async fn git_discard_all(cwd: String) -> Result<(), String> {
+    validate_cwd(&cwd)?;
+    tokio::task::spawn_blocking(move || {
+        let _ = git_cmd(&cwd, &["reset", "HEAD", "--"]);
+        git_cmd(&cwd, &["checkout", "--", "."])?;
+        git_cmd(&cwd, &["clean", "-fd"]).map(|_| ())
+    }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Get the current git status for determining the adaptive button state.
 #[tauri::command(async)]
-pub fn get_git_status(cwd: String) -> Result<GitStatus, String> {
-    // Verify this is actually a git repository
-    git_cmd(&cwd, &["rev-parse", "--git-dir"])?;
+pub async fn get_git_status(cwd: String) -> Result<GitStatus, String> {
+    validate_cwd(&cwd)?;
+    tokio::task::spawn_blocking(move || {
+        // Verify this is actually a git repository
+        git_cmd(&cwd, &["rev-parse", "--git-dir"])?;
 
-    // Check for unstaged changes (working tree vs index) or untracked files
-    let has_modified = Command::new("git")
-        .args(["-C", &cwd, "diff", "--quiet"])
-        .output()
-        .map(|o| !o.status.success())
-        .unwrap_or(false);
+        // Check for unstaged changes (working tree vs index)
+        // git diff --quiet exits 1 when there are changes
+        let has_modified = git_cmd(&cwd, &["diff", "--quiet"]).is_err();
 
-    let has_untracked = Command::new("git")
-        .args(["-C", &cwd, "ls-files", "--others", "--exclude-standard"])
-        .output()
-        .map(|o| !String::from_utf8_lossy(&o.stdout).trim().is_empty())
-        .unwrap_or(false);
+        // Check for untracked files
+        let has_untracked = git_cmd(&cwd, &["ls-files", "--others", "--exclude-standard"])
+            .map(|s| !s.is_empty())
+            .unwrap_or(false);
 
-    let has_unstaged = has_modified || has_untracked;
+        let has_unstaged = has_modified || has_untracked;
 
-    // Check for staged changes (index vs HEAD)
-    let has_staged = Command::new("git")
-        .args(["-C", &cwd, "diff", "--cached", "--quiet"])
-        .output()
-        .map(|o| !o.status.success())
-        .unwrap_or(false);
+        // Check for staged changes (index vs HEAD)
+        let has_staged = git_cmd(&cwd, &["diff", "--cached", "--quiet"]).is_err();
 
-    // Check for unpushed commits
-    let has_unpushed = git_cmd(&cwd, &["rev-list", "@{u}..HEAD", "--count"])
-        .map(|s| s.trim().parse::<u32>().unwrap_or(0) > 0)
-        .unwrap_or(false);
+        // Check for unpushed commits
+        let has_unpushed = git_cmd(&cwd, &["rev-list", "@{u}..HEAD", "--count"])
+            .map(|s| s.trim().parse::<u32>().unwrap_or(0) > 0)
+            .unwrap_or(false);
 
-    // Check for commits behind upstream
-    let commits_behind = git_cmd(&cwd, &["rev-list", "HEAD..@{u}", "--count"])
-        .map(|s| s.trim().parse::<u32>().unwrap_or(0))
-        .unwrap_or(0);
+        // Check for commits behind upstream
+        let commits_behind = git_cmd(&cwd, &["rev-list", "HEAD..@{u}", "--count"])
+            .map(|s| s.trim().parse::<u32>().unwrap_or(0))
+            .unwrap_or(0);
 
-    // Get current branch
-    let branch = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
-        .unwrap_or_default();
+        // Get current branch
+        let branch = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
+            .unwrap_or_default();
 
-    Ok(GitStatus {
-        has_unstaged,
-        has_staged,
-        has_unpushed,
-        commits_behind,
-        branch,
-    })
+        Ok(GitStatus {
+            has_unstaged,
+            has_staged,
+            has_unpushed,
+            commits_behind,
+            branch,
+        })
+    }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Commit all changes with the given message. Stages everything first.
 #[tauri::command(async)]
-pub fn git_commit(cwd: String, message: String) -> Result<(), String> {
-    git_cmd(&cwd, &["add", "-A"])?;
-    git_cmd(&cwd, &["commit", "-m", &message])?;
-    Ok(())
+pub async fn git_commit(cwd: String, message: String) -> Result<(), String> {
+    validate_cwd(&cwd)?;
+    if message.is_empty() {
+        return Err("Commit message cannot be empty".to_string());
+    }
+    if message.contains('\0') {
+        return Err("Commit message contains invalid characters".to_string());
+    }
+    tokio::task::spawn_blocking(move || {
+        git_cmd(&cwd, &["add", "-A"])?;
+        git_cmd(&cwd, &["commit", "-m", &message])?;
+        Ok(())
+    }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Push to the upstream remote.
 #[tauri::command(async)]
-pub fn git_push(cwd: String) -> Result<String, String> {
-    // Check if we have an upstream tracking branch
-    let has_upstream = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).is_ok();
+pub async fn git_push(cwd: String) -> Result<String, String> {
+    validate_cwd(&cwd)?;
+    tokio::task::spawn_blocking(move || {
+        let has_upstream = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).is_ok();
 
-    if has_upstream {
-        git_cmd(&cwd, &["push"])?;
-        return Ok("Pushed to remote".to_string());
-    }
+        if has_upstream {
+            git_cmd(&cwd, &["push"])?;
+            return Ok("Pushed to remote".to_string());
+        }
 
-    // No upstream — check if origin remote exists
-    let has_origin = git_cmd(&cwd, &["remote", "get-url", "origin"]).is_ok();
-    if !has_origin {
-        return Err("No remote 'origin' configured. Add a remote first.".to_string());
-    }
+        let has_origin = git_cmd(&cwd, &["remote", "get-url", "origin"]).is_ok();
+        if !has_origin {
+            return Err("No remote 'origin' configured. Add a remote first.".to_string());
+        }
 
-    // Push with -u to set upstream
-    let branch = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])?;
-    git_cmd(&cwd, &["push", "-u", "origin", &branch])?;
-    Ok("Pushed and set upstream".to_string())
+        let branch = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+        git_cmd(&cwd, &["push", "-u", "origin", &branch])?;
+        Ok("Pushed and set upstream".to_string())
+    }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Fetch from remote with prune.
 #[tauri::command(async)]
-pub fn git_fetch(cwd: String) -> Result<(), String> {
-    git_cmd(&cwd, &["fetch", "--prune"]).map(|_| ())
+pub async fn git_fetch(cwd: String) -> Result<(), String> {
+    validate_cwd(&cwd)?;
+    tokio::task::spawn_blocking(move || {
+        git_cmd(&cwd, &["fetch", "--prune"]).map(|_| ())
+    }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Pull from remote.
 #[tauri::command(async)]
-pub fn git_pull(cwd: String) -> Result<(), String> {
-    git_cmd(&cwd, &["pull"]).map(|_| ())
+pub async fn git_pull(cwd: String) -> Result<(), String> {
+    validate_cwd(&cwd)?;
+    tokio::task::spawn_blocking(move || {
+        git_cmd(&cwd, &["pull"]).map(|_| ())
+    }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// List child git repos with their current branch names.
 #[tauri::command(async)]
-pub fn get_child_repos(cwd: String) -> Result<Vec<RepoInfo>, String> {
-    let mut entries: Vec<_> = match fs::read_dir(&cwd) {
-        Ok(e) => e.flatten().collect(),
-        Err(_) => return Ok(Vec::new()),
-    };
-    entries.sort_by_key(|e| e.file_name());
+pub async fn get_child_repos(cwd: String) -> Result<Vec<RepoInfo>, String> {
+    validate_cwd(&cwd)?;
+    tokio::task::spawn_blocking(move || {
+        let mut entries: Vec<_> = match fs::read_dir(&cwd) {
+            Ok(e) => e.flatten().collect(),
+            Err(_) => return Ok(Vec::new()),
+        };
+        entries.sort_by_key(|e| e.file_name());
 
-    let mut repos = Vec::new();
-    for entry in entries {
-        if !entry.file_type().map_or(false, |t| t.is_dir()) {
-            continue;
+        let mut repos = Vec::new();
+        for entry in entries {
+            if !entry.file_type().map_or(false, |t| t.is_dir()) {
+                continue;
+            }
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy().to_string();
+            let child = entry.path().to_string_lossy().to_string();
+            if should_skip_dir(&name_str) {
+                continue;
+            }
+            if git_cmd(&child, &["rev-parse", "--show-toplevel"]).is_err() {
+                continue;
+            }
+            let branch = git_cmd(&child, &["rev-parse", "--abbrev-ref", "HEAD"])
+                .unwrap_or_default();
+            let commits_behind = git_cmd(&child, &["rev-list", "HEAD..@{u}", "--count"])
+                .map(|s| s.trim().parse::<u32>().unwrap_or(0))
+                .unwrap_or(0);
+            repos.push(RepoInfo { name: name_str, branch, commits_behind });
         }
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy().to_string();
-        let child = entry.path().to_string_lossy().to_string();
-        if should_skip_dir(&name_str) {
-            continue;
-        }
-        if git_cmd(&child, &["rev-parse", "--show-toplevel"]).is_err() {
-            continue;
-        }
-        let branch = git_cmd(&child, &["rev-parse", "--abbrev-ref", "HEAD"])
-            .unwrap_or_default();
-        let commits_behind = git_cmd(&child, &["rev-list", "HEAD..@{u}", "--count"])
-            .map(|s| s.trim().parse::<u32>().unwrap_or(0))
-            .unwrap_or(0);
-        repos.push(RepoInfo { name: name_str, branch, commits_behind });
-    }
-    Ok(repos)
+        Ok(repos)
+    }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Check whether a directory should be skipped during repo scanning.
@@ -732,53 +873,63 @@ pub fn get_child_repos(cwd: String) -> Result<Vec<RepoInfo>, String> {
 /// (e.g. "/Users/jake/repos/legacy") from the folder browser.
 /// List local branches with the current branch marked.
 #[tauri::command(async)]
-pub fn git_list_branches(cwd: String) -> Result<Vec<crate::panel::watcher::BranchInfo>, String> {
-    let output = git_cmd(&cwd, &["branch", "--format=%(refname:short)\t%(HEAD)"])?;
-    let mut branches: Vec<crate::panel::watcher::BranchInfo> = output
-        .lines()
-        .filter_map(|line| {
-            let parts: Vec<&str> = line.splitn(2, '\t').collect();
-            if parts.len() == 2 {
-                Some(crate::panel::watcher::BranchInfo {
-                    name: parts[0].trim().to_string(),
-                    is_current: parts[1].trim() == "*",
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
+pub async fn git_list_branches(cwd: String) -> Result<Vec<crate::panel::watcher::BranchInfo>, String> {
+    validate_cwd(&cwd)?;
+    tokio::task::spawn_blocking(move || {
+        let output = git_cmd(&cwd, &["branch", "--format=%(refname:short)\t%(HEAD)"])?;
+        let mut branches: Vec<crate::panel::watcher::BranchInfo> = output
+            .lines()
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.splitn(2, '\t').collect();
+                if parts.len() == 2 {
+                    Some(crate::panel::watcher::BranchInfo {
+                        name: parts[0].trim().to_string(),
+                        is_current: parts[1].trim() == "*",
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
 
-    // If main/master aren't in local branches, check remote tracking branches
-    let local_names: std::collections::HashSet<String> =
-        branches.iter().map(|b| b.name.clone()).collect();
-    for default_branch in &["main", "master"] {
-        if !local_names.contains(*default_branch) {
-            let remote_ref = format!("origin/{}", default_branch);
-            if git_cmd(&cwd, &["rev-parse", "--verify", &format!("refs/remotes/{}", remote_ref)])
-                .is_ok()
-            {
-                branches.push(crate::panel::watcher::BranchInfo {
-                    name: default_branch.to_string(),
-                    is_current: false,
-                });
+        let local_names: std::collections::HashSet<String> =
+            branches.iter().map(|b| b.name.clone()).collect();
+        for default_branch in &["main", "master"] {
+            if !local_names.contains(*default_branch) {
+                let remote_ref = format!("origin/{}", default_branch);
+                if git_cmd(&cwd, &["rev-parse", "--verify", &format!("refs/remotes/{}", remote_ref)])
+                    .is_ok()
+                {
+                    branches.push(crate::panel::watcher::BranchInfo {
+                        name: default_branch.to_string(),
+                        is_current: false,
+                    });
+                }
             }
         }
-    }
 
-    Ok(branches)
+        Ok(branches)
+    }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Checkout an existing local branch.
 #[tauri::command(async)]
-pub fn git_checkout_branch(cwd: String, branch: String) -> Result<(), String> {
-    git_cmd(&cwd, &["checkout", &branch]).map(|_| ())
+pub async fn git_checkout_branch(cwd: String, branch: String) -> Result<(), String> {
+    validate_cwd(&cwd)?;
+    validate_branch_name(&branch)?;
+    tokio::task::spawn_blocking(move || {
+        git_cmd(&cwd, &["checkout", &branch]).map(|_| ())
+    }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Create and switch to a new branch via `git checkout -b`.
 #[tauri::command(async)]
-pub fn git_create_branch(cwd: String, branch: String) -> Result<(), String> {
-    git_cmd(&cwd, &["checkout", "-b", &branch]).map(|_| ())
+pub async fn git_create_branch(cwd: String, branch: String) -> Result<(), String> {
+    validate_cwd(&cwd)?;
+    validate_branch_name(&branch)?;
+    tokio::task::spawn_blocking(move || {
+        git_cmd(&cwd, &["checkout", "-b", &branch]).map(|_| ())
+    }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 fn should_skip_dir(name: &str) -> bool {
@@ -1103,5 +1254,159 @@ diff --git a/file.rs b/file.rs
     fn untracked_diffs_non_git_dir() {
         let result = generate_untracked_diffs("/tmp");
         assert!(result.is_empty());
+    }
+
+    // --- Input validation tests ---
+
+    #[test]
+    fn validate_session_id_accepts_valid_uuid() {
+        assert!(validate_session_id("550e8400-e29b-41d4-a716-446655440000").is_ok());
+    }
+
+    #[test]
+    fn validate_session_id_accepts_simple_id() {
+        assert!(validate_session_id("my-session-123").is_ok());
+    }
+
+    #[test]
+    fn validate_session_id_rejects_empty() {
+        assert!(validate_session_id("").is_err());
+    }
+
+    #[test]
+    fn validate_session_id_rejects_path_traversal() {
+        assert!(validate_session_id("../../etc/passwd").is_err());
+    }
+
+    #[test]
+    fn validate_session_id_rejects_slashes() {
+        assert!(validate_session_id("abc/def").is_err());
+        assert!(validate_session_id("abc\\def").is_err());
+    }
+
+    #[test]
+    fn validate_session_id_rejects_special_chars() {
+        assert!(validate_session_id("abc def").is_err());
+        assert!(validate_session_id("abc!def").is_err());
+    }
+
+    #[test]
+    fn validate_cwd_rejects_empty() {
+        assert!(validate_cwd("").is_err());
+    }
+
+    #[test]
+    fn validate_cwd_rejects_relative_path() {
+        assert!(validate_cwd("relative/path").is_err());
+    }
+
+    #[test]
+    fn validate_cwd_rejects_nonexistent_path() {
+        assert!(validate_cwd("/nonexistent/path/should/not/exist").is_err());
+    }
+
+    #[test]
+    fn validate_cwd_accepts_existing_dir() {
+        assert!(validate_cwd("/tmp").is_ok());
+    }
+
+    #[test]
+    fn validate_branch_name_accepts_valid() {
+        assert!(validate_branch_name("feature/my-branch").is_ok());
+        assert!(validate_branch_name("main").is_ok());
+        assert!(validate_branch_name("fix-123").is_ok());
+        assert!(validate_branch_name("release/v1.0").is_ok());
+    }
+
+    #[test]
+    fn validate_branch_name_rejects_empty() {
+        assert!(validate_branch_name("").is_err());
+    }
+
+    #[test]
+    fn validate_branch_name_rejects_double_dot() {
+        assert!(validate_branch_name("branch..name").is_err());
+    }
+
+    #[test]
+    fn validate_branch_name_rejects_leading_dash() {
+        assert!(validate_branch_name("-bad-name").is_err());
+    }
+
+    #[test]
+    fn validate_branch_name_rejects_space() {
+        assert!(validate_branch_name("bad name").is_err());
+    }
+
+    #[test]
+    fn validate_branch_name_rejects_tilde() {
+        assert!(validate_branch_name("bad~name").is_err());
+    }
+
+    #[test]
+    fn validate_branch_name_rejects_lock_suffix() {
+        assert!(validate_branch_name("refs/heads/main.lock").is_err());
+    }
+
+    #[test]
+    fn validate_file_paths_rejects_absolute_path() {
+        assert!(validate_file_paths("/tmp", &["/etc/passwd".to_string()]).is_err());
+    }
+
+    #[test]
+    fn validate_file_paths_rejects_traversal() {
+        assert!(validate_file_paths("/tmp", &["../../etc/passwd".to_string()]).is_err());
+    }
+
+    #[test]
+    fn validate_file_paths_accepts_relative() {
+        assert!(validate_file_paths("/tmp", &["subdir/file.txt".to_string()]).is_ok());
+    }
+
+    #[test]
+    fn validate_file_paths_rejects_empty() {
+        assert!(validate_file_paths("/tmp", &["".to_string()]).is_err());
+    }
+
+    // --- Additional count_diff_stats edge cases ---
+
+    #[test]
+    fn count_diff_stats_metadata_only_lines() {
+        let diff = "--- a/file\n+++ b/file";
+        let (files, added, removed) = count_diff_stats(diff);
+        assert_eq!(files, 0);
+        assert_eq!(added, 0);
+        assert_eq!(removed, 0);
+    }
+
+    #[test]
+    fn count_diff_stats_no_diff_header() {
+        let diff = "+added line\n-removed line";
+        let (files, added, removed) = count_diff_stats(diff);
+        assert_eq!(files, 0);
+        assert_eq!(added, 1);
+        assert_eq!(removed, 1);
+    }
+
+    #[test]
+    fn validate_branch_name_rejects_del_character() {
+        assert!(validate_branch_name("bad\x7fname").is_err());
+    }
+
+    #[test]
+    fn validate_branch_name_rejects_control_chars() {
+        assert!(validate_branch_name("bad\x01name").is_err());
+        assert!(validate_branch_name("bad\tname").is_err());
+    }
+
+    // --- sessions_dir tests ---
+
+    #[test]
+    fn sessions_dir_returns_valid_path() {
+        let dir = sessions_dir();
+        assert!(dir.is_ok());
+        let path = dir.unwrap();
+        assert!(path.to_string_lossy().contains(".atlas"));
+        assert!(path.to_string_lossy().contains("sessions"));
     }
 }

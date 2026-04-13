@@ -54,7 +54,7 @@
 
   .header-icon {
     font-size: 0.9rem;
-    color: var(--yellow);
+    color: var(--cyan);
     font-variation-settings: 'FILL' 1;
   }
 

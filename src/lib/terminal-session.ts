@@ -9,7 +9,7 @@ import type { PanelData } from "../types/panel";
 import { updateSessionLabelByTabId } from "./stores/workspace";
 import { get } from "svelte/store";
 import { showToast } from "./stores/toast";
-import { handleGlobalKeydown, setRefreshHandler } from "./shortcuts";
+import { setRefreshHandler } from "./shortcuts";
 import { xtermTheme } from "./theme";
 
 export interface TerminalSessionOptions {
@@ -64,7 +64,7 @@ export class TerminalSession {
     this.registerKeyHandler();
     this.registerOscHandlers();
     this.registerReadinessHandler();
-    this.setupResizeObserver(opts.container, opts.visible);
+    this.setupResizeObserver(opts.container);
     this.spawnPty(opts.onPtyReady);
     this.setupEnterRefresh();
     if (this._visible) this.startPolling();
@@ -73,10 +73,20 @@ export class TerminalSession {
   private registerKeyHandler() {
     this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       if (e.type !== "keydown") return true;
+      // Pass through global shortcuts to the window-level handler — returning
+      // false prevents xterm from consuming the key so it bubbles up to
+      // TerminalContainer's <svelte:window onkeydown>.  We must NOT call
+      // handleGlobalKeydown here because the window handler already does,
+      // which would cause actions like openMarkdownFile to fire twice.
       if (e.ctrlKey && e.key === "Tab") return false;
       if (e.ctrlKey && !e.shiftKey && e.key === "t") return false;
       if (e.ctrlKey && !e.shiftKey && e.key === "w") return false;
-      if (handleGlobalKeydown(e)) return false;
+      if (e.ctrlKey && !e.shiftKey && e.key === "o") return false;
+      if (e.ctrlKey && !e.shiftKey && e.key >= "1" && e.key <= "9") return false;
+      // All Ctrl+Shift combos are global shortcuts (panel toggle, section
+      // switching, manual refresh) — pass them all through rather than
+      // maintaining a duplicate list that drifts from shortcuts.ts.
+      if (e.ctrlKey && e.shiftKey) return false;
       return true;
     });
   }
@@ -161,7 +171,7 @@ export class TerminalSession {
     });
   }
 
-  private setupResizeObserver(container: HTMLDivElement, _visible: boolean) {
+  private setupResizeObserver(container: HTMLDivElement) {
     this.resizeObserver = new ResizeObserver(() => {
       if (this._visible) {
         this.fitAddon.fit();

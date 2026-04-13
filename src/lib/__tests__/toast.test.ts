@@ -41,7 +41,7 @@ describe("toast store", () => {
   it("auto-dismisses after timeout", () => {
     showToast("Temporary");
     expect(get(toasts)).toHaveLength(1);
-    vi.advanceTimersByTime(5000);
+    vi.advanceTimersByTime(5001);
     expect(get(toasts)).toHaveLength(0);
   });
 

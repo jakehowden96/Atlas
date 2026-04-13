@@ -86,31 +86,27 @@
     }
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      if (creating) {
-        creating = false;
-      } else {
+  // Always register/cleanup listeners; gate behavior on `open` state inside
+  // the handlers to avoid listener leaks when the dropdown toggles rapidly.
+  $effect(() => {
+    function onClick(e: MouseEvent) {
+      if (open && dropdownEl && !dropdownEl.contains(e.target as Node)) {
         open = false;
       }
     }
-  }
-
-  function handleClickOutside(e: MouseEvent) {
-    if (dropdownEl && !dropdownEl.contains(e.target as Node)) {
-      open = false;
+    function onKeydown(e: KeyboardEvent) {
+      if (!open) return;
+      if (e.key === "Escape") {
+        if (creating) creating = false;
+        else open = false;
+      }
     }
-  }
-
-  $effect(() => {
-    if (open) {
-      document.addEventListener("click", handleClickOutside, true);
-      document.addEventListener("keydown", handleKeydown);
-      return () => {
-        document.removeEventListener("click", handleClickOutside, true);
-        document.removeEventListener("keydown", handleKeydown);
-      };
-    }
+    document.addEventListener("click", onClick, true);
+    document.addEventListener("keydown", onKeydown);
+    return () => {
+      document.removeEventListener("click", onClick, true);
+      document.removeEventListener("keydown", onKeydown);
+    };
   });
 </script>
 

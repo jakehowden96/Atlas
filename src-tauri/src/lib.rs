@@ -49,7 +49,7 @@ fn write_config_api_key(key: &str) -> Result<(), String> {
     std::fs::write(&path, json).map_err(|e| e.to_string())
 }
 
-fn build_claude_client(api_key: String) -> ClaudeClient {
+fn build_claude_client(api_key: String) -> Result<ClaudeClient, String> {
     let base_url = std::env::var("ANTHROPIC_BASE_URL")
         .ok()
         .or_else(|| read_claude_settings_env("ANTHROPIC_BASE_URL"))
@@ -168,7 +168,10 @@ pub fn run() {
 
     let has_key = api_key.is_some();
     let claude_state: ClaudeState = Arc::new(RwLock::new(
-        api_key.map(build_claude_client),
+        api_key.and_then(|key| match build_claude_client(key) {
+            Ok(client) => Some(client),
+            Err(e) => { log::error!("Failed to create Claude client: {}", e); None }
+        }),
     ));
 
     if !has_key {
@@ -208,9 +211,10 @@ pub fn run() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
-            let watcher = panel::watcher::start_watcher(handle)
-                .expect("Failed to start panel watcher");
-            app.manage(watcher);
+            match panel::watcher::start_watcher(handle) {
+                Ok(watcher) => { app.manage(watcher); }
+                Err(e) => log::error!("Failed to start panel watcher: {} — panel updates will not work", e),
+            }
 
             // Install notification hook — resolve script path from bundled
             // resources (production) or fall back to the repo scripts/ dir (dev).
@@ -237,5 +241,5 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .unwrap_or_else(|e| log::error!("Tauri application error: {}", e));
 }

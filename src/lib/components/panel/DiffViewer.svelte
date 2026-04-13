@@ -71,15 +71,15 @@
 
   // Track which files are selected for staging
   let selectedFiles: Set<string> = $state(new Set());
-  let prevFileNames: string[] = [];
+  let lastResetKey = "";
 
-  // Auto-select all files only when the actual file list changes
+  // Auto-select all files when the underlying data changes (new commit, new CWD),
+  // but NOT when toggling between local/remote views of the same data.
   $effect(() => {
-    const allNames = isMultiRepo ? allProjectFileKeys : files.map((f) => f.newName);
-    const key = allNames.join("\0");
-    const prevKey = prevFileNames.join("\0");
-    if (key !== prevKey) {
-      prevFileNames = allNames;
+    const resetKey = cwd + "\0" + (data?.raw ?? "");
+    if (resetKey !== lastResetKey) {
+      lastResetKey = resetKey;
+      const allNames = isMultiRepo ? allProjectFileKeys : files.map((f) => f.newName);
       selectedFiles = new Set(allNames);
     }
   });
