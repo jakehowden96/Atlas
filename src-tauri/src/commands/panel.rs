@@ -709,7 +709,7 @@ pub async fn git_stage_files(cwd: String, files: Vec<String>) -> Result<(), Stri
     }
     validate_file_paths(&cwd, &files)?;
     tokio::task::spawn_blocking(move || {
-        let mut args = vec!["add", "--"];
+        let mut args = vec!["add", "-A", "--"];
         let refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
         args.extend(refs);
         git_cmd(&cwd, &args).map(|_| ())
