@@ -61,7 +61,6 @@ struct IssueResponse {
 struct FlowResponse {
     #[serde(default)]
     edges: Vec<EdgeResponse>,
-    mermaid: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -69,6 +68,8 @@ struct EdgeResponse {
     from: String,
     to: String,
     label: Option<String>,
+    #[serde(rename = "type")]
+    edge_type: Option<String>,
 }
 
 const ANALYSIS_PROMPT: &str = r#"Analyze this git diff and respond with ONLY a JSON object (no markdown, no code fences, no explanation).
@@ -84,9 +85,8 @@ The JSON must have this exact structure:
   ],
   "flow": {
     "edges": [
-      {"from": "function_a", "to": "function_b", "label": "calls"}
-    ],
-    "mermaid": "graph LR\n  A[\"function_a\"] --> B[\"function_b\"]"
+      {"from": "file.ts::functionName", "to": "other.ts::otherFunction", "label": "calls updateDB", "type": "call"}
+    ]
   }
 }
 
@@ -94,11 +94,18 @@ Rules:
 - confidence: 0.0 to 1.0, how confident you are in the analysis
 - issues: only include real concerns (bugs, security, performance). Empty array if none found.
 - severity: one of "info", "warning", "error"
-- flow.edges: show the key relationships between modified functions/modules
-- flow.mermaid: valid Mermaid.js graph LR syntax showing the code flow of the changes. Put all labels in quotes.
 - Keep all text concise
 
-Diff:
+Flow rules:
+- Nodes MUST use the format "filename::symbolName" (e.g. "graph-layout.ts::layoutFlowGraph")
+- Use the short filename (not the full path), e.g. "panel.rs" not "src-tauri/src/commands/panel.rs"
+- Only include symbols that appear in the diff or are directly called/imported by changed code
+- Edge "type" must be one of: "call" (function invocation), "import" (dependency), "modify" (data mutation), "emit" (event/signal)
+- Edge "label" should be a short description of the relationship (e.g. "calls", "imports type", "updates state")
+- Focus on [CHANGED] definitions from the code context below
+- For cross-file relationships, trace imports to identify which files depend on modified symbols
+- Keep the graph focused: 3-10 edges maximum, showing the most important relationships
+
 "#;
 
 impl ClaudeClient {
@@ -113,6 +120,7 @@ impl ClaudeClient {
     pub async fn analyze_diff(
         &self,
         raw_diff: &str,
+        analysis_context: &str,
     ) -> Result<(SummaryData, FlowData), String> {
         // Truncate very large diffs to avoid token limits (char-boundary safe)
         let diff_text = if raw_diff.len() > 30_000 {
@@ -125,7 +133,11 @@ impl ClaudeClient {
             raw_diff
         };
 
-        let prompt = format!("{}{}", ANALYSIS_PROMPT, diff_text);
+        let prompt = if analysis_context.is_empty() {
+            format!("{}Diff:\n{}", ANALYSIS_PROMPT, diff_text)
+        } else {
+            format!("{}{}\n\nDiff:\n{}", ANALYSIS_PROMPT, analysis_context, diff_text)
+        };
 
         let request = ApiRequest {
             model: self.model.clone(),
@@ -220,9 +232,9 @@ impl ClaudeClient {
                     from: e.from,
                     to: e.to,
                     label: e.label,
+                    edge_type: e.edge_type,
                 })
                 .collect(),
-            mermaid: analysis.flow.mermaid,
         };
 
         Ok((summary, flow))

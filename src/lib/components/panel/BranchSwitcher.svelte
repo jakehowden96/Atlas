@@ -18,12 +18,26 @@
   let creating = $state(false);
   let newBranchName = $state("");
   let dropdownEl: HTMLDivElement = $state(null!);
+  let triggerEl: HTMLButtonElement = $state(null!);
   let newBranchInput: HTMLInputElement = $state(null!);
+  let dropdownStyle = $state("");
 
   async function toggleDropdown() {
     if (open) {
       open = false;
       return;
+    }
+    // Compute fixed position from trigger button before opening
+    if (triggerEl) {
+      const rect = triggerEl.getBoundingClientRect();
+      const spaceRight = window.innerWidth - rect.left;
+      const minW = 200;
+      // If dropdown would overflow right, align to right edge of trigger instead
+      if (spaceRight < minW) {
+        dropdownStyle = `position:fixed; top:${rect.bottom + 6}px; right:${window.innerWidth - rect.right}px;`;
+      } else {
+        dropdownStyle = `position:fixed; top:${rect.bottom + 6}px; left:${rect.left}px;`;
+      }
     }
     loadingBranches = true;
     open = true;
@@ -111,14 +125,14 @@
 </script>
 
 <div class="branch-switcher" bind:this={dropdownEl}>
-  <button class="branch-trigger" onclick={toggleDropdown} title="Switch branch">
+  <button class="branch-trigger" bind:this={triggerEl} onclick={toggleDropdown} title="Switch branch">
     <span class="material-symbols-outlined branch-icon">fork_right</span>
     <span class="branch-name">{currentBranch || "..."}</span>
     <span class="material-symbols-outlined chevron" class:open>{open ? "expand_less" : "expand_more"}</span>
   </button>
 
   {#if open}
-    <div class="branch-dropdown">
+    <div class="branch-dropdown" style={dropdownStyle}>
       {#if loadingBranches}
         <div class="branch-loading">
           <span class="material-symbols-outlined spinner">progress_activity</span>
@@ -223,9 +237,6 @@
   }
 
   .branch-dropdown {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
     min-width: 200px;
     max-height: 280px;
     overflow-y: auto;
@@ -233,7 +244,7 @@
     border: 1px solid var(--outline-variant);
     border-radius: 8px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-    z-index: 100;
+    z-index: 9999;
     padding: 4px;
   }
 

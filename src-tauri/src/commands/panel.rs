@@ -1,3 +1,4 @@
+use crate::analysis;
 use crate::panel::watcher::{sessions_dir, AnalysisStatusEvent, DiffData, FlowData, GitStatus, PanelData, PanelUpdateEvent, ProjectDiff, RepoInfo, SummaryData};
 use crate::ClaudeState;
 use std::collections::HashMap;
@@ -210,7 +211,11 @@ pub fn refresh_panel(
 
                     emit_status("running", None);
 
-                    match client.analyze_diff(&raw_diff).await {
+                    // Run static analysis to extract code context
+                    let analysis_ctx = analysis::analyze_changed_files(&expected_cwd, &raw_diff);
+                    let context_str = analysis::format_context(&analysis_ctx);
+
+                    match client.analyze_diff(&raw_diff, &context_str).await {
                         Ok((summary, flow)) => {
                             // Acquire panel lock for atomic read-check-write
                             let lock = panel_lock(&sid);

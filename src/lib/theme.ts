@@ -4,7 +4,7 @@
  * Deep midnight tonal architecture with luminous accents.
  * CSS custom properties are defined in App.svelte using these same values.
  * Use the CSS vars in Svelte component <style> blocks, and this object
- * where JS/TS runtime access is needed (e.g. xterm theme, mermaid config).
+ * where JS/TS runtime access is needed (e.g. xterm theme).
  */
 export const theme = {
   /* Surface hierarchy (tonal depth, no borders) */
@@ -84,18 +84,3 @@ export const xtermTheme = {
   brightWhite: theme.whiteBright,
 } as const;
 
-/** Mermaid themeVariables derived from the shared palette */
-export const mermaidThemeVariables = {
-  darkMode: true,
-  primaryColor: theme.primary,
-  primaryTextColor: theme.onSurfaceVariant,
-  primaryBorderColor: theme.outlineVariant,
-  lineColor: theme.outlineVariant,
-  secondaryColor: theme.surfaceContainerHigh,
-  tertiaryColor: theme.surfaceContainerHighest,
-  background: theme.surface,
-  mainBkg: theme.surfaceContainerHigh,
-  nodeBorder: theme.outlineVariant,
-  clusterBkg: theme.surfaceContainerLow,
-  fontSize: "13px",
-} as const;

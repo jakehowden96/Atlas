@@ -65,14 +65,16 @@ pub struct Issue {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowData {
     pub edges: Vec<FlowEdge>,
-    pub mermaid: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowEdge {
     pub from: String,
     pub to: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edge_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

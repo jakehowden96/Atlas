@@ -1,11 +1,8 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import mermaid from "mermaid";
   import type { FlowData } from "../../../types/panel";
   import RepositoryClean from "./RepositoryClean.svelte";
   import ActionButton from "./ActionButton.svelte";
-  import { flowEdgesToMermaid } from "../../mermaid-converter";
-  import { mermaidThemeVariables } from "../../theme";
+  import { layoutFlowGraphChunked, type ChunkedGraphLayout } from "../../css-graph-layout";
   import { apiKeyConfigured, checkApiStatus, panelData, analysisStatus, analysisError } from "../../stores/panel";
   import { setApiKey, refreshPanel, resetAnalysis } from "../../ipc";
   import { activeTabId } from "../../stores/terminal";
@@ -20,6 +17,49 @@
   let { data, hasDiff = false }: Props = $props();
   let apiKeyInput = $state("");
   let saving = $state(false);
+
+  let layout = $state.raw<ChunkedGraphLayout | null>(null);
+  let viewportEl: HTMLDivElement = $state(null!);
+
+  const PADDING = 24;
+
+  $effect(() => {
+    if (data && data.edges.length > 0) {
+      const availableWidth = viewportEl
+        ? viewportEl.clientWidth - PADDING * 2
+        : 300;
+      layout = layoutFlowGraphChunked(data.edges, availableWidth);
+    } else {
+      layout = null;
+    }
+  });
+
+  function edgeToPath(points: { x: number; y: number }[]): string {
+    if (points.length === 0) return "";
+    if (points.length === 1) return `M${points[0].x},${points[0].y}`;
+
+    let d = `M${points[0].x},${points[0].y}`;
+    if (points.length === 2) {
+      d += ` L${points[1].x},${points[1].y}`;
+      return d;
+    }
+
+    // Smooth curve through intermediate points
+    for (let i = 1; i < points.length - 1; i++) {
+      const curr = points[i];
+      const next = points[i + 1];
+      const cpx2 = (curr.x + next.x) / 2;
+      const cpy2 = (curr.y + next.y) / 2;
+      if (i === 1) {
+        d += ` Q${curr.x},${curr.y} ${cpx2},${cpy2}`;
+      } else {
+        d += ` T${cpx2},${cpy2}`;
+      }
+    }
+    const last = points[points.length - 1];
+    d += ` L${last.x},${last.y}`;
+    return d;
+  }
 
   async function handleSaveKey() {
     if (!apiKeyInput.trim()) return;
@@ -39,6 +79,7 @@
       saving = false;
     }
   }
+
   async function handleRetry() {
     const tabId = get(activeTabId);
     try {
@@ -58,127 +99,63 @@
     }
   }
 
-  let diagramEl: HTMLDivElement = $state(null!);
-  let containerEl: HTMLDivElement = $state(null!);
-  let renderCount = 0;
-  let lastRenderedSyntax = "";
-
-  let scale = $state(1);
-  let translateX = $state(0);
-  let translateY = $state(0);
-
-  // Pan state
-  let isPanning = $state(false);
-  let panStartX = 0;
-  let panStartY = 0;
-  let panStartTransX = 0;
-  let panStartTransY = 0;
-
-  function zoomIn() {
-    scale = Math.min(scale * 1.25, 5);
-  }
-
-  function zoomOut() {
-    scale = Math.max(scale / 1.25, 0.2);
-  }
-
-  function resetView() {
-    scale = 1;
-    translateX = 0;
-    translateY = 0;
-  }
-
-  function handleWheel(e: WheelEvent) {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? 1 / 1.1 : 1.1;
-      scale = Math.min(Math.max(scale * delta, 0.2), 5);
+  /** Parse "file.ts::symbolName" into { file, symbol }. Falls back gracefully. */
+  function parseNodeLabel(label: string): { file: string; symbol: string } {
+    const sep = label.indexOf("::");
+    if (sep > 0) {
+      return { file: label.slice(0, sep), symbol: label.slice(sep + 2) };
     }
+    return { file: "", symbol: label };
   }
-
-  function handlePointerDown(e: PointerEvent) {
-    if (e.button !== 0) return;
-    isPanning = true;
-    panStartX = e.clientX;
-    panStartY = e.clientY;
-    panStartTransX = translateX;
-    panStartTransY = translateY;
-    containerEl.setPointerCapture(e.pointerId);
-  }
-
-  function handlePointerMove(e: PointerEvent) {
-    if (!isPanning) return;
-    translateX = panStartTransX + (e.clientX - panStartX);
-    translateY = panStartTransY + (e.clientY - panStartY);
-  }
-
-  function handlePointerUp() {
-    isPanning = false;
-  }
-
-  onMount(() => {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: "dark",
-      securityLevel: "strict",
-      themeVariables: mermaidThemeVariables,
-    });
-  });
-
-  $effect(() => {
-    if (data && diagramEl) {
-      const mermaidSyntax = data.mermaid || flowEdgesToMermaid(data.edges);
-      if (mermaidSyntax === lastRenderedSyntax) return;
-      lastRenderedSyntax = mermaidSyntax;
-      renderCount++;
-      const id = `flow-${renderCount}`;
-
-      // mermaid.render returns sanitized SVG from its own syntax — safe to inject
-      mermaid
-        .render(id, mermaidSyntax)
-        .then(({ svg }) => {
-          // mermaid.render returns sanitized SVG (securityLevel: "strict") — safe to inject
-          if (diagramEl) diagramEl.innerHTML = svg; // eslint-disable-line no-unsanitized/property
-        })
-        .catch((err) => {
-          if (diagramEl) diagramEl.textContent = `Failed to render diagram: ${err.message}`;
-        });
-    }
-  });
 </script>
 
 <div class="flow-diagram">
-  {#if data}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="diagram-viewport"
-      bind:this={containerEl}
-      onwheel={handleWheel}
-      onpointerdown={handlePointerDown}
-      onpointermove={handlePointerMove}
-      onpointerup={handlePointerUp}
-      style="cursor: {isPanning ? 'grabbing' : 'grab'}"
-    >
-      <div
-        class="diagram-container"
-        bind:this={diagramEl}
-        style="transform: translate({translateX}px, {translateY}px) scale({scale})"
-      ></div>
-    </div>
+  {#if layout && layout.chunks.length > 0}
+    <div class="diagram-viewport" bind:this={viewportEl}>
+      {#each layout.chunks as chunk, chunkIdx (chunkIdx)}
+        <div class="diagram-chunk">
+          <div class="chunk-title">{chunk.title}</div>
+          <div
+            class="diagram-stage"
+            style="width: {chunk.width}px; height: {chunk.height}px"
+          >
+            <!-- SVG edge layer -->
+            <svg class="edge-layer" viewBox="0 0 {chunk.width} {chunk.height}">
+              <defs>
+                <marker
+                  id="arrowhead-{chunkIdx}"
+                  markerWidth="8"
+                  markerHeight="6"
+                  refX="7"
+                  refY="3"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 8 3, 0 6" fill="var(--outline-variant)" />
+                </marker>
+              </defs>
+              {#each chunk.edges as edge (edge.id)}
+                <path
+                  d={edgeToPath(edge.points)}
+                  class="edge-path {edge.edge_type === 'import' ? 'edge-import' : ''} {edge.edge_type === 'call' ? 'edge-call' : ''}"
+                  marker-end="url(#arrowhead-{chunkIdx})"
+                />
+              {/each}
+            </svg>
 
-    <!-- Zoom Controls -->
-    <div class="zoom-controls">
-      <button class="zoom-btn" title="Zoom In" onclick={zoomIn}>
-        <span class="material-symbols-outlined">zoom_in</span>
-      </button>
-      <span class="zoom-divider"></span>
-      <button class="zoom-btn" title="Zoom Out" onclick={zoomOut}>
-        <span class="material-symbols-outlined">zoom_out</span>
-      </button>
-      <span class="zoom-divider"></span>
-      <button class="zoom-btn" title="Center" onclick={resetView}>
-        <span class="material-symbols-outlined">center_focus_weak</span>
-      </button>
+            <!-- Node layer -->
+            {#each chunk.nodes as node (node.id)}
+              {@const parsed = parseNodeLabel(node.label)}
+              <div
+                class="graph-node"
+                style="left: {node.x}px; top: {node.y}px; width: {node.width}px; height: {node.height}px"
+              >
+                <span class="node-type">{parsed.file || "function"}</span>
+                <span class="node-label">{parsed.symbol}</span>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/each}
     </div>
   {:else}
     <div class="empty">
@@ -232,79 +209,121 @@
 <style>
   .flow-diagram {
     height: 100%;
-    overflow: auto;
     position: relative;
+    background-color: var(--surface);
     background-image: radial-gradient(var(--surface-container-high) 1px, transparent 1px);
     background-size: 24px 24px;
-    background-color: var(--surface);
   }
 
   .diagram-viewport {
     width: 100%;
     height: 100%;
-    overflow: hidden;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    touch-action: none;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 24px;
+    box-sizing: border-box;
   }
 
-  .diagram-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 200px;
-    padding: 3rem var(--spacing-5);
-    transform-origin: center center;
+  .diagram-chunk {
+    margin-bottom: 32px;
   }
 
-  .diagram-container :global(svg) {
+  .diagram-chunk:last-child {
+    margin-bottom: 0;
+  }
+
+  .chunk-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--on-surface-variant);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding-bottom: 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--outline-variant) 30%, transparent);
+    margin-bottom: 16px;
+  }
+
+  .diagram-stage {
+    position: relative;
+    margin: 0 auto;
+  }
+
+  /* ── SVG edges ── */
+  .edge-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     pointer-events: none;
   }
 
-  .zoom-controls {
-    position: absolute;
-    bottom: 1.5rem;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.6rem 1.5rem;
-    background: color-mix(in srgb, var(--surface-container-highest) 80%, transparent);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid color-mix(in srgb, var(--outline-variant) 20%, transparent);
-    border-radius: 9999px;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  .edge-path {
+    fill: none;
+    stroke: var(--outline-variant);
+    stroke-width: 2;
+    opacity: 0.5;
   }
 
-  .zoom-btn {
+  .edge-call {
+    stroke: var(--primary-dim);
+    opacity: 0.7;
+  }
+
+  .edge-import {
+    stroke-dasharray: 6 4;
+    opacity: 0.35;
+  }
+
+  /* ── Nodes ── */
+  .graph-node {
+    position: absolute;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: none;
-    border: none;
-    color: var(--on-surface-variant);
-    cursor: pointer;
-    padding: 0;
-    transition: color 0.15s;
+    gap: 2px;
+    background: var(--surface-container-high);
+    border: 1px solid color-mix(in srgb, var(--outline-variant) 30%, transparent);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    z-index: 1;
   }
 
-  .zoom-btn:hover {
+  .graph-node:hover {
+    border-color: var(--primary);
+    box-shadow:
+      0 4px 20px rgba(0, 0, 0, 0.3),
+      0 0 20px color-mix(in srgb, var(--primary) 15%, transparent);
+  }
+
+  .node-type {
+    font-family: var(--font-mono);
+    font-size: 10px;
     color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: calc(100% - 16px);
   }
 
-  .zoom-btn :global(.material-symbols-outlined) {
-    font-size: 1.15rem;
+  .node-label {
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--on-surface);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: calc(100% - 20px);
   }
 
-  .zoom-divider {
-    width: 1px;
-    height: 1rem;
-    background: color-mix(in srgb, var(--outline-variant) 40%, transparent);
-  }
-
+  /* ── Empty / error / loading states ── */
   .empty {
     display: flex;
     align-items: center;
@@ -312,7 +331,6 @@
     height: 100%;
     color: var(--on-surface-variant);
   }
-
 
   .api-key-prompt {
     display: flex;
@@ -418,12 +436,5 @@
   @keyframes pulse {
     0%, 100% { opacity: 0.3; }
     50% { opacity: 1; }
-  }
-
-  .diagram-container :global(.error) {
-    color: var(--error);
-    font-size: 13px;
-    padding: 20px;
-    text-align: center;
   }
 </style>

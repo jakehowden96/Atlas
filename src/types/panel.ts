@@ -9,6 +9,7 @@ export interface FlowEdge {
   from: string;
   to: string;
   label?: string;
+  edge_type?: string;
 }
 
 export interface ProjectDiff {
@@ -41,7 +42,6 @@ export interface SummaryData {
 
 export interface FlowData {
   edges: FlowEdge[];
-  mermaid?: string;
 }
 
 export interface PanelData {

@@ -89,25 +89,29 @@
 
 <style>
   .resizer {
-    width: 0;
+    width: 17px;
+    margin: 0 -8px;
     cursor: col-resize;
     background: transparent;
     flex-shrink: 0;
     position: relative;
+    z-index: 2;
   }
 
-  /* Wider invisible hit area for easier grabbing */
+  /* Visible 1px line indicator, centered in the 17px grab area */
   .resizer::before {
     content: "";
     position: absolute;
     top: 0;
     bottom: 0;
-    left: -3px;
-    right: -3px;
+    left: 8px;
+    width: 1px;
+    background: transparent;
+    transition: background 0.15s;
   }
 
-  .resizer:hover,
-  .resizer.active {
+  .resizer:hover::before,
+  .resizer.active::before {
     background: var(--primary);
   }
 </style>

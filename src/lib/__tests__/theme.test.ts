@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { theme, xtermTheme, mermaidThemeVariables } from "../theme";
+import { theme, xtermTheme } from "../theme";
 
 describe("theme", () => {
   it("has all required base colors", () => {
@@ -28,10 +28,3 @@ describe("xtermTheme", () => {
   });
 });
 
-describe("mermaidThemeVariables", () => {
-  it("derives colors from the shared palette", () => {
-    expect(mermaidThemeVariables.primaryColor).toBe(theme.primary);
-    expect(mermaidThemeVariables.background).toBe(theme.surface);
-    expect(mermaidThemeVariables.darkMode).toBe(true);
-  });
-});

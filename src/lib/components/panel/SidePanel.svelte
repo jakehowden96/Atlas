@@ -1,7 +1,7 @@
 <script lang="ts">
   import DiffViewer from "./DiffViewer.svelte";
   import SummaryView from "./SummaryView.svelte";
-  import FlowDiagram from "./FlowDiagram.svelte";
+  import CSSFlowDiagram from "./CSSFlowDiagram.svelte";
   import { panelData, activeSection, setSection, togglePanel } from "../../stores/panel";
   import type { PanelSection } from "../../../types/panel";
 
@@ -38,7 +38,7 @@
     {:else if $activeSection === "summary"}
       <SummaryView data={$panelData?.summary} hasDiff={!!$panelData?.diff} />
     {:else if $activeSection === "flow"}
-      <FlowDiagram data={$panelData?.flow} hasDiff={!!$panelData?.diff} />
+      <CSSFlowDiagram data={$panelData?.flow} hasDiff={!!$panelData?.diff} />
     {/if}
   </div>
 
