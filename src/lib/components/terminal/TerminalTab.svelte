@@ -80,6 +80,10 @@
     background: var(--surface);
   }
 
+  .terminal-container :global(.xterm .xterm-viewport) {
+    background-color: var(--surface) !important;
+  }
+
   .loading-overlay {
     display: flex;
     flex-direction: column;
