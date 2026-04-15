@@ -9,6 +9,7 @@ function makePanel(overrides: Partial<PanelData> = {}): PanelData {
     cwd: "/tmp",
     is_git: true,
     diff: undefined,
+    plan: undefined,
     summary: undefined,
     flow: undefined,
     ...overrides,

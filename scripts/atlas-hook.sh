@@ -89,6 +89,27 @@ LINES_REMOVED=$(echo "$RAW_DIFF" | grep -c '^-[^-]' || echo 0)
 
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
+# Discover the most recent implementation plan (if any)
+PLAN_JSON=""
+PLANS_DIR="$GIT_ROOT/.claude/plans"
+if [ -d "$PLANS_DIR" ]; then
+  LATEST_PLAN=$(find "$PLANS_DIR" -maxdepth 1 -name '*.md' -type f -print0 2>/dev/null \
+    | xargs -0 ls -t 2>/dev/null | head -1)
+  if [ -n "$LATEST_PLAN" ] && [ -f "$LATEST_PLAN" ]; then
+    # Truncate large plans at the last complete line before 5KB.
+    # head -c grabs raw bytes; if the file was larger, the final line
+    # is likely incomplete, so drop it to avoid cutting mid-sentence.
+    PLAN_RAW=$(head -c 5120 "$LATEST_PLAN")
+    FILE_SIZE=$(wc -c < "$LATEST_PLAN" | tr -d ' ')
+    if [ "$FILE_SIZE" -gt 5120 ]; then
+      PLAN_TEXT=$(printf '%s' "$PLAN_RAW" | sed '$d')
+    else
+      PLAN_TEXT="$PLAN_RAW"
+    fi
+    PLAN_JSON=$(printf ',\n  "plan": %s' "$(echo "$PLAN_TEXT" | jq -Rs .)")
+  fi
+fi
+
 # Write panel.json — the Rust file watcher picks this up and emits to frontend
 cat > "$SESSION_DIR/panel.json" << PANEL_EOF
 {
@@ -100,7 +121,7 @@ cat > "$SESSION_DIR/panel.json" << PANEL_EOF
     "files_changed": $FILES_CHANGED,
     "lines_added": $LINES_ADDED,
     "lines_removed": $LINES_REMOVED
-  }
+  }${PLAN_JSON}
 }
 PANEL_EOF
 

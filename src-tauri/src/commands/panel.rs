@@ -182,6 +182,7 @@ pub fn refresh_panel(
             let has_client = claude_state.read().map(|g| g.is_some()).unwrap_or(false);
             if has_client && should_analyze {
                 let raw_diff = diff.raw.clone();
+                let plan_text = data.plan.clone();
                 let expected_cwd = data.cwd.clone();
                 let expected_diff_hash = diff_hash;
                 let sid = session_id.clone();
@@ -215,7 +216,7 @@ pub fn refresh_panel(
                     let analysis_ctx = analysis::analyze_changed_files(&expected_cwd, &raw_diff);
                     let context_str = analysis::format_context(&analysis_ctx);
 
-                    match client.analyze_diff(&raw_diff, &context_str).await {
+                    match client.analyze_diff(&raw_diff, &context_str, plan_text.as_deref()).await {
                         Ok((summary, flow)) => {
                             // Acquire panel lock for atomic read-check-write
                             let lock = panel_lock(&sid);
@@ -284,6 +285,7 @@ fn build_panel_single(
             cwd: git_root.to_string(),
             is_git: true,
             diff: None,
+            plan: None,
             summary: None,
             flow: None,
         }));
@@ -299,8 +301,8 @@ fn build_panel_single(
         (None, None, None, None)
     };
 
-    // Preserve existing summary/flow if the diff hasn't changed
-    let (prev_summary, prev_flow) = read_existing_analysis(panel_path, &bundle.full);
+    // Preserve existing summary/flow/plan if the diff hasn't changed
+    let (prev_summary, prev_flow, prev_plan) = read_existing_analysis(panel_path, &bundle.full);
 
     let data = PanelData {
         version: 1,
@@ -318,6 +320,7 @@ fn build_panel_single(
             local_lines_added: local_la,
             local_lines_removed: local_lr,
         }),
+        plan: prev_plan,
         summary: prev_summary,
         flow: prev_flow,
     };
@@ -398,6 +401,7 @@ fn build_panel_multi(
             cwd: root.to_string(),
             is_git: true,
             diff: None,
+            plan: None,
             summary: None,
             flow: None,
         }));
@@ -405,8 +409,8 @@ fn build_panel_multi(
 
     let combined = all_diffs.join("\n\n");
 
-    // Preserve existing summary/flow if the diff hasn't changed
-    let (prev_summary, prev_flow) = read_existing_analysis(panel_path, &combined);
+    // Preserve existing summary/flow/plan if the diff hasn't changed
+    let (prev_summary, prev_flow, prev_plan) = read_existing_analysis(panel_path, &combined);
 
     let data = PanelData {
         version: 1,
@@ -424,6 +428,7 @@ fn build_panel_multi(
             local_lines_added: None,
             local_lines_removed: None,
         }),
+        plan: prev_plan,
         summary: prev_summary,
         flow: prev_flow,
     };
@@ -620,22 +625,22 @@ fn count_diff_stats(raw: &str) -> (u32, u32, u32) {
     (files, added, removed)
 }
 
-/// Read the existing panel.json and return its summary/flow if the diff matches.
+/// Read the existing panel.json and return its summary/flow/plan if the diff matches.
 /// This prevents polling from clobbering async Claude analysis results.
 fn read_existing_analysis(
     panel_path: &std::path::Path,
     current_diff_raw: &str,
-) -> (Option<SummaryData>, Option<FlowData>) {
+) -> (Option<SummaryData>, Option<FlowData>, Option<String>) {
     if let Ok(contents) = fs::read_to_string(panel_path) {
         if let Ok(existing) = serde_json::from_str::<PanelData>(&contents) {
             if let Some(ref diff) = existing.diff {
                 if diff.raw == current_diff_raw {
-                    return (existing.summary, existing.flow);
+                    return (existing.summary, existing.flow, existing.plan);
                 }
             }
         }
     }
-    (None, None)
+    (None, None, None)
 }
 
 fn write_panel(session_id: &str, data: &PanelData, panel_path: &std::path::Path) {
@@ -1149,6 +1154,7 @@ diff --git a/file.rs b/file.rs
                 local_lines_added: None,
                 local_lines_removed: None,
             }),
+            plan: None,
             summary: None,
             flow: None,
         };
@@ -1163,8 +1169,123 @@ diff --git a/file.rs b/file.rs
         assert_eq!(diff.files_changed, 1);
         assert_eq!(diff.lines_added, 1);
         assert_eq!(diff.lines_removed, 0);
+        assert!(parsed.plan.is_none());
         assert!(parsed.summary.is_none());
         assert!(parsed.flow.is_none());
+    }
+
+    #[test]
+    fn panel_data_with_plan_roundtrip() {
+        let data = PanelData {
+            version: 1,
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            cwd: "/tmp/test".to_string(),
+            is_git: true,
+            diff: None,
+            plan: Some("## Plan\nRefactor the auth module".to_string()),
+            summary: None,
+            flow: None,
+        };
+
+        let json = serde_json::to_string(&data).unwrap();
+        assert!(json.contains("\"plan\""));
+        let parsed: PanelData = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.plan.as_deref(), Some("## Plan\nRefactor the auth module"));
+    }
+
+    #[test]
+    fn panel_data_plan_omitted_when_none() {
+        let data = PanelData {
+            version: 1,
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            cwd: "/tmp/test".to_string(),
+            is_git: true,
+            diff: None,
+            plan: None,
+            summary: None,
+            flow: None,
+        };
+
+        let json = serde_json::to_string(&data).unwrap();
+        assert!(!json.contains("\"plan\""), "plan field should be omitted when None");
+    }
+
+    #[test]
+    fn panel_data_deserializes_without_plan_field() {
+        // Simulates old panel.json files that lack the plan field
+        let json = r#"{
+            "version": 1,
+            "timestamp": "2024-01-01T00:00:00Z",
+            "cwd": "/tmp/test",
+            "is_git": true
+        }"#;
+        let parsed: PanelData = serde_json::from_str(json).unwrap();
+        assert!(parsed.plan.is_none());
+    }
+
+    #[test]
+    fn summary_data_serialization_roundtrip() {
+        use crate::panel::watcher::{Concern, SummaryData};
+
+        let summary = SummaryData {
+            intent: "Fix login timeout on slow networks".to_string(),
+            approach: "Increased timeout from 5s to 30s with exponential backoff".to_string(),
+            impact: "Affects auth.rs and the login API handler".to_string(),
+            concerns: vec![
+                Concern {
+                    severity: "warning".to_string(),
+                    description: "30s timeout may be too generous for DoS scenarios".to_string(),
+                    file: Some("src/auth.rs".to_string()),
+                    line: Some(42),
+                },
+                Concern {
+                    severity: "info".to_string(),
+                    description: "Consider making timeout configurable".to_string(),
+                    file: None,
+                    line: None,
+                },
+            ],
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
+        let parsed: SummaryData = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.intent, summary.intent);
+        assert_eq!(parsed.approach, summary.approach);
+        assert_eq!(parsed.impact, summary.impact);
+        assert_eq!(parsed.concerns.len(), 2);
+        assert_eq!(parsed.concerns[0].severity, "warning");
+        assert_eq!(parsed.concerns[0].file.as_deref(), Some("src/auth.rs"));
+        assert_eq!(parsed.concerns[0].line, Some(42));
+        assert_eq!(parsed.concerns[1].file, None);
+        assert_eq!(parsed.concerns[1].line, None);
+    }
+
+    #[test]
+    fn summary_data_deserializes_with_empty_concerns() {
+        let json = r#"{
+            "intent": "test",
+            "approach": "test",
+            "impact": "test"
+        }"#;
+        let parsed: SummaryData = serde_json::from_str(json).unwrap();
+        assert!(parsed.concerns.is_empty());
+    }
+
+    #[test]
+    fn concern_omits_null_fields() {
+        use crate::panel::watcher::Concern;
+
+        let concern = Concern {
+            severity: "info".to_string(),
+            description: "Test concern".to_string(),
+            file: None,
+            line: None,
+        };
+
+        let json = serde_json::to_string(&concern).unwrap();
+        assert!(!json.contains("\"file\""), "file should be omitted when None");
+        assert!(!json.contains("\"line\""), "line should be omitted when None");
     }
 
     // --- unix_to_iso8601 boundary tests ---

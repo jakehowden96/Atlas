@@ -14,6 +14,8 @@ pub struct PanelData {
     #[serde(default)]
     pub is_git: bool,
     pub diff: Option<DiffData>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
     pub summary: Option<SummaryData>,
     pub flow: Option<FlowData>,
 }
@@ -47,19 +49,21 @@ pub struct ProjectDiff {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SummaryData {
-    pub summary: String,
-    pub fix: String,
-    pub why: String,
-    pub confidence: f64,
-    pub issues: Vec<Issue>,
+    pub intent: String,
+    pub approach: String,
+    pub impact: String,
+    #[serde(default)]
+    pub concerns: Vec<Concern>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Issue {
+pub struct Concern {
     pub severity: String,
-    pub file: String,
-    pub line: u32,
-    pub message: String,
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

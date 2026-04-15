@@ -1,8 +1,8 @@
-export interface Issue {
+export interface Concern {
   severity: "info" | "warning" | "error";
-  file: string;
-  line: number;
-  message: string;
+  description: string;
+  file?: string;
+  line?: number;
 }
 
 export interface FlowEdge {
@@ -33,11 +33,10 @@ export interface DiffData {
 }
 
 export interface SummaryData {
-  summary: string;
-  fix: string;
-  why: string;
-  confidence: number;
-  issues: Issue[];
+  intent: string;
+  approach: string;
+  impact: string;
+  concerns: Concern[];
 }
 
 export interface FlowData {
@@ -50,6 +49,7 @@ export interface PanelData {
   cwd: string;
   is_git: boolean;
   diff?: DiffData;
+  plan?: string;
   summary?: SummaryData;
   flow?: FlowData;
 }

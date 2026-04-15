@@ -66,13 +66,13 @@
     if (phase === "push") pushDone = false;
   });
 
-  // Pre-fill commit message from AI summary when entering commit phase,
-  // or when the summary arrives while already in the commit phase.
+  // Pre-fill commit message from AI analysis when entering commit phase,
+  // or when the analysis arrives while already in the commit phase.
   $effect(() => {
     if (phase === "commit") {
-      const summary = $panelData?.summary?.summary;
-      if (summary && !commitMsg.trim()) {
-        commitMsg = summary;
+      const approach = $panelData?.summary?.approach;
+      if (approach && !commitMsg.trim()) {
+        commitMsg = approach;
       }
     }
   });
@@ -240,7 +240,7 @@
     <div class="commit-section">
       <div class="commit-label-row">
         <span class="commit-label">COMMIT MESSAGE</span>
-        {#if $panelData?.summary?.summary && commitMsg === $panelData.summary.summary}
+        {#if $panelData?.summary?.approach && commitMsg === $panelData.summary.approach}
           <span class="ai-badge">AI</span>
         {/if}
       </div>

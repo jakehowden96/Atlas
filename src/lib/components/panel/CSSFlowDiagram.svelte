@@ -136,7 +136,7 @@
               {#each chunk.edges as edge (edge.id)}
                 <path
                   d={edgeToPath(edge.points)}
-                  class="edge-path {edge.edge_type === 'import' ? 'edge-import' : ''} {edge.edge_type === 'call' ? 'edge-call' : ''}"
+                  class="edge-path {edge.edge_type && /^[a-z_]+$/.test(edge.edge_type) ? 'edge-' + edge.edge_type : ''}"
                   marker-end="url(#arrowhead-{chunkIdx})"
                 />
               {/each}
@@ -266,14 +266,24 @@
     opacity: 0.5;
   }
 
-  .edge-call {
+  .edge-calls {
     stroke: var(--primary-dim);
     opacity: 0.7;
   }
 
-  .edge-import {
+  .edge-depends_on {
     stroke-dasharray: 6 4;
     opacity: 0.35;
+  }
+
+  .edge-consumed_by {
+    stroke: var(--secondary);
+    opacity: 0.6;
+  }
+
+  .edge-modifies {
+    stroke: var(--error);
+    opacity: 0.5;
   }
 
   /* ── Nodes ── */
