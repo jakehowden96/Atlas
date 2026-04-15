@@ -22,7 +22,6 @@
       "identifier": "fs:allow-mkdir",
       "allow": [{ "path": "$HOME/.atlas" }, { "path": "$HOME/.atlas/**" }]
     },
-    "fs:default",
     "notification:default"
   ]
 }

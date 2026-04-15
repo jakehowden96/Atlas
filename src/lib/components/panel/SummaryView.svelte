@@ -132,7 +132,7 @@
             <span class="section-label">Concerns ({data.concerns.length})</span>
           </div>
           <div class="issues">
-            {#each data.concerns as concern}
+            {#each data.concerns as concern, i (i)}
               <div class="issue-card">
                 <div class="issue-header">
                   <span

@@ -1,6 +1,13 @@
 import dagre from "@dagrejs/dagre";
 import type { FlowEdge } from "../types/panel";
 
+interface DagreNodeData {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface LayoutNode {
   id: string;
   label: string;
@@ -114,7 +121,7 @@ export function layoutFlowGraphCSS(
 }
 
 function buildResult(
-  g: dagre.graphlib.Graph,
+  g: InstanceType<typeof dagre.graphlib.Graph>,
   edges: FlowEdge[],
   nodeWidth: number,
 ): GraphLayout {
@@ -124,7 +131,7 @@ function buildResult(
   let maxY = -Infinity;
 
   for (const id of g.nodes()) {
-    const n = g.node(id);
+    const n = g.node(id) as DagreNodeData;
     const left = n.x - nodeWidth / 2;
     const top = n.y - NODE_HEIGHT / 2;
     const right = n.x + nodeWidth / 2;
@@ -135,8 +142,8 @@ function buildResult(
     maxY = Math.max(maxY, bottom);
   }
 
-  const nodes: LayoutNode[] = g.nodes().map((id) => {
-    const n = g.node(id);
+  const nodes: LayoutNode[] = g.nodes().map((id: string) => {
+    const n = g.node(id) as DagreNodeData;
     return {
       id,
       label: id,
@@ -148,7 +155,7 @@ function buildResult(
   });
 
   const layoutEdges: LayoutEdge[] = edges.map((e, i) => {
-    const edgeData = g.edge(e.from, e.to);
+    const edgeData = g.edge(e.from, e.to) as { points?: { x: number; y: number }[] } | undefined;
     const points = (edgeData?.points ?? []).map((p: { x: number; y: number }) => ({
       x: p.x - minX,
       y: p.y - minY,

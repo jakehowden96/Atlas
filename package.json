@@ -1,6 +1,6 @@
 {
   "name": "atlas",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "packageManager": "pnpm@10.33.0",
   "type": "module",
@@ -46,6 +46,7 @@
     "prettier": "^3.8.1",
     "prettier-plugin-svelte": "^3.5.1",
     "svelte-check": "^4.4.6",
+    "svelte-eslint-parser": "^1.6.0",
     "tailwindcss": "^4.2.2",
     "tslib": "^2.8.1",
     "typescript": "^6.0.2",

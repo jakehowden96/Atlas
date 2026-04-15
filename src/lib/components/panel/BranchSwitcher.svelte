@@ -138,7 +138,7 @@
           <span class="material-symbols-outlined spinner">progress_activity</span>
         </div>
       {:else}
-        {#each branches as branch}
+        {#each branches as branch (branch.name)}
           <button
             class="branch-item"
             class:current={branch.is_current}

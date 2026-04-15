@@ -38,7 +38,7 @@ function makeKeyEvent(overrides: Partial<KeyboardEvent> = {}): KeyboardEvent {
 describe("handleGlobalKeydown", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    setRefreshHandler(null as any);
+    setRefreshHandler(null as unknown as () => void);
   });
 
   it("Ctrl+O opens markdown file", () => {

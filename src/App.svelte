@@ -37,6 +37,7 @@
   let unlisten: UnlistenFn | null = null;
   let unlistenStatus: UnlistenFn | null = null;
   let unlistenNotification: UnlistenFn | null = null;
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
   const spawningSessionIds = new Set<string>();
 
   let openTabIds = $derived(new Set($tabs.map(t => t.id)));

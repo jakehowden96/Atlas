@@ -1,4 +1,4 @@
-use crate::panel::watcher::{Concern, FlowData, FlowEdge, SummaryData};
+use crate::panel::types::{Concern, FlowData, FlowEdge, SummaryData};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncBufReadExt;

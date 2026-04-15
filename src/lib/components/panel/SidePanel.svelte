@@ -15,7 +15,7 @@
 <div class="side-panel">
   <div class="panel-tabs">
     <div class="tabs-left">
-      {#each navItems as item}
+      {#each navItems as item (item.id)}
         <button
           class="panel-tab"
           class:active={$activeSection === item.id}

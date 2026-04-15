@@ -130,7 +130,7 @@
   {#if isMultiRepo}
     <div class="repo-list">
       <span class="info-label">Repositories</span>
-      {#each childRepos as repo}
+      {#each childRepos as repo (repo.name)}
         <div class="repo-row">
           <span class="material-symbols-outlined info-icon">fork_right</span>
           <span class="repo-name">{repo.name}</span>

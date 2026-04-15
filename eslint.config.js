@@ -1,6 +1,7 @@
 import tseslint from "@typescript-eslint/eslint-plugin";
 import tsParser from "@typescript-eslint/parser";
 import svelte from "eslint-plugin-svelte";
+import svelteParser from "svelte-eslint-parser";
 import prettier from "eslint-config-prettier";
 
 export default [
@@ -28,6 +29,17 @@ export default [
     },
   },
   ...svelte.configs["flat/recommended"],
+  {
+    files: ["src/**/*.svelte"],
+    languageOptions: {
+      parser: svelteParser,
+      parserOptions: {
+        parser: tsParser,
+        ecmaVersion: "latest",
+        sourceType: "module",
+      },
+    },
+  },
   prettier,
   ...svelte.configs["flat/prettier"],
 ];

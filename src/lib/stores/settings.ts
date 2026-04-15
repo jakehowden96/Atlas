@@ -28,8 +28,8 @@ export async function loadSettings() {
     const data = JSON.parse(raw) as PersistedSettings;
     if (data.skipPermissions) skipPermissions.set(true);
     if (data.enableNotifications === false) enableNotifications.set(false);
-  } catch {
-    // No file or corrupted — use defaults
+  } catch (e) {
+    console.warn("Failed to load settings (using defaults):", e);
   }
 }
 

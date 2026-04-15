@@ -12,6 +12,7 @@
   let { onCloseTab, onSelectTab, onCloseGroup, onSelectWorkspace }: Props = $props();
 
   const workspaceEntries = $derived.by(() => {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const tabsByWs = new Map<string, typeof $tabs>();
     for (const tab of $tabs) {
       const wsPath = getTabWorkspacePath(tab);

@@ -35,7 +35,8 @@ import {
 } from "../stores/terminal";
 import { activeWorkspacePath } from "../stores/workspace";
 import { panelData } from "../stores/panel";
-import type { TabItem } from "../../types/terminal";
+import type { TabItem, MarkdownTab } from "../../types/terminal";
+import type { Terminal } from "@xterm/xterm";
 
 function makeTerminalTab(overrides: Partial<TabItem & { type: "terminal" }> = {}): TabItem {
   return {
@@ -43,12 +44,12 @@ function makeTerminalTab(overrides: Partial<TabItem & { type: "terminal" }> = {}
     id: overrides.id ?? crypto.randomUUID(),
     title: overrides.title ?? "",
     ptyId: -1,
-    terminal: {} as any,
+    terminal: {} as unknown as Terminal,
     ...overrides,
   };
 }
 
-function makeMarkdownTab(overrides: Partial<TabItem & { type: "markdown" }> = {}): TabItem {
+function makeMarkdownTab(overrides: Partial<MarkdownTab> = {}): TabItem {
   return {
     type: "markdown",
     id: overrides.id ?? crypto.randomUUID(),
@@ -324,7 +325,7 @@ describe("terminal store", () => {
     });
 
     it("returns workspacePath for markdown tabs", () => {
-      const tab = makeMarkdownTab({ workspacePath: "/a" } as any);
+      const tab = makeMarkdownTab({ workspacePath: "/a" });
       expect(getTabWorkspacePath(tab)).toBe("/a");
     });
 
@@ -394,7 +395,7 @@ describe("terminal store", () => {
       addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
       activeTabId.set("t1");
       // Manually add a tab to /b without making it active
-      tabs.update((t) => [...t, { type: "terminal" as const, id: "t2", title: "", ptyId: -1, terminal: {} as any, cwd: "/b" }]);
+      tabs.update((t) => [...t, { type: "terminal" as const, id: "t2", title: "", ptyId: -1, terminal: {} as unknown as Terminal, cwd: "/b" }]);
       activeWorkspacePath.set("/b");
       expect(get(activeTabId)).toBe("t2");
     });

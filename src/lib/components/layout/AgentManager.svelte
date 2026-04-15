@@ -221,8 +221,9 @@
               ></span>
             </button>
             {#if colorPickerPath === workspace.path}
+              <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
               <div class="color-dropdown" onclick={(e) => e.stopPropagation()}>
-                {#each WORKSPACE_COLORS as color}
+                {#each WORKSPACE_COLORS as color (color)}
                   <button
                     class="color-swatch"
                     class:active={workspace.color === color}

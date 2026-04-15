@@ -30,7 +30,6 @@
 </script>
 
 {#if $settingsOpen}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="settings-overlay" onclick={close} role="presentation">
     <div
       class="settings-modal"
@@ -50,7 +49,7 @@
 
       <div class="settings-layout">
         <nav class="settings-sidebar">
-          {#each tabs as tab}
+          {#each tabs as tab (tab.id)}
             <button
               class="sidebar-tab"
               class:active={activeTab === tab.id}

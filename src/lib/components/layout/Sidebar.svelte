@@ -20,7 +20,7 @@
 
   <nav class="nav">
     <div class="nav-label">Navigation</div>
-    {#each navItems as item}
+    {#each navItems as item (item.id)}
       <button
         class="nav-item"
         class:active={$activeSection === item.id}

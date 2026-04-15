@@ -28,6 +28,7 @@
 </script>
 
 <div class="markdown-body">
+  <!-- eslint-disable-next-line svelte/no-at-html-tags -->
   {@html rendered}
 </div>
 

@@ -209,7 +209,7 @@
     <div class="repo-selector">
       <span class="repo-label">REPOSITORY</span>
       <select class="repo-dropdown" bind:value={selectedProjectName}>
-        {#each projects! as project}
+        {#each projects! as project (project.name)}
           <option value={project.name}>{project.name}</option>
         {/each}
       </select>

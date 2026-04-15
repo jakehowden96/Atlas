@@ -47,7 +47,16 @@ fn write_config_api_key(key: &str) -> Result<(), String> {
 
     config["api_key"] = serde_json::json!(key);
     let json = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
-    std::fs::write(&path, json).map_err(|e| e.to_string())
+    std::fs::write(&path, &json).map_err(|e| e.to_string())?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o600);
+        let _ = std::fs::set_permissions(&path, perms);
+    }
+
+    Ok(())
 }
 
 fn build_claude_client(api_key: String) -> Result<ClaudeClient, String> {
@@ -194,21 +203,21 @@ pub fn run() {
             commands::panel::get_session_dir,
             commands::panel::get_panel_data,
             commands::panel::refresh_panel,
-            commands::panel::git_stage_all,
-            commands::panel::git_stage_files,
-            commands::panel::git_discard_all,
-            commands::panel::get_git_status,
-            commands::panel::get_child_repos,
-            commands::panel::git_fetch,
-            commands::panel::git_pull,
-            commands::panel::git_commit,
-            commands::panel::git_push,
+            commands::git::git_stage_all,
+            commands::git::git_stage_files,
+            commands::git::git_discard_all,
+            commands::git::get_git_status,
+            commands::git::get_child_repos,
+            commands::git::git_fetch,
+            commands::git::git_pull,
+            commands::git::git_commit,
+            commands::git::git_push,
             commands::panel::reset_analysis,
             commands::panel::set_api_key,
             commands::panel::get_api_status,
-            commands::panel::git_list_branches,
-            commands::panel::git_checkout_branch,
-            commands::panel::git_create_branch,
+            commands::git::git_list_branches,
+            commands::git::git_checkout_branch,
+            commands::git::git_create_branch,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

@@ -60,8 +60,8 @@ export async function loadWorkspaces() {
       }
     }
     workspaces.set(data);
-  } catch {
-    // No file or corrupted — start fresh
+  } catch (e) {
+    console.warn("Failed to load workspaces (starting fresh):", e);
   }
 }
 

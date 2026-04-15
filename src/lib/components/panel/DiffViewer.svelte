@@ -85,6 +85,7 @@
   });
 
   function toggleFile(name: string) {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const next = new Set(selectedFiles);
     if (next.has(name)) {
       next.delete(name);
@@ -124,6 +125,7 @@
   }
 
   function toggleExpand(key: string) {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const next = new Set(expandedFiles);
     if (next.has(key)) {
       next.delete(key);
@@ -168,7 +170,7 @@
           </label>
         </div>
       {/if}
-      {#each projectFiles as project}
+      {#each projectFiles as project (project.name)}
         <div class="project-section">
           <div class="project-header">
             <span class="project-name">{project.name}</span>
@@ -178,13 +180,12 @@
               <span class="stat removed">-{project.lines_removed}</span>
             </span>
           </div>
-          {#each project.files as file}
+          {#each project.files as file (file.newName)}
             {@const fileKey = project.name + "/" + file.newName}
             {@const collapsed = shouldCollapse(file, fileKey)}
             <div class="file-section">
               <div class="file-header">
                 <div class="file-header-left">
-                  <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_click_events_have_key_events -->
                   <label class="file-checkbox-label" onclick={(e: MouseEvent) => e.stopPropagation()} onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
                     <input
                       type="checkbox"
@@ -206,8 +207,8 @@
                 </div>
               {:else}
                 <div class="file-lines">
-                  {#each file.hunks as hunk}
-                    {#each hunk.lines as line}
+                  {#each file.hunks as hunk, hi (hi)}
+                    {#each hunk.lines as line, i (i)}
                       {#if line.type === "hunk-header"}
                         <div class="diff-line hunk-info">
                           <div class="line-num"></div>
@@ -255,12 +256,11 @@
           </label>
         </div>
       {/if}
-      {#each files as file}
+      {#each files as file (file.newName)}
         {@const collapsed = shouldCollapse(file, file.newName)}
         <div class="file-section">
           <div class="file-header">
             <div class="file-header-left">
-              <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_click_events_have_key_events -->
               <label class="file-checkbox-label" onclick={(e: MouseEvent) => e.stopPropagation()} onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
                 <input
                   type="checkbox"
@@ -282,8 +282,8 @@
             </div>
           {:else}
             <div class="file-lines">
-              {#each file.hunks as hunk}
-                {#each hunk.lines as line}
+              {#each file.hunks as hunk, hi (hi)}
+                {#each hunk.lines as line, i (i)}
                   {#if line.type === "hunk-header"}
                     <div class="diff-line hunk-info">
                       <div class="line-num"></div>
