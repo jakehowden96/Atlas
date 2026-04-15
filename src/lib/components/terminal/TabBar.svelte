@@ -7,9 +7,10 @@
     onSelectTab: (id: string) => void;
     onCloseGroup: (cwd: string) => void;
     onSelectWorkspace: (path: string) => void;
+    tabBarRowHeight?: number;
   }
 
-  let { onCloseTab, onSelectTab, onCloseGroup, onSelectWorkspace }: Props = $props();
+  let { onCloseTab, onSelectTab, onCloseGroup, onSelectWorkspace, tabBarRowHeight = $bindable(0) }: Props = $props();
 
   const workspaceEntries = $derived.by(() => {
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -48,7 +49,7 @@
         <button
           class="workspace-tab"
           class:active={ws.path === $activeWorkspacePath}
-          class:needs-input={ws.needsInput && ws.path !== $activeWorkspacePath}
+          class:needs-input={ws.needsInput}
           style={ws.color ? `--ws-color: ${ws.color}` : ""}
           onclick={() => onSelectWorkspace(ws.path)}
         >
@@ -59,7 +60,7 @@
   {/if}
 
   <!-- Row 2: Session tabs within active workspace -->
-  <div class="tab-bar">
+  <div class="tab-bar" bind:clientHeight={tabBarRowHeight}>
     {#each filteredTabs as tab, i (tab.id)}
       <button
         class="tab"
@@ -153,6 +154,13 @@
 
   .workspace-tab.needs-input {
     color: var(--yellow);
+    border-bottom-color: var(--yellow);
+    animation: pulse-ws 2s ease-in-out infinite;
+  }
+
+  .workspace-tab.active.needs-input {
+    color: var(--yellow);
+    background: var(--surface-container-high);
     border-bottom-color: var(--yellow);
     animation: pulse-ws 2s ease-in-out infinite;
   }

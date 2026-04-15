@@ -77,6 +77,7 @@
     padding: 0 0 0 6px;
     height: 100%;
     margin-top: 2px;
+    background: var(--surface);
   }
 
   .loading-overlay {

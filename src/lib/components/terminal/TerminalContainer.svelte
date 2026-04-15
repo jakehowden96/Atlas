@@ -10,6 +10,8 @@
     addTab,
     removeTab,
     getTabWorkspacePath,
+    chromeHeight as chromeHeightStore,
+    tabBarHeight as tabBarHeightStore,
   } from "../../stores/terminal";
   import { activeWorkspacePath } from "../../stores/workspace";
   import { ptyKill, getSessionDir } from "../../ipc";
@@ -80,6 +82,17 @@
     }
   }
 
+  let measuredChromeHeight = $state(0);
+  let measuredTabBarHeight = $state(0);
+
+  $effect(() => {
+    if (measuredChromeHeight > 0) chromeHeightStore.set(measuredChromeHeight);
+  });
+
+  $effect(() => {
+    if (measuredTabBarHeight > 0) tabBarHeightStore.set(measuredTabBarHeight);
+  });
+
   function handleKeydown(e: KeyboardEvent) {
     if (handleGlobalKeydown(e)) return;
     if (e.ctrlKey && !e.shiftKey && e.key === "t") {
@@ -100,12 +113,13 @@
 
 <div class="terminal-area">
   {#if $tabs.length > 0}
-    <div class="terminal-chrome">
+    <div class="terminal-chrome" bind:clientHeight={measuredChromeHeight}>
       <TabBar
         onCloseTab={closeTab}
         onSelectTab={selectTab}
         onCloseGroup={closeGroup}
         onSelectWorkspace={selectWorkspace}
+        bind:tabBarRowHeight={measuredTabBarHeight}
       />
     </div>
     <div class="terminal-panes">

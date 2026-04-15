@@ -13,23 +13,26 @@
 </script>
 
 <div class="side-panel">
-  <div class="panel-tabs">
-    <div class="tabs-left">
-      {#each navItems as item (item.id)}
-        <button
-          class="panel-tab"
-          class:active={$activeSection === item.id}
-          onclick={() => setSection(item.id)}
-        >
-          <span class="material-symbols-outlined tab-icon">{item.icon}</span>
-          <span>{item.label}</span>
+  <div class="panel-chrome">
+    <div class="panel-spacer"></div>
+    <div class="panel-tabs">
+      <div class="tabs-left">
+        {#each navItems as item (item.id)}
+          <button
+            class="panel-tab"
+            class:active={$activeSection === item.id}
+            onclick={() => setSection(item.id)}
+          >
+            <span class="material-symbols-outlined tab-icon">{item.icon}</span>
+            <span>{item.label}</span>
+          </button>
+        {/each}
+      </div>
+      <div class="tabs-right">
+        <button class="panel-close-btn" onclick={togglePanel} title="Close Panel">
+          <span class="material-symbols-outlined">right_panel_close</span>
         </button>
-      {/each}
-    </div>
-    <div class="tabs-right">
-      <button class="panel-close-btn" onclick={togglePanel} title="Close Panel">
-        <span class="material-symbols-outlined">right_panel_close</span>
-      </button>
+      </div>
     </div>
   </div>
   <div class="panel-content">
@@ -52,16 +55,27 @@
     background: var(--surface-container-low);
   }
 
-  .panel-tabs {
+  .panel-chrome {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
     height: var(--chrome-height);
-    padding: 0 0.25rem 0 0.5rem;
     background: var(--surface-container-low);
     flex-shrink: 0;
     user-select: none;
     -webkit-user-select: none;
+  }
+
+  .panel-spacer {
+    flex: 1;
+  }
+
+  .panel-tabs {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: var(--tab-bar-height);
+    padding: 0 0.25rem 0 0.5rem;
+    flex-shrink: 0;
   }
 
   .tabs-left {

@@ -7,6 +7,11 @@ import { activeWorkspacePath } from "./workspace";
 export const tabs = writable<TabItem[]>([]);
 export const activeTabId = writable<string>("");
 
+/** Measured pixel height of the full terminal chrome (workspace bar + session tab bar). */
+export const chromeHeight = writable(0);
+/** Measured pixel height of the session tab bar row only. */
+export const tabBarHeight = writable(0);
+
 export const activeTab = derived([tabs, activeTabId], ([$tabs, $activeTabId]) =>
   $tabs.find((t) => t.id === $activeTabId),
 );

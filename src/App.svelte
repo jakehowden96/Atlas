@@ -8,7 +8,7 @@
   import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
   import { Terminal } from "@xterm/xterm";
   import { panelVisible, panelData, checkApiStatus, analysisStatus, analysisError } from "./lib/stores/panel";
-  import { tabs, activeTabId, addTab, removeTab, setTabNeedsInput, setTabReady } from "./lib/stores/terminal";
+  import { tabs, activeTabId, addTab, removeTab, setTabNeedsInput, setTabReady, chromeHeight, tabBarHeight } from "./lib/stores/terminal";
   import { onPanelUpdate, onAnalysisStatus, onClaudeNotification, ptyWrite, ptyKill } from "./lib/ipc";
   import { skipPermissions, enableNotifications, loadSettings } from "./lib/stores/settings";
   import { sendNotification, isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
@@ -293,7 +293,7 @@
   />
   </div>
   <Resizer onResize={handleSidebarResize} />
-  <div class="main-stage">
+  <div class="main-stage" class:has-tabs={$tabs.length > 0} style="--chrome-height: {$chromeHeight}px; --tab-bar-height: {$tabBarHeight}px">
     <div class="terminal-section">
       <TerminalContainer />
     </div>
@@ -346,9 +346,6 @@
     --yellow: #e8be7b;
     --cyan: #63bcc6;
     --amber: #FFA726;
-
-    /* Chrome bar height (shared between terminal + panel) */
-    --chrome-height: 64px;
 
     /* Radius */
     --radius: 8px;
@@ -441,7 +438,7 @@
     position: relative;
   }
 
-  .main-stage::after {
+  .main-stage.has-tabs::after {
     content: "";
     position: absolute;
     top: var(--chrome-height);

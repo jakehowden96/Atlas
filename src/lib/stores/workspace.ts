@@ -54,6 +54,9 @@ export async function loadWorkspaces() {
     const data = JSON.parse(raw) as Workspace[];
     // Mark any previously running sessions as idle on load
     for (const ws of data) {
+      if (!ws.color) {
+        ws.color = nextAvailableColor(data.filter((w) => w !== ws));
+      }
       for (const s of ws.sessions) {
         if (s.status === "running" || s.status === "starting") s.status = "idle";
         s.terminalTabId = null;
