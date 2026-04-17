@@ -80,22 +80,15 @@
   onMount(async () => {
     await log.init();
     log.info("app", "onMount started");
-    log.debug("app", "calling checkApiStatus...");
     checkApiStatus();
-    log.debug("app", "calling loadWorkspaces...");
     await loadWorkspaces();
     const ws = get(workspaces);
     log.info("app", `workspaces loaded: ${ws.length}`);
-    log.debug("app", `activeWorkspacePath before set: "${get(activeWorkspacePath)}"`);
     if (ws.length > 0 && !get(activeWorkspacePath)) {
       activeWorkspacePath.set(ws[0].path);
       log.info("app", `active workspace set: ${ws[0].path}`);
-    } else {
-      log.debug("app", `skipped setting active workspace: ws.length=${ws.length}, activeWorkspacePath="${get(activeWorkspacePath)}"`);
     }
-    log.debug("app", "calling loadSettings...");
     await loadSettings();
-    log.debug("app", "onMount setup complete, attaching listeners...");
     unlisten = await onPanelUpdate((sessionId, data) => {
       if (sessionId === get(activeTabId)) {
         panelData.set(data);

@@ -101,10 +101,6 @@ export const log = {
     enqueue("WARN", source, message);
   },
 
-  debug(source: string, message: string) {
-    enqueue("DEBUG", source, message);
-  },
-
   error(source: string, message: string, err?: unknown) {
     const full = err ? `${message}: ${formatError(err)}` : message;
     enqueue("ERROR", source, full);
