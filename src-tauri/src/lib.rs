@@ -12,6 +12,53 @@ use tauri::Manager;
 /// Shared state for the Claude API client, settable at runtime.
 pub type ClaudeState = Arc<RwLock<Option<ClaudeClient>>>;
 
+fn setup_logging() {
+    let log_dir = dirs::home_dir()
+        .map(|h| h.join(".atlas").join("logs"))
+        .expect("could not resolve home directory");
+
+    std::fs::create_dir_all(&log_dir).ok();
+
+    let file_config = fern::DateBased::new(
+        log_dir.join("atlas-backend-"),
+        "%Y-%m-%d.log",
+    );
+
+    fern::Dispatch::new()
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "[{}] [{}] [{}] {}",
+                chrono::Local::now().format("%H:%M:%S%.3f"),
+                record.level(),
+                record.target(),
+                message
+            ))
+        })
+        .level(log::LevelFilter::Info)
+        .chain(std::io::stderr())
+        .chain(file_config)
+        .apply()
+        .ok();
+
+    clean_old_logs(&log_dir, 7);
+}
+
+fn clean_old_logs(log_dir: &std::path::Path, max_age_days: u64) {
+    let cutoff = std::time::SystemTime::now()
+        - std::time::Duration::from_secs(max_age_days * 24 * 60 * 60);
+    let Ok(entries) = std::fs::read_dir(log_dir) else { return };
+    for entry in entries.flatten() {
+        if !entry.file_name().to_string_lossy().ends_with(".log") { continue; }
+        if let Ok(meta) = entry.metadata() {
+            if let Ok(modified) = meta.modified() {
+                if modified < cutoff {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+}
+
 /// Config file path: ~/.atlas/config.json
 fn config_path() -> Option<std::path::PathBuf> {
     Some(dirs::home_dir()?.join(".atlas").join("config.json"))
@@ -163,9 +210,7 @@ fn install_notification_hook(script_path: &str) {
 }
 
 pub fn run() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .format_timestamp_millis()
-        .init();
+    setup_logging();
 
     let pty_manager = PtyManager::new();
 

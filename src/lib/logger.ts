@@ -47,8 +47,8 @@ async function ensureLogDir() {
       await mkdir(LOG_DIR, { baseDir: BaseDirectory.Home, recursive: true });
     }
     dirReady = true;
-  } catch {
-    // Can't create log dir — logging will silently fail
+  } catch (e) {
+    console.warn("[atlas-logger] failed to create log dir:", e);
   }
 }
 
@@ -68,8 +68,8 @@ async function flush() {
       baseDir: BaseDirectory.Home,
       append: true,
     });
-  } catch {
-    // Logging must never crash the app
+  } catch (e) {
+    console.warn("[atlas-logger] flush failed:", e);
   }
 }
 
@@ -87,8 +87,8 @@ async function cleanOldLogs() {
         await remove(`${LOG_DIR}/${entry.name}`, { baseDir: BaseDirectory.Home });
       }
     }
-  } catch {
-    // Non-critical — old logs just stay around longer
+  } catch (e) {
+    console.warn("[atlas-logger] log cleanup failed:", e);
   }
 }
 
@@ -115,5 +115,6 @@ export const log = {
     enqueue("INFO", "logger", "Atlas started");
     await flush();
     cleanOldLogs();
+    window.addEventListener("beforeunload", () => { flush(); });
   },
 };
