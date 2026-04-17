@@ -13,13 +13,32 @@ export interface TerminalTab {
   commandWrittenAt?: number;
 }
 
-export interface MarkdownTab {
-  type: "markdown";
+export type FileLanguage =
+  | "markdown"
+  | "plaintext"
+  | "typescript"
+  | "javascript"
+  | "json"
+  | "yaml"
+  | "html"
+  | "css"
+  | "python"
+  | "rust"
+  | "toml"
+  | "shell"
+  | "unknown";
+
+export interface FileTab {
+  type: "file";
   id: string;
   title: string;
   content: string;
   filePath?: string;
   workspacePath?: string;
+  language: FileLanguage;
+  dirty: boolean;
+  editing: boolean;
+  originalContent: string;
 }
 
-export type TabItem = TerminalTab | MarkdownTab;
+export type TabItem = TerminalTab | FileTab;

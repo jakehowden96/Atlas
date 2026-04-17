@@ -1,5 +1,6 @@
 import { writable, get } from "svelte/store";
 import { BaseDirectory, readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs";
+import { log } from "../logger";
 
 export interface WorkspaceSession {
   id: string;
@@ -47,14 +48,17 @@ async function ensureDir() {
 }
 
 export async function loadWorkspaces() {
+  log.info("workspace", "loadWorkspaces started");
   try {
     const fileExists = await exists(STORAGE_FILE, { baseDir: BaseDirectory.Home });
+    log.info("workspace", `exists check: ${fileExists}`);
     if (!fileExists) return;
     const raw = await readTextFile(STORAGE_FILE, { baseDir: BaseDirectory.Home });
     const data = JSON.parse(raw) as Workspace[];
-    // Mark any previously running sessions as idle on load
+    log.info("workspace", `parsed ${data.length} workspaces`);
+    const validColors = new Set(WORKSPACE_COLORS);
     for (const ws of data) {
-      if (!ws.color) {
+      if (!ws.color || !validColors.has(ws.color)) {
         ws.color = nextAvailableColor(data.filter((w) => w !== ws));
       }
       for (const s of ws.sessions) {
@@ -63,7 +67,9 @@ export async function loadWorkspaces() {
       }
     }
     workspaces.set(data);
+    log.info("workspace", `store updated with ${data.length} workspaces`);
   } catch (e) {
+    log.error("workspace", "failed to load workspaces", e);
     console.warn("Failed to load workspaces (starting fresh):", e);
   }
 }
@@ -76,21 +82,22 @@ async function persist() {
       baseDir: BaseDirectory.Home,
     });
   } catch (e) {
+    log.error("workspace", "failed to persist workspaces", e);
     console.error("Failed to persist workspaces:", e);
   }
 }
 
 const WORKSPACE_COLORS = [
-  "#72b1ff", // blue
-  "#97f999", // green
-  "#ff7167", // coral
-  "#e8be7b", // yellow
-  "#c48eed", // purple
-  "#63bcc6", // cyan
-  "#ff9288", // salmon
-  "#89ea8d", // lime
-  "#94c5ff", // light blue
-  "#d8abff", // lavender
+  "#e6194B", // red
+  "#3cb44b", // green
+  "#ffe119", // yellow
+  "#4363d8", // blue
+  "#f58231", // orange
+  "#42d4f4", // cyan
+  "#f032e6", // magenta
+  "#fabed4", // pink
+  "#469990", // teal
+  "#dcbeff", // lavender
 ];
 
 export function nextAvailableColor(existing: Workspace[]): string {
@@ -101,6 +108,7 @@ export function nextAvailableColor(existing: Workspace[]): string {
 export async function addWorkspace(path: string): Promise<boolean> {
   const current = get(workspaces);
   if (current.some((w) => w.path === path)) {
+    log.info("workspace", `addWorkspace duplicate: ${path}`);
     activeWorkspacePath.set(path);
     return false;
   }
@@ -109,10 +117,12 @@ export async function addWorkspace(path: string): Promise<boolean> {
   workspaces.set([...current, { path, name, color, sessions: [] }]);
   activeWorkspacePath.set(path);
   await persist();
+  log.info("workspace", `addWorkspace: ${path} (${name})`);
   return true;
 }
 
 export async function removeWorkspace(path: string) {
+  log.info("workspace", `removeWorkspace: ${path}`);
   workspaces.update((ws) => ws.filter((w) => w.path !== path));
   await persist();
 }

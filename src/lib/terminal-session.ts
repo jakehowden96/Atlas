@@ -11,6 +11,7 @@ import { get } from "svelte/store";
 import { showToast } from "./stores/toast";
 import { setRefreshHandler } from "./shortcuts";
 import { xtermTheme } from "./theme";
+import { log } from "./logger";
 
 export interface TerminalSessionOptions {
   tabId: string;
@@ -77,11 +78,12 @@ export class TerminalSession {
       // false prevents xterm from consuming the key so it bubbles up to
       // TerminalContainer's <svelte:window onkeydown>.  We must NOT call
       // handleGlobalKeydown here because the window handler already does,
-      // which would cause actions like openMarkdownFile to fire twice.
+      // which would cause actions like openFile to fire twice.
       if (e.ctrlKey && e.key === "Tab") return false;
       if (e.ctrlKey && !e.shiftKey && e.key === "t") return false;
       if (e.ctrlKey && !e.shiftKey && e.key === "w") return false;
       if (e.ctrlKey && !e.shiftKey && e.key === "o") return false;
+      if (e.ctrlKey && !e.shiftKey && e.key === "s") return false;
       if (e.ctrlKey && !e.shiftKey && e.key >= "1" && e.key <= "9") return false;
       // All Ctrl+Shift combos are global shortcuts (panel toggle, section
       // switching, manual refresh) — pass them all through rather than
@@ -184,6 +186,7 @@ export class TerminalSession {
   }
 
   private async spawnPty(onPtyReady: (ptyId: number) => void) {
+    log.info("terminal", `spawnPty tab=${this.tabId} cwd=${this.initialCwd ?? "default"}`);
     try {
       this.ptyId = await ptySpawn(
         this.terminal.cols,
@@ -198,8 +201,10 @@ export class TerminalSession {
         this.initialCwd ?? undefined,
         { ATLAS_SESSION_ID: this.tabId },
       );
+      log.info("terminal", `spawnPty success: ptyId=${this.ptyId}`);
       onPtyReady(this.ptyId);
     } catch (e) {
+      log.error("terminal", `spawnPty failed for tab=${this.tabId}`, e);
       showToast(`Failed to spawn terminal: ${e}`);
       return;
     }
@@ -275,6 +280,7 @@ export class TerminalSession {
           panelData.set(data);
         }
       } catch (e) {
+        log.error("terminal", `panel refresh failed for tab=${this.tabId}`, e);
         showToast(`Panel refresh failed: ${e}`);
       }
     }, 300);
@@ -327,7 +333,7 @@ export class TerminalSession {
               this.updatePanelFingerprint(cached);
               panelData.set(cached);
             }
-          }).catch(() => {});
+          }).catch((e) => { log.warn("terminal", `getPanelData failed for tab=${this.tabId}: ${e}`); });
           this.scheduleRefresh(this.currentCwd);
         } else {
           panelData.set(null);
@@ -341,6 +347,7 @@ export class TerminalSession {
   }
 
   destroy() {
+    log.info("terminal", `destroy tab=${this.tabId} ptyId=${this.ptyId}`);
     this.resizeObserver?.disconnect();
     this.stopPolling();
     if (this.refreshTimer) clearTimeout(this.refreshTimer);

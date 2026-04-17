@@ -32,10 +32,13 @@ import {
   getTabWorkspacePath,
   activeWorkspaceTabs,
   lastActiveTabByWorkspace,
+  updateFileContent,
+  setFileEditing,
+  markFileSaved,
 } from "../stores/terminal";
 import { activeWorkspacePath } from "../stores/workspace";
 import { panelData } from "../stores/panel";
-import type { TabItem, MarkdownTab } from "../../types/terminal";
+import type { TabItem, FileTab } from "../../types/terminal";
 import type { Terminal } from "@xterm/xterm";
 
 function makeTerminalTab(overrides: Partial<TabItem & { type: "terminal" }> = {}): TabItem {
@@ -49,12 +52,16 @@ function makeTerminalTab(overrides: Partial<TabItem & { type: "terminal" }> = {}
   };
 }
 
-function makeMarkdownTab(overrides: Partial<MarkdownTab> = {}): TabItem {
+function makeFileTab(overrides: Partial<FileTab> = {}): TabItem {
   return {
-    type: "markdown",
+    type: "file",
     id: overrides.id ?? crypto.randomUUID(),
     title: overrides.title ?? "",
     content: "",
+    language: "plaintext",
+    dirty: false,
+    editing: false,
+    originalContent: "",
     ...overrides,
   };
 }
@@ -125,7 +132,7 @@ describe("terminal store", () => {
       expect(get(activeTabId)).toBe("");
     });
 
-    it("clears panelData when removing the active tab", () => {
+    it("clears panelData when removing the active terminal tab", () => {
       addTab(makeTerminalTab({ id: "t1" }));
       removeTab("t1");
       expect(panelData.set).toHaveBeenCalledWith(null);
@@ -135,6 +142,12 @@ describe("terminal store", () => {
       addTab(makeTerminalTab({ id: "t1" }));
       addTab(makeTerminalTab({ id: "t2" }));
       removeTab("t1");
+      expect(panelData.set).not.toHaveBeenCalledWith(null);
+    });
+
+    it("does not clear panelData when removing an active file tab", () => {
+      addTab(makeFileTab({ id: "f1" }));
+      removeTab("f1");
       expect(panelData.set).not.toHaveBeenCalledWith(null);
     });
 
@@ -324,13 +337,13 @@ describe("terminal store", () => {
       expect(getTabWorkspacePath(tab)).toBe("");
     });
 
-    it("returns workspacePath for markdown tabs", () => {
-      const tab = makeMarkdownTab({ workspacePath: "/a" });
+    it("returns workspacePath for file tabs", () => {
+      const tab = makeFileTab({ workspacePath: "/a" });
       expect(getTabWorkspacePath(tab)).toBe("/a");
     });
 
-    it("returns empty string for markdown tabs without workspacePath", () => {
-      const tab = makeMarkdownTab({});
+    it("returns empty string for file tabs without workspacePath", () => {
+      const tab = makeFileTab({});
       expect(getTabWorkspacePath(tab)).toBe("");
     });
   });
@@ -406,6 +419,56 @@ describe("terminal store", () => {
       activeTabId.set("t2");
       activeWorkspacePath.set("/a");
       expect(get(activeTabId)).toBe("t2");
+    });
+  });
+
+  describe("updateFileContent", () => {
+    it("sets dirty when content differs from originalContent", () => {
+      addTab(makeFileTab({ id: "f1", content: "hello", originalContent: "hello" }));
+      updateFileContent("f1", "hello world");
+      const tab = get(tabs)[0];
+      expect(tab.type === "file" && tab.dirty).toBe(true);
+      expect(tab.type === "file" && tab.content).toBe("hello world");
+    });
+
+    it("clears dirty when content matches originalContent", () => {
+      addTab(makeFileTab({ id: "f1", content: "changed", originalContent: "original", dirty: true }));
+      updateFileContent("f1", "original");
+      const tab = get(tabs)[0];
+      expect(tab.type === "file" && tab.dirty).toBe(false);
+    });
+
+    it("no-op for terminal tabs", () => {
+      addTab(makeTerminalTab({ id: "t1" }));
+      updateFileContent("t1", "test");
+      const tab = get(tabs)[0];
+      expect(tab.type).toBe("terminal");
+    });
+  });
+
+  describe("setFileEditing", () => {
+    it("toggles editing flag on file tab", () => {
+      addTab(makeFileTab({ id: "f1", editing: false }));
+      setFileEditing("f1", true);
+      const tab = get(tabs)[0];
+      expect(tab.type === "file" && tab.editing).toBe(true);
+    });
+  });
+
+  describe("markFileSaved", () => {
+    it("resets dirty and updates originalContent", () => {
+      addTab(makeFileTab({ id: "f1", content: "new", originalContent: "old", dirty: true }));
+      markFileSaved("f1");
+      const tab = get(tabs)[0];
+      expect(tab.type === "file" && tab.dirty).toBe(false);
+      expect(tab.type === "file" && tab.originalContent).toBe("new");
+    });
+
+    it("updates filePath when provided", () => {
+      addTab(makeFileTab({ id: "f1", content: "test", originalContent: "test" }));
+      markFileSaved("f1", "/new/path.md");
+      const tab = get(tabs)[0];
+      expect(tab.type === "file" && tab.filePath).toBe("/new/path.md");
     });
   });
 });

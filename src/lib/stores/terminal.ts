@@ -1,6 +1,6 @@
 import { writable, derived, get } from "svelte/store";
 import type { Terminal } from "@xterm/xterm";
-import type { MarkdownTab, TabItem } from "../../types/terminal";
+import type { FileTab, FileLanguage, TabItem } from "../../types/terminal";
 import { panelData } from "./panel";
 import { activeWorkspacePath } from "./workspace";
 
@@ -19,7 +19,7 @@ export const activeTab = derived([tabs, activeTabId], ([$tabs, $activeTabId]) =>
 /** Extract the workspace path from any TabItem. */
 export function getTabWorkspacePath(tab: TabItem): string {
   if (tab.type === "terminal") return tab.cwd ?? "";
-  if (tab.type === "markdown") return tab.workspacePath ?? "";
+  if (tab.type === "file") return tab.workspacePath ?? "";
   return "";
 }
 
@@ -83,24 +83,58 @@ export function createTerminalTabWithCwd(terminal: Terminal, cwd: string): strin
   return id;
 }
 
-export function addMarkdownTab(title: string, content: string, filePath?: string, workspacePath?: string) {
-  const tab: MarkdownTab = {
-    type: "markdown",
+export function addFileTab(
+  title: string,
+  content: string,
+  language: FileLanguage,
+  filePath?: string,
+  workspacePath?: string,
+) {
+  const tab: FileTab = {
+    type: "file",
     id: crypto.randomUUID(),
     title,
     content,
     filePath,
     workspacePath,
+    language,
+    dirty: false,
+    editing: false,
+    originalContent: content,
   };
   addTab(tab);
   return tab.id;
 }
 
-export function updateMarkdownContent(id: string, content: string) {
+export function updateFileContent(id: string, content: string) {
   tabs.update((t) =>
     t.map((tab) =>
-      tab.id === id && tab.type === "markdown" ? { ...tab, content } : tab,
+      tab.id === id && tab.type === "file"
+        ? { ...tab, content, dirty: content !== tab.originalContent }
+        : tab,
     ),
+  );
+}
+
+export function setFileEditing(id: string, editing: boolean) {
+  tabs.update((t) =>
+    t.map((tab) =>
+      tab.id === id && tab.type === "file" ? { ...tab, editing } : tab,
+    ),
+  );
+}
+
+export function markFileSaved(id: string, filePath?: string) {
+  tabs.update((t) =>
+    t.map((tab) => {
+      if (tab.id !== id || tab.type !== "file") return tab;
+      return {
+        ...tab,
+        dirty: false,
+        originalContent: tab.content,
+        ...(filePath ? { filePath } : {}),
+      };
+    }),
   );
 }
 
@@ -128,7 +162,10 @@ export function removeTab(id: string) {
     } else {
       activeTabId.set("");
     }
-    panelData.set(null);
+    // Only clear panelData when closing a terminal tab — file tabs don't own panel data
+    if (removedTab?.type === "terminal") {
+      panelData.set(null);
+    }
   }
 }
 

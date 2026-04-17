@@ -1,7 +1,8 @@
 import { switchToTab, cycleTab } from "./stores/terminal";
 import { togglePanel, setSection } from "./stores/panel";
 import { cycleWorkspace } from "./stores/workspace";
-import { openMarkdownFile } from "./file-open";
+import { openFile } from "./file-open";
+import { saveActiveFile } from "./file-save";
 
 // Set by TerminalTab when it knows its CWD — used for manual refresh
 export let requestPanelRefresh: (() => void) | null = null;
@@ -10,10 +11,17 @@ export function setRefreshHandler(handler: () => void) {
 }
 
 export function handleGlobalKeydown(e: KeyboardEvent): boolean {
-  // Ctrl+O: open markdown file
+  // Ctrl+O: open file
   if (e.ctrlKey && !e.shiftKey && e.key === "o") {
     e.preventDefault();
-    openMarkdownFile();
+    openFile();
+    return true;
+  }
+
+  // Ctrl+S: save active file
+  if (e.ctrlKey && !e.shiftKey && e.key === "s") {
+    e.preventDefault();
+    saveActiveFile();
     return true;
   }
 

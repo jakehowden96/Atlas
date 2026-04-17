@@ -65,6 +65,8 @@ pub struct Concern {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowData {
     pub edges: Vec<FlowEdge>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed_nodes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

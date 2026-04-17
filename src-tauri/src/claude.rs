@@ -61,6 +61,8 @@ struct ConcernResponse {
 struct FlowResponse {
     #[serde(default)]
     edges: Vec<EdgeResponse>,
+    #[serde(default)]
+    changed_nodes: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -87,7 +89,8 @@ The JSON must have this exact structure:
   "flow": {
     "edges": [
       {"from": "file.ts::changedSymbol", "to": "other.ts::consumer", "label": "calls", "type": "calls"}
-    ]
+    ],
+    "changed_nodes": ["file.ts::changedSymbol"]
   }
 }
 
@@ -104,6 +107,7 @@ Impact graph rules:
 - Edge "type" must be one of: "calls", "depends_on", "consumed_by", "modifies".
 - Edge "label" should be a short description (e.g. "calls", "imports type", "reads from").
 - Focus on [CHANGED] definitions from the code context.
+- "changed_nodes" lists node IDs (matching the "from"/"to" values in edges) that represent symbols marked [CHANGED] in the code context. These are the directly modified symbols.
 - Keep the graph focused: 3-12 edges maximum.
 "#;
 
@@ -153,7 +157,7 @@ impl ClaudeClient {
 
         let request = ApiRequest {
             model: self.model.clone(),
-            max_tokens: 2048,
+            max_tokens: 4096,
             stream: true,
             system: SYSTEM_PROMPT.to_string(),
             messages: vec![Message {
@@ -247,6 +251,7 @@ impl ClaudeClient {
                     edge_type: e.edge_type,
                 })
                 .collect(),
+            changed_nodes: analysis.flow.changed_nodes,
         };
 
         Ok((summary, flow))

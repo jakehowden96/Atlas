@@ -6,13 +6,14 @@
     "core:default",
     "shell:allow-open",
     "dialog:allow-open",
+    "dialog:allow-save",
     {
       "identifier": "fs:allow-read-text-file",
-      "allow": [{ "path": "$HOME/.atlas/**" }]
+      "allow": [{ "path": "**" }]
     },
     {
       "identifier": "fs:allow-write-text-file",
-      "allow": [{ "path": "$HOME/.atlas/**" }]
+      "allow": [{ "path": "**" }]
     },
     {
       "identifier": "fs:allow-exists",
@@ -21,6 +22,15 @@
     {
       "identifier": "fs:allow-mkdir",
       "allow": [{ "path": "$HOME/.atlas" }, { "path": "$HOME/.atlas/**" }]
+    },
+    "fs:default",
+    {
+      "identifier": "fs:allow-read-dir",
+      "allow": [{ "path": "$HOME/.atlas/logs" }]
+    },
+    {
+      "identifier": "fs:allow-remove",
+      "allow": [{ "path": "$HOME/.atlas/logs/**" }]
     },
     "notification:default"
   ]

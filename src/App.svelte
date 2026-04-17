@@ -30,6 +30,7 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { get } from "svelte/store";
   import type { UnlistenFn } from "@tauri-apps/api/event";
+  import { log } from "./lib/logger";
 
   let panelWidth = $state(420);
   let sidebarWidth = $state(280);
@@ -77,11 +78,15 @@
   function handleResizeEnd() { isResizing = false; }
 
   onMount(async () => {
+    await log.init();
+    log.info("app", "onMount started");
     checkApiStatus();
     await loadWorkspaces();
     const ws = get(workspaces);
+    log.info("app", `workspaces loaded: ${ws.length}`);
     if (ws.length > 0 && !get(activeWorkspacePath)) {
       activeWorkspacePath.set(ws[0].path);
+      log.info("app", `active workspace set: ${ws[0].path}`);
     }
     await loadSettings();
     unlisten = await onPanelUpdate((sessionId, data) => {
@@ -120,6 +125,7 @@
             });
           }
         } catch (e) {
+          log.warn("app", `notification failed: ${e}`);
           console.warn("Failed to send notification:", e);
         }
       }

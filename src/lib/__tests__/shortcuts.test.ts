@@ -15,14 +15,18 @@ vi.mock("../stores/workspace", () => ({
   workspaces: { subscribe: vi.fn(() => () => {}) },
 }));
 vi.mock("../file-open", () => ({
-  openMarkdownFile: vi.fn(),
+  openFile: vi.fn(),
+}));
+vi.mock("../file-save", () => ({
+  saveActiveFile: vi.fn(),
 }));
 
 import { handleGlobalKeydown, setRefreshHandler } from "../shortcuts";
 import { switchToTab, cycleTab } from "../stores/terminal";
 import { togglePanel, setSection } from "../stores/panel";
 import { cycleWorkspace } from "../stores/workspace";
-import { openMarkdownFile } from "../file-open";
+import { openFile } from "../file-open";
+import { saveActiveFile } from "../file-save";
 
 function makeKeyEvent(overrides: Partial<KeyboardEvent> = {}): KeyboardEvent {
   const e = {
@@ -41,11 +45,19 @@ describe("handleGlobalKeydown", () => {
     setRefreshHandler(null as unknown as () => void);
   });
 
-  it("Ctrl+O opens markdown file", () => {
+  it("Ctrl+O opens file", () => {
     const e = makeKeyEvent({ ctrlKey: true, key: "o" });
     const handled = handleGlobalKeydown(e);
     expect(handled).toBe(true);
-    expect(openMarkdownFile).toHaveBeenCalled();
+    expect(openFile).toHaveBeenCalled();
+    expect(e.preventDefault).toHaveBeenCalled();
+  });
+
+  it("Ctrl+S saves active file", () => {
+    const e = makeKeyEvent({ ctrlKey: true, key: "s" });
+    const handled = handleGlobalKeydown(e);
+    expect(handled).toBe(true);
+    expect(saveActiveFile).toHaveBeenCalled();
     expect(e.preventDefault).toHaveBeenCalled();
   });
 

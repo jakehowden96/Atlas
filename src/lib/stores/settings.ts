@@ -1,5 +1,6 @@
 import { writable, get } from "svelte/store";
 import { BaseDirectory, readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs";
+import { log } from "../logger";
 
 export const settingsOpen = writable(false);
 export const skipPermissions = writable(false);
@@ -21,14 +22,18 @@ async function ensureDir() {
 }
 
 export async function loadSettings() {
+  log.info("settings", "loadSettings started");
   try {
     const fileExists = await exists(SETTINGS_FILE, { baseDir: BaseDirectory.Home });
+    log.info("settings", `exists check: ${fileExists}`);
     if (!fileExists) return;
     const raw = await readTextFile(SETTINGS_FILE, { baseDir: BaseDirectory.Home });
     const data = JSON.parse(raw) as PersistedSettings;
     if (data.skipPermissions) skipPermissions.set(true);
     if (data.enableNotifications === false) enableNotifications.set(false);
+    log.info("settings", "settings loaded");
   } catch (e) {
+    log.error("settings", "failed to load settings", e);
     console.warn("Failed to load settings (using defaults):", e);
   }
 }
@@ -44,6 +49,7 @@ async function persistSettings() {
       baseDir: BaseDirectory.Home,
     });
   } catch (e) {
+    log.error("settings", "failed to persist settings", e);
     console.error("Failed to persist settings:", e);
   }
 }

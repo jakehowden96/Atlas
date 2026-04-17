@@ -186,6 +186,7 @@
             <div class="file-section">
               <div class="file-header">
                 <div class="file-header-left">
+                  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
                   <label class="file-checkbox-label" onclick={(e: MouseEvent) => e.stopPropagation()} onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
                     <input
                       type="checkbox"
@@ -261,6 +262,7 @@
         <div class="file-section">
           <div class="file-header">
             <div class="file-header-left">
+              <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
               <label class="file-checkbox-label" onclick={(e: MouseEvent) => e.stopPropagation()} onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
                 <input
                   type="checkbox"

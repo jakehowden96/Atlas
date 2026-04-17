@@ -45,10 +45,10 @@ export interface ChunkedGraphLayout {
   chunks: GraphChunk[];
 }
 
-const NODE_HEIGHT = 56;
+const NODE_HEIGHT = 58;
 const MIN_NODE_WIDTH = 120;
 const NODESEP = 24;
-const RANKSEP = 60;
+const RANKSEP = 50;
 
 /**
  * Layout a flow graph using dagre, constrained to fit within maxWidth.
@@ -216,6 +216,20 @@ function deriveChunkTitle(nodeIds: Set<string>): string {
   }
   if (files.size === 0) return "Graph";
   return [...files].sort().join(" / ");
+}
+
+export function extractFileColorMap(edges: FlowEdge[]): Map<string, number> {
+  const files = new Set<string>();
+  for (const e of edges) {
+    for (const id of [e.from, e.to]) {
+      const sep = id.indexOf("::");
+      if (sep > 0) files.add(id.slice(0, sep));
+    }
+  }
+  const sorted = [...files].sort();
+  const map = new Map<string, number>();
+  sorted.forEach((f, i) => map.set(f, i));
+  return map;
 }
 
 /**

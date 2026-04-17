@@ -65,12 +65,17 @@
       <button
         class="tab"
         class:active={tab.id === $activeTabId}
-        class:tab-markdown={tab.type === "markdown"}
+        class:tab-file={tab.type === "file"}
         class:needs-input={tab.type === "terminal" && tab.needsInput && tab.id !== $activeTabId}
         onclick={() => onSelectTab(tab.id)}
       >
-        {#if tab.type === "markdown"}
-          <span class="material-symbols-outlined tab-type-icon">description</span>
+        {#if tab.type === "file"}
+          <span class="material-symbols-outlined tab-type-icon">
+            {tab.language === "markdown" ? "description" : "code"}
+          </span>
+          {#if tab.dirty}
+            <span class="dirty-dot"></span>
+          {/if}
         {/if}
         <span class="tab-title">{tab.title || `Tab ${i + 1}`}</span>
         <span
@@ -153,21 +158,21 @@
   }
 
   .workspace-tab.needs-input {
-    color: var(--yellow);
-    border-bottom-color: var(--yellow);
+    color: var(--amber);
+    border-bottom-color: var(--amber);
     animation: pulse-ws 2s ease-in-out infinite;
   }
 
   .workspace-tab.active.needs-input {
-    color: var(--yellow);
+    color: var(--amber);
     background: var(--surface-container-high);
-    border-bottom-color: var(--yellow);
+    border-bottom-color: var(--amber);
     animation: pulse-ws 2s ease-in-out infinite;
   }
 
   @keyframes pulse-ws {
-    0%, 100% { background: color-mix(in srgb, var(--yellow) 12%, transparent); }
-    50% { background: color-mix(in srgb, var(--yellow) 5%, transparent); }
+    0%, 100% { background: color-mix(in srgb, var(--amber) 12%, transparent); }
+    50% { background: color-mix(in srgb, var(--amber) 5%, transparent); }
   }
 
   /* ── Row 2: Session tabs ── */
@@ -209,28 +214,36 @@
     color: var(--on-surface);
   }
 
-  .tab-markdown {
+  .tab-file {
     color: var(--on-surface-variant);
     opacity: 0.85;
   }
 
-  .tab-markdown .tab-type-icon {
+  .tab-file .tab-type-icon {
     color: var(--cyan);
   }
 
-  .tab-markdown:hover {
+  .tab-file:hover {
     color: var(--on-surface);
     opacity: 1;
   }
 
-  .tab-markdown.active {
+  .tab-file.active {
     color: var(--on-surface);
     opacity: 1;
     background: color-mix(in srgb, var(--cyan) 8%, var(--surface-container-high));
   }
 
-  .tab-markdown.active .tab-type-icon {
+  .tab-file.active .tab-type-icon {
     color: var(--cyan);
+  }
+
+  .dirty-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--primary);
+    flex-shrink: 0;
   }
 
   .tab.needs-input {

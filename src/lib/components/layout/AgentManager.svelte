@@ -14,16 +14,16 @@
   }>();
 
   const WORKSPACE_COLORS = [
-    "#72b1ff", // blue
-    "#97f999", // green
-    "#ff7167", // coral
-    "#e8be7b", // yellow
-    "#c48eed", // purple
-    "#63bcc6", // cyan
-    "#ff9288", // salmon
-    "#89ea8d", // lime
-    "#94c5ff", // light blue
-    "#d8abff", // lavender
+    "#e6194B", // red
+    "#3cb44b", // green
+    "#ffe119", // yellow
+    "#4363d8", // blue
+    "#f58231", // orange
+    "#42d4f4", // cyan
+    "#f032e6", // magenta
+    "#fabed4", // pink
+    "#469990", // teal
+    "#dcbeff", // lavender
   ];
 
   interface Session {
@@ -221,7 +221,7 @@
               ></span>
             </button>
             {#if colorPickerPath === workspace.path}
-              <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
               <div class="color-dropdown" onclick={(e) => e.stopPropagation()}>
                 {#each WORKSPACE_COLORS as color (color)}
                   <button

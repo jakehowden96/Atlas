@@ -3,7 +3,7 @@
   import { get } from "svelte/store";
   import TabBar from "./TabBar.svelte";
   import TerminalTab from "./TerminalTab.svelte";
-  import MarkdownTabView from "./MarkdownTab.svelte";
+  import FileTabView from "./FileTabView.svelte";
   import {
     tabs,
     activeTabId,
@@ -133,8 +133,8 @@
             onData={tab.onData}
             onPtyReady={(ptyId) => handlePtyReady(tab.id, ptyId)}
           />
-        {:else if tab.type === "markdown"}
-          <MarkdownTabView
+        {:else if tab.type === "file"}
+          <FileTabView
             {tab}
             visible={tab.id === $activeTabId}
           />

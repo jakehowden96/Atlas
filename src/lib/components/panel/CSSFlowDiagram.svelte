@@ -2,7 +2,7 @@
   import type { FlowData } from "../../../types/panel";
   import RepositoryClean from "./RepositoryClean.svelte";
   import ActionButton from "./ActionButton.svelte";
-  import { layoutFlowGraphChunked, type ChunkedGraphLayout } from "../../css-graph-layout";
+  import { layoutFlowGraphChunked, extractFileColorMap, type ChunkedGraphLayout } from "../../css-graph-layout";
   import { apiKeyConfigured, checkApiStatus, panelData, analysisStatus, analysisError } from "../../stores/panel";
   import { setApiKey, refreshPanel, resetAnalysis } from "../../ipc";
   import { activeTabId } from "../../stores/terminal";
@@ -20,8 +20,27 @@
 
   let layout = $state.raw<ChunkedGraphLayout | null>(null);
   let viewportEl: HTMLDivElement = $state(null!);
+  let fileColorMap = $state<Map<string, number>>(new Map());
 
   const PADDING = 24;
+  const FILE_COLORS = [
+    "#e6194B",
+    "#3cb44b",
+    "#ffe119",
+    "#4363d8",
+    "#f58231",
+    "#42d4f4",
+    "#f032e6",
+    "#fabed4",
+    "#469990",
+    "#dcbeff",
+    "#9A6324",
+    "#fffac8",
+    "#800000",
+    "#aaffc3",
+    "#000075",
+    "#a9a9a9",
+  ];
 
   $effect(() => {
     if (data && data.edges.length > 0) {
@@ -29,8 +48,10 @@
         ? viewportEl.clientWidth - PADDING * 2
         : 300;
       layout = layoutFlowGraphChunked(data.edges, availableWidth);
+      fileColorMap = extractFileColorMap(data.edges);
     } else {
       layout = null;
+      fileColorMap = new Map();
     }
   });
 
@@ -99,13 +120,20 @@
     }
   }
 
-  /** Parse "file.ts::symbolName" into { file, symbol }. Falls back gracefully. */
-  function parseNodeLabel(label: string): { file: string; symbol: string } {
+  function parseSymbol(label: string): string {
     const sep = label.indexOf("::");
-    if (sep > 0) {
-      return { file: label.slice(0, sep), symbol: label.slice(sep + 2) };
-    }
-    return { file: "", symbol: label };
+    return sep > 0 ? label.slice(sep + 2) : label;
+  }
+
+  function getFileName(nodeId: string): string {
+    const sep = nodeId.indexOf("::");
+    return sep > 0 ? nodeId.slice(0, sep) : "";
+  }
+
+  function getFileColor(nodeId: string): string {
+    const file = getFileName(nodeId);
+    const idx = fileColorMap.get(file) ?? 0;
+    return FILE_COLORS[idx % FILE_COLORS.length];
   }
 </script>
 
@@ -114,7 +142,6 @@
     <div class="diagram-viewport" bind:this={viewportEl}>
       {#each layout.chunks as chunk, chunkIdx (chunkIdx)}
         <div class="diagram-chunk">
-          <div class="chunk-title">{chunk.title}</div>
           <div
             class="diagram-stage"
             style="width: {chunk.width}px; height: {chunk.height}px"
@@ -144,13 +171,13 @@
 
             <!-- Node layer -->
             {#each chunk.nodes as node (node.id)}
-              {@const parsed = parseNodeLabel(node.label)}
               <div
                 class="graph-node"
-                style="left: {node.x}px; top: {node.y}px; width: {node.width}px; height: {node.height}px"
+                class:node-changed={data?.changed_nodes?.includes(node.id)}
+                style="left: {node.x}px; top: {node.y}px; width: {node.width}px; height: {node.height}px; border-left: 3px solid {getFileColor(node.id)}"
               >
-                <span class="node-type">{parsed.file || "function"}</span>
-                <span class="node-label">{parsed.symbol}</span>
+                <span class="node-file" style="color: {getFileColor(node.id)}">{getFileName(node.label)}</span>
+                <span class="node-label">{parseSymbol(node.label)}</span>
               </div>
             {/each}
           </div>
@@ -225,23 +252,11 @@
   }
 
   .diagram-chunk {
-    margin-bottom: 32px;
+    margin-bottom: 24px;
   }
 
   .diagram-chunk:last-child {
     margin-bottom: 0;
-  }
-
-  .chunk-title {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--on-surface-variant);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    padding-bottom: 12px;
-    border-bottom: 1px solid color-mix(in srgb, var(--outline-variant) 30%, transparent);
-    margin-bottom: 16px;
   }
 
   .diagram-stage {
@@ -291,9 +306,8 @@
     position: absolute;
     display: flex;
     flex-direction: column;
-    align-items: center;
     justify-content: center;
-    gap: 2px;
+    padding: 4px 10px;
     background: var(--surface-container-high);
     border: 1px solid color-mix(in srgb, var(--outline-variant) 30%, transparent);
     border-radius: var(--radius);
@@ -310,16 +324,23 @@
       0 0 20px color-mix(in srgb, var(--primary) 15%, transparent);
   }
 
-  .node-type {
+  .node-changed {
+    background: color-mix(in srgb, var(--primary) 12%, var(--surface-container-high));
+    box-shadow:
+      0 4px 20px rgba(0, 0, 0, 0.3),
+      0 0 12px color-mix(in srgb, var(--primary) 20%, transparent);
+    border-color: color-mix(in srgb, var(--primary) 40%, var(--outline-variant));
+  }
+
+  .node-file {
     font-family: var(--font-mono);
     font-size: 10px;
-    color: var(--primary);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: calc(100% - 16px);
+    max-width: calc(100% - 6px);
+    line-height: 1.2;
   }
 
   .node-label {
@@ -330,7 +351,7 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: calc(100% - 20px);
+    max-width: calc(100% - 6px);
   }
 
   /* ── Empty / error / loading states ── */

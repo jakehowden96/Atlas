@@ -41,6 +41,7 @@ export interface SummaryData {
 
 export interface FlowData {
   edges: FlowEdge[];
+  changed_nodes?: string[];
 }
 
 export interface PanelData {

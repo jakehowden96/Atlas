@@ -24,7 +24,7 @@
     },
   });
 
-  let rendered = $derived(md.render(content || ""));
+  let rendered = $derived(md.render(String(content ?? "")));
 </script>
 
 <div class="markdown-body">

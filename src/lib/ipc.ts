@@ -1,6 +1,7 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { PanelData, GitStatus, RepoInfo, BranchInfo, AnalysisStatusEvent } from "../types/panel";
+import { log } from "./logger";
 
 export async function ptySpawn(
   cols: number,
@@ -14,13 +15,21 @@ export async function ptySpawn(
     onData(new Uint8Array(data));
   };
 
-  return invoke<number>("pty_spawn", {
-    cols,
-    rows,
-    cwd: cwd ?? null,
-    envVars: envVars ?? null,
-    onData: channel,
-  });
+  log.info("ipc", `ptySpawn cols=${cols} rows=${rows} cwd=${cwd ?? "default"}`);
+  try {
+    const id = await invoke<number>("pty_spawn", {
+      cols,
+      rows,
+      cwd: cwd ?? null,
+      envVars: envVars ?? null,
+      onData: channel,
+    });
+    log.info("ipc", `ptySpawn success: id=${id}`);
+    return id;
+  } catch (e) {
+    log.error("ipc", "ptySpawn failed", e);
+    throw e;
+  }
 }
 
 const encoder = new TextEncoder();
@@ -38,6 +47,7 @@ export async function ptyResize(
 }
 
 export async function ptyKill(id: number): Promise<void> {
+  log.info("ipc", `ptyKill id=${id}`);
   return invoke("pty_kill", { id });
 }
 
@@ -48,25 +58,39 @@ export async function getSessionDir(sessionId: string): Promise<string> {
 export async function getPanelData(
   sessionId: string,
 ): Promise<PanelData | null> {
-  return invoke("get_panel_data", { sessionId });
+  try {
+    const data = await invoke<PanelData | null>("get_panel_data", { sessionId });
+    return data;
+  } catch (e) {
+    log.error("ipc", `getPanelData failed for ${sessionId}`, e);
+    throw e;
+  }
 }
 
 export async function refreshPanel(
   sessionId: string,
   cwd: string,
 ): Promise<PanelData | null> {
-  return invoke("refresh_panel", { sessionId, cwd });
+  try {
+    return await invoke("refresh_panel", { sessionId, cwd });
+  } catch (e) {
+    log.error("ipc", `refreshPanel failed for ${sessionId}`, e);
+    throw e;
+  }
 }
 
 export async function gitStageAll(cwd: string): Promise<void> {
+  log.info("ipc", `gitStageAll: ${cwd}`);
   return invoke("git_stage_all", { cwd });
 }
 
 export async function gitStageFiles(cwd: string, files: string[]): Promise<void> {
+  log.info("ipc", `gitStageFiles: ${files.length} files in ${cwd}`);
   return invoke("git_stage_files", { cwd, files });
 }
 
 export async function gitDiscardAll(cwd: string): Promise<void> {
+  log.info("ipc", `gitDiscardAll: ${cwd}`);
   return invoke("git_discard_all", { cwd });
 }
 
@@ -90,10 +114,12 @@ export async function gitCommit(
   cwd: string,
   message: string,
 ): Promise<void> {
+  log.info("ipc", `gitCommit: ${cwd}`);
   return invoke("git_commit", { cwd, message });
 }
 
 export async function gitPush(cwd: string): Promise<string> {
+  log.info("ipc", `gitPush: ${cwd}`);
   return invoke("git_push", { cwd });
 }
 
@@ -106,7 +132,14 @@ export async function setApiKey(apiKey: string): Promise<void> {
 }
 
 export async function getApiStatus(): Promise<boolean> {
-  return invoke("get_api_status");
+  try {
+    const status = await invoke<boolean>("get_api_status");
+    log.info("ipc", `getApiStatus: ${status}`);
+    return status;
+  } catch (e) {
+    log.error("ipc", "getApiStatus failed", e);
+    throw e;
+  }
 }
 
 export async function gitListBranches(cwd: string): Promise<BranchInfo[]> {
