@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "Capability for the main window. $HOME/** scope is required for file open/save features (user-chosen arbitrary paths via dialog). $HOME/.atlas/** is used for workspace, settings, and log storage.",
   "windows": ["main"],
   "permissions": [
     "core:default",

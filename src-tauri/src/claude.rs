@@ -127,7 +127,8 @@ impl ClaudeClient {
         plan: Option<&str>,
     ) -> Result<(SummaryData, FlowData), String> {
         // Truncate very large diffs to avoid token limits (char-boundary safe)
-        let diff_text = if raw_diff.len() > 30_000 {
+        let truncated = raw_diff.len() > 30_000;
+        let diff_text = if truncated {
             let mut end = 30_000;
             while !raw_diff.is_char_boundary(end) {
                 end -= 1;
@@ -168,22 +169,51 @@ impl ClaudeClient {
 
         let url = format!("{}v1/messages", self.base_url);
 
-        let response = self
-            .http
-            .post(&url)
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", "2023-06-01")
-            .header("content-type", "application/json")
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| format!("HTTP request failed: {}", e))?;
+        const MAX_RETRIES: u32 = 3;
+        let mut last_err = String::new();
+        let mut response = None;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(format!("Claude API error {}: {}", status, body));
+        for attempt in 0..MAX_RETRIES {
+            let result = self
+                .http
+                .post(&url)
+                .header("x-api-key", &self.api_key)
+                .header("anthropic-version", "2023-06-01")
+                .header("content-type", "application/json")
+                .json(&request)
+                .send()
+                .await;
+
+            match result {
+                Ok(resp) if resp.status().is_success() => {
+                    response = Some(resp);
+                    break;
+                }
+                Ok(resp) => {
+                    let status = resp.status();
+                    let retryable = matches!(status.as_u16(), 429 | 500 | 502 | 503 | 529);
+                    let body = resp.text().await.unwrap_or_default();
+                    last_err = format!("Claude API error {}: {}", status, body);
+                    if !retryable || attempt == MAX_RETRIES - 1 {
+                        return Err(last_err);
+                    }
+                    let delay = std::time::Duration::from_secs(1 << attempt);
+                    log::warn!("Claude API returned {}, retrying in {:?} (attempt {}/{})", status, delay, attempt + 1, MAX_RETRIES);
+                    tokio::time::sleep(delay).await;
+                }
+                Err(e) => {
+                    last_err = format!("HTTP request failed: {}", e);
+                    if attempt == MAX_RETRIES - 1 {
+                        return Err(last_err);
+                    }
+                    let delay = std::time::Duration::from_secs(1 << attempt);
+                    log::warn!("HTTP request failed: {}, retrying in {:?} (attempt {}/{})", e, delay, attempt + 1, MAX_RETRIES);
+                    tokio::time::sleep(delay).await;
+                }
+            }
         }
+
+        let response = response.ok_or(last_err)?;
 
         // Stream SSE events and accumulate text
         let mut accumulated_text = String::new();
@@ -237,6 +267,7 @@ impl ClaudeClient {
                     line: c.line,
                 })
                 .collect(),
+            truncated,
         };
 
         let flow = FlowData {

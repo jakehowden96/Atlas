@@ -46,9 +46,9 @@ export async function ptyResize(
   return invoke("pty_resize", { id, cols, rows });
 }
 
-export async function ptyKill(id: number): Promise<void> {
-  log.info("ipc", `ptyKill id=${id}`);
-  return invoke("pty_kill", { id });
+export async function ptyKill(id: number, sessionId?: string): Promise<void> {
+  log.info("ipc", `ptyKill id=${id} sessionId=${sessionId ?? "none"}`);
+  return invoke("pty_kill", { id, sessionId: sessionId ?? null });
 }
 
 export async function getSessionDir(sessionId: string): Promise<string> {

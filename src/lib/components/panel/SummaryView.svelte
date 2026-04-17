@@ -91,6 +91,13 @@
     </div>
 
     <div class="summary-body">
+      {#if data.truncated}
+        <div class="truncation-notice">
+          <span class="material-symbols-outlined truncation-icon">content_cut</span>
+          <span>Analysis based on a partial diff. Large changes were truncated before analysis.</span>
+        </div>
+      {/if}
+
       <!-- Intent -->
       <div class="section">
         <div class="section-header muted">
@@ -265,6 +272,24 @@
     display: flex;
     flex-direction: column;
     gap: 2rem;
+  }
+
+  .truncation-notice {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.875rem;
+    background: color-mix(in srgb, var(--yellow) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--yellow) 25%, transparent);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    color: var(--yellow);
+    line-height: 1.4;
+  }
+
+  .truncation-icon {
+    font-size: 16px;
+    flex-shrink: 0;
   }
 
   .section {

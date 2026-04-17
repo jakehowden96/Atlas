@@ -494,54 +494,7 @@ pub fn get_api_status(app_handle: tauri::AppHandle) -> bool {
 }
 
 fn now_iso8601() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    unix_to_iso8601(secs)
-}
-
-/// Convert a Unix timestamp (seconds since epoch) to ISO 8601 string.
-fn unix_to_iso8601(secs: u64) -> String {
-    // Manual UTC formatting to avoid pulling in chrono for one function
-    let days = secs / 86400;
-    let time_of_day = secs % 86400;
-    let hours = time_of_day / 3600;
-    let minutes = (time_of_day % 3600) / 60;
-    let seconds = time_of_day % 60;
-
-    // Days since epoch to Y-M-D (civil calendar)
-    let mut y = 1970i64;
-    let mut remaining = days as i64;
-    loop {
-        let days_in_year = if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 366 } else { 365 };
-        if remaining < days_in_year {
-            break;
-        }
-        remaining -= days_in_year;
-        y += 1;
-    }
-    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
-    let month_days = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let mut m = 0usize;
-    for (i, days_in_month) in month_days.iter().enumerate() {
-        if remaining < *days_in_month as i64 {
-            break;
-        }
-        remaining -= *days_in_month as i64;
-        m = i + 1;
-    }
-    // Clamp to valid month range (0..=11) to prevent overflow from edge cases
-    if m > 11 {
-        m = 11;
-        remaining = 0;
-    }
-
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        y, m + 1, remaining + 1, hours, minutes, seconds
-    )
+    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
 #[cfg(test)]
@@ -676,6 +629,7 @@ mod tests {
                     line: None,
                 },
             ],
+            truncated: false,
         };
 
         let json = serde_json::to_string(&summary).unwrap();
@@ -715,51 +669,6 @@ mod tests {
         let json = serde_json::to_string(&concern).unwrap();
         assert!(!json.contains("\"file\""), "file should be omitted when None");
         assert!(!json.contains("\"line\""), "line should be omitted when None");
-    }
-
-    // --- unix_to_iso8601 boundary tests ---
-
-    #[test]
-    fn iso8601_epoch() {
-        assert_eq!(unix_to_iso8601(0), "1970-01-01T00:00:00Z");
-    }
-
-    #[test]
-    fn iso8601_jan1_2024() {
-        // 2024-01-01 00:00:00 UTC = 1704067200
-        assert_eq!(unix_to_iso8601(1704067200), "2024-01-01T00:00:00Z");
-    }
-
-    #[test]
-    fn iso8601_leap_year_feb29() {
-        // 2024-02-29 12:00:00 UTC = 1709208000
-        assert_eq!(unix_to_iso8601(1709208000), "2024-02-29T12:00:00Z");
-    }
-
-    #[test]
-    fn iso8601_dec31_end_of_year() {
-        // 2024-12-31 23:59:59 UTC = 1735689599
-        assert_eq!(unix_to_iso8601(1735689599), "2024-12-31T23:59:59Z");
-    }
-
-    #[test]
-    fn iso8601_non_leap_year_mar1() {
-        // 2023-03-01 00:00:00 UTC = 1677628800
-        assert_eq!(unix_to_iso8601(1677628800), "2023-03-01T00:00:00Z");
-    }
-
-    #[test]
-    fn iso8601_month_never_exceeds_12() {
-        // Test a wide range of timestamps to ensure month is always 1-12
-        for secs in (0..2_000_000_000u64).step_by(86400 * 37) {
-            let ts = unix_to_iso8601(secs);
-            let parts: Vec<&str> = ts.split('T').collect();
-            let date_parts: Vec<&str> = parts[0].split('-').collect();
-            let month: u32 = date_parts[1].parse().unwrap();
-            let day: u32 = date_parts[2].parse().unwrap();
-            assert!(month >= 1 && month <= 12, "Invalid month {} in {}", month, ts);
-            assert!(day >= 1 && day <= 31, "Invalid day {} in {}", day, ts);
-        }
     }
 
     // --- hash_diff tests ---

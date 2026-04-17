@@ -37,6 +37,7 @@ export interface SummaryData {
   approach: string;
   impact: string;
   concerns: Concern[];
+  truncated?: boolean;
 }
 
 export interface FlowData {

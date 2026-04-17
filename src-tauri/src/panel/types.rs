@@ -50,6 +50,8 @@ pub struct SummaryData {
     pub impact: String,
     #[serde(default)]
     pub concerns: Vec<Concern>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

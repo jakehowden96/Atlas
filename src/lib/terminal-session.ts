@@ -352,7 +352,7 @@ export class TerminalSession {
     this.stopPolling();
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     if (this.ptyId !== null) {
-      ptyKill(this.ptyId);
+      ptyKill(this.ptyId, this.tabId);
     }
     this.terminal?.dispose();
   }
