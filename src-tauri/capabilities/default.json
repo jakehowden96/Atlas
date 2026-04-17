@@ -9,11 +9,11 @@
     "dialog:allow-save",
     {
       "identifier": "fs:allow-read-text-file",
-      "allow": [{ "path": "**" }]
+      "allow": [{ "path": "$HOME/.atlas/**" }, { "path": "$HOME/**" }]
     },
     {
       "identifier": "fs:allow-write-text-file",
-      "allow": [{ "path": "**" }]
+      "allow": [{ "path": "$HOME/.atlas/**" }, { "path": "$HOME/**" }]
     },
     {
       "identifier": "fs:allow-exists",

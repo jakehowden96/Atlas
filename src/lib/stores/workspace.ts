@@ -49,15 +49,25 @@ async function ensureDir() {
 
 export async function loadWorkspaces() {
   log.info("workspace", "loadWorkspaces started");
+  log.debug("workspace", `STORAGE_FILE=${STORAGE_FILE}, baseDir=Home`);
   try {
+    log.debug("workspace", "checking file exists...");
     const fileExists = await exists(STORAGE_FILE, { baseDir: BaseDirectory.Home });
     log.info("workspace", `exists check: ${fileExists}`);
-    if (!fileExists) return;
+    if (!fileExists) {
+      log.debug("workspace", "file does not exist, returning early with no workspaces");
+      return;
+    }
+    log.debug("workspace", "reading file...");
     const raw = await readTextFile(STORAGE_FILE, { baseDir: BaseDirectory.Home });
+    log.debug("workspace", `raw file length: ${raw.length} chars`);
+    log.debug("workspace", `raw content preview: ${raw.substring(0, 200)}`);
     const data = JSON.parse(raw) as Workspace[];
     log.info("workspace", `parsed ${data.length} workspaces`);
+    log.debug("workspace", `workspace paths: ${data.map((w) => w.path).join(", ")}`);
     const validColors = new Set(WORKSPACE_COLORS);
     for (const ws of data) {
+      log.debug("workspace", `processing workspace: ${ws.name} (${ws.path}), sessions=${ws.sessions.length}`);
       if (!ws.color || !validColors.has(ws.color)) {
         ws.color = nextAvailableColor(data.filter((w) => w !== ws));
       }
@@ -66,7 +76,10 @@ export async function loadWorkspaces() {
         s.terminalTabId = null;
       }
     }
+    log.debug("workspace", "calling workspaces.set()...");
     workspaces.set(data);
+    const stored = get(workspaces);
+    log.debug("workspace", `store verification: ${stored.length} workspaces in store`);
     log.info("workspace", `store updated with ${data.length} workspaces`);
   } catch (e) {
     log.error("workspace", "failed to load workspaces", e);
