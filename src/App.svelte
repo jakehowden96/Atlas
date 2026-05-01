@@ -55,7 +55,6 @@
     }
   });
 
-  // Clear needsInput when switching to a tab
   $effect(() => {
     if ($activeTabId) {
       setTabNeedsInput($activeTabId, false);
@@ -82,14 +81,13 @@
     await log.init();
     log.info("app", "onMount started");
     checkApiStatus();
-    await loadWorkspaces();
+    await Promise.all([loadWorkspaces(), loadSettings()]);
     const ws = get(workspaces);
     log.info("app", `workspaces loaded: ${ws.length}`);
     if (ws.length > 0 && !get(activeWorkspacePath)) {
       activeWorkspacePath.set(ws[0].path);
       log.info("app", `active workspace set: ${ws[0].path}`);
     }
-    await loadSettings();
     unlisten = await onPanelUpdate((sessionId, data) => {
       if (sessionId === get(activeTabId)) {
         panelData.set(data);

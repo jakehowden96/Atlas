@@ -1,4 +1,4 @@
-import { writable, derived, get } from "svelte/store";
+import { writable, get } from "svelte/store";
 import { BaseDirectory, readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs";
 import { log } from "../logger";
 import type { ToolSettings } from "../adapters/types";
@@ -7,10 +7,6 @@ export const settingsOpen = writable(false);
 export const enableNotifications = writable(true);
 export const selectedTool = writable<string>("claude-code");
 export const toolSettings = writable<Record<string, ToolSettings>>({});
-
-export const skipPermissions = derived(toolSettings, ($ts) =>
-  !!$ts["claude-code"]?.skipPermissions,
-);
 
 const SETTINGS_DIR = ".atlas";
 const SETTINGS_FILE = ".atlas/settings.json";
@@ -22,11 +18,14 @@ interface PersistedSettings {
   toolSettings?: Record<string, ToolSettings>;
 }
 
+let dirEnsured = false;
 async function ensureDir() {
+  if (dirEnsured) return;
   const dirExists = await exists(SETTINGS_DIR, { baseDir: BaseDirectory.Home });
   if (!dirExists) {
     await mkdir(SETTINGS_DIR, { baseDir: BaseDirectory.Home });
   }
+  dirEnsured = true;
 }
 
 export async function loadSettings() {

@@ -199,8 +199,10 @@ export function setTabTitle(id: string, title: string, source?: "auto" | "osc") 
         if (source === "auto" && tab.type === "terminal" && tab.titleSource && tab.titleSource !== "auto") {
           return tab;
         }
-        const titleSource = source && tab.type === "terminal" ? source : (tab as any).titleSource;
-        return { ...tab, title, ...(tab.type === "terminal" ? { titleSource } : {}) };
+        if (tab.type === "terminal") {
+          return { ...tab, title, titleSource: source ?? tab.titleSource };
+        }
+        return { ...tab, title };
       }),
     );
   }, 100));

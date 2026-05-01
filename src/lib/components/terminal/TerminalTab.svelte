@@ -6,7 +6,7 @@
   import { handleChatEvent, appendUserMessage, endStreaming, startStreaming } from "../../stores/chat";
   import { ptyWrite } from "../../ipc";
   import { getAdapter } from "../../adapters";
-  import { getToolSettings, selectedTool } from "../../stores/settings";
+  import { getToolSettings } from "../../stores/settings";
   import { tabs, setTabTitle } from "../../stores/terminal";
   import { updateSessionLabelByTabId } from "../../stores/workspace";
   import { deriveTabTitle } from "../../terminal-utils";
@@ -24,7 +24,6 @@
     perTurnInvocation?: boolean;
     adapterId?: string;
     toolSessionId?: string;
-    turnCount?: number;
   }
 
   let {
@@ -32,6 +31,8 @@
     useStreamJson = false, perTurnInvocation = false,
     adapterId, toolSessionId,
   }: Props = $props();
+
+  const headless = useStreamJson || perTurnInvocation;
 
   let containerEl: HTMLDivElement;
   let session: TerminalSession | null = null;
@@ -49,7 +50,7 @@
     appendUserMessage(tabId, text);
 
     const adapter = getAdapter(adapterId);
-    const settings = getToolSettings(get(selectedTool));
+    const settings = getToolSettings(adapterId);
     const tab = get(tabs).find((t) => t.id === tabId);
     const currentTurnCount = (tab?.type === "terminal" ? tab.turnCount ?? 0 : 0);
 
@@ -91,7 +92,7 @@
   }
 
   onMount(() => {
-    if (useStreamJson || perTurnInvocation) {
+    if (headless) {
       streamParser = new StreamParser((event) => {
         handleChatEvent(tabId, event);
       }, { perTurnMode: perTurnInvocation });
@@ -99,15 +100,15 @@
 
     session = new TerminalSession({
       tabId,
-      container: (useStreamJson || perTurnInvocation) ? undefined : containerEl,
+      container: headless ? undefined : containerEl,
       visible,
       onPtyReady: (id) => {
         ptyId = id;
         onPtyReady(id);
       },
       cwd,
-      onData: (useStreamJson || perTurnInvocation) ? handleStreamData : onData,
-      headless: useStreamJson || perTurnInvocation,
+      onData: headless ? handleStreamData : onData,
+      headless,
     });
   });
 
@@ -122,13 +123,13 @@
   });
 
   $effect(() => {
-    if (!useStreamJson && !perTurnInvocation && visible && ready) {
+    if (!headless && visible && ready) {
       session?.fitTerminal();
     }
   });
 </script>
 
-{#if useStreamJson || perTurnInvocation}
+{#if headless}
   <ChatView {tabId} onSendMessage={handleSendMessage} {visible} />
 {:else}
   {#if visible && !ready}

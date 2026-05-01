@@ -24,9 +24,7 @@
 
   function toolLabel(): string {
     const input = call.input;
-    if (call.toolName === "Read" && input.file_path) return `Read ${input.file_path}`;
-    if (call.toolName === "Edit" && input.file_path) return `Edit ${input.file_path}`;
-    if (call.toolName === "Write" && input.file_path) return `Write ${input.file_path}`;
+    if (["Read", "Edit", "Write"].includes(call.toolName) && input.file_path) return `${call.toolName} ${input.file_path}`;
     if (call.toolName === "Bash" && input.command) return `${input.command}`;
     if (call.toolName === "Glob" && input.pattern) return `Glob ${input.pattern}`;
     if (call.toolName === "Grep" && input.pattern) return `Grep "${input.pattern}"`;

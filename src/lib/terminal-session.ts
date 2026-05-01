@@ -12,6 +12,7 @@ import { showToast } from "./stores/toast";
 import { setRefreshHandler } from "./shortcuts";
 import { xtermTheme } from "./theme";
 import { log } from "./logger";
+import { panelDataChanged, parseOsc7Cwd } from "./terminal-utils";
 
 export interface TerminalSessionOptions {
   tabId: string;
@@ -114,33 +115,20 @@ export class TerminalSession {
 
   private registerOscHandlers() {
     const term = this.terminal!;
-    term.parser.registerOscHandler(0, (data) => {
+    const handleTitleOsc = (data: string) => {
       setTabTitle(this.tabId, data, "osc");
       this.checkOscReadiness();
       updateSessionLabelByTabId(this.tabId, data);
       return true;
-    });
-    term.parser.registerOscHandler(2, (data) => {
-      setTabTitle(this.tabId, data, "osc");
-      this.checkOscReadiness();
-      updateSessionLabelByTabId(this.tabId, data);
-      return true;
-    });
+    };
+    term.parser.registerOscHandler(0, handleTitleOsc);
+    term.parser.registerOscHandler(2, handleTitleOsc);
 
     term.parser.registerOscHandler(7, (data) => {
-      try {
-        const url = new URL(data);
-        const cwd = decodeURIComponent(url.pathname);
-        if (cwd && cwd !== this.currentCwd) {
-          this.currentCwd = cwd;
-          this.scheduleRefresh(cwd);
-        }
-      } catch {
-        const cwd = data.trim();
-        if (cwd && cwd !== this.currentCwd) {
-          this.currentCwd = cwd;
-          this.scheduleRefresh(cwd);
-        }
+      const cwd = parseOsc7Cwd(data);
+      if (cwd && cwd !== this.currentCwd) {
+        this.currentCwd = cwd;
+        this.scheduleRefresh(cwd);
       }
       return true;
     });
@@ -247,11 +235,8 @@ export class TerminalSession {
   private lastPanelVersion = -1;
   private lastPanelDiffRaw: string | null = null;
 
-  /** Cheap identity check: compare version + diff raw string instead of full JSON. */
   private panelChanged(data: PanelData | null): boolean {
-    if (!data) return this.lastPanelVersion !== -1;
-    if (data.version !== this.lastPanelVersion) return true;
-    return (data.diff?.raw ?? null) !== this.lastPanelDiffRaw;
+    return panelDataChanged(data, this.lastPanelVersion, this.lastPanelDiffRaw);
   }
 
   private updatePanelFingerprint(data: PanelData | null) {

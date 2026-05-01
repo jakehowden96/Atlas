@@ -132,7 +132,6 @@
             perTurnInvocation={tab.perTurnInvocation}
             adapterId={tab.adapterId}
             toolSessionId={tab.toolSessionId}
-            turnCount={tab.turnCount}
             onPtyReady={(ptyId) => handlePtyReady(tab.id, ptyId)}
           />
         {:else if tab.type === "file"}

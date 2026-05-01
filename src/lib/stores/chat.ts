@@ -32,6 +32,7 @@ export interface ChatSession {
   streaming: boolean;
 }
 
+const RAW_MESSAGE_ID = "__raw__";
 const sessions = writable<Map<string, ChatSession>>(new Map());
 
 function ensureSession(tabId: string): ChatSession {
@@ -63,9 +64,13 @@ export function getSessionStore(tabId: string) {
   }
   return {
     subscribe: (fn: (value: ChatSession) => void) => {
+      let prev: ChatSession | undefined;
       return sessions.subscribe((m) => {
         const s = m.get(tabId);
-        if (s) fn(s);
+        if (s && s !== prev) {
+          prev = s;
+          fn(s);
+        }
       });
     },
   };
@@ -171,12 +176,12 @@ export function handleChatEvent(tabId: string, event: ChatEvent) {
     case "raw-text":
       updateSession(tabId, (s) => {
         const last = s.messages[s.messages.length - 1];
-        if (last?.type === "agent" && last.id === "__raw__") {
+        if (last?.type === "agent" && last.id === RAW_MESSAGE_ID) {
           last.text += "\n" + event.text;
         } else {
           s.messages.push({
             type: "agent",
-            id: "__raw__",
+            id: RAW_MESSAGE_ID,
             text: event.text,
             timestamp: Date.now(),
           });
@@ -187,12 +192,16 @@ export function handleChatEvent(tabId: string, event: ChatEvent) {
 }
 
 export function startStreaming(tabId: string) {
+  const s = get(sessions).get(tabId);
+  if (s?.streaming) return;
   updateSession(tabId, (s) => {
     s.streaming = true;
   });
 }
 
 export function endStreaming(tabId: string) {
+  const s = get(sessions).get(tabId);
+  if (!s || !s.streaming) return;
   updateSession(tabId, (s) => {
     s.streaming = false;
   });

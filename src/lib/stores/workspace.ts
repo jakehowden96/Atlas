@@ -40,11 +40,14 @@ export const workspaces = writable<Workspace[]>([]);
 export const activeWorkspacePath = writable("");
 export const activeSessionId = writable("");
 
+let dirEnsured = false;
 async function ensureDir() {
+  if (dirEnsured) return;
   const dirExists = await exists(STORAGE_DIR, { baseDir: BaseDirectory.Home });
   if (!dirExists) {
     await mkdir(STORAGE_DIR, { baseDir: BaseDirectory.Home });
   }
+  dirEnsured = true;
 }
 
 export async function loadWorkspaces() {
@@ -92,7 +95,7 @@ async function persist() {
   }
 }
 
-const WORKSPACE_COLORS = [
+export const WORKSPACE_COLORS = [
   "#e6194B", // red
   "#3cb44b", // green
   "#ffe119", // yellow

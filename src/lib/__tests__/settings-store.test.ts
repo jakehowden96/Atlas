@@ -10,7 +10,6 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
 }));
 
 import {
-  skipPermissions,
   enableNotifications,
   selectedTool,
   toolSettings,
@@ -36,7 +35,6 @@ describe("settings store", () => {
         JSON.stringify({ skipPermissions: true, enableNotifications: true }),
       );
       await loadSettings();
-      expect(get(skipPermissions)).toBe(true);
       expect(get(toolSettings)["claude-code"]?.skipPermissions).toBe(true);
     });
 
@@ -67,7 +65,7 @@ describe("settings store", () => {
     it("handles missing file gracefully", async () => {
       vi.mocked(exists).mockResolvedValue(false);
       await loadSettings();
-      expect(get(skipPermissions)).toBe(false);
+      expect(get(toolSettings)).toEqual({});
       expect(get(enableNotifications)).toBe(true);
     });
 
@@ -75,7 +73,7 @@ describe("settings store", () => {
       vi.mocked(exists).mockResolvedValue(true);
       vi.mocked(readTextFile).mockResolvedValue("{not valid json");
       await loadSettings();
-      expect(get(skipPermissions)).toBe(false);
+      expect(get(toolSettings)).toEqual({});
     });
   });
 
@@ -85,7 +83,7 @@ describe("settings store", () => {
       vi.mocked(mkdir).mockResolvedValue(undefined);
       vi.mocked(writeTextFile).mockResolvedValue(undefined);
       await setToolSetting("claude-code", "skipPermissions", true);
-      expect(get(skipPermissions)).toBe(true);
+      expect(get(toolSettings)["claude-code"]?.skipPermissions).toBe(true);
       expect(writeTextFile).toHaveBeenCalled();
     });
   });

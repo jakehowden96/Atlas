@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
   import { settingsOpen } from "../../stores/settings";
+  import { WORKSPACE_COLORS } from "../../stores/workspace";
 
   const dispatch = createEventDispatcher<{
     newSession: { workspacePath: string };
@@ -12,19 +13,6 @@
     addWorkspace: void;
     newTerminal: void;
   }>();
-
-  const WORKSPACE_COLORS = [
-    "#e6194B", // red
-    "#3cb44b", // green
-    "#ffe119", // yellow
-    "#4363d8", // blue
-    "#f58231", // orange
-    "#42d4f4", // cyan
-    "#f032e6", // magenta
-    "#fabed4", // pink
-    "#469990", // teal
-    "#dcbeff", // lavender
-  ];
 
   interface Session {
     id: string;
@@ -58,7 +46,7 @@
   }
 
   let filterText = $state("");
-  let expandedPaths = $state<string[]>([]);
+  let expandedPaths = $state<Set<string>>(new Set());
   let selectedPath = $state("");
   let colorPickerPath = $state<string | null>(null);
 
@@ -83,18 +71,20 @@
       selectedPath = activeWorkspacePath;
       // Auto-expand if it has sessions
       const ws = workspaces.find((w) => w.path === activeWorkspacePath);
-      if (ws && ws.sessions.length > 0 && !expandedPaths.includes(activeWorkspacePath)) {
-        expandedPaths = [...expandedPaths, activeWorkspacePath];
+      if (ws && ws.sessions.length > 0 && !expandedPaths.has(activeWorkspacePath)) {
+        expandedPaths = new Set([...expandedPaths, activeWorkspacePath]);
       }
     }
   });
 
   function toggleExpand(path: string) {
-    if (expandedPaths.includes(path)) {
-      expandedPaths = expandedPaths.filter((p) => p !== path);
+    const next = new Set(expandedPaths);
+    if (next.has(path)) {
+      next.delete(path);
     } else {
-      expandedPaths = [...expandedPaths, path];
+      next.add(path);
     }
+    expandedPaths = next;
   }
 
   function selectWorkspace(path: string) {
@@ -183,7 +173,7 @@
 
     {#each filteredWorkspaces as workspace (workspace.path)}
       {@const hasSessions = workspace.sessions.length > 0}
-      {@const isExpanded = hasSessions && expandedPaths.includes(workspace.path)}
+      {@const isExpanded = hasSessions && expandedPaths.has(workspace.path)}
       {@const isSelected = workspace.path === selectedPath}
       <div class="workspace-group">
         <div class="workspace-row" class:selected={isSelected}>

@@ -176,16 +176,18 @@ pub(crate) fn discover_diff(git_root: &str) -> DiffBundle {
 }
 
 pub(crate) fn count_diff_stats(raw: &str) -> (u32, u32, u32) {
-    let files = raw.matches("\ndiff --git ").count() as u32
-        + if raw.starts_with("diff --git ") { 1 } else { 0 };
-    let added = raw
-        .lines()
-        .filter(|l| l.starts_with('+') && !l.starts_with("+++"))
-        .count() as u32;
-    let removed = raw
-        .lines()
-        .filter(|l| l.starts_with('-') && !l.starts_with("---"))
-        .count() as u32;
+    let mut files: u32 = 0;
+    let mut added: u32 = 0;
+    let mut removed: u32 = 0;
+    for line in raw.lines() {
+        if line.starts_with("diff --git ") {
+            files += 1;
+        } else if line.starts_with('+') && !line.starts_with("+++") {
+            added += 1;
+        } else if line.starts_with('-') && !line.starts_with("---") {
+            removed += 1;
+        }
+    }
     (files, added, removed)
 }
 

@@ -84,6 +84,7 @@ fn analyze_file(
 
     let mut definitions = Vec::new();
     let mut seen_defs = HashSet::new();
+    let mut imports = Vec::new();
 
     for (line_idx, line_text) in source.lines().enumerate() {
         let line_num = (line_idx + 1) as u32;
@@ -92,7 +93,6 @@ fn analyze_file(
             if let Some(cap) = pat.regex.captures(line_text) {
                 if let Some(name_match) = cap.get(pat.name_group) {
                     let name = name_match.as_str().to_string();
-                    // Deduplicate (e.g. impl block re-matches struct name)
                     let key = format!("{}::{}", pat.kind, name);
                     if seen_defs.insert(key) {
                         definitions.push(Definition {
@@ -105,11 +105,7 @@ fn analyze_file(
                 }
             }
         }
-    }
 
-    let mut imports = Vec::new();
-
-    for line_text in source.lines() {
         for pat in &lang_patterns.imports {
             if let Some(cap) = pat.regex.captures(line_text) {
                 let source_str = cap[pat.source_group].trim().to_string();
