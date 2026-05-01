@@ -11,6 +11,15 @@ export function panelDataChanged(
   return (data.diff?.raw ?? null) !== lastDiffRaw;
 }
 
+const MAX_TAB_TITLE_LENGTH = 60;
+
+export function deriveTabTitle(text: string): string {
+  const firstLine = text.split("\n")[0].trim();
+  if (!firstLine) return "";
+  if (firstLine.length <= MAX_TAB_TITLE_LENGTH) return firstLine;
+  return firstLine.slice(0, MAX_TAB_TITLE_LENGTH - 1) + "…";
+}
+
 /** Parse an OSC 7 URL to extract the CWD path. */
 export function parseOsc7Cwd(data: string): string | null {
   try {

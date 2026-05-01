@@ -30,12 +30,13 @@ MESSAGE=$(printf '%s' "$INPUT" | jq -r '.message // ""' 2>/dev/null)
 
 # Fall back to type-specific titles when none provided
 if [ -z "$TITLE" ]; then
+  TOOL_NAME="${ATLAS_TOOL_NAME:-Agent}"
   case "$NOTIFICATION_TYPE" in
-    permission_prompt)  TITLE="Claude needs permission" ;;
-    idle_prompt)        TITLE="Claude is waiting" ;;
-    auth_success)       TITLE="Claude authenticated" ;;
-    elicitation_dialog) TITLE="Claude needs input" ;;
-    *)                  TITLE="Claude Code" ;;
+    permission_prompt)  TITLE="$TOOL_NAME needs permission" ;;
+    idle_prompt)        TITLE="$TOOL_NAME is waiting" ;;
+    auth_success)       TITLE="$TOOL_NAME authenticated" ;;
+    elicitation_dialog) TITLE="$TOOL_NAME needs input" ;;
+    *)                  TITLE="$TOOL_NAME" ;;
   esac
 fi
 

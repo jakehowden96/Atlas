@@ -1,16 +1,19 @@
-import type { Terminal } from "@xterm/xterm";
-
 export interface TerminalTab {
   type: "terminal";
   id: string;
   title: string;
   ptyId: number;
-  terminal: Terminal;
   cwd?: string;
   onData?: (data: string) => void;
   needsInput?: boolean;
   ready?: boolean;
   commandWrittenAt?: number;
+  useStreamJson?: boolean;
+  perTurnInvocation?: boolean;
+  toolSessionId?: string;
+  adapterId?: string;
+  turnCount?: number;
+  titleSource?: "auto" | "osc";
 }
 
 export type FileLanguage =

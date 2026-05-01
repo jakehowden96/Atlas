@@ -33,6 +33,7 @@
     "@xterm/xterm": "^6.0.0",
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.1.1",
+    "material-symbols": "^0.44.3",
     "svelte": "^5.55.1"
   },
   "devDependencies": {

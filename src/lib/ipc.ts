@@ -170,22 +170,22 @@ export async function onAnalysisStatus(
   });
 }
 
-export interface ClaudeNotification {
+export interface ToolNotification {
   notification_type: string;
   title: string;
   message: string;
   timestamp: string;
 }
 
-export interface ClaudeNotificationEvent {
+export interface ToolNotificationEvent {
   session_id: string;
-  notification: ClaudeNotification;
+  notification: ToolNotification;
 }
 
-export async function onClaudeNotification(
-  callback: (event: ClaudeNotificationEvent) => void,
+export async function onToolNotification(
+  callback: (event: ToolNotificationEvent) => void,
 ): Promise<UnlistenFn> {
-  return listen<ClaudeNotificationEvent>("claude-notification", (event) => {
+  return listen<ToolNotificationEvent>("tool-notification", (event) => {
     callback(event.payload);
   });
 }

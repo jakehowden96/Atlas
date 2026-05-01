@@ -1,10 +1,16 @@
-import { writable, get } from "svelte/store";
+import { writable, derived, get } from "svelte/store";
 import { BaseDirectory, readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs";
 import { log } from "../logger";
+import type { ToolSettings } from "../adapters/types";
 
 export const settingsOpen = writable(false);
-export const skipPermissions = writable(false);
 export const enableNotifications = writable(true);
+export const selectedTool = writable<string>("claude-code");
+export const toolSettings = writable<Record<string, ToolSettings>>({});
+
+export const skipPermissions = derived(toolSettings, ($ts) =>
+  !!$ts["claude-code"]?.skipPermissions,
+);
 
 const SETTINGS_DIR = ".atlas";
 const SETTINGS_FILE = ".atlas/settings.json";
@@ -12,6 +18,8 @@ const SETTINGS_FILE = ".atlas/settings.json";
 interface PersistedSettings {
   skipPermissions?: boolean;
   enableNotifications?: boolean;
+  selectedTool?: string;
+  toolSettings?: Record<string, ToolSettings>;
 }
 
 async function ensureDir() {
@@ -29,8 +37,22 @@ export async function loadSettings() {
     if (!fileExists) return;
     const raw = await readTextFile(SETTINGS_FILE, { baseDir: BaseDirectory.Home });
     const data = JSON.parse(raw) as PersistedSettings;
-    if (data.skipPermissions) skipPermissions.set(true);
+
     if (data.enableNotifications === false) enableNotifications.set(false);
+
+    if (data.selectedTool) {
+      selectedTool.set(data.selectedTool);
+    }
+
+    if (data.toolSettings) {
+      toolSettings.set(data.toolSettings);
+    } else if (data.skipPermissions !== undefined) {
+      // Migrate old flat skipPermissions into new nested structure
+      toolSettings.set({
+        "claude-code": { skipPermissions: data.skipPermissions },
+      });
+    }
+
     log.info("settings", "settings loaded");
   } catch (e) {
     log.error("settings", "failed to load settings", e);
@@ -42,8 +64,9 @@ async function persistSettings() {
   try {
     await ensureDir();
     const data: PersistedSettings = {
-      skipPermissions: get(skipPermissions),
+      selectedTool: get(selectedTool),
       enableNotifications: get(enableNotifications),
+      toolSettings: get(toolSettings),
     };
     await writeTextFile(SETTINGS_FILE, JSON.stringify(data, null, 2), {
       baseDir: BaseDirectory.Home,
@@ -54,13 +77,24 @@ async function persistSettings() {
   }
 }
 
-export async function setSkipPermissions(value: boolean) {
-  skipPermissions.set(value);
+export async function setSelectedTool(id: string) {
+  selectedTool.set(id);
   await persistSettings();
+}
+
+export async function setToolSetting(adapterId: string, key: string, value: boolean | string) {
+  toolSettings.update((ts) => ({
+    ...ts,
+    [adapterId]: { ...(ts[adapterId] ?? {}), [key]: value },
+  }));
+  await persistSettings();
+}
+
+export function getToolSettings(adapterId: string): ToolSettings {
+  return get(toolSettings)[adapterId] ?? {};
 }
 
 export async function setEnableNotifications(value: boolean) {
   enableNotifications.set(value);
   await persistSettings();
 }
-

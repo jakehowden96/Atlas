@@ -85,11 +85,11 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
                                 Ok(contents) => {
                                     // Delete the file immediately — it's a one-shot signal
                                     let _ = std::fs::remove_file(path);
-                                    match serde_json::from_str::<ClaudeNotification>(&contents) {
+                                    match serde_json::from_str::<ToolNotification>(&contents) {
                                         Ok(notification) => {
                                             let _ = handle.emit(
-                                                "claude-notification",
-                                                ClaudeNotificationEvent {
+                                                "tool-notification",
+                                                ToolNotificationEvent {
                                                     session_id,
                                                     notification,
                                                 },

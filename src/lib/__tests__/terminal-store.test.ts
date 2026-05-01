@@ -39,7 +39,6 @@ import {
 import { activeWorkspacePath } from "../stores/workspace";
 import { panelData } from "../stores/panel";
 import type { TabItem, FileTab } from "../../types/terminal";
-import type { Terminal } from "@xterm/xterm";
 
 function makeTerminalTab(overrides: Partial<TabItem & { type: "terminal" }> = {}): TabItem {
   return {
@@ -47,7 +46,6 @@ function makeTerminalTab(overrides: Partial<TabItem & { type: "terminal" }> = {}
     id: overrides.id ?? crypto.randomUUID(),
     title: overrides.title ?? "",
     ptyId: -1,
-    terminal: {} as unknown as Terminal,
     ...overrides,
   };
 }
@@ -408,7 +406,7 @@ describe("terminal store", () => {
       addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
       activeTabId.set("t1");
       // Manually add a tab to /b without making it active
-      tabs.update((t) => [...t, { type: "terminal" as const, id: "t2", title: "", ptyId: -1, terminal: {} as unknown as Terminal, cwd: "/b" }]);
+      tabs.update((t) => [...t, { type: "terminal" as const, id: "t2", title: "", ptyId: -1, cwd: "/b" }]);
       activeWorkspacePath.set("/b");
       expect(get(activeTabId)).toBe("t2");
     });
