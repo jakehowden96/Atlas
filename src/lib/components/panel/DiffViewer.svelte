@@ -60,6 +60,13 @@
   const MAX_VISIBLE_LINES = 500;
   let expandedFiles: Set<string> = $state(new Set());
 
+  // User-driven collapse, keyed by file path. Independent of the size-based auto-collapse
+  // and of the per-file "Viewed" state.
+  let userCollapsed: Set<string> = $state(new Set());
+
+  // Per-file "Viewed" state, keyed by file path. Independent of collapse state.
+  let viewedFiles: Set<string> = $state(new Set());
+
   function totalLines(file: { hunks: { lines: { type: string }[] }[] }): number {
     return file.hunks.reduce((sum, h) => sum + h.lines.length, 0);
   }
@@ -75,8 +82,34 @@
     expandedFiles = next;
   }
 
+  function toggleUserCollapsed(key: string) {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    const next = new Set(userCollapsed);
+    if (next.has(key)) {
+      next.delete(key);
+    } else {
+      next.add(key);
+    }
+    userCollapsed = next;
+  }
+
+  function toggleViewed(key: string) {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    const next = new Set(viewedFiles);
+    if (next.has(key)) {
+      next.delete(key);
+    } else {
+      next.add(key);
+    }
+    viewedFiles = next;
+  }
+
   function shouldCollapse(file: { hunks: { lines: { type: string }[] }[] }, key: string): boolean {
     return totalLines(file) > MAX_VISIBLE_LINES && !expandedFiles.has(key);
+  }
+
+  function isCollapsed(file: { hunks: { lines: { type: string }[] }[] }, key: string): boolean {
+    return userCollapsed.has(key) || shouldCollapse(file, key);
   }
 </script>
 
@@ -109,16 +142,36 @@
           </div>
           {#each project.files as file (file.newName)}
             {@const fileKey = project.name + "/" + file.newName}
-            {@const collapsed = shouldCollapse(file, fileKey)}
-            <div class="file-section">
-              <div class="file-header">
-                <div class="file-header-left">
+            {@const autoCollapsed = shouldCollapse(file, fileKey)}
+            {@const collapsed = isCollapsed(file, fileKey)}
+            <div class="file-section" class:collapsed>
+              <div class="file-header-row">
+                <button
+                  type="button"
+                  class="file-header"
+                  onclick={() => toggleUserCollapsed(fileKey)}
+                  aria-expanded={!collapsed}
+                >
+                  <span class="material-symbols-outlined chevron"
+                    >{collapsed ? "chevron_right" : "expand_more"}</span
+                  >
                   <span class="material-symbols-outlined file-icon">description</span>
                   <span class="file-name">{file.newName}</span>
                   <span class="badge {badgeClass[file.changeType]}">{file.changeType.toUpperCase()}</span>
-                </div>
+                </button>
+                <label class="viewed-label">
+                  <input
+                    type="checkbox"
+                    class="viewed-toggle"
+                    checked={viewedFiles.has(fileKey)}
+                    onchange={() => toggleViewed(fileKey)}
+                  />
+                  Viewed
+                </label>
               </div>
-              {#if collapsed}
+              {#if userCollapsed.has(fileKey)}
+                <!-- User collapsed — hide hunks entirely; click header to reopen. -->
+              {:else if autoCollapsed}
                 <div class="collapsed-notice">
                   <button class="expand-btn" onclick={() => toggleExpand(fileKey)}>
                     Show {totalLines(file)} lines
@@ -163,18 +216,39 @@
       {/each}
     {:else}
       {#each files as file (file.newName)}
-        {@const collapsed = shouldCollapse(file, file.newName)}
-        <div class="file-section">
-          <div class="file-header">
-            <div class="file-header-left">
+        {@const fileKey = file.newName}
+        {@const autoCollapsed = shouldCollapse(file, fileKey)}
+        {@const collapsed = isCollapsed(file, fileKey)}
+        <div class="file-section" class:collapsed>
+          <div class="file-header-row">
+            <button
+              type="button"
+              class="file-header"
+              onclick={() => toggleUserCollapsed(fileKey)}
+              aria-expanded={!collapsed}
+            >
+              <span class="material-symbols-outlined chevron"
+                >{collapsed ? "chevron_right" : "expand_more"}</span
+              >
               <span class="material-symbols-outlined file-icon">description</span>
               <span class="file-name">{file.newName}</span>
               <span class="badge {badgeClass[file.changeType]}">{file.changeType.toUpperCase()}</span>
-            </div>
+            </button>
+            <label class="viewed-label">
+              <input
+                type="checkbox"
+                class="viewed-toggle"
+                checked={viewedFiles.has(fileKey)}
+                onchange={() => toggleViewed(fileKey)}
+              />
+              Viewed
+            </label>
           </div>
-          {#if collapsed}
+          {#if userCollapsed.has(fileKey)}
+            <!-- User collapsed — hide hunks entirely; click header to reopen. -->
+          {:else if autoCollapsed}
             <div class="collapsed-notice">
-              <button class="expand-btn" onclick={() => toggleExpand(file.newName)}>
+              <button class="expand-btn" onclick={() => toggleExpand(fileKey)}>
                 Show {totalLines(file)} lines
               </button>
             </div>
@@ -270,18 +344,50 @@
     contain-intrinsic-size: auto none;
   }
 
-  .file-header {
+  .file-header-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 10px;
+    padding: 0 10px 0 0;
     background: var(--surface-container-high);
   }
 
-  .file-header-left {
+  .file-header {
     display: flex;
     align-items: center;
     gap: 8px;
+    padding: 6px 10px;
+    background: transparent;
+    flex: 1;
+    border: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .file-header:hover {
+    background: var(--surface-container-highest);
+  }
+
+  .chevron {
+    font-size: 16px;
+    color: var(--on-surface-variant);
+    transition: transform 0.15s ease;
+  }
+
+  .viewed-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--on-surface-variant);
+    font-family: var(--font-mono);
+    cursor: pointer;
+  }
+
+  .viewed-toggle {
+    cursor: pointer;
   }
 
   .file-icon {
