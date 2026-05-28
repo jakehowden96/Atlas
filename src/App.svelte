@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, tick } from "svelte";
   import TerminalContainer from "./lib/components/terminal/TerminalContainer.svelte";
   import SidePanel from "./lib/components/panel/SidePanel.svelte";
   import Resizer from "./lib/components/layout/Resizer.svelte";
+  import { mountPanelLayout, type PanelLayout } from "./lib/panel-layout";
   import AgentManager from "./lib/components/layout/AgentManager.svelte";
   import Toast from "./lib/components/Toast.svelte";
   import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
@@ -33,7 +34,10 @@
   import type { UnlistenFn } from "@tauri-apps/api/event";
   import { log } from "./lib/logger";
 
-  let panelWidth = $state(420);
+  let stageEl: HTMLDivElement | undefined = $state();
+  let panelLayout: PanelLayout | null = null;
+  let panelWidth = $state(0);
+  let panelWidthUnsub: (() => void) | null = null;
   let sidebarWidth = $state(280);
   let isResizing = $state(false);
   let unlisten: UnlistenFn | null = null;
@@ -60,13 +64,11 @@
     }
   });
 
-  const MIN_PANEL_WIDTH = 280;
-  const MAX_PANEL_WIDTH = 800;
   const MIN_SIDEBAR_WIDTH = 200;
   const MAX_SIDEBAR_WIDTH = 480;
 
   function handleResize(delta: number) {
-    panelWidth = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, panelWidth + delta));
+    panelLayout?.nudge(delta);
   }
 
   function handleSidebarResize(delta: number) {
@@ -79,6 +81,11 @@
   onMount(async () => {
     await log.init();
     log.info("app", "onMount started");
+    await tick();
+    if (stageEl) {
+      panelLayout = mountPanelLayout(stageEl);
+      panelWidthUnsub = panelLayout.panelWidth$.subscribe((w) => { panelWidth = w; });
+    }
     checkApiStatus();
     await Promise.all([loadWorkspaces(), loadSettings()]);
     const ws = get(workspaces);
@@ -127,6 +134,8 @@
   onDestroy(() => {
     unlisten?.();
     unlistenNotification?.();
+    panelWidthUnsub?.();
+    panelLayout?.destroy();
   });
 
   async function spawnToolSession(workspacePath: string, resumeId?: string, existingSessionId?: string) {
@@ -318,7 +327,7 @@
   />
   </div>
   <Resizer onResize={handleSidebarResize} />
-  <div class="main-stage" class:has-tabs={$tabs.length > 0} style="--chrome-height: {$chromeHeight}px; --tab-bar-height: {$tabBarHeight}px">
+  <div bind:this={stageEl} class="main-stage" class:has-tabs={$tabs.length > 0} style="--chrome-height: {$chromeHeight}px; --tab-bar-height: {$tabBarHeight}px">
     <div class="terminal-section">
       <TerminalContainer />
     </div>
