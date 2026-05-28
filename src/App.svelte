@@ -38,7 +38,7 @@
   let panelLayout: PanelLayout | null = null;
   let panelWidth = $state(0);
   let panelWidthUnsub: (() => void) | null = null;
-  let sidebarWidth = $state(280);
+  let sidebarWidth = $state(160);
   let isResizing = $state(false);
   let unlisten: UnlistenFn | null = null;
   let unlistenNotification: UnlistenFn | null = null;
@@ -64,8 +64,8 @@
     }
   });
 
-  const MIN_SIDEBAR_WIDTH = 200;
-  const MAX_SIDEBAR_WIDTH = 480;
+  const MIN_SIDEBAR_WIDTH = 120;
+  const MAX_SIDEBAR_WIDTH = 280;
 
   function handleResize(delta: number) {
     panelLayout?.nudge(delta);
@@ -246,23 +246,23 @@
     activeWorkspacePath={$activeWorkspacePath}
     activeSessionId={$activeSessionId}
     {openTabIds}
-    on:newTerminal={() => {
+    onNewTerminal={() => {
       const id = crypto.randomUUID();
       const wsPath = get(activeWorkspacePath);
       addTab({ type: "terminal", id, title: "Terminal", ptyId: -1, cwd: wsPath || undefined });
     }}
-    on:addWorkspace={async () => {
+    onAddWorkspace={async () => {
       const selected = await open({ directory: true, multiple: false, title: "Select workspace folder" });
       if (typeof selected === "string") await storeAddWorkspace(selected);
     }}
-    on:newSession={(e) => {
-      spawnToolSession(e.detail.workspacePath);
+    onNewSession={(detail) => {
+      spawnToolSession(detail.workspacePath);
     }}
-    on:selectSession={(e) => {
-      activeWorkspacePath.set(e.detail.workspacePath);
-      activeSessionId.set(e.detail.sessionId);
-      const ws = get(workspaces).find((w) => w.path === e.detail.workspacePath);
-      const session = ws?.sessions.find((s) => s.id === e.detail.sessionId);
+    onSelectSession={(detail) => {
+      activeWorkspacePath.set(detail.workspacePath);
+      activeSessionId.set(detail.sessionId);
+      const ws = get(workspaces).find((w) => w.path === detail.workspacePath);
+      const session = ws?.sessions.find((s) => s.id === detail.sessionId);
       if (!session) return;
 
       if (spawningSessionIds.has(session.id)) return;
@@ -280,12 +280,12 @@
       if (session.status !== "running" || !get(tabs).find((t) => t.id === session.terminalTabId)) {
         spawningSessionIds.add(session.id);
         const resumeId = session.toolSessionId ?? undefined;
-        spawnToolSession(e.detail.workspacePath, resumeId, session.id)
+        spawnToolSession(detail.workspacePath, resumeId, session.id)
           .finally(() => spawningSessionIds.delete(session.id));
       }
     }}
-    on:deleteSession={async (e) => {
-      const { workspacePath, sessionId } = e.detail;
+    onDeleteSession={async (detail) => {
+      const { workspacePath, sessionId } = detail;
       const ws = get(workspaces).find((w) => w.path === workspacePath);
       const session = ws?.sessions.find((s) => s.id === sessionId);
       // Close the terminal tab if the session is open
@@ -298,14 +298,11 @@
       }
       await removeSession(workspacePath, sessionId);
     }}
-    on:selectWorkspace={(e) => {
-      activeWorkspacePath.set(e.detail.workspacePath);
+    onSetWorkspaceColor={(detail) => {
+      setWorkspaceColor(detail.workspacePath, detail.color);
     }}
-    on:setWorkspaceColor={(e) => {
-      setWorkspaceColor(e.detail.workspacePath, e.detail.color);
-    }}
-    on:deleteWorkspace={async (e) => {
-      const { workspacePath } = e.detail;
+    onDeleteWorkspace={async (detail) => {
+      const { workspacePath } = detail;
       const ws = get(workspaces).find((w) => w.path === workspacePath);
       if (ws) {
         for (const session of ws.sessions) {
