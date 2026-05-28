@@ -8,6 +8,7 @@ interface Session {
   status: "complete" | "running" | "error" | "idle" | "starting";
   age: string;
   terminalTabId: string | null;
+  diffStats?: { files: number; added: number; removed: number };
 }
 
 interface Workspace {
@@ -132,6 +133,60 @@ describe("AgentManager flat list", () => {
     });
     const slots = getAllByTestId("diff-badge-slot");
     expect(slots).toHaveLength(3);
+  });
+
+  it("renders +N -M badge for a session with non-zero diffStats", () => {
+    const data: Workspace[] = [
+      {
+        path: "/r/atlas",
+        name: "atlas",
+        color: "#ff0000",
+        sessions: [
+          {
+            id: "s1",
+            label: "Fix Bug",
+            status: "running",
+            age: "1m",
+            terminalTabId: "tab-1",
+            diffStats: { files: 2, added: 12, removed: 5 },
+          },
+        ],
+      },
+    ];
+    const { getByTestId } = render(AgentManager, { props: { workspaces: data } });
+    const badge = getByTestId("diff-badge-slot");
+    expect(badge.textContent?.replace(/\s+/g, " ").trim()).toBe("+12 −5");
+  });
+
+  it("does not render a badge when diffStats is absent or all zero", () => {
+    const data: Workspace[] = [
+      {
+        path: "/r/atlas",
+        name: "atlas",
+        color: "#ff0000",
+        sessions: [
+          {
+            id: "s-absent",
+            label: "Absent",
+            status: "idle",
+            age: "",
+            terminalTabId: null,
+          },
+          {
+            id: "s-zero",
+            label: "Zero",
+            status: "idle",
+            age: "",
+            terminalTabId: null,
+            diffStats: { files: 0, added: 0, removed: 0 },
+          },
+        ],
+      },
+    ];
+    const { getAllByTestId } = render(AgentManager, { props: { workspaces: data } });
+    const slots = getAllByTestId("diff-badge-slot");
+    expect(slots[0].textContent?.trim()).toBe("");
+    expect(slots[1].textContent?.trim()).toBe("");
   });
 
   it("clicking a session row invokes onSelectSession with workspace+id", async () => {

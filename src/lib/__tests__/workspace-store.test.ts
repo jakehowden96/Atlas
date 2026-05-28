@@ -23,6 +23,7 @@ import {
   removeSession,
   loadWorkspaces,
   cycleWorkspace,
+  updateSessionDiffStatsByTabId,
 } from "../stores/workspace";
 import { exists, readTextFile } from "@tauri-apps/plugin-fs";
 
@@ -116,6 +117,30 @@ describe("workspace store", () => {
       activeSessionId.set(sessions[0].id);
       await removeSession("/a", sessions[1].id);
       expect(get(activeSessionId)).toBe(sessions[0].id);
+    });
+  });
+
+  describe("updateSessionDiffStatsByTabId", () => {
+    it("updates diffStats for the session whose terminalTabId matches", async () => {
+      await addWorkspace("/a");
+      await addSession("/a", "first", "tab-1");
+      await addSession("/a", "second", "tab-2");
+      updateSessionDiffStatsByTabId("tab-2", { files: 3, added: 12, removed: 5 });
+      const sessions = get(workspaces)[0].sessions;
+      const tab2Session = sessions.find((s) => s.terminalTabId === "tab-2");
+      const tab1Session = sessions.find((s) => s.terminalTabId === "tab-1");
+      expect(tab2Session?.diffStats).toEqual({ files: 3, added: 12, removed: 5 });
+      expect(tab1Session?.diffStats).toBeUndefined();
+    });
+
+    it("does not persist diffStats to disk", async () => {
+      const { writeTextFile } = await import("@tauri-apps/plugin-fs");
+      await addWorkspace("/a");
+      await addSession("/a", "first", "tab-1");
+      vi.mocked(writeTextFile).mockClear();
+      updateSessionDiffStatsByTabId("tab-1", { files: 1, added: 2, removed: 3 });
+      // updateSessionDiffStatsByTabId is in-memory only.
+      expect(writeTextFile).not.toHaveBeenCalled();
     });
   });
 
