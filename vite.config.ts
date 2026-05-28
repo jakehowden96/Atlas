@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
@@ -22,4 +23,13 @@ export default defineConfig({
       ignored: ["**/src-tauri/**"],
     },
   },
+  test: {
+    environment: "jsdom",
+    globals: false,
+    include: ["src/**/*.test.ts"],
+    setupFiles: ["./src/lib/__tests__/setup.ts"],
+  },
+  resolve: process.env.VITEST
+    ? { conditions: ["browser"] }
+    : undefined,
 });
