@@ -1,50 +1,28 @@
 <script lang="ts">
   import DiffViewer from "./DiffViewer.svelte";
-  import SummaryView from "./SummaryView.svelte";
-  import CSSFlowDiagram from "./CSSFlowDiagram.svelte";
-  import { panelData, activeSection, setSection, togglePanel } from "../../stores/panel";
-  import type { PanelSection } from "../../../types/panel";
+  import { panelData, togglePanel } from "../../stores/panel";
 
-  const navItems: { id: PanelSection; label: string; icon: string }[] = [
-    { id: "diff", label: "Diff", icon: "difference" },
-    { id: "summary", label: "Summary", icon: "description" },
-    { id: "flow", label: "Flow", icon: "account_tree" },
-  ];
+  let diff = $derived($panelData?.diff);
+  let statusLabel = $derived.by(() => {
+    if (!diff) return "No changes";
+    const fileWord = diff.files_changed === 1 ? "file" : "files";
+    return `${diff.files_changed} ${fileWord} +${diff.lines_added} -${diff.lines_removed}`;
+  });
 </script>
 
 <div class="side-panel">
   <div class="panel-chrome">
     <div class="panel-spacer"></div>
-    <div class="panel-tabs">
-      <div class="tabs-left">
-        {#each navItems as item (item.id)}
-          <button
-            class="panel-tab"
-            class:active={$activeSection === item.id}
-            onclick={() => setSection(item.id)}
-          >
-            <span class="material-symbols-outlined tab-icon">{item.icon}</span>
-            <span>{item.label}</span>
-          </button>
-        {/each}
-      </div>
-      <div class="tabs-right">
-        <button class="panel-close-btn" onclick={togglePanel} title="Close Panel">
-          <span class="material-symbols-outlined">right_panel_close</span>
-        </button>
-      </div>
+    <div class="panel-bar">
+      <span class="status-pill">{statusLabel}</span>
+      <button class="panel-close-btn" onclick={togglePanel} title="Close Panel">
+        <span class="material-symbols-outlined">right_panel_close</span>
+      </button>
     </div>
   </div>
   <div class="panel-content">
-    {#if $activeSection === "diff"}
-      <DiffViewer data={$panelData?.diff} cwd={$panelData?.cwd ?? ''} />
-    {:else if $activeSection === "summary"}
-      <SummaryView data={$panelData?.summary} hasDiff={!!$panelData?.diff} />
-    {:else if $activeSection === "flow"}
-      <CSSFlowDiagram data={$panelData?.flow} hasDiff={!!$panelData?.diff} />
-    {/if}
+    <DiffViewer data={$panelData?.diff} cwd={$panelData?.cwd ?? ''} />
   </div>
-
 </div>
 
 <style>
@@ -69,7 +47,7 @@
     flex: 1;
   }
 
-  .panel-tabs {
+  .panel-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -78,46 +56,15 @@
     flex-shrink: 0;
   }
 
-  .tabs-left {
-    display: flex;
+  .status-pill {
+    display: inline-flex;
     align-items: center;
-    gap: 2px;
-  }
-
-  .tabs-right {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-  }
-
-  .panel-tab {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.3rem 0.6rem;
-    background: transparent;
-    border: none;
+    padding: 0.2rem 0.5rem;
     border-radius: var(--radius-sm);
+    background: var(--surface-container-high);
     color: var(--on-surface-variant);
     font-size: 11px;
-    font-family: var(--font-body);
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-  }
-
-  .panel-tab:hover {
-    background: var(--surface-container-high);
-    color: var(--on-surface);
-  }
-
-  .panel-tab.active {
-    background: var(--surface-container-high);
-    color: var(--on-surface);
-    font-weight: 500;
-  }
-
-  .tab-icon {
-    font-size: 0.9rem;
+    font-family: var(--font-mono);
   }
 
   .panel-close-btn {

@@ -6,7 +6,6 @@ vi.mock("../stores/terminal", () => ({
 }));
 vi.mock("../stores/panel", () => ({
   togglePanel: vi.fn(),
-  setSection: vi.fn(),
   panelData: { set: vi.fn(), subscribe: vi.fn(() => () => {}) },
 }));
 vi.mock("../stores/workspace", () => ({
@@ -23,7 +22,7 @@ vi.mock("../file-save", () => ({
 
 import { handleGlobalKeydown, setRefreshHandler } from "../shortcuts";
 import { switchToTab, cycleTab } from "../stores/terminal";
-import { togglePanel, setSection } from "../stores/panel";
+import { togglePanel } from "../stores/panel";
 import { cycleWorkspace } from "../stores/workspace";
 import { openFile } from "../file-open";
 import { saveActiveFile } from "../file-save";
@@ -90,27 +89,6 @@ describe("handleGlobalKeydown", () => {
     const handled = handleGlobalKeydown(e);
     expect(handled).toBe(true);
     expect(togglePanel).toHaveBeenCalled();
-  });
-
-  it("Ctrl+Shift+D shows diff section", () => {
-    const e = makeKeyEvent({ ctrlKey: true, shiftKey: true, key: "D" });
-    const handled = handleGlobalKeydown(e);
-    expect(handled).toBe(true);
-    expect(setSection).toHaveBeenCalledWith("diff");
-  });
-
-  it("Ctrl+Shift+S shows summary section", () => {
-    const e = makeKeyEvent({ ctrlKey: true, shiftKey: true, key: "S" });
-    const handled = handleGlobalKeydown(e);
-    expect(handled).toBe(true);
-    expect(setSection).toHaveBeenCalledWith("summary");
-  });
-
-  it("Ctrl+Shift+F shows flow section", () => {
-    const e = makeKeyEvent({ ctrlKey: true, shiftKey: true, key: "F" });
-    const handled = handleGlobalKeydown(e);
-    expect(handled).toBe(true);
-    expect(setSection).toHaveBeenCalledWith("flow");
   });
 
   it("Ctrl+Shift+R calls refresh handler when set", () => {

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { parseDiff } from "../../diff-parser";
   import type { DiffData } from "../../../types/panel";
-  import ChangeSummary from "./ChangeSummary.svelte";
   import RepositoryClean from "./RepositoryClean.svelte";
 
   interface Props {
@@ -9,7 +8,7 @@
     cwd: string;
   }
 
-  let { data, cwd }: Props = $props();
+  let { data }: Props = $props();
 
   let diffView = $state<"local" | "remote">("remote");
   let hasLocalToggle = $derived(!!data?.local_raw && data.local_raw !== data.raw);
@@ -24,20 +23,6 @@
   let activeRaw = $derived(
     hasLocalToggle && diffView === "local" ? data!.local_raw! : data?.raw
   );
-
-  let activeDiffData = $derived.by(() => {
-    if (!data) return undefined;
-    if (hasLocalToggle && diffView === "local") {
-      return {
-        ...data,
-        raw: data.local_raw!,
-        files_changed: data.local_files_changed!,
-        lines_added: data.local_lines_added!,
-        lines_removed: data.local_lines_removed!,
-      };
-    }
-    return data;
-  });
 
   // Memoize parseDiff — only re-parse when the raw string actually changes
   let lastRaw = "";
@@ -62,52 +47,7 @@
     return lastProjectFiles;
   });
 
-  // Flat list of namespaced file keys for multi-repo (avoids collisions like both repos having src/main.rs)
-  let allProjectFileKeys = $derived(
-    projectFiles.flatMap((p) => p.files.map((f) => `${p.name}/${f.newName}`))
-  );
-
   let isMultiRepo = $derived(projectFiles.length > 0);
-
-  // Track which files are selected for staging
-  let selectedFiles: Set<string> = $state(new Set());
-  let lastResetKey = "";
-
-  // Auto-select all files when the underlying data changes (new commit, new CWD),
-  // but NOT when toggling between local/remote views of the same data.
-  $effect(() => {
-    const resetKey = cwd + "\0" + (data?.raw ?? "");
-    if (resetKey !== lastResetKey) {
-      lastResetKey = resetKey;
-      const allNames = isMultiRepo ? allProjectFileKeys : files.map((f) => f.newName);
-      selectedFiles = new Set(allNames);
-    }
-  });
-
-  function toggleFile(name: string) {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
-    const next = new Set(selectedFiles);
-    if (next.has(name)) {
-      next.delete(name);
-    } else {
-      next.add(name);
-    }
-    selectedFiles = next;
-  }
-
-  function toggleAll() {
-    const allNames = isMultiRepo ? allProjectFileKeys : files.map((f) => f.newName);
-    if (selectedFiles.size === allNames.length) {
-      selectedFiles = new Set();
-    } else {
-      selectedFiles = new Set(allNames);
-    }
-  }
-
-  let allSelected = $derived.by(() => {
-    const total = isMultiRepo ? allProjectFileKeys.length : files.length;
-    return total > 0 && selectedFiles.size === total;
-  });
 
   const badgeClass: Record<string, string> = {
     modified: "badge-modified",
@@ -157,19 +97,6 @@
       </div>
     {/if}
     {#if isMultiRepo}
-      {#if allProjectFileKeys.length > 1}
-        <div class="select-all-bar">
-          <label class="file-checkbox-label">
-            <input
-              type="checkbox"
-              checked={allSelected}
-              onchange={toggleAll}
-              class="file-checkbox"
-            />
-            <span class="select-all-text">{allSelected ? "Deselect all" : "Select all"}</span>
-          </label>
-        </div>
-      {/if}
       {#each projectFiles as project (project.name)}
         <div class="project-section">
           <div class="project-header">
@@ -186,15 +113,6 @@
             <div class="file-section">
               <div class="file-header">
                 <div class="file-header-left">
-                  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-                  <label class="file-checkbox-label" onclick={(e: MouseEvent) => e.stopPropagation()} onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
-                    <input
-                      type="checkbox"
-                      checked={selectedFiles.has(fileKey)}
-                      onchange={() => toggleFile(fileKey)}
-                      class="file-checkbox"
-                    />
-                  </label>
                   <span class="material-symbols-outlined file-icon">description</span>
                   <span class="file-name">{file.newName}</span>
                   <span class="badge {badgeClass[file.changeType]}">{file.changeType.toUpperCase()}</span>
@@ -244,33 +162,11 @@
         </div>
       {/each}
     {:else}
-      {#if files.length > 1}
-        <div class="select-all-bar">
-          <label class="file-checkbox-label">
-            <input
-              type="checkbox"
-              checked={allSelected}
-              onchange={toggleAll}
-              class="file-checkbox"
-            />
-            <span class="select-all-text">{allSelected ? "Deselect all" : "Select all"}</span>
-          </label>
-        </div>
-      {/if}
       {#each files as file (file.newName)}
         {@const collapsed = shouldCollapse(file, file.newName)}
         <div class="file-section">
           <div class="file-header">
             <div class="file-header-left">
-              <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-              <label class="file-checkbox-label" onclick={(e: MouseEvent) => e.stopPropagation()} onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
-                <input
-                  type="checkbox"
-                  checked={selectedFiles.has(file.newName)}
-                  onchange={() => toggleFile(file.newName)}
-                  class="file-checkbox"
-                />
-              </label>
               <span class="material-symbols-outlined file-icon">description</span>
               <span class="file-name">{file.newName}</span>
               <span class="badge {badgeClass[file.changeType]}">{file.changeType.toUpperCase()}</span>
@@ -318,7 +214,6 @@
         </div>
       {/each}
     {/if}
-    <ChangeSummary data={activeDiffData!} {cwd} projects={data?.projects} {selectedFiles} />
   {:else}
     <RepositoryClean />
   {/if}
@@ -363,34 +258,6 @@
     background: var(--surface-container-highest);
     color: var(--on-surface);
     font-weight: 600;
-  }
-
-  /* Select all bar */
-  .select-all-bar {
-    padding: 6px 10px;
-    background: var(--surface-container-low);
-    border-bottom: 1px solid color-mix(in srgb, var(--outline-variant) 10%, transparent);
-  }
-
-  .file-checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    cursor: pointer;
-  }
-
-  .file-checkbox {
-    width: 14px;
-    height: 14px;
-    accent-color: var(--primary);
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-
-  .select-all-text {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--on-surface-variant);
   }
 
   /* File section */
@@ -606,20 +473,5 @@
 
   .stat.files {
     color: var(--on-surface-variant);
-  }
-
-  /* Empty state */
-  .empty {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    color: var(--on-surface-variant);
-  }
-
-  .empty-text {
-    font-size: 22px;
-    font-family: var(--font-display);
-    letter-spacing: -0.02em;
   }
 </style>

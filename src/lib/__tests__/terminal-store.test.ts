@@ -4,10 +4,7 @@ import { get } from "svelte/store";
 vi.mock("../stores/panel", () => ({
   panelData: { set: vi.fn(), subscribe: vi.fn(() => () => {}) },
   panelVisible: { set: vi.fn(), subscribe: vi.fn(() => () => {}) },
-  activeSection: { set: vi.fn(), subscribe: vi.fn(() => () => {}) },
   apiKeyConfigured: { set: vi.fn(), subscribe: vi.fn(() => () => {}) },
-  analysisStatus: { set: vi.fn(), subscribe: vi.fn(() => () => {}) },
-  analysisError: { set: vi.fn(), subscribe: vi.fn(() => () => {}) },
 }));
 
 vi.mock("@tauri-apps/plugin-fs", () => ({

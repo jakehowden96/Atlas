@@ -6,11 +6,11 @@
   import AgentManager from "./lib/components/layout/AgentManager.svelte";
   import Toast from "./lib/components/Toast.svelte";
   import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
-  import { panelVisible, panelData, checkApiStatus, analysisStatus, analysisError } from "./lib/stores/panel";
+  import { panelVisible, panelData, checkApiStatus } from "./lib/stores/panel";
   import { getAdapter } from "./lib/adapters";
   import { selectedTool, getToolSettings } from "./lib/stores/settings";
   import { tabs, activeTabId, addTab, removeTab, setTabNeedsInput, setTabReady, chromeHeight, tabBarHeight } from "./lib/stores/terminal";
-  import { onPanelUpdate, onAnalysisStatus, onToolNotification, ptyWrite, ptyKill } from "./lib/ipc";
+  import { onPanelUpdate, onToolNotification, ptyWrite, ptyKill } from "./lib/ipc";
   import { enableNotifications, loadSettings } from "./lib/stores/settings";
   import { sendNotification, isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
   import {
@@ -37,7 +37,6 @@
   let sidebarWidth = $state(280);
   let isResizing = $state(false);
   let unlisten: UnlistenFn | null = null;
-  let unlistenStatus: UnlistenFn | null = null;
   let unlistenNotification: UnlistenFn | null = null;
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   const spawningSessionIds = new Set<string>();
@@ -93,12 +92,6 @@
         panelData.set(data);
       }
     });
-    unlistenStatus = await onAnalysisStatus((event) => {
-      if (event.session_id === get(activeTabId)) {
-        analysisStatus.set(event.status);
-        analysisError.set(event.error ?? null);
-      }
-    });
     unlistenNotification = await onToolNotification(async (event) => {
       const { session_id, notification } = event;
       // Only mark as needing input for notification types that require user action.
@@ -133,7 +126,6 @@
 
   onDestroy(() => {
     unlisten?.();
-    unlistenStatus?.();
     unlistenNotification?.();
   });
 

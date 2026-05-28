@@ -1,17 +1,3 @@
-export interface Concern {
-  severity: "info" | "warning" | "error";
-  description: string;
-  file?: string;
-  line?: number;
-}
-
-export interface FlowEdge {
-  from: string;
-  to: string;
-  label?: string;
-  edge_type?: string;
-}
-
 export interface ProjectDiff {
   name: string;
   raw: string;
@@ -32,19 +18,6 @@ export interface DiffData {
   local_lines_removed?: number;
 }
 
-export interface SummaryData {
-  intent: string;
-  approach: string;
-  impact: string;
-  concerns: Concern[];
-  truncated?: boolean;
-}
-
-export interface FlowData {
-  edges: FlowEdge[];
-  changed_nodes?: string[];
-}
-
 export interface PanelData {
   version: number;
   timestamp: string;
@@ -52,8 +25,6 @@ export interface PanelData {
   is_git: boolean;
   diff?: DiffData;
   plan?: string;
-  summary?: SummaryData;
-  flow?: FlowData;
 }
 
 export interface GitStatus {
@@ -73,14 +44,4 @@ export interface RepoInfo {
 export interface BranchInfo {
   name: string;
   is_current: boolean;
-}
-
-export type PanelSection = "diff" | "summary" | "flow";
-
-export type AnalysisStatus = "idle" | "running" | "complete" | "error";
-
-export interface AnalysisStatusEvent {
-  session_id: string;
-  status: AnalysisStatus;
-  error?: string;
 }

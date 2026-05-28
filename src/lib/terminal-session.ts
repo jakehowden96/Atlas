@@ -4,7 +4,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel, getPanelData } from "./ipc";
 import { setTabTitle, activeTabId, setTabNeedsInput, setTabReady, tabs } from "./stores/terminal";
-import { panelData, analysisStatus, analysisError } from "./stores/panel";
+import { panelData } from "./stores/panel";
 import type { PanelData } from "../types/panel";
 import { updateSessionLabelByTabId } from "./stores/workspace";
 import { get } from "svelte/store";
@@ -250,24 +250,6 @@ export class TerminalSession {
       try {
         const data = await refreshPanel(this.tabId, cwd);
         if (get(activeTabId) !== this.tabId) return;
-
-        // Preserve summary/flow from async Claude analysis if the refresh
-        // returned without them (they arrive later via the file watcher).
-        // Only merge if the diff content matches (not just CWD) to prevent
-        // cross-tab pollution when multiple tabs share the same repo.
-        const existing = get(panelData);
-        if (data && existing && data.diff?.raw && data.diff.raw === existing.diff?.raw) {
-          if (!data.summary && existing.summary) data.summary = existing.summary;
-          if (!data.flow && existing.flow) data.flow = existing.flow;
-        }
-
-        // Reset analysis status when context changes (new CWD or new diff)
-        const diffChanged = !existing || existing.cwd !== data?.cwd
-          || existing.diff?.raw !== data?.diff?.raw;
-        if (!data?.summary && diffChanged) {
-          analysisStatus.set("idle");
-          analysisError.set(null);
-        }
 
         if (this.panelChanged(data)) {
           this.updatePanelFingerprint(data);

@@ -8,10 +8,8 @@ vi.mock("../ipc", () => ({
 import {
   panelVisible,
   panelData,
-  activeSection,
   apiKeyConfigured,
   togglePanel,
-  setSection,
   checkApiStatus,
 } from "../stores/panel";
 import { getApiStatus } from "../ipc";
@@ -20,7 +18,6 @@ describe("panel store", () => {
   beforeEach(() => {
     panelVisible.set(true);
     panelData.set(null);
-    activeSection.set("diff");
     apiKeyConfigured.set(false);
     vi.clearAllMocks();
   });
@@ -36,23 +33,6 @@ describe("panel store", () => {
       panelVisible.set(false);
       togglePanel();
       expect(get(panelVisible)).toBe(true);
-    });
-  });
-
-  describe("setSection", () => {
-    it("sets active section to diff", () => {
-      setSection("diff");
-      expect(get(activeSection)).toBe("diff");
-    });
-
-    it("sets active section to summary", () => {
-      setSection("summary");
-      expect(get(activeSection)).toBe("summary");
-    });
-
-    it("sets active section to flow", () => {
-      setSection("flow");
-      expect(get(activeSection)).toBe("flow");
     });
   });
 
