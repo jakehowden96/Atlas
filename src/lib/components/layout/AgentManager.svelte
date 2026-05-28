@@ -9,6 +9,7 @@
     age: string;
     terminalTabId: string | null;
     createdAt?: string;
+    diffStats?: { files: number; added: number; removed: number };
   }
 
   interface Workspace {
@@ -191,7 +192,14 @@
           {statusDotIcon(row.session)}
         </span>
         <span class="session-label" data-testid="session-label">{row.label}</span>
-        <span class="diff-badge-slot" data-testid="diff-badge-slot"></span>
+        <span class="diff-badge-slot" data-testid="diff-badge-slot">
+          {#if row.session.diffStats && (row.session.diffStats.added > 0 || row.session.diffStats.removed > 0)}
+            <span class="diff-badge">
+              <span class="diff-added">+{row.session.diffStats.added}</span>
+              <span class="diff-removed">−{row.session.diffStats.removed}</span>
+            </span>
+          {/if}
+        </span>
         <button
           class="close-btn"
           data-testid="session-close-btn"
@@ -389,7 +397,24 @@
 
   .diff-badge-slot {
     flex-shrink: 0;
-    /* deliberately empty: filled by issue 05 */
+  }
+
+  .diff-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+
+  .diff-added {
+    color: var(--secondary);
+  }
+
+  .diff-removed {
+    color: var(--error);
   }
 
   .close-btn {

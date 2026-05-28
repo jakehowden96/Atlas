@@ -2,6 +2,12 @@ import { writable, get } from "svelte/store";
 import { BaseDirectory, readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs";
 import { log } from "../logger";
 
+export interface DiffStats {
+  files: number;
+  added: number;
+  removed: number;
+}
+
 export interface WorkspaceSession {
   id: string;
   label: string;
@@ -10,6 +16,8 @@ export interface WorkspaceSession {
   toolSessionId: string | null;
   terminalTabId: string | null;
   createdAt: string;
+  /** In-memory only; not persisted. Driven by panel-update events. */
+  diffStats?: DiffStats;
 }
 
 export interface Workspace {
@@ -86,7 +94,12 @@ async function persist() {
   try {
     await ensureDir();
     const data = get(workspaces);
-    await writeTextFile(STORAGE_FILE, JSON.stringify(data, null, 2), {
+    // Strip in-memory-only fields (diffStats) before writing to disk.
+    const serializable = data.map((w) => ({
+      ...w,
+      sessions: w.sessions.map(({ diffStats: _diffStats, ...rest }) => rest),
+    }));
+    await writeTextFile(STORAGE_FILE, JSON.stringify(serializable, null, 2), {
       baseDir: BaseDirectory.Home,
     });
   } catch (e) {
@@ -260,6 +273,18 @@ export function cycleWorkspace(direction: 1 | -1) {
   const currentIndex = ws.findIndex((w) => w.path === currentPath);
   const nextIndex = (currentIndex + direction + ws.length) % ws.length;
   activeWorkspacePath.set(ws[nextIndex].path);
+}
+
+export function updateSessionDiffStatsByTabId(tabId: string, stats: DiffStats) {
+  workspaces.update((ws) =>
+    ws.map((w) => ({
+      ...w,
+      sessions: w.sessions.map((s) =>
+        s.terminalTabId === tabId ? { ...s, diffStats: stats } : s,
+      ),
+    })),
+  );
+  // Not persisted — diffStats are in-memory only.
 }
 
 export function updateSessionAge(sessionId: string, age: string) {

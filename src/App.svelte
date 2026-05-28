@@ -27,6 +27,7 @@
     updateSessionStatus,
     setWorkspaceColor,
     stripBundleExtension,
+    updateSessionDiffStatsByTabId,
   } from "./lib/stores/workspace";
   import { open } from "@tauri-apps/plugin-dialog";
   import { get } from "svelte/store";
@@ -90,6 +91,16 @@
     unlisten = await onPanelUpdate((sessionId, data) => {
       if (sessionId === get(activeTabId)) {
         panelData.set(data);
+      }
+      // Update per-session diff stats for sidebar badge (all sessions, not just active).
+      if (data.diff) {
+        updateSessionDiffStatsByTabId(sessionId, {
+          files: data.diff.files_changed,
+          added: data.diff.lines_added,
+          removed: data.diff.lines_removed,
+        });
+      } else {
+        updateSessionDiffStatsByTabId(sessionId, { files: 0, added: 0, removed: 0 });
       }
     });
     unlistenNotification = await onToolNotification(async (event) => {
