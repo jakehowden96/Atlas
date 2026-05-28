@@ -1,16 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { TerminalSession } from "../../terminal-session";
-  import ChatView from "../chat/ChatView.svelte";
-  import { StreamParser } from "../../stream-parser";
-  import { handleChatEvent, appendUserMessage, endStreaming, startStreaming } from "../../stores/chat";
-  import { ptyWrite } from "../../ipc";
-  import { getAdapter } from "../../adapters";
-  import { getToolSettings } from "../../stores/settings";
-  import { tabs, setTabTitle } from "../../stores/terminal";
-  import { updateSessionLabelByTabId } from "../../stores/workspace";
-  import { deriveTabTitle } from "../../terminal-utils";
-  import { get } from "svelte/store";
   import "@xterm/xterm/css/xterm.css";
 
   interface Props {
@@ -20,130 +10,52 @@
     onPtyReady: (ptyId: number) => void;
     cwd?: string;
     onData?: (data: string) => void;
-    useStreamJson?: boolean;
-    perTurnInvocation?: boolean;
-    adapterId?: string;
-    toolSessionId?: string;
   }
 
-  let {
-    tabId, visible, ready = true, onPtyReady, cwd, onData,
-    useStreamJson = false, perTurnInvocation = false,
-    adapterId, toolSessionId,
-  }: Props = $props();
-
-  const headless = useStreamJson || perTurnInvocation;
+  let { tabId, visible, ready = true, onPtyReady, cwd, onData }: Props = $props();
 
   let containerEl: HTMLDivElement;
   let session: TerminalSession | null = null;
-  let streamParser: StreamParser | null = null;
-  let ptyId: number | null = null;
-
-  function handleStreamData(data: string) {
-    if (streamParser) {
-      streamParser.feed(data);
-    }
-  }
-
-  function handleSendMessage(text: string) {
-    if (ptyId === null || !adapterId) return;
-    appendUserMessage(tabId, text);
-
-    const adapter = getAdapter(adapterId);
-    const settings = getToolSettings(adapterId);
-    const tab = get(tabs).find((t) => t.id === tabId);
-    const currentTurnCount = (tab?.type === "terminal" ? tab.turnCount ?? 0 : 0);
-
-    if (currentTurnCount === 0) {
-      const title = deriveTabTitle(text);
-      if (title) {
-        setTabTitle(tabId, title, "auto");
-        updateSessionLabelByTabId(tabId, title);
-      }
-    }
-
-    if (perTurnInvocation && toolSessionId) {
-      startStreaming(tabId);
-      const cmd = adapter.buildSendCommand?.({
-        message: text,
-        toolSessionId,
-        isFirstTurn: currentTurnCount === 0,
-        settings,
-      });
-      if (cmd) {
-        ptyWrite(ptyId, cmd);
-        tabs.update((t) =>
-          t.map((x) => (x.id === tabId && x.type === "terminal"
-            ? { ...x, turnCount: currentTurnCount + 1 }
-            : x)),
-        );
-      }
-    } else if (useStreamJson) {
-      const cmd = adapter.buildSendCommand?.({
-        message: text,
-        toolSessionId: toolSessionId ?? "",
-        isFirstTurn: currentTurnCount === 0,
-        settings,
-      });
-      ptyWrite(ptyId, cmd ?? (text + "\n"));
-    } else {
-      ptyWrite(ptyId, text + "\n");
-    }
-  }
 
   onMount(() => {
-    if (headless) {
-      streamParser = new StreamParser((event) => {
-        handleChatEvent(tabId, event);
-      }, { perTurnMode: perTurnInvocation });
-    }
-
     session = new TerminalSession({
       tabId,
-      container: headless ? undefined : containerEl,
+      container: containerEl,
       visible,
-      onPtyReady: (id) => {
-        ptyId = id;
-        onPtyReady(id);
-      },
+      onPtyReady,
       cwd,
-      onData: headless ? handleStreamData : onData,
-      headless,
+      onData,
     });
   });
 
   onDestroy(() => {
     session?.destroy();
-    streamParser?.flush();
-    endStreaming(tabId);
   });
 
   $effect(() => {
     session?.handleVisibilityChange(visible);
   });
 
+  // Re-fit terminal when ready transitions to true — the container was
+  // position:absolute while hidden, so xterm had incorrect dimensions.
   $effect(() => {
-    if (!headless && visible && ready) {
+    if (visible && ready) {
       session?.fitTerminal();
     }
   });
 </script>
 
-{#if headless}
-  <ChatView {tabId} onSendMessage={handleSendMessage} {visible} />
-{:else}
-  {#if visible && !ready}
-    <div class="loading-overlay">
-      <span class="material-symbols-outlined loading-spinner">progress_activity</span>
-      <span class="loading-text">Starting session...</span>
-    </div>
-  {/if}
-  <div
-    class="terminal-container"
-    class:hidden={!visible || !ready}
-    bind:this={containerEl}
-  ></div>
+{#if visible && !ready}
+  <div class="loading-overlay">
+    <span class="material-symbols-outlined loading-spinner">progress_activity</span>
+    <span class="loading-text">Starting Claude Code...</span>
+  </div>
 {/if}
+<div
+  class="terminal-container"
+  class:hidden={!visible || !ready}
+  bind:this={containerEl}
+></div>
 
 <style>
   .terminal-container {

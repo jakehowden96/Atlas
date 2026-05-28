@@ -6,12 +6,11 @@
   import AgentManager from "./lib/components/layout/AgentManager.svelte";
   import Toast from "./lib/components/Toast.svelte";
   import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
+  import { Terminal } from "@xterm/xterm";
   import { panelVisible, panelData, checkApiStatus, analysisStatus, analysisError } from "./lib/stores/panel";
-  import { getAdapter } from "./lib/adapters";
-  import { selectedTool, getToolSettings } from "./lib/stores/settings";
   import { tabs, activeTabId, addTab, removeTab, setTabNeedsInput, setTabReady, chromeHeight, tabBarHeight } from "./lib/stores/terminal";
-  import { onPanelUpdate, onAnalysisStatus, onToolNotification, ptyWrite, ptyKill } from "./lib/ipc";
-  import { enableNotifications, loadSettings } from "./lib/stores/settings";
+  import { onPanelUpdate, onAnalysisStatus, onClaudeNotification, ptyWrite, ptyKill } from "./lib/ipc";
+  import { skipPermissions, enableNotifications, loadSettings } from "./lib/stores/settings";
   import { sendNotification, isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
   import {
     workspaces,
@@ -20,7 +19,7 @@
     loadWorkspaces,
     addWorkspace as storeAddWorkspace,
     addSession,
-    setToolSessionId,
+    setClaudeSessionId,
     removeSession,
     removeWorkspace,
     resumeSession,
@@ -55,6 +54,7 @@
     }
   });
 
+  // Clear needsInput when switching to a tab
   $effect(() => {
     if ($activeTabId) {
       setTabNeedsInput($activeTabId, false);
@@ -81,13 +81,14 @@
     await log.init();
     log.info("app", "onMount started");
     checkApiStatus();
-    await Promise.all([loadWorkspaces(), loadSettings()]);
+    await loadWorkspaces();
     const ws = get(workspaces);
     log.info("app", `workspaces loaded: ${ws.length}`);
     if (ws.length > 0 && !get(activeWorkspacePath)) {
       activeWorkspacePath.set(ws[0].path);
       log.info("app", `active workspace set: ${ws[0].path}`);
     }
+    await loadSettings();
     unlisten = await onPanelUpdate((sessionId, data) => {
       if (sessionId === get(activeTabId)) {
         panelData.set(data);
@@ -99,7 +100,7 @@
         analysisError.set(event.error ?? null);
       }
     });
-    unlistenNotification = await onToolNotification(async (event) => {
+    unlistenNotification = await onClaudeNotification(async (event) => {
       const { session_id, notification } = event;
       // Only mark as needing input for notification types that require user action.
       // Excludes idle_prompt — that fires when Claude finishes work and returns to
@@ -119,8 +120,8 @@
           }
           if (granted) {
             sendNotification({
-              title: notification.title || "Agent needs input",
-              body: notification.message || "A session is waiting for your response",
+              title: notification.title || "Claude needs input",
+              body: notification.message || "A Claude session is waiting for your response",
             });
           }
         } catch (e) {
@@ -137,100 +138,71 @@
     unlistenNotification?.();
   });
 
-  async function spawnToolSession(workspacePath: string, resumeId?: string, existingSessionId?: string) {
+  /**
+   * Spawn a terminal tab in the given workspace directory, run `claude`
+   * (or `claude --resume <id>` for existing sessions).
+   * New sessions get a pre-generated UUID passed via `--session-id`.
+   */
+  async function spawnClaudeSession(workspacePath: string, resumeId?: string, existingSessionId?: string) {
     const tabId = crypto.randomUUID();
-    const adapter = getAdapter(get(selectedTool));
-    const adapterSettings = getToolSettings(get(selectedTool));
+    const terminal = new Terminal();
     let session: { id: string };
-    let toolSessionId: string | undefined;
-
-    const resumeResult = resumeId
-      ? adapter.buildResumeCommand({ toolSessionId: resumeId, settings: adapterSettings })
-      : null;
-    const useStreamJson = resumeResult
-      ? (resumeResult.useStreamJson ?? adapter.supportsStreamJson)
-      : adapter.supportsStreamJson;
+    let claudeSessionId: string | undefined;
 
     if (existingSessionId) {
       await resumeSession(existingSessionId, tabId);
       session = { id: existingSessionId };
     } else {
+      // Generate a Claude session ID upfront so we can pass it via --session-id
+      // and store it immediately — no need to capture it from terminal output.
+      claudeSessionId = crypto.randomUUID();
       const wsName = get(workspaces).find((w) => w.path === workspacePath)?.name
         ?? stripBundleExtension(workspacePath.split("/").filter(Boolean).pop() ?? "New session");
       session = await addSession(workspacePath, wsName, tabId);
+      await setClaudeSessionId(session.id, claudeSessionId);
     }
 
-    // For per-turn adapters, generate toolSessionId upfront (no command written yet)
-    if (adapter.perTurnInvocation && !resumeId) {
-      const result = adapter.buildNewSessionCommand({ sessionId: tabId, settings: adapterSettings });
-      toolSessionId = result.toolSessionId;
-      if (toolSessionId) {
-        await setToolSessionId(session.id, toolSessionId);
-      }
-    }
-    if (resumeId) {
-      toolSessionId = resumeId;
-    }
+    addTab({ type: "terminal", id: tabId, title: "", ptyId: -1, terminal, cwd: workspacePath, ready: false });
 
-    addTab({
-      type: "terminal",
-      id: tabId,
-      title: "",
-      ptyId: -1,
-      cwd: workspacePath,
-      ready: false,
-      useStreamJson,
-      perTurnInvocation: adapter.perTurnInvocation ?? false,
-      adapterId: adapter.id,
-      toolSessionId,
-      turnCount: resumeId ? 1 : 0,
-    });
-
+    // Once the PTY is ready, send the claude command.
+    // We watch for the ptyId to become available via a short poll since
+    // handlePtyReady fires inside TerminalContainer.
     let pollAttempts = 0;
     const poll = setInterval(async () => {
       pollAttempts++;
       const currentTabs = get(tabs);
       const tab = currentTabs.find((t) => t.id === tabId);
+      // Stop polling if the tab was removed or we've exceeded a reasonable timeout (10s)
       if (!tab || pollAttempts > 100) {
         clearInterval(poll);
         return;
       }
       if (tab.type === "terminal" && tab.ptyId >= 0) {
         clearInterval(poll);
-
-        if (adapter.perTurnInvocation) {
-          updateSessionStatus(session.id, "running");
-          setTabReady(tabId);
+        const skip = get(skipPermissions) ? " --dangerously-skip-permissions" : "";
+        let cmd: string;
+        if (resumeId) {
+          cmd = `claude --resume ${resumeId}${skip}\n`;
         } else {
-          let cmd: string;
-          if (resumeResult) {
-            cmd = resumeResult.command;
-          } else {
-            const result = adapter.buildNewSessionCommand({ sessionId: tabId, settings: adapterSettings });
-            cmd = result.command;
-            toolSessionId = result.toolSessionId;
-            if (toolSessionId) {
-              await setToolSessionId(session.id, toolSessionId);
-            }
-          }
-          setTimeout(() => {
-            ptyWrite(tab.ptyId, cmd);
-            tabs.update((t) =>
-              t.map((x) => (x.id === tabId && x.type === "terminal" ? { ...x, commandWrittenAt: Date.now() } : x)),
-            );
-            updateSessionStatus(session.id, "running");
-            if (useStreamJson) {
-              setTabReady(tabId);
-            } else {
-              setTimeout(() => {
-                const current = get(tabs).find((t) => t.id === tabId);
-                if (current?.type === "terminal" && current.ready === false) {
-                  setTabReady(tabId);
-                }
-              }, 5000);
-            }
-          }, 300);
+          cmd = `claude --session-id ${claudeSessionId}${skip}\n`;
         }
+        // Small delay to let the shell prompt render
+        setTimeout(() => {
+          ptyWrite(tab.ptyId, cmd);
+          tabs.update((t) =>
+            t.map((x) => (x.id === tabId && x.type === "terminal" ? { ...x, commandWrittenAt: Date.now() } : x)),
+          );
+          updateSessionStatus(session.id, "running");
+          // Readiness is triggered by TerminalSession detecting Claude Code's
+          // OSC title (after a 300ms gate to skip shell-emitted titles) or
+          // alternate screen buffer activation. Safety fallback after 5s.
+          setTimeout(() => {
+            const current = get(tabs).find((t) => t.id === tabId);
+            if (current?.type === "terminal" && current.ready === false) {
+              setTabReady(tabId);
+            }
+          }, 5000);
+        }, 300);
       }
     }, 100);
 
@@ -247,15 +219,16 @@
     {openTabIds}
     on:newTerminal={() => {
       const id = crypto.randomUUID();
+      const terminal = new Terminal();
       const wsPath = get(activeWorkspacePath);
-      addTab({ type: "terminal", id, title: "Terminal", ptyId: -1, cwd: wsPath || undefined });
+      addTab({ type: "terminal", id, title: "Terminal", ptyId: -1, terminal, cwd: wsPath || undefined });
     }}
     on:addWorkspace={async () => {
       const selected = await open({ directory: true, multiple: false, title: "Select workspace folder" });
       if (typeof selected === "string") await storeAddWorkspace(selected);
     }}
     on:newSession={(e) => {
-      spawnToolSession(e.detail.workspacePath);
+      spawnClaudeSession(e.detail.workspacePath);
     }}
     on:selectSession={(e) => {
       activeWorkspacePath.set(e.detail.workspacePath);
@@ -278,8 +251,8 @@
       // Spawn/resume if not actively running (or running with a missing tab)
       if (session.status !== "running" || !get(tabs).find((t) => t.id === session.terminalTabId)) {
         spawningSessionIds.add(session.id);
-        const resumeId = session.toolSessionId ?? undefined;
-        spawnToolSession(e.detail.workspacePath, resumeId, session.id)
+        const resumeId = session.claudeSessionId ?? undefined;
+        spawnClaudeSession(e.detail.workspacePath, resumeId, session.id)
           .finally(() => spawningSessionIds.delete(session.id));
       }
     }}

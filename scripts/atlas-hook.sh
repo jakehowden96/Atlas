@@ -91,7 +91,7 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Discover the most recent implementation plan (if any)
 PLAN_JSON=""
-PLANS_DIR="${ATLAS_PLAN_DIRS:-$GIT_ROOT/.claude/plans}"
+PLANS_DIR="$GIT_ROOT/.claude/plans"
 if [ -d "$PLANS_DIR" ]; then
   LATEST_PLAN=$(find "$PLANS_DIR" -maxdepth 1 -name '*.md' -type f -print0 2>/dev/null \
     | xargs -0 ls -t 2>/dev/null | head -1)

@@ -7,7 +7,7 @@ export interface WorkspaceSession {
   label: string;
   status: "complete" | "running" | "error" | "idle" | "starting";
   age: string;
-  toolSessionId: string | null;
+  claudeSessionId: string | null;
   terminalTabId: string | null;
   createdAt: string;
 }
@@ -66,12 +66,6 @@ export async function loadWorkspaces() {
       for (const s of ws.sessions) {
         if (s.status === "running" || s.status === "starting") s.status = "idle";
         s.terminalTabId = null;
-        // Migrate old claudeSessionId field
-        const legacy = s as unknown as Record<string, unknown>;
-        if (legacy.claudeSessionId && !s.toolSessionId) {
-          s.toolSessionId = legacy.claudeSessionId as string;
-          delete legacy.claudeSessionId;
-        }
       }
     }
     workspaces.set(data);
@@ -152,7 +146,7 @@ export async function addSession(
     label: formatLabel(label),
     status: "starting",
     age: "",
-    toolSessionId: null,
+    claudeSessionId: null,
     terminalTabId,
     createdAt: new Date().toISOString(),
   };
@@ -168,15 +162,15 @@ export async function addSession(
   return session;
 }
 
-export async function setToolSessionId(
+export async function setClaudeSessionId(
   sessionId: string,
-  toolSessionId: string,
+  claudeSessionId: string,
 ) {
   workspaces.update((ws) =>
     ws.map((w) => ({
       ...w,
       sessions: w.sessions.map((s) =>
-        s.id === sessionId ? { ...s, toolSessionId } : s,
+        s.id === sessionId ? { ...s, claudeSessionId } : s,
       ),
     })),
   );

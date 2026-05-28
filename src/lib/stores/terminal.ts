@@ -1,8 +1,8 @@
 import { writable, derived, get } from "svelte/store";
+import type { Terminal } from "@xterm/xterm";
 import type { FileTab, FileLanguage, TabItem } from "../../types/terminal";
 import { panelData } from "./panel";
 import { activeWorkspacePath } from "./workspace";
-import { clearSession } from "./chat";
 
 export const tabs = writable<TabItem[]>([]);
 export const activeTabId = writable<string>("");
@@ -77,9 +77,9 @@ export function addTab(tab: TabItem) {
 }
 
 /** Create a terminal tab pre-configured with a working directory. */
-export function createTerminalTabWithCwd(cwd: string, useStreamJson = false): string {
+export function createTerminalTabWithCwd(terminal: Terminal, cwd: string): string {
   const id = crypto.randomUUID();
-  addTab({ type: "terminal", id, title: "", ptyId: -1, cwd, useStreamJson });
+  addTab({ type: "terminal", id, title: "", ptyId: -1, terminal, cwd });
   return id;
 }
 
@@ -144,7 +144,6 @@ export function removeTab(id: string) {
   const removedWs = removedTab ? getTabWorkspacePath(removedTab) : "";
 
   tabs.update((t) => t.filter((tab) => tab.id !== id));
-  clearSession(id);
 
   if (wasActive) {
     const remaining = get(tabs);
@@ -188,22 +187,13 @@ export function cycleTab(direction: 1 | -1) {
 
 const titleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-export function setTabTitle(id: string, title: string, source?: "auto" | "osc") {
+export function setTabTitle(id: string, title: string) {
   const existing = titleTimers.get(id);
   if (existing) clearTimeout(existing);
   titleTimers.set(id, setTimeout(() => {
     titleTimers.delete(id);
     tabs.update((t) =>
-      t.map((tab) => {
-        if (tab.id !== id) return tab;
-        if (source === "auto" && tab.type === "terminal" && tab.titleSource && tab.titleSource !== "auto") {
-          return tab;
-        }
-        if (tab.type === "terminal") {
-          return { ...tab, title, titleSource: source ?? tab.titleSource };
-        }
-        return { ...tab, title };
-      }),
+      t.map((tab) => (tab.id === id ? { ...tab, title } : tab)),
     );
   }, 100));
 }

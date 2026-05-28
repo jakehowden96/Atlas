@@ -12,21 +12,19 @@ import { showToast } from "./stores/toast";
 import { setRefreshHandler } from "./shortcuts";
 import { xtermTheme } from "./theme";
 import { log } from "./logger";
-import { panelDataChanged, parseOsc7Cwd } from "./terminal-utils";
 
 export interface TerminalSessionOptions {
   tabId: string;
-  container?: HTMLDivElement;
+  container: HTMLDivElement;
   visible: boolean;
   onPtyReady: (ptyId: number) => void;
   cwd?: string;
   onData?: (data: string) => void;
-  headless?: boolean;
 }
 
 export class TerminalSession {
-  private terminal: Terminal | null = null;
-  private fitAddon: FitAddon | null = null;
+  private terminal: Terminal;
+  private fitAddon: FitAddon;
   private resizeObserver: ResizeObserver | null = null;
   private ptyId: number | null = null;
   private currentCwd = "";
@@ -36,52 +34,45 @@ export class TerminalSession {
   private _visible: boolean;
   private initialCwd?: string;
   private externalOnData?: (data: string) => void;
-  private headless: boolean;
-  private decoder = new TextDecoder();
 
   constructor(opts: TerminalSessionOptions) {
     this.tabId = opts.tabId;
     this._visible = opts.visible;
     this.initialCwd = opts.cwd;
-    this.currentCwd = opts.cwd ?? "";
     this.externalOnData = opts.onData;
-    this.headless = opts.headless ?? false;
 
-    if (!this.headless && opts.container) {
-      this.terminal = new Terminal({
-        cursorBlink: true,
-        fontSize: 14,
-        fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
-        theme: xtermTheme,
-        allowProposedApi: true,
-      });
+    this.terminal = new Terminal({
+      cursorBlink: true,
+      fontSize: 14,
+      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
+      theme: xtermTheme,
+      allowProposedApi: true,
+    });
 
-      this.fitAddon = new FitAddon();
-      this.terminal.loadAddon(this.fitAddon);
-      this.terminal.loadAddon(new WebLinksAddon());
+    this.fitAddon = new FitAddon();
+    this.terminal.loadAddon(this.fitAddon);
+    this.terminal.loadAddon(new WebLinksAddon());
 
-      this.terminal.open(opts.container);
+    this.terminal.open(opts.container);
 
-      try {
-        this.terminal.loadAddon(new WebglAddon());
-      } catch {
-        // WebGL not available, canvas renderer is fine
-      }
-
-      this.fitAddon.fit();
-      this.registerKeyHandler();
-      this.registerOscHandlers();
-      this.registerReadinessHandler();
-      this.setupResizeObserver(opts.container);
-      this.setupEnterRefresh();
+    try {
+      this.terminal.loadAddon(new WebglAddon());
+    } catch {
+      // WebGL not available, canvas renderer is fine
     }
 
+    this.fitAddon.fit();
+    this.registerKeyHandler();
+    this.registerOscHandlers();
+    this.registerReadinessHandler();
+    this.setupResizeObserver(opts.container);
     this.spawnPty(opts.onPtyReady);
+    this.setupEnterRefresh();
     if (this._visible) this.startPolling();
   }
 
   private registerKeyHandler() {
-    this.terminal!.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+    this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       if (e.type !== "keydown") return true;
       // Pass through global shortcuts to the window-level handler — returning
       // false prevents xterm from consuming the key so it bubbles up to
@@ -114,21 +105,36 @@ export class TerminalSession {
   }
 
   private registerOscHandlers() {
-    const term = this.terminal!;
-    const handleTitleOsc = (data: string) => {
-      setTabTitle(this.tabId, data, "osc");
+    // OSC 0 & 2: tab title — also triggers readiness after the command gate
+    this.terminal.parser.registerOscHandler(0, (data) => {
+      setTabTitle(this.tabId, data);
       this.checkOscReadiness();
       updateSessionLabelByTabId(this.tabId, data);
       return true;
-    };
-    term.parser.registerOscHandler(0, handleTitleOsc);
-    term.parser.registerOscHandler(2, handleTitleOsc);
+    });
+    this.terminal.parser.registerOscHandler(2, (data) => {
+      setTabTitle(this.tabId, data);
+      this.checkOscReadiness();
+      updateSessionLabelByTabId(this.tabId, data);
+      return true;
+    });
 
-    term.parser.registerOscHandler(7, (data) => {
-      const cwd = parseOsc7Cwd(data);
-      if (cwd && cwd !== this.currentCwd) {
-        this.currentCwd = cwd;
-        this.scheduleRefresh(cwd);
+    // OSC 7: CWD reporting — shells emit this when the directory changes
+    // Format: file://hostname/path/to/dir
+    this.terminal.parser.registerOscHandler(7, (data) => {
+      try {
+        const url = new URL(data);
+        const cwd = decodeURIComponent(url.pathname);
+        if (cwd && cwd !== this.currentCwd) {
+          this.currentCwd = cwd;
+          this.scheduleRefresh(cwd);
+        }
+      } catch {
+        const cwd = data.trim();
+        if (cwd && cwd !== this.currentCwd) {
+          this.currentCwd = cwd;
+          this.scheduleRefresh(cwd);
+        }
       }
       return true;
     });
@@ -140,7 +146,7 @@ export class TerminalSession {
    * unlike OSC title sequences which shells also emit.
    */
   private registerReadinessHandler() {
-    this.terminal!.parser.registerCsiHandler({ final: "h", prefix: "?" }, (params) => {
+    this.terminal.parser.registerCsiHandler({ final: "h", prefix: "?" }, (params) => {
       if (params.includes(1049)) {
         const tab = get(tabs).find(t => t.id === this.tabId);
         if (tab?.type === "terminal" && tab.ready === false) {
@@ -153,10 +159,11 @@ export class TerminalSession {
 
   /** Re-fit the terminal and sync PTY dimensions. Call after layout changes. */
   fitTerminal() {
-    if (this.headless || !this.terminal || !this.fitAddon) return;
+    // Double rAF: first lets the browser recalculate layout after CSS class
+    // changes (hidden → visible), second ensures paint has completed before
+    // we measure the container and fit xterm to it.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        if (!this.terminal || !this.fitAddon) return;
         this.fitAddon.fit();
         this.terminal.focus();
         if (this.ptyId !== null) {
@@ -168,7 +175,7 @@ export class TerminalSession {
 
   private setupResizeObserver(container: HTMLDivElement) {
     this.resizeObserver = new ResizeObserver(() => {
-      if (this._visible && this.fitAddon && this.terminal) {
+      if (this._visible) {
         this.fitAddon.fit();
         if (this.ptyId !== null) {
           ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
@@ -179,20 +186,16 @@ export class TerminalSession {
   }
 
   private async spawnPty(onPtyReady: (ptyId: number) => void) {
-    log.info("terminal", `spawnPty tab=${this.tabId} cwd=${this.initialCwd ?? "default"} headless=${this.headless}`);
-    const cols = this.terminal?.cols ?? 120;
-    const rows = this.terminal?.rows ?? 40;
-
+    log.info("terminal", `spawnPty tab=${this.tabId} cwd=${this.initialCwd ?? "default"}`);
     try {
       this.ptyId = await ptySpawn(
-        cols,
-        rows,
+        this.terminal.cols,
+        this.terminal.rows,
         (data) => {
-          if (!this.headless && this.terminal) {
-            this.terminal.write(data);
-          }
+          this.terminal.write(data);
           if (this.externalOnData) {
-            this.externalOnData(this.decoder.decode(data, { stream: true }));
+            const decoder = new TextDecoder();
+            this.externalOnData(decoder.decode(data));
           }
         },
         this.initialCwd ?? undefined,
@@ -206,16 +209,15 @@ export class TerminalSession {
       return;
     }
 
-    if (!this.headless && this.terminal) {
-      this.terminal.onData((data) => {
-        if (this.ptyId !== null) {
-          ptyWrite(this.ptyId, data);
-        }
-        setTabNeedsInput(this.tabId, false);
-      });
-    }
+    this.terminal.onData((data) => {
+      if (this.ptyId !== null) {
+        ptyWrite(this.ptyId, data);
+      }
+      setTabNeedsInput(this.tabId, false);
+    });
   }
 
+  /** Write a string to the PTY (e.g. to run a command). */
   async writeCommand(cmd: string) {
     if (this.ptyId !== null) {
       await ptyWrite(this.ptyId, cmd);
@@ -223,7 +225,8 @@ export class TerminalSession {
   }
 
   private setupEnterRefresh() {
-    this.terminal!.onData((data) => {
+    // Refresh panel after Enter key — catches cases where OSC 7 isn't emitted
+    this.terminal.onData((data) => {
       if (data === "\r" && this.currentCwd) {
         setTimeout(() => {
           if (this.currentCwd) this.scheduleRefresh(this.currentCwd);
@@ -235,8 +238,11 @@ export class TerminalSession {
   private lastPanelVersion = -1;
   private lastPanelDiffRaw: string | null = null;
 
+  /** Cheap identity check: compare version + diff raw string instead of full JSON. */
   private panelChanged(data: PanelData | null): boolean {
-    return panelDataChanged(data, this.lastPanelVersion, this.lastPanelDiffRaw);
+    if (!data) return this.lastPanelVersion !== -1;
+    if (data.version !== this.lastPanelVersion) return true;
+    return (data.diff?.raw ?? null) !== this.lastPanelDiffRaw;
   }
 
   private updatePanelFingerprint(data: PanelData | null) {
@@ -311,12 +317,10 @@ export class TerminalSession {
     // First rAF: fit terminal and focus (lightweight, runs in the next paint)
     requestAnimationFrame(() => {
       if (!this._visible) return;
-      if (!this.headless && this.terminal && this.fitAddon) {
-        this.fitAddon.fit();
-        this.terminal.focus();
-        if (this.ptyId !== null) {
-          ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
-        }
+      this.fitAddon.fit();
+      this.terminal.focus();
+      if (this.ptyId !== null) {
+        ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
       }
 
       // Second rAF: guarantees a paint between tab highlight and the heavier panel data work
@@ -350,6 +354,6 @@ export class TerminalSession {
     if (this.ptyId !== null) {
       ptyKill(this.ptyId, this.tabId);
     }
-    if (this.terminal) this.terminal.dispose();
+    this.terminal?.dispose();
   }
 }

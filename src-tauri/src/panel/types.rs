@@ -118,7 +118,7 @@ pub struct AnalysisStatusEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolNotification {
+pub struct ClaudeNotification {
     pub notification_type: String,
     pub title: String,
     pub message: String,
@@ -126,9 +126,9 @@ pub struct ToolNotification {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolNotificationEvent {
+pub struct ClaudeNotificationEvent {
     pub session_id: String,
-    pub notification: ToolNotification,
+    pub notification: ClaudeNotification,
 }
 
 pub fn sessions_dir() -> Result<PathBuf, String> {

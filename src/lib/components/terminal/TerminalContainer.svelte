@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Terminal } from "@xterm/xterm";
   import { get } from "svelte/store";
   import TabBar from "./TabBar.svelte";
   import TerminalTab from "./TerminalTab.svelte";
@@ -19,12 +20,14 @@
 
   function createTab() {
     const id = crypto.randomUUID();
+    const terminal = new Terminal();
     const wsPath = get(activeWorkspacePath);
     addTab({
       type: "terminal",
       id,
       title: "",
       ptyId: -1,
+      terminal,
       cwd: wsPath || undefined,
     });
   }
@@ -128,10 +131,6 @@
             ready={tab.ready !== false}
             cwd={tab.cwd}
             onData={tab.onData}
-            useStreamJson={tab.useStreamJson}
-            perTurnInvocation={tab.perTurnInvocation}
-            adapterId={tab.adapterId}
-            toolSessionId={tab.toolSessionId}
             onPtyReady={(ptyId) => handlePtyReady(tab.id, ptyId)}
           />
         {:else if tab.type === "file"}

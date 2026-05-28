@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { panelDataChanged, parseOsc7Cwd, deriveTabTitle } from "../terminal-utils";
+import { panelDataChanged, parseOsc7Cwd } from "../terminal-utils";
 import type { PanelData } from "../../types/panel";
 
 function makePanel(overrides: Partial<PanelData> = {}): PanelData {
@@ -65,46 +65,5 @@ describe("parseOsc7Cwd", () => {
 
   it("trims whitespace from raw path", () => {
     expect(parseOsc7Cwd("  /Users/test  ")).toBe("/Users/test");
-  });
-});
-
-describe("deriveTabTitle", () => {
-  it("returns the full text when under 60 chars", () => {
-    expect(deriveTabTitle("Fix the login bug")).toBe("Fix the login bug");
-  });
-
-  it("truncates with ellipsis at 60 chars", () => {
-    const long = "A".repeat(80);
-    const result = deriveTabTitle(long);
-    expect(result.length).toBe(60);
-    expect(result).toBe("A".repeat(59) + "…");
-  });
-
-  it("uses only the first line of multi-line input", () => {
-    expect(deriveTabTitle("First line\nSecond line\nThird line")).toBe("First line");
-  });
-
-  it("trims whitespace from the first line", () => {
-    expect(deriveTabTitle("  hello world  \nsecond")).toBe("hello world");
-  });
-
-  it("returns empty string for empty input", () => {
-    expect(deriveTabTitle("")).toBe("");
-  });
-
-  it("returns empty string for whitespace-only input", () => {
-    expect(deriveTabTitle("   \n   ")).toBe("");
-  });
-
-  it("returns text at exactly 60 chars unchanged", () => {
-    const exact = "A".repeat(60);
-    expect(deriveTabTitle(exact)).toBe(exact);
-  });
-
-  it("truncates at 61 chars", () => {
-    const text = "A".repeat(61);
-    const result = deriveTabTitle(text);
-    expect(result.length).toBe(60);
-    expect(result).toBe("A".repeat(59) + "…");
   });
 });

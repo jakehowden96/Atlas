@@ -10,53 +10,36 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
 }));
 
 import {
+  skipPermissions,
   enableNotifications,
-  selectedTool,
-  toolSettings,
   loadSettings,
-  setToolSetting,
+  setSkipPermissions,
   setEnableNotifications,
-  setSelectedTool,
 } from "../stores/settings";
 import { exists, readTextFile, writeTextFile, mkdir } from "@tauri-apps/plugin-fs";
 
 describe("settings store", () => {
   beforeEach(() => {
-    selectedTool.set("claude-code");
-    toolSettings.set({});
+    // Reset to defaults
+    skipPermissions.set(false);
     enableNotifications.set(true);
     vi.clearAllMocks();
   });
 
   describe("loadSettings", () => {
-    it("migrates old skipPermissions into toolSettings", async () => {
+    it("loads skipPermissions from file", async () => {
       vi.mocked(exists).mockResolvedValue(true);
       vi.mocked(readTextFile).mockResolvedValue(
         JSON.stringify({ skipPermissions: true, enableNotifications: true }),
       );
       await loadSettings();
-      expect(get(toolSettings)["claude-code"]?.skipPermissions).toBe(true);
-    });
-
-    it("loads new format toolSettings", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
-        JSON.stringify({
-          selectedTool: "codex",
-          enableNotifications: false,
-          toolSettings: { codex: { approvalMode: "never" } },
-        }),
-      );
-      await loadSettings();
-      expect(get(selectedTool)).toBe("codex");
-      expect(get(enableNotifications)).toBe(false);
-      expect(get(toolSettings).codex?.approvalMode).toBe("never");
+      expect(get(skipPermissions)).toBe(true);
     });
 
     it("loads enableNotifications false from file", async () => {
       vi.mocked(exists).mockResolvedValue(true);
       vi.mocked(readTextFile).mockResolvedValue(
-        JSON.stringify({ enableNotifications: false }),
+        JSON.stringify({ skipPermissions: false, enableNotifications: false }),
       );
       await loadSettings();
       expect(get(enableNotifications)).toBe(false);
@@ -65,7 +48,7 @@ describe("settings store", () => {
     it("handles missing file gracefully", async () => {
       vi.mocked(exists).mockResolvedValue(false);
       await loadSettings();
-      expect(get(toolSettings)).toEqual({});
+      expect(get(skipPermissions)).toBe(false);
       expect(get(enableNotifications)).toBe(true);
     });
 
@@ -73,28 +56,17 @@ describe("settings store", () => {
       vi.mocked(exists).mockResolvedValue(true);
       vi.mocked(readTextFile).mockResolvedValue("{not valid json");
       await loadSettings();
-      expect(get(toolSettings)).toEqual({});
+      expect(get(skipPermissions)).toBe(false);
     });
   });
 
-  describe("setToolSetting", () => {
-    it("updates tool setting and persists", async () => {
+  describe("setSkipPermissions", () => {
+    it("updates store value and persists", async () => {
       vi.mocked(exists).mockResolvedValue(true);
       vi.mocked(mkdir).mockResolvedValue(undefined);
       vi.mocked(writeTextFile).mockResolvedValue(undefined);
-      await setToolSetting("claude-code", "skipPermissions", true);
-      expect(get(toolSettings)["claude-code"]?.skipPermissions).toBe(true);
-      expect(writeTextFile).toHaveBeenCalled();
-    });
-  });
-
-  describe("setSelectedTool", () => {
-    it("updates selected tool and persists", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(mkdir).mockResolvedValue(undefined);
-      vi.mocked(writeTextFile).mockResolvedValue(undefined);
-      await setSelectedTool("codex");
-      expect(get(selectedTool)).toBe("codex");
+      await setSkipPermissions(true);
+      expect(get(skipPermissions)).toBe(true);
       expect(writeTextFile).toHaveBeenCalled();
     });
   });
