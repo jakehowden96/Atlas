@@ -23,7 +23,6 @@
 
   let filterText = $state("");
   let highlightIndex = $state(0);
-  let modalEl: HTMLDivElement | null = $state(null);
   let inputEl: HTMLInputElement | null = $state(null);
   let manageMode = $state(false);
   let colorPickerPath = $state<string | null>(null);
@@ -120,7 +119,6 @@
   <div class="qs-overlay" onclick={close} role="presentation">
     <div
       class="qs-modal"
-      bind:this={modalEl}
       onclick={(e) => e.stopPropagation()}
       onkeydown={handleKeydown}
       role="dialog"

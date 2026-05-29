@@ -1,6 +1,11 @@
 <script lang="ts">
+  import { get } from "svelte/store";
   import { parseDiff, type DiffFile } from "../../diff-parser";
   import type { DiffData } from "../../../types/panel";
+  import { refreshPanel } from "../../ipc";
+  import { panelData } from "../../stores/panel";
+  import { activeTabId } from "../../stores/terminal";
+  import { showToast } from "../../stores/toast";
   import RepositoryClean from "./RepositoryClean.svelte";
 
   interface Props {
@@ -9,6 +14,20 @@
   }
 
   let { data, cwd }: Props = $props();
+
+  let refreshing = $state(false);
+  async function handleRefresh() {
+    if (refreshing || !cwd) return;
+    refreshing = true;
+    try {
+      const fresh = await refreshPanel(get(activeTabId), cwd);
+      panelData.set(fresh);
+    } catch (e) {
+      showToast(`Refresh failed: ${e}`);
+    } finally {
+      refreshing = false;
+    }
+  }
 
   // ---------- Local/Remote toggle (preserves existing behavior) ----------
   let diffView = $state<"local" | "remote">("remote");
@@ -340,6 +359,15 @@
             <span>Unified</span>
           </button>
         </div>
+        <button
+          class="icon-btn"
+          onclick={handleRefresh}
+          disabled={refreshing}
+          title="Refresh diff"
+          aria-label="Refresh diff"
+        >
+          <span class="material-symbols-outlined" class:spinning={refreshing}>refresh</span>
+        </button>
       </div>
       <div class="toolbar-right">
         <button class="copy-all-btn" class:copied={copiedAll} onclick={copyAllPrompts} title="Copy all prompts">
@@ -623,8 +651,13 @@
     transition: background 0.15s, color 0.15s, border-color 0.15s;
   }
   .icon-btn:hover { background: var(--surface-container-high); color: var(--on-surface); }
+  .icon-btn:disabled { cursor: default; opacity: 0.6; }
   .icon-btn.active { color: var(--on-surface); border-color: var(--outline-variant); }
   .icon-btn :global(.material-symbols-outlined) { font-size: 1rem; }
+  .icon-btn :global(.material-symbols-outlined.spinning) { animation: diff-spin 0.8s linear infinite; }
+  @keyframes diff-spin {
+    to { transform: rotate(360deg); }
+  }
 
   .mode-group {
     display: inline-flex;

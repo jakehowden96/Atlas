@@ -22,6 +22,7 @@
     status: "complete" | "running" | "error" | "idle" | "starting";
     age: string;
     terminalTabId: string | null;
+    createdAt: string;
   }
 
   interface Workspace {
