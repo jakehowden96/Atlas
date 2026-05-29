@@ -1,6 +1,6 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { PanelData, GitStatus, RepoInfo, BranchInfo, AnalysisStatusEvent } from "../types/panel";
+import type { PanelData, GitStatus, RepoInfo, BranchInfo } from "../types/panel";
 import { log } from "./logger";
 
 export async function ptySpawn(
@@ -123,25 +123,6 @@ export async function gitPush(cwd: string): Promise<string> {
   return invoke("git_push", { cwd });
 }
 
-export async function resetAnalysis(sessionId: string): Promise<void> {
-  return invoke("reset_analysis", { sessionId });
-}
-
-export async function setApiKey(apiKey: string): Promise<void> {
-  return invoke("set_api_key", { apiKey });
-}
-
-export async function getApiStatus(): Promise<boolean> {
-  try {
-    const status = await invoke<boolean>("get_api_status");
-    log.info("ipc", `getApiStatus: ${status}`);
-    return status;
-  } catch (e) {
-    log.error("ipc", "getApiStatus failed", e);
-    throw e;
-  }
-}
-
 export async function gitListBranches(cwd: string): Promise<BranchInfo[]> {
   return invoke("git_list_branches", { cwd });
 }
@@ -159,14 +140,6 @@ export async function onPanelUpdate(
 ): Promise<UnlistenFn> {
   return listen<{ session_id: string; data: PanelData }>("panel-update", (event) => {
     callback(event.payload.session_id, event.payload.data);
-  });
-}
-
-export async function onAnalysisStatus(
-  callback: (event: AnalysisStatusEvent) => void,
-): Promise<UnlistenFn> {
-  return listen<AnalysisStatusEvent>("analysis-status", (event) => {
-    callback(event.payload);
   });
 }
 

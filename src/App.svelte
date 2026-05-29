@@ -7,9 +7,9 @@
   import Toast from "./lib/components/Toast.svelte";
   import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
   import { Terminal } from "@xterm/xterm";
-  import { panelVisible, panelData, checkApiStatus, analysisStatus, analysisError } from "./lib/stores/panel";
+  import { panelVisible, panelData } from "./lib/stores/panel";
   import { tabs, activeTabId, addTab, removeTab, setTabNeedsInput, setTabReady, chromeHeight, tabBarHeight } from "./lib/stores/terminal";
-  import { onPanelUpdate, onAnalysisStatus, onClaudeNotification, ptyWrite, ptyKill } from "./lib/ipc";
+  import { onPanelUpdate, onClaudeNotification, ptyWrite, ptyKill } from "./lib/ipc";
   import { skipPermissions, enableNotifications, loadSettings } from "./lib/stores/settings";
   import { sendNotification, isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
   import {
@@ -26,31 +26,37 @@
     updateSessionStatus,
     setWorkspaceColor,
     stripBundleExtension,
+    setSessionDiffStats,
   } from "./lib/stores/workspace";
   import { open } from "@tauri-apps/plugin-dialog";
   import { get } from "svelte/store";
   import type { UnlistenFn } from "@tauri-apps/api/event";
   import { log } from "./lib/logger";
 
-  let panelWidth = $state(420);
-  let sidebarWidth = $state(280);
+  let panelFraction = $state(0.5);
+  let sidebarWidth = $state(160);
   let isResizing = $state(false);
+  let mainStageWidth = $state(0);
+  let panelWidth = $derived(Math.round(mainStageWidth * panelFraction));
   let unlisten: UnlistenFn | null = null;
-  let unlistenStatus: UnlistenFn | null = null;
   let unlistenNotification: UnlistenFn | null = null;
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   const spawningSessionIds = new Set<string>();
 
   let openTabIds = $derived(new Set($tabs.map(t => t.id)));
 
-  // Show panel only when inside a git workspace.
-  // When panelData is null (e.g. during tab switch), keep the current
-  // visibility to avoid the panel collapsing and immediately reopening.
+  // Panel auto-hides when there are no tabs. When the first tab appears
+  // we auto-open it. Beyond that the user owns visibility via togglePanel —
+  // we don't reopen on every panelData update (that broke the close button).
+  let hadTabs = $state(false);
   $effect(() => {
-    if ($tabs.length === 0) {
+    const hasTabs = $tabs.length > 0;
+    if (!hasTabs) {
       panelVisible.set(false);
-    } else if ($panelData !== null) {
-      panelVisible.set(!!$panelData.is_git);
+      hadTabs = false;
+    } else if (!hadTabs) {
+      panelVisible.set(true);
+      hadTabs = true;
     }
   });
 
@@ -61,13 +67,18 @@
     }
   });
 
-  const MIN_PANEL_WIDTH = 280;
-  const MAX_PANEL_WIDTH = 800;
-  const MIN_SIDEBAR_WIDTH = 200;
-  const MAX_SIDEBAR_WIDTH = 480;
+  const MIN_PANEL_FRACTION = 0.2;
+  const MAX_PANEL_FRACTION = 0.8;
+  const MIN_SIDEBAR_WIDTH = 120;
+  const MAX_SIDEBAR_WIDTH = 280;
 
   function handleResize(delta: number) {
-    panelWidth = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, panelWidth + delta));
+    if (mainStageWidth <= 0) return;
+    const deltaFraction = delta / mainStageWidth;
+    panelFraction = Math.min(
+      MAX_PANEL_FRACTION,
+      Math.max(MIN_PANEL_FRACTION, panelFraction + deltaFraction),
+    );
   }
 
   function handleSidebarResize(delta: number) {
@@ -80,7 +91,6 @@
   onMount(async () => {
     await log.init();
     log.info("app", "onMount started");
-    checkApiStatus();
     await loadWorkspaces();
     const ws = get(workspaces);
     log.info("app", `workspaces loaded: ${ws.length}`);
@@ -93,11 +103,15 @@
       if (sessionId === get(activeTabId)) {
         panelData.set(data);
       }
-    });
-    unlistenStatus = await onAnalysisStatus((event) => {
-      if (event.session_id === get(activeTabId)) {
-        analysisStatus.set(event.status);
-        analysisError.set(event.error ?? null);
+      // Update diff badge for any session, not just the active one
+      if (data.diff && (data.diff.files_changed > 0 || data.diff.lines_added > 0 || data.diff.lines_removed > 0)) {
+        setSessionDiffStats(sessionId, {
+          filesChanged: data.diff.files_changed,
+          linesAdded: data.diff.lines_added,
+          linesRemoved: data.diff.lines_removed,
+        });
+      } else {
+        setSessionDiffStats(sessionId, null);
       }
     });
     unlistenNotification = await onClaudeNotification(async (event) => {
@@ -134,7 +148,6 @@
 
   onDestroy(() => {
     unlisten?.();
-    unlistenStatus?.();
     unlistenNotification?.();
   });
 
@@ -299,7 +312,7 @@
   />
   </div>
   <Resizer onResize={handleSidebarResize} />
-  <div class="main-stage" class:has-tabs={$tabs.length > 0} style="--chrome-height: {$chromeHeight}px; --tab-bar-height: {$tabBarHeight}px">
+  <div class="main-stage" class:has-tabs={$tabs.length > 0} style="--chrome-height: {$chromeHeight}px; --tab-bar-height: {$tabBarHeight}px" bind:clientWidth={mainStageWidth}>
     <div class="terminal-section">
       <TerminalContainer />
     </div>

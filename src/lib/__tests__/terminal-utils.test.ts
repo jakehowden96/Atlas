@@ -10,8 +10,6 @@ function makePanel(overrides: Partial<PanelData> = {}): PanelData {
     is_git: true,
     diff: undefined,
     plan: undefined,
-    summary: undefined,
-    flow: undefined,
     ...overrides,
   };
 }

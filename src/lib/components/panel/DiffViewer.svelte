@@ -1,7 +1,6 @@
 <script lang="ts">
   import { parseDiff, type DiffFile } from "../../diff-parser";
   import type { DiffData } from "../../../types/panel";
-  import ChangeSummary from "./ChangeSummary.svelte";
   import RepositoryClean from "./RepositoryClean.svelte";
 
   interface Props {
@@ -24,20 +23,6 @@
   let activeRaw = $derived(
     hasLocalToggle && diffView === "local" ? data!.local_raw! : data?.raw
   );
-
-  let activeDiffData = $derived.by(() => {
-    if (!data) return undefined;
-    if (hasLocalToggle && diffView === "local") {
-      return {
-        ...data,
-        raw: data.local_raw!,
-        files_changed: data.local_files_changed!,
-        lines_added: data.local_lines_added!,
-        lines_removed: data.local_lines_removed!,
-      };
-    }
-    return data;
-  });
 
   // Memoize parseDiff
   let lastRaw = "";
@@ -77,6 +62,16 @@
     }
     return { key, file, addedCount: added, removedCount: removed };
   }
+  // git diff can emit the same path twice (e.g. .csproj.lscache appearing in
+  // both worktree and index). Suffix duplicates so keyed {#each} stays unique.
+  function dedupeKeys(items: FlatFile[]): FlatFile[] {
+    const seen = new Map<string, number>();
+    return items.map((item) => {
+      const n = seen.get(item.key) ?? 0;
+      seen.set(item.key, n + 1);
+      return n === 0 ? item : { ...item, key: `${item.key}#${n}` };
+    });
+  }
   type ProjectFlat = {
     project: { name: string; files_changed: number; lines_added: number; lines_removed: number };
     items: FlatFile[];
@@ -85,35 +80,15 @@
     isMultiRepo
       ? projectFiles.map((p) => ({
           project: { name: p.name, files_changed: p.files_changed, lines_added: p.lines_added, lines_removed: p.lines_removed },
-          items: p.files.map((f) => toFlat(f, `${p.name}/${f.newName}`)),
+          items: dedupeKeys(p.files.map((f) => toFlat(f, `${p.name}/${f.newName}`))),
         }))
       : []
   );
   let flatFiles = $derived<FlatFile[]>(
     isMultiRepo
       ? projectFlat.flatMap((pf) => pf.items)
-      : files.map((f) => toFlat(f, f.newName))
+      : dedupeKeys(files.map((f) => toFlat(f, f.newName)))
   );
-
-  // ---------- Selection (kept for ChangeSummary staging) ----------
-  let selectedFiles: Set<string> = $state(new Set());
-  let lastResetKey = "";
-
-  $effect(() => {
-    const resetKey = cwd + "\0" + (data?.raw ?? "");
-    if (resetKey !== lastResetKey) {
-      lastResetKey = resetKey;
-      selectedFiles = new Set(flatFiles.map((f) => f.key));
-    }
-  });
-
-  function toggleFile(name: string) {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
-    const next = new Set(selectedFiles);
-    if (next.has(name)) next.delete(name);
-    else next.add(name);
-    selectedFiles = next;
-  }
 
   // ---------- difit-style viewed state ----------
   let viewedFiles: Set<string> = $state(new Set());
@@ -140,14 +115,6 @@
   // ---------- Toolbar state ----------
   let diffMode = $state<"split" | "unified">("unified");
   let copiedAll = $state(false);
-
-  // ---------- Select-all / deselect-all ----------
-  let allSelected = $derived(
-    flatFiles.length > 0 && selectedFiles.size === flatFiles.length
-  );
-  function toggleAll() {
-    selectedFiles = allSelected ? new Set() : new Set(flatFiles.map((f) => f.key));
-  }
 
   async function copyAllPrompts() {
     const prompt = flatFiles
@@ -264,12 +231,34 @@
     }
   }
 
-  // Virtualization: collapse files with > MAX_VISIBLE_LINES behind a toggle
+  // ---------- Per-file collapse ----------
+  // userCollapsed: the user clicked the header to hide a file
+  // expandedFiles: the user clicked "Show N lines" to override the size-based auto-collapse
+  // Both reset when the diff changes (cheap to redo).
   const MAX_VISIBLE_LINES = 500;
+  let userCollapsed: Set<string> = $state(new Set());
   let expandedFiles: Set<string> = $state(new Set());
+  let lastCollapseResetKey = "";
+
+  $effect(() => {
+    const resetKey = cwd + "\0" + (data?.raw ?? "");
+    if (resetKey !== lastCollapseResetKey) {
+      lastCollapseResetKey = resetKey;
+      userCollapsed = new Set();
+      expandedFiles = new Set();
+    }
+  });
 
   function totalLines(file: DiffFile): number {
     return file.hunks.reduce((sum, h) => sum + h.lines.length, 0);
+  }
+
+  function toggleUserCollapsed(key: string) {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    const next = new Set(userCollapsed);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    userCollapsed = next;
   }
 
   function toggleExpand(key: string) {
@@ -281,6 +270,7 @@
   }
 
   function shouldCollapse(file: DiffFile, key: string): boolean {
+    if (userCollapsed.has(key)) return true;
     return totalLines(file) > MAX_VISIBLE_LINES && !expandedFiles.has(key);
   }
 
@@ -350,12 +340,6 @@
             <span>Unified</span>
           </button>
         </div>
-        {#if flatFiles.length > 1}
-          <button class="select-all-btn" onclick={toggleAll}>
-            <span class="material-symbols-outlined">{allSelected ? "check_box" : "check_box_outline_blank"}</span>
-            <span>{allSelected ? "Deselect all" : "Select all"}</span>
-          </button>
-        {/if}
       </div>
       <div class="toolbar-right">
         <button class="copy-all-btn" class:copied={copiedAll} onclick={copyAllPrompts} title="Copy all prompts">
@@ -423,8 +407,6 @@
             {@render fileCard(item)}
           {/each}
         {/if}
-
-        <ChangeSummary data={activeDiffData!} {cwd} projects={data?.projects} {selectedFiles} />
       </div>
     </div>
   {:else}
@@ -435,21 +417,29 @@
 {#snippet fileCard(item: FlatFile)}
   {@const collapsed = shouldCollapse(item.file, item.key)}
   {@const viewed = viewedFiles.has(item.key)}
+  {@const isUserCollapsed = userCollapsed.has(item.key)}
   <section
     class="file-card"
     class:viewed
     id={"diff-file-" + cssEscape(item.key)}
   >
-    <header class="file-card-head">
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <header
+      class="file-card-head"
+      role="button"
+      tabindex="0"
+      onclick={() => toggleUserCollapsed(item.key)}
+      onkeydown={(e: KeyboardEvent) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggleUserCollapsed(item.key);
+        }
+      }}
+    >
       <div class="head-left">
-        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-        <label class="select-cb" onclick={(e: MouseEvent) => e.stopPropagation()} onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
-          <input
-            type="checkbox"
-            checked={selectedFiles.has(item.key)}
-            onchange={() => toggleFile(item.key)}
-          />
-        </label>
+        <span class="material-symbols-outlined chevron" class:rotated={!isUserCollapsed}>
+          chevron_right
+        </span>
         <span class="status-dot status-{item.file.changeType}" title={item.file.changeType}>
           {statusLetter(item.file.changeType)}
         </span>
@@ -460,7 +450,8 @@
         </span>
       </div>
       <div class="head-right">
-        <label class="viewed-toggle">
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+        <label class="viewed-toggle" onclick={(e: MouseEvent) => e.stopPropagation()}>
           <input type="checkbox" checked={viewed} onchange={() => toggleViewed(item.key)} />
           <span>Viewed</span>
         </label>
@@ -658,24 +649,6 @@
   .mode-btn :global(.material-symbols-outlined) { font-size: 0.85rem; }
   .mode-btn:hover { background: var(--surface-container-highest); color: var(--on-surface); }
   .mode-btn.active { background: var(--surface-container-highest); color: var(--on-surface); font-weight: 600; }
-
-  .select-all-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 3px 10px 3px 6px;
-    background: var(--surface-container-high);
-    border: 1px solid var(--outline-variant);
-    border-radius: 6px;
-    color: var(--on-surface-variant);
-    font-family: var(--font-body);
-    font-size: 11px;
-    cursor: pointer;
-    user-select: none;
-    transition: background 0.15s, color 0.15s;
-  }
-  .select-all-btn :global(.material-symbols-outlined) { font-size: 0.95rem; }
-  .select-all-btn:hover { background: var(--surface-container-highest); color: var(--on-surface); }
 
   .copy-all-btn {
     display: inline-flex;
@@ -892,8 +865,7 @@
     border-radius: 8px;
     background: var(--surface-container-low);
     overflow: hidden;
-    content-visibility: auto;
-    contain-intrinsic-size: auto none;
+    flex-shrink: 0;
   }
   .file-card.viewed { opacity: 0.6; }
 
@@ -905,6 +877,16 @@
     padding: 6px 10px;
     background: var(--surface-container-high);
     border-bottom: 1px solid var(--outline-variant);
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .file-card-head:hover {
+    background: var(--surface-container-highest);
+  }
+  .file-card-head:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
   }
   .head-left {
     display: flex;
@@ -919,8 +901,15 @@
     gap: 8px;
     flex-shrink: 0;
   }
-  .select-cb { display: inline-flex; align-items: center; cursor: pointer; }
-  .select-cb input { width: 13px; height: 13px; accent-color: var(--primary); margin: 0; cursor: pointer; }
+  .chevron {
+    font-size: 1rem !important;
+    color: var(--on-surface-variant);
+    transition: transform 0.15s ease;
+    flex-shrink: 0;
+  }
+  .chevron.rotated {
+    transform: rotate(90deg);
+  }
 
   .file-path {
     font-family: var(--font-mono);

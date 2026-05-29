@@ -1,5 +1,5 @@
 import { switchToTab, cycleTab } from "./stores/terminal";
-import { togglePanel, setSection } from "./stores/panel";
+import { togglePanel } from "./stores/panel";
 import { cycleWorkspace } from "./stores/workspace";
 import { openFile } from "./file-open";
 import { saveActiveFile } from "./file-save";
@@ -43,27 +43,6 @@ export function handleGlobalKeydown(e: KeyboardEvent): boolean {
   if (e.ctrlKey && e.shiftKey && e.key === "\\") {
     e.preventDefault();
     togglePanel();
-    return true;
-  }
-
-  // Ctrl+Shift+D: show diff
-  if (e.ctrlKey && e.shiftKey && e.key === "D") {
-    e.preventDefault();
-    setSection("diff");
-    return true;
-  }
-
-  // Ctrl+Shift+S: show summary
-  if (e.ctrlKey && e.shiftKey && e.key === "S") {
-    e.preventDefault();
-    setSection("summary");
-    return true;
-  }
-
-  // Ctrl+Shift+F: show flow
-  if (e.ctrlKey && e.shiftKey && e.key === "F") {
-    e.preventDefault();
-    setSection("flow");
     return true;
   }
 

@@ -4,7 +4,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel, getPanelData } from "./ipc";
 import { setTabTitle, activeTabId, setTabNeedsInput, setTabReady, tabs } from "./stores/terminal";
-import { panelData, analysisStatus, analysisError } from "./stores/panel";
+import { panelData } from "./stores/panel";
 import type { PanelData } from "../types/panel";
 import { updateSessionLabelByTabId } from "./stores/workspace";
 import { get } from "svelte/store";
@@ -203,6 +203,13 @@ export class TerminalSession {
       );
       log.info("terminal", `spawnPty success: ptyId=${this.ptyId}`);
       onPtyReady(this.ptyId);
+      // Seed cwd from the spawn arg so the diff panel populates without
+      // waiting for OSC 7 (not all shells emit it). OSC 7 will still
+      // overwrite this when the user `cd`s.
+      if (this.initialCwd && !this.currentCwd) {
+        this.currentCwd = this.initialCwd;
+        this.scheduleRefresh(this.initialCwd);
+      }
     } catch (e) {
       log.error("terminal", `spawnPty failed for tab=${this.tabId}`, e);
       showToast(`Failed to spawn terminal: ${e}`);
@@ -256,24 +263,6 @@ export class TerminalSession {
       try {
         const data = await refreshPanel(this.tabId, cwd);
         if (get(activeTabId) !== this.tabId) return;
-
-        // Preserve summary/flow from async Claude analysis if the refresh
-        // returned without them (they arrive later via the file watcher).
-        // Only merge if the diff content matches (not just CWD) to prevent
-        // cross-tab pollution when multiple tabs share the same repo.
-        const existing = get(panelData);
-        if (data && existing && data.diff?.raw && data.diff.raw === existing.diff?.raw) {
-          if (!data.summary && existing.summary) data.summary = existing.summary;
-          if (!data.flow && existing.flow) data.flow = existing.flow;
-        }
-
-        // Reset analysis status when context changes (new CWD or new diff)
-        const diffChanged = !existing || existing.cwd !== data?.cwd
-          || existing.diff?.raw !== data?.diff?.raw;
-        if (!data?.summary && diffChanged) {
-          analysisStatus.set("idle");
-          analysisError.set(null);
-        }
 
         if (this.panelChanged(data)) {
           this.updatePanelFingerprint(data);

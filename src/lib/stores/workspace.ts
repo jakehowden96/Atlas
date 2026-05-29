@@ -40,6 +40,28 @@ export const workspaces = writable<Workspace[]>([]);
 export const activeWorkspacePath = writable("");
 export const activeSessionId = writable("");
 
+export interface DiffStats {
+  filesChanged: number;
+  linesAdded: number;
+  linesRemoved: number;
+}
+
+/**
+ * In-memory per-session diff stats for sidebar badges.
+ * Keyed by terminalTabId (matches the session_id used by onPanelUpdate).
+ * Not persisted — recomputed on next file change.
+ */
+export const sessionDiffStats = writable<Map<string, DiffStats>>(new Map());
+
+export function setSessionDiffStats(sessionId: string, stats: DiffStats | null) {
+  sessionDiffStats.update((m) => {
+    const next = new Map(m);
+    if (stats === null) next.delete(sessionId);
+    else next.set(sessionId, stats);
+    return next;
+  });
+}
+
 let dirEnsured = false;
 async function ensureDir() {
   if (dirEnsured) return;

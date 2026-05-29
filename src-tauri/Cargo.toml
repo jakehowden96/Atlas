@@ -20,11 +20,7 @@ notify = "8.2.0"
 uuid = { version = "1.23.0", features = ["v4"] }
 dirs = "6.0.0"
 tokio = { version = "1.50.0", features = ["sync", "rt", "rt-multi-thread", "macros"] }
-reqwest = { version = "0.12.28", features = ["json", "stream"] }
-tokio-util = { version = "0.7.18", features = ["io"] }
-futures-util = "0.3.32"
 log = "0.4.29"
-regex = "1"
 fern = { version = "0.7", features = ["date-based"] }
 chrono = "0.4"
 tauri-plugin-dialog = "2.6.0"

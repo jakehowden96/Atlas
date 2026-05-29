@@ -12,8 +12,6 @@ pub struct PanelData {
     pub diff: Option<DiffData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<String>,
-    pub summary: Option<SummaryData>,
-    pub flow: Option<FlowData>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,44 +42,6 @@ pub struct ProjectDiff {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SummaryData {
-    pub intent: String,
-    pub approach: String,
-    pub impact: String,
-    #[serde(default)]
-    pub concerns: Vec<Concern>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub truncated: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Concern {
-    pub severity: String,
-    pub description: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub file: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub line: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FlowData {
-    pub edges: Vec<FlowEdge>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub changed_nodes: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FlowEdge {
-    pub from: String,
-    pub to: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub edge_type: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitStatus {
     pub has_unstaged: bool,
     pub has_staged: bool,
@@ -107,14 +67,6 @@ pub struct BranchInfo {
 pub struct PanelUpdateEvent {
     pub session_id: String,
     pub data: PanelData,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AnalysisStatusEvent {
-    pub session_id: String,
-    pub status: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

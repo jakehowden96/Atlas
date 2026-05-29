@@ -1,7 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
   import { settingsOpen } from "../../stores/settings";
-  import { WORKSPACE_COLORS } from "../../stores/workspace";
+  import { sessionDiffStats, type DiffStats } from "../../stores/workspace";
+  import WorkspaceQuickSwitcher from "./WorkspaceQuickSwitcher.svelte";
 
   const dispatch = createEventDispatcher<{
     newSession: { workspacePath: string };
@@ -46,71 +47,41 @@
   }
 
   let filterText = $state("");
-  let expandedPaths = $state<Set<string>>(new Set());
-  let selectedPath = $state("");
-  let colorPickerPath = $state<string | null>(null);
+  let quickSwitcherOpen = $state(false);
 
-  function toggleColorPicker(e: Event, path: string) {
-    e.stopPropagation();
-    colorPickerPath = colorPickerPath === path ? null : path;
+  // Flatten to one entry per session, carrying workspace metadata for the row.
+  interface FlatRow {
+    workspacePath: string;
+    workspaceName: string;
+    workspaceColor: string;
+    session: Session;
   }
 
-  function pickColor(e: Event, workspacePath: string, color: string) {
-    e.stopPropagation();
-    dispatch("setWorkspaceColor", { workspacePath, color });
-    colorPickerPath = null;
-  }
-
-  function handleWindowClick() {
-    if (colorPickerPath) colorPickerPath = null;
-  }
-
-  // Sync selected path from prop when it changes externally
-  $effect(() => {
-    if (activeWorkspacePath && activeWorkspacePath !== selectedPath) {
-      selectedPath = activeWorkspacePath;
-      // Auto-expand if it has sessions
-      const ws = workspaces.find((w) => w.path === activeWorkspacePath);
-      if (ws && ws.sessions.length > 0 && !expandedPaths.has(activeWorkspacePath)) {
-        expandedPaths = new Set([...expandedPaths, activeWorkspacePath]);
+  let flatRows = $derived.by<FlatRow[]>(() => {
+    const rows: FlatRow[] = [];
+    for (const ws of workspaces) {
+      for (const s of ws.sessions) {
+        rows.push({
+          workspacePath: ws.path,
+          workspaceName: ws.name,
+          workspaceColor: ws.color ?? "#888",
+          session: s,
+        });
       }
     }
+    return rows;
   });
 
-  function toggleExpand(path: string) {
-    const next = new Set(expandedPaths);
-    if (next.has(path)) {
-      next.delete(path);
-    } else {
-      next.add(path);
-    }
-    expandedPaths = next;
-  }
-
-  function selectWorkspace(path: string) {
-    selectedPath = path;
-    dispatch("selectWorkspace", { workspacePath: path });
-  }
-
-  function handleWorkspaceClick(workspace: Workspace) {
-    selectWorkspace(workspace.path);
-    // Toggle expand if there are sessions to show
-    if (workspace.sessions.length > 0) {
-      toggleExpand(workspace.path);
-    }
-  }
-
-  function handleArrowClick(e: Event, path: string) {
-    e.stopPropagation();
-    toggleExpand(path);
-  }
-
-  const filteredWorkspaces = $derived(
+  let filteredRows = $derived(
     filterText
-      ? workspaces.filter((w) =>
-          w.name.toLowerCase().includes(filterText.toLowerCase()),
-        )
-      : workspaces,
+      ? flatRows.filter((r) => {
+          const needle = filterText.toLowerCase();
+          return (
+            r.workspaceName.toLowerCase().includes(needle) ||
+            r.session.label.toLowerCase().includes(needle)
+          );
+        })
+      : flatRows,
   );
 
   function sessionIcon(session: Session): string {
@@ -126,9 +97,12 @@
   function sessionIconFill(session: Session): number {
     return isSessionOpen(session) ? 1 : 0;
   }
-</script>
 
-<svelte:window onclick={handleWindowClick} />
+  function getStats(sessionId: string | null): DiffStats | undefined {
+    if (!sessionId) return undefined;
+    return $sessionDiffStats.get(sessionId);
+  }
+</script>
 
 <aside class="agent-manager">
   <div class="header">
@@ -137,171 +111,137 @@
       <input
         class="filter-input"
         type="text"
-        placeholder="Filter workspaces..."
+        placeholder="Filter sessions..."
         bind:value={filterText}
       />
     </div>
   </div>
 
-  <nav class="workspace-tree">
-    <div class="tree-header">
-      <span class="tree-label">Workspaces</span>
-      <div class="tree-header-actions">
-        <button
-          class="settings-btn"
-          title="Open terminal"
-          onclick={() => dispatch("newTerminal")}
-        >
-          <span class="material-symbols-outlined">terminal</span>
-        </button>
-        <button
-          class="settings-btn"
-          title="Settings"
-          onclick={() => settingsOpen.set(true)}
-        >
-          <span class="material-symbols-outlined">settings</span>
-        </button>
-        <button
-          class="add-workspace-btn"
-          title="Add workspace folder"
-          onclick={() => dispatch("addWorkspace")}
-        >
-          <span class="material-symbols-outlined">create_new_folder</span>
-        </button>
-      </div>
+  <div class="list-header">
+    <span class="list-label">Sessions</span>
+    <div class="list-header-actions">
+      <button
+        class="hdr-btn"
+        title="Open terminal"
+        onclick={() => dispatch("newTerminal")}
+      >
+        <span class="material-symbols-outlined">terminal</span>
+      </button>
+      <button
+        class="hdr-btn"
+        title="Settings"
+        onclick={() => settingsOpen.set(true)}
+      >
+        <span class="material-symbols-outlined">settings</span>
+      </button>
+      <button
+        class="hdr-btn"
+        title="New session"
+        onclick={() => (quickSwitcherOpen = true)}
+      >
+        <span class="material-symbols-outlined">add</span>
+      </button>
     </div>
+  </div>
 
-    {#each filteredWorkspaces as workspace (workspace.path)}
-      {@const hasSessions = workspace.sessions.length > 0}
-      {@const isExpanded = hasSessions && expandedPaths.has(workspace.path)}
-      {@const isSelected = workspace.path === selectedPath}
-      <div class="workspace-group">
-        <div class="workspace-row" class:selected={isSelected}>
-          {#if hasSessions}
-            <button
-              class="arrow-btn"
-              onclick={(e) => handleArrowClick(e, workspace.path)}
-            >
-              <span class="material-symbols-outlined arrow-icon">
-                {isExpanded ? "keyboard_arrow_down" : "keyboard_arrow_right"}
-              </span>
-            </button>
-          {/if}
-          <button
-            class="workspace-main"
-            class:no-arrow={!hasSessions}
-            onclick={() => handleWorkspaceClick(workspace)}
+  <nav class="session-list">
+    {#each filteredRows as row (row.session.id)}
+      {@const stats = getStats(row.session.terminalTabId)}
+      {@const isActive = row.session.id === activeSessionId}
+      <div
+        class="session-row"
+        class:active={isActive}
+        role="button"
+        tabindex="0"
+        title="{row.workspaceName} / {row.session.label}"
+        onclick={() => {
+          if (row.workspacePath !== activeWorkspacePath) {
+            dispatch("selectWorkspace", { workspacePath: row.workspacePath });
+          }
+          dispatch("selectSession", {
+            workspacePath: row.workspacePath,
+            sessionId: row.session.id,
+          });
+        }}
+        onkeydown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            dispatch("selectSession", {
+              workspacePath: row.workspacePath,
+              sessionId: row.session.id,
+            });
+          }
+        }}
+      >
+        <span class="ws-stripe" style="background: {row.workspaceColor}"></span>
+
+        {#if row.session.status === "starting"}
+          <span class="material-symbols-outlined session-spinner">progress_activity</span>
+        {:else}
+          <span
+            class="material-symbols-outlined session-status-icon"
+            style="color: {sessionIconColor(row.session)}; font-variation-settings: 'FILL' {sessionIconFill(row.session)}"
           >
-            <span class="material-symbols-outlined folder-icon" class:open={isExpanded}>
-              {isExpanded ? "folder_open" : "folder"}
-            </span>
-            <span class="workspace-name" class:selected={isSelected}>
-              {workspace.name}
-            </span>
-          </button>
-          <div class="color-picker-wrap">
-            <button
-              class="color-dot-btn"
-              title="Set workspace color"
-              onclick={(e) => toggleColorPicker(e, workspace.path)}
-            >
-              <span
-                class="ws-color-dot"
-                style="background: {workspace.color ?? WORKSPACE_COLORS[0]}"
-              ></span>
-            </button>
-            {#if colorPickerPath === workspace.path}
-              <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
-              <div class="color-dropdown" onclick={(e) => e.stopPropagation()}>
-                {#each WORKSPACE_COLORS as color (color)}
-                  <button
-                    class="color-swatch"
-                    class:active={workspace.color === color}
-                    style="background: {color}"
-                    title={color}
-                    onclick={(e) => pickColor(e, workspace.path, color)}
-                  ></button>
-                {/each}
-              </div>
-            {/if}
-          </div>
-          <button
-            class="new-session-inline"
-            title="New session"
-            onclick={() => dispatch("newSession", { workspacePath: workspace.path })}
-          >
-            <span class="material-symbols-outlined">add</span>
-          </button>
-          <button
-            class="delete-workspace-btn"
-            title="Remove workspace"
-            onclick={(e) => {
-              e.stopPropagation();
-              dispatch("deleteWorkspace", { workspacePath: workspace.path });
-            }}
-          >
-            <span class="material-symbols-outlined">close</span>
-          </button>
+            {sessionIcon(row.session)}
+          </span>
+        {/if}
+
+        <div class="row-label">
+          <span class="row-ws">{row.workspaceName}</span>
+          <span class="row-sep">/</span>
+          <span class="row-session" class:open={isSessionOpen(row.session)}>{row.session.label}</span>
         </div>
 
-        {#if isExpanded}
-          <div class="session-list">
-            {#each workspace.sessions as session (session.id)}
-              <div
-                class="session-row"
-                class:active={session.id === activeSessionId}
-                role="button"
-                tabindex="0"
-                onclick={() =>
-                  dispatch("selectSession", {
-                    workspacePath: workspace.path,
-                    sessionId: session.id,
-                  })}
-                onkeydown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    dispatch("selectSession", {
-                      workspacePath: workspace.path,
-                      sessionId: session.id,
-                    });
-                  }
-                }}
-              >
-                <div class="session-info">
-                  <span
-                    class="material-symbols-outlined session-status-icon"
-                    style="color: {sessionIconColor(session)}; font-variation-settings: 'FILL' {sessionIconFill(session)}"
-                  >
-                    {sessionIcon(session)}
-                  </span>
-                  <span class="session-label" class:session-open={isSessionOpen(session)}>{session.label}</span>
-                </div>
-                {#if session.status === "starting"}
-                  <span class="material-symbols-outlined session-spinner">progress_activity</span>
-                {:else}
-                  <span class="session-age">{session.age}</span>
-                {/if}
-                <button
-                  class="delete-session-btn"
-                  title="Delete session"
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    dispatch("deleteSession", {
-                      workspacePath: workspace.path,
-                      sessionId: session.id,
-                    });
-                  }}
-                >
-                  <span class="material-symbols-outlined">close</span>
-                </button>
-              </div>
-            {/each}
-          </div>
+        {#if stats}
+          <span class="diff-badge">
+            <span class="add">+{stats.linesAdded}</span>
+            <span class="rem">−{stats.linesRemoved}</span>
+          </span>
         {/if}
+
+        <button
+          class="close-btn"
+          title="Close session"
+          onclick={(e) => {
+            e.stopPropagation();
+            dispatch("deleteSession", {
+              workspacePath: row.workspacePath,
+              sessionId: row.session.id,
+            });
+          }}
+        >
+          <span class="material-symbols-outlined">close</span>
+        </button>
       </div>
     {/each}
+
+    {#if flatRows.length === 0}
+      <div class="empty-state">
+        <span class="material-symbols-outlined empty-icon">forum</span>
+        <span class="empty-text">No sessions yet</span>
+        <button class="empty-cta" onclick={() => (quickSwitcherOpen = true)}>
+          Start a session
+        </button>
+      </div>
+    {/if}
   </nav>
 </aside>
+
+<WorkspaceQuickSwitcher
+  bind:open={quickSwitcherOpen}
+  {workspaces}
+  on:pickWorkspace={(e) => {
+    quickSwitcherOpen = false;
+    dispatch("selectWorkspace", { workspacePath: e.detail.workspacePath });
+    dispatch("newSession", { workspacePath: e.detail.workspacePath });
+  }}
+  on:addWorkspace={() => {
+    quickSwitcherOpen = false;
+    dispatch("addWorkspace");
+  }}
+  on:setWorkspaceColor={(e) => dispatch("setWorkspaceColor", e.detail)}
+  on:deleteWorkspace={(e) => dispatch("deleteWorkspace", e.detail)}
+/>
 
 <style>
   .agent-manager {
@@ -316,22 +256,17 @@
     font-family: var(--font-body);
   }
 
-  /* ── Header ── */
   .header {
-    padding: 1.25rem 1.25rem 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.9rem;
+    padding: 0.75rem 0.6rem 0.4rem;
   }
 
-  /* ── Filter ── */
   .filter-wrap {
     position: relative;
   }
 
   .filter-icon {
     position: absolute;
-    left: 0.6rem;
+    left: 0.5rem;
     top: 50%;
     transform: translateY(-50%);
     font-size: 0.85rem !important;
@@ -343,349 +278,91 @@
     width: 100%;
     background: var(--surface-container-lowest);
     color: var(--on-surface);
-    font-size: 0.75rem;
+    font-size: 11px;
     font-family: var(--font-body);
     border: 1px solid color-mix(in srgb, var(--outline-variant) 30%, transparent);
-    border-radius: var(--radius);
-    padding: 0.5rem 0.75rem 0.5rem 2rem;
+    border-radius: var(--radius-sm);
+    padding: 0.4rem 0.5rem 0.4rem 1.8rem;
     outline: none;
     transition: border-color 0.15s;
   }
 
-  .filter-input::placeholder {
-    color: var(--on-surface-variant);
-    opacity: 0.5;
-  }
+  .filter-input::placeholder { color: var(--on-surface-variant); opacity: 0.5; }
+  .filter-input:focus { border-color: color-mix(in srgb, var(--primary) 50%, transparent); }
 
-  .filter-input:focus {
-    border-color: color-mix(in srgb, var(--primary) 50%, transparent);
-  }
-
-  /* ── Tree header with Add Workspace ── */
-  .tree-header {
+  .list-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 0.75rem;
-    margin-bottom: 0.4rem;
+    padding: 0.2rem 0.6rem 0.3rem;
   }
-
-  .tree-label {
-    font-size: 0.8rem;
+  .list-label {
+    font-size: 10px;
     font-family: var(--font-display);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--on-surface);
-    opacity: 0.7;
+    opacity: 0.65;
   }
-
-  .tree-header-actions {
+  .list-header-actions {
     display: flex;
     align-items: center;
     gap: 2px;
   }
-
-  .settings-btn,
-  .add-workspace-btn {
+  .hdr-btn {
     background: none;
     border: none;
     color: var(--on-surface-variant);
     cursor: pointer;
-    padding: 4px;
+    padding: 3px;
     border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
-    transition: color 0.15s;
+    transition: color 0.15s, background 0.15s;
   }
+  .hdr-btn:hover { color: var(--primary); background: var(--surface-container-high); }
+  .hdr-btn :global(.material-symbols-outlined) { font-size: 1rem; }
 
-  .settings-btn:hover,
-  .add-workspace-btn:hover {
-    color: var(--primary);
-  }
-
-  .settings-btn :global(.material-symbols-outlined),
-  .add-workspace-btn :global(.material-symbols-outlined) {
-    font-size: 1.15rem;
-  }
-
-  /* ── Workspace tree ── */
-  .workspace-tree {
+  .session-list {
     flex: 1;
     overflow-y: auto;
-    padding: 0.9rem 0.75rem;
+    padding: 0.2rem 0.3rem;
     display: flex;
     flex-direction: column;
-    gap: 2px;
-  }
-
-  .workspace-group {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .workspace-row {
-    display: flex;
-    align-items: center;
-    padding: 0.1rem 0.4rem 0.1rem 0.5rem;
-    border-radius: var(--radius);
-    transition: background 0.15s;
-  }
-
-  .workspace-row:hover {
-    background: var(--surface-container-high);
-  }
-
-  .workspace-row.selected {
-    background: color-mix(in srgb, var(--surface-container-high) 60%, transparent);
-  }
-
-  .arrow-btn {
-    background: none;
-    border: none;
-    color: var(--on-surface-variant);
-    cursor: pointer;
-    padding: 0.35rem 0;
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-  }
-
-  .arrow-icon {
-    font-size: 0.95rem !important;
-  }
-
-  .workspace-main {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex: 1;
-    min-width: 0;
-    background: none;
-    border: none;
-    color: var(--on-surface-variant);
-    font-size: 0.8rem;
-    font-family: var(--font-body);
-    cursor: pointer;
-    padding: 0.4rem 0.25rem;
-    text-align: left;
-  }
-
-  .workspace-main.no-arrow {
-    padding-left: 0.1rem;
-  }
-
-  .folder-icon {
-    font-size: 1.05rem !important;
-    flex-shrink: 0;
-  }
-
-  .folder-icon.open {
-    color: var(--primary);
-  }
-
-  .workspace-name {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .workspace-name.selected {
-    font-weight: 500;
-    color: var(--on-surface);
-  }
-
-  .new-session-inline {
-    background: none;
-    border: none;
-    color: var(--on-surface-variant);
-    cursor: pointer;
-    padding: 0.3rem;
-    border-radius: var(--radius-sm);
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-    opacity: 0;
-    transition: opacity 0.15s, color 0.15s;
-  }
-
-  .workspace-row:hover .new-session-inline {
-    opacity: 1;
-  }
-
-  .workspace-row.selected .new-session-inline {
-    opacity: 0.7;
-  }
-
-  .new-session-inline:hover {
-    color: var(--primary);
-    opacity: 1 !important;
-  }
-
-  .new-session-inline :global(.material-symbols-outlined) {
-    font-size: 1.1rem;
-  }
-
-  .delete-workspace-btn {
-    background: none;
-    border: none;
-    color: var(--on-surface-variant);
-    cursor: pointer;
-    padding: 0.3rem;
-    border-radius: var(--radius-sm);
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-    opacity: 0;
-    transition: opacity 0.15s, color 0.15s;
-  }
-
-  .workspace-row:hover .delete-workspace-btn {
-    opacity: 1;
-  }
-
-  .delete-workspace-btn:hover {
-    color: var(--error);
-  }
-
-  .delete-workspace-btn :global(.material-symbols-outlined) {
-    font-size: 0.85rem;
-  }
-
-  /* ── Color picker ── */
-  .color-picker-wrap {
-    position: relative;
-    flex-shrink: 0;
-  }
-
-  .color-dot-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0.3rem;
-    border-radius: var(--radius-sm);
-    display: flex;
-    align-items: center;
-    opacity: 0;
-    transition: opacity 0.15s;
-  }
-
-  .workspace-row:hover .color-dot-btn {
-    opacity: 1;
-  }
-
-  .ws-color-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-
-  .color-dropdown {
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 100;
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 4px;
-    padding: 6px;
-    background: var(--surface-container-highest);
-    border: 1px solid var(--outline-variant);
-    border-radius: var(--radius);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  }
-
-  .color-swatch {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    border: 2px solid transparent;
-    cursor: pointer;
-    transition: transform 0.1s, border-color 0.1s;
-    padding: 0;
-  }
-
-  .color-swatch:hover {
-    transform: scale(1.2);
-  }
-
-  .color-swatch.active {
-    border-color: var(--on-surface);
-  }
-
-  /* ── Session list ── */
-  .session-list {
-    margin-left: 2.25rem;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    border-left: 1px solid color-mix(in srgb, var(--outline-variant) 20%, transparent);
+    gap: 1px;
   }
 
   .session-row {
+    position: relative;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    padding: 0.4rem 0.5rem 0.4rem 1rem;
-    background: transparent;
-    border: none;
-    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    gap: 0.4rem;
+    padding: 0.3rem 0.4rem 0.3rem 0.65rem;
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    transition: background 0.15s;
-    text-align: left;
+    transition: background 0.12s;
+    min-height: 26px;
   }
+  .session-row:hover { background: color-mix(in srgb, var(--surface-container-high) 60%, transparent); }
+  .session-row.active { background: var(--surface-container-high); }
 
-  .session-row:hover {
-    background: color-mix(in srgb, var(--surface-container-high) 50%, transparent);
-  }
-
-  .session-row.active {
-    background: var(--surface-container-high);
-  }
-
-  .session-info {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    overflow: hidden;
-    min-width: 0;
+  .ws-stripe {
+    position: absolute;
+    left: 0;
+    top: 4px;
+    bottom: 4px;
+    width: 3px;
+    border-radius: 2px;
   }
 
   .session-status-icon {
-    font-size: 0.75rem !important;
+    font-size: 0.7rem !important;
     flex-shrink: 0;
-  }
-
-  .session-label {
-    font-size: 0.69rem;
-    color: var(--on-surface-variant);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .session-label.session-open {
-    color: var(--on-surface);
-  }
-
-  .session-age {
-    font-size: 0.55rem;
-    color: var(--on-surface-variant);
-    opacity: 0;
-    flex-shrink: 0;
-    transition: opacity 0.15s;
-  }
-
-  .session-row:hover .session-age {
-    opacity: 1;
   }
 
   .session-spinner {
-    font-size: 0.7rem;
+    font-size: 0.75rem !important;
     color: var(--primary);
     flex-shrink: 0;
     animation: spin 1s linear infinite;
@@ -696,12 +373,59 @@
     to { transform: rotate(360deg); }
   }
 
-  .delete-session-btn {
+  .row-label {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 3px;
+    overflow: hidden;
+  }
+  .row-ws {
+    font-size: 0.68rem;
+    color: var(--on-surface-variant);
+    white-space: nowrap;
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    max-width: 45%;
+  }
+  .row-sep {
+    color: var(--on-surface-variant);
+    opacity: 0.5;
+    font-size: 0.65rem;
+    flex-shrink: 0;
+  }
+  .row-session {
+    font-size: 0.68rem;
+    color: var(--on-surface-variant);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
+  }
+  .row-session.open { color: var(--on-surface); }
+
+  .diff-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    flex-shrink: 0;
+    opacity: 0.85;
+  }
+  .diff-badge .add { color: var(--secondary); }
+  .diff-badge .rem { color: var(--error); }
+
+  .close-btn {
     background: none;
     border: none;
     color: var(--on-surface-variant);
     cursor: pointer;
-    padding: 0.15rem;
+    padding: 2px;
     border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
@@ -709,17 +433,32 @@
     opacity: 0;
     transition: opacity 0.15s, color 0.15s;
   }
+  .session-row:hover .close-btn { opacity: 1; }
+  .close-btn:hover { color: var(--error); }
+  .close-btn :global(.material-symbols-outlined) { font-size: 0.85rem; }
 
-  .session-row:hover .delete-session-btn {
-    opacity: 1;
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 2rem 0.5rem;
+    color: var(--on-surface-variant);
+    text-align: center;
   }
-
-  .delete-session-btn:hover {
-    color: var(--error);
+  .empty-icon { font-size: 1.8rem !important; opacity: 0.4; }
+  .empty-text { font-size: 0.7rem; opacity: 0.65; }
+  .empty-cta {
+    margin-top: 0.4rem;
+    background: var(--surface-container-high);
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--radius-sm);
+    color: var(--on-surface);
+    font-family: var(--font-body);
+    font-size: 0.7rem;
+    padding: 0.35rem 0.7rem;
+    cursor: pointer;
+    transition: background 0.15s;
   }
-
-  .delete-session-btn :global(.material-symbols-outlined) {
-    font-size: 0.8rem;
-  }
-
+  .empty-cta:hover { background: var(--surface-container-highest); }
 </style>
