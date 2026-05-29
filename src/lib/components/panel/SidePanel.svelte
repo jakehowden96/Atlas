@@ -4,14 +4,11 @@
 </script>
 
 <div class="side-panel">
-  <div class="panel-chrome">
-    <div class="panel-spacer"></div>
-    <div class="panel-row">
-      <span class="panel-title">Diff</span>
-      <button class="panel-close-btn" onclick={togglePanel} title="Close Panel">
-        <span class="material-symbols-outlined">right_panel_close</span>
-      </button>
-    </div>
+  <div class="panel-header">
+    <span class="panel-title">Diff</span>
+    <button class="panel-close-btn" onclick={togglePanel} title="Close Panel">
+      <span class="material-symbols-outlined">right_panel_close</span>
+    </button>
   </div>
   <div class="panel-content">
     <DiffViewer data={$panelData?.diff} cwd={$panelData?.cwd ?? ''} />
@@ -26,37 +23,24 @@
     background: var(--surface-container-low);
   }
 
-  .panel-chrome {
+  .panel-header {
     display: flex;
-    flex-direction: column;
-    height: var(--chrome-height);
-    background: var(--surface-container-low);
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.2rem 0.25rem 0.3rem 0.6rem;
     flex-shrink: 0;
     user-select: none;
     -webkit-user-select: none;
   }
 
-  .panel-spacer {
-    flex: 1;
-  }
-
-  .panel-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    height: var(--tab-bar-height);
-    padding: 0 0.25rem 0 0.75rem;
-    flex-shrink: 0;
-  }
-
   .panel-title {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
     font-family: var(--font-display);
     color: var(--on-surface);
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    opacity: 0.85;
+    opacity: 0.65;
   }
 
   .panel-close-btn {

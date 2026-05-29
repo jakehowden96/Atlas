@@ -7,11 +7,6 @@ import { activeWorkspacePath } from "./workspace";
 export const tabs = writable<TabItem[]>([]);
 export const activeTabId = writable<string>("");
 
-/** Measured pixel height of the full terminal chrome (workspace bar + session tab bar). */
-export const chromeHeight = writable(0);
-/** Measured pixel height of the session tab bar row only. */
-export const tabBarHeight = writable(0);
-
 export const activeTab = derived([tabs, activeTabId], ([$tabs, $activeTabId]) =>
   $tabs.find((t) => t.id === $activeTabId),
 );
@@ -71,9 +66,9 @@ activeWorkspacePath.subscribe((path) => {
   }
 });
 
-export function addTab(tab: TabItem) {
+export function addTab(tab: TabItem, opts?: { activate?: boolean }) {
   tabs.update((t) => [...t, tab]);
-  activeTabId.set(tab.id);
+  if (opts?.activate !== false) activeTabId.set(tab.id);
 }
 
 /** Create a terminal tab pre-configured with a working directory. */
@@ -147,12 +142,18 @@ export function removeTab(id: string) {
 
   if (wasActive) {
     const remaining = get(tabs);
+    // Skip tabs that suppress the panel (e.g. pre-spawned PRs tab) when
+    // picking a fallback — those are singleton screens the user invokes
+    // explicitly, not natural fallbacks after closing a session.
+    const eligible = remaining.filter(
+      (t) => !(t.type === "terminal" && t.suppressPanel === true),
+    );
     // Prefer falling back to another tab in the same workspace
-    const sameWsTabs = remaining.filter((t) => getTabWorkspacePath(t) === removedWs);
+    const sameWsTabs = eligible.filter((t) => getTabWorkspacePath(t) === removedWs);
     if (sameWsTabs.length > 0) {
       activeTabId.set(sameWsTabs[sameWsTabs.length - 1].id);
-    } else if (remaining.length > 0) {
-      const fallback = remaining[remaining.length - 1];
+    } else if (eligible.length > 0) {
+      const fallback = eligible[eligible.length - 1];
       activeTabId.set(fallback.id);
       // Sync workspace to match the cross-workspace fallback tab
       const fallbackWs = getTabWorkspacePath(fallback);
