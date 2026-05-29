@@ -329,42 +329,48 @@
 
 <style>
   :global(:root) {
-    /* Surface hierarchy (tonal depth) */
-    --surface: #0a0e14;
-    --surface-container-lowest: #000000;
-    --surface-container-low: #0f141a;
-    --surface-container-high: #1b2028;
-    --surface-container-highest: #20262f;
-    --surface-bright: #262c36;
+    /* Everforest Hard Dark palette — canonical values
+       Contrast targets (against bg0 #272e33):
+         fg #d3c6aa  → 7.97:1  AAA  (default body, headings)
+         grey2       → 5.36:1  AA   (captions, hints)
+         primary     → 6.92:1  AAA  (links, accents)
+       Surface hierarchy (tonal depth) */
+    --surface: #272e33;              /* bg0 */
+    --surface-container-lowest: #1e2326; /* bg_dim */
+    --surface-container-low: #2e383c;  /* bg1 */
+    --surface-container: #374145;     /* bg2 */
+    --surface-container-high: #414b50; /* bg3 */
+    --surface-container-highest: #495156; /* bg4 */
+    --surface-bright: #4f5b58;       /* bg5 */
 
     /* Foreground */
-    --on-surface: #f1f3fc;
-    --on-surface-variant: #a8abb3;
+    --on-surface: #d3c6aa;           /* fg — AAA on bg0 */
+    --on-surface-variant: #9da9a0;   /* grey2 — AA on bg0 */
 
-    /* Outline */
-    --outline-variant: #44484f;
+    /* Outline — at least 3:1 against surface for non-text contrast */
+    --outline-variant: #7a8478;      /* grey0 — 3.66:1 on bg0 */
 
-    /* Primary */
-    --primary: #72b1ff;
-    --primary-container: #55a3fc;
-    --on-primary: #002f58;
-    --primary-dim: #4a8ad4;
+    /* Primary (blue) */
+    --primary: #7fbbb3;
+    --primary-container: #6ba89f;
+    --on-primary: #272e33;
+    --primary-dim: #5a948c;
 
-    /* Secondary */
-    --secondary: #97f999;
-    --secondary-container: #006e23;
+    /* Secondary (green) */
+    --secondary: #a7c080;
+    --secondary-container: #404d44; /* bg_green */
 
-    /* Error */
-    --error: #ff716c;
-    --error-container: #9f0519;
+    /* Error (red) */
+    --error: #e67e80;
+    --error-container: #4e3e43;     /* bg_red */
 
-    /* Tertiary */
-    --tertiary: #ff7167;
+    /* Tertiary (orange) */
+    --tertiary: #e69875;
 
     /* Named colors */
-    --yellow: #e8be7b;
-    --cyan: #63bcc6;
-    --amber: #FFA726;
+    --yellow: #dbbc7f;
+    --cyan: #83c092;
+    --amber: #e69875;
 
     /* Radius */
     --radius: 8px;
@@ -377,15 +383,54 @@
     --spacing-4: 0.9rem;
     --spacing-5: 1.1rem;
 
-    /* Additional surface */
-    --surface-container: #151a21;
-
     /* Typography */
     --font-display: "Space Grotesk Variable", "Space Grotesk", sans-serif;
     --font-body: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --font-mono: "JetBrains Mono Variable", "JetBrains Mono", "Fira Code", Menlo, monospace;
 
     font-size: 115%;
+  }
+
+  /* Everforest Hard Light — applied when the OS is in light mode.
+     Contrast targets (against bg0 #fffbef):
+       on-surface #3a464c → 10.3:1  AAA   (default body)
+       grey1     #939f91 → 3.28:1  large/icon only
+       primary   #3a94c5 → 3.91:1  AA-large + non-text
+       error     #f85552 → 3.69:1  non-text contrast
+     Hard light uses #fffbef (warm bg0); we slightly cool the fg vs the
+     Everforest grey scale so body text comfortably clears AAA. */
+  @media (prefers-color-scheme: light) {
+    :global(:root) {
+      --surface: #fffbef;              /* bg0 */
+      --surface-container-lowest: #f3ead3; /* bg_dim */
+      --surface-container-low: #f8f5e4;  /* bg1 */
+      --surface-container: #f2efdf;     /* bg2 */
+      --surface-container-high: #edeada; /* bg3 */
+      --surface-container-highest: #e6e2cc; /* bg4 */
+      --surface-bright: #bec5b2;        /* bg5 */
+
+      --on-surface: #3a464c;            /* darker than Everforest fg for AAA */
+      --on-surface-variant: #5c6a72;    /* Everforest fg — AA on bg0 */
+
+      --outline-variant: #939f91;       /* grey1 — 3.28:1 non-text */
+
+      --primary: #3a94c5;
+      --primary-container: #2b7faa;
+      --on-primary: #fffbef;
+      --primary-dim: #2f7ea6;
+
+      --secondary: #8da101;
+      --secondary-container: #e5e6c5;   /* bg_green */
+
+      --error: #f85552;
+      --error-container: #fbe3da;       /* bg_red */
+
+      --tertiary: #f57d26;
+
+      --yellow: #dfa000;
+      --cyan: #35a77c;
+      --amber: #f57d26;
+    }
   }
 
   /* Keep terminal at its own font size — xterm manages this internally */
@@ -398,7 +443,7 @@
     padding: 0;
     overflow: hidden;
     background: var(--surface);
-    color: var(--on-surface-variant);
+    color: var(--on-surface);
     font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

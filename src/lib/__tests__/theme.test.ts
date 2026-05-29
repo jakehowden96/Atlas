@@ -21,7 +21,8 @@ describe("theme", () => {
 describe("xtermTheme", () => {
   it("derives all colors from the shared palette", () => {
     expect(xtermTheme.background).toBe(theme.surface);
-    expect(xtermTheme.foreground).toBe(theme.onSurfaceVariant);
+    /* Terminal output sits at full AAA fg, not the muted variant */
+    expect(xtermTheme.foreground).toBe(theme.onSurface);
     expect(xtermTheme.red).toBe(theme.red);
     expect(xtermTheme.green).toBe(theme.green);
     expect(xtermTheme.blue).toBe(theme.blue);
