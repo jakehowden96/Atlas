@@ -111,17 +111,20 @@ async function persist() {
   }
 }
 
+// Everforest Hard accents (same hexes work for both dark and light modes).
+// Pink/teal use the bright/dim accent variants; lavender has no Everforest
+// equivalent, so the slot falls back to grey2 — distinct from every accent.
 export const WORKSPACE_COLORS = [
-  "#e6194B", // red
-  "#3cb44b", // green
-  "#ffe119", // yellow
-  "#4363d8", // blue
-  "#f58231", // orange
-  "#42d4f4", // cyan
-  "#f032e6", // magenta
-  "#fabed4", // pink
-  "#469990", // teal
-  "#dcbeff", // lavender
+  "#e67e80", // red
+  "#a7c080", // green
+  "#dbbc7f", // yellow
+  "#7fbbb3", // blue
+  "#e69875", // orange (tertiary)
+  "#83c092", // cyan (aqua)
+  "#d699b6", // magenta
+  "#e0a8c1", // pink (magenta bright)
+  "#5a948c", // teal (primary dim)
+  "#9da9a0", // lavender → grey2 fallback
 ];
 
 export function nextAvailableColor(existing: Workspace[]): string {

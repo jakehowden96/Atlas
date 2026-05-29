@@ -11,6 +11,10 @@ export interface TerminalTab {
   needsInput?: boolean;
   ready?: boolean;
   commandWrittenAt?: number;
+  /** Stable role marker for singleton terminal tabs (e.g. "prs"). */
+  role?: "prs";
+  /** When true, the right-side diff panel stays hidden while this tab is active. */
+  suppressPanel?: boolean;
 }
 
 export type FileLanguage =

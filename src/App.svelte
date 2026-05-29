@@ -8,7 +8,7 @@
   import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
   import { Terminal } from "@xterm/xterm";
   import { panelVisible, panelData } from "./lib/stores/panel";
-  import { tabs, activeTabId, addTab, removeTab, setTabNeedsInput, setTabReady, chromeHeight, tabBarHeight } from "./lib/stores/terminal";
+  import { tabs, activeTabId, activeTab, addTab, removeTab, setTabNeedsInput, setTabReady, chromeHeight, tabBarHeight } from "./lib/stores/terminal";
   import { onPanelUpdate, onClaudeNotification, ptyWrite, ptyKill } from "./lib/ipc";
   import { skipPermissions, enableNotifications, loadSettings } from "./lib/stores/settings";
   import { sendNotification, isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
@@ -48,12 +48,17 @@
   // Panel auto-hides when there are no tabs. When the first tab appears
   // we auto-open it. Beyond that the user owns visibility via togglePanel —
   // we don't reopen on every panelData update (that broke the close button).
+  // Tabs with suppressPanel (e.g. the PRs screen) force the panel closed
+  // while active and never trigger auto-open.
   let hadTabs = $state(false);
   $effect(() => {
     const hasTabs = $tabs.length > 0;
+    const suppress = $activeTab?.type === "terminal" && $activeTab.suppressPanel === true;
     if (!hasTabs) {
       panelVisible.set(false);
       hadTabs = false;
+    } else if (suppress) {
+      panelVisible.set(false);
     } else if (!hadTabs) {
       panelVisible.set(true);
       hadTabs = true;
@@ -101,7 +106,9 @@
     await loadSettings();
     unlisten = await onPanelUpdate((sessionId, data) => {
       if (sessionId === get(activeTabId)) {
-        panelData.set(data);
+        const active = get(tabs).find((t) => t.id === sessionId);
+        const suppress = active?.type === "terminal" && active.suppressPanel === true;
+        if (!suppress) panelData.set(data);
       }
       // Update diff badge for any session, not just the active one
       if (data.diff && (data.diff.files_changed > 0 || data.diff.lines_added > 0 || data.diff.lines_removed > 0)) {
@@ -235,6 +242,39 @@
       const terminal = new Terminal();
       const wsPath = get(activeWorkspacePath);
       addTab({ type: "terminal", id, title: "Terminal", ptyId: -1, terminal, cwd: wsPath || undefined });
+    }}
+    on:openPrs={() => {
+      // Singleton: focus the existing PRs tab if one is open.
+      const existing = get(tabs).find((t) => t.type === "terminal" && t.role === "prs");
+      if (existing) {
+        activeTabId.set(existing.id);
+        return;
+      }
+      const id = crypto.randomUUID();
+      const terminal = new Terminal();
+      addTab({
+        type: "terminal",
+        id,
+        title: "PRs",
+        ptyId: -1,
+        terminal,
+        role: "prs",
+        suppressPanel: true,
+      });
+      // Wait for the PTY to come up, then run `prs`.
+      let attempts = 0;
+      const poll = setInterval(() => {
+        attempts++;
+        const t = get(tabs).find((x) => x.id === id);
+        if (!t || attempts > 100) {
+          clearInterval(poll);
+          return;
+        }
+        if (t.type === "terminal" && t.ptyId >= 0) {
+          clearInterval(poll);
+          setTimeout(() => ptyWrite(t.ptyId, "prs\n"), 300);
+        }
+      }, 100);
     }}
     on:addWorkspace={async () => {
       const selected = await open({ directory: true, multiple: false, title: "Select workspace folder" });

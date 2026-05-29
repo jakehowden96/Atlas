@@ -13,6 +13,7 @@
     setWorkspaceColor: { workspacePath: string; color: string };
     addWorkspace: void;
     newTerminal: void;
+    openPrs: void;
   }>();
 
   interface Session {
@@ -129,10 +130,10 @@
       </button>
       <button
         class="hdr-btn"
-        title="Settings"
-        onclick={() => settingsOpen.set(true)}
+        title="Pull requests"
+        onclick={() => dispatch("openPrs")}
       >
-        <span class="material-symbols-outlined">settings</span>
+        <span class="material-symbols-outlined">account_tree</span>
       </button>
       <button
         class="hdr-btn"
@@ -175,43 +176,46 @@
       >
         <span class="ws-stripe" style="background: {row.workspaceColor}"></span>
 
-        {#if row.session.status === "starting"}
-          <span class="material-symbols-outlined session-spinner">progress_activity</span>
-        {:else}
-          <span
-            class="material-symbols-outlined session-status-icon"
-            style="color: {sessionIconColor(row.session)}; font-variation-settings: 'FILL' {sessionIconFill(row.session)}"
-          >
-            {sessionIcon(row.session)}
-          </span>
-        {/if}
+        <div class="row-content">
+          <div class="row-primary">
+            {#if row.session.status === "starting"}
+              <span class="material-symbols-outlined session-spinner">progress_activity</span>
+            {:else}
+              <span
+                class="material-symbols-outlined session-status-icon"
+                style="color: {sessionIconColor(row.session)}; font-variation-settings: 'FILL' {sessionIconFill(row.session)}"
+              >
+                {sessionIcon(row.session)}
+              </span>
+            {/if}
 
-        <div class="row-label">
-          <span class="row-ws">{row.workspaceName}</span>
-          <span class="row-sep">/</span>
-          <span class="row-session" class:open={isSessionOpen(row.session)}>{row.session.label}</span>
+            <span class="row-session" class:open={isSessionOpen(row.session)}>{row.session.label}</span>
+
+            <button
+              class="close-btn"
+              title="Close session"
+              onclick={(e) => {
+                e.stopPropagation();
+                dispatch("deleteSession", {
+                  workspacePath: row.workspacePath,
+                  sessionId: row.session.id,
+                });
+              }}
+            >
+              <span class="material-symbols-outlined">close</span>
+            </button>
+          </div>
+
+          <div class="row-secondary">
+            <span class="row-ws">{row.workspaceName}</span>
+            {#if stats}
+              <span class="diff-badge">
+                <span class="add">+{stats.linesAdded}</span>
+                <span class="rem">−{stats.linesRemoved}</span>
+              </span>
+            {/if}
+          </div>
         </div>
-
-        {#if stats}
-          <span class="diff-badge">
-            <span class="add">+{stats.linesAdded}</span>
-            <span class="rem">−{stats.linesRemoved}</span>
-          </span>
-        {/if}
-
-        <button
-          class="close-btn"
-          title="Close session"
-          onclick={(e) => {
-            e.stopPropagation();
-            dispatch("deleteSession", {
-              workspacePath: row.workspacePath,
-              sessionId: row.session.id,
-            });
-          }}
-        >
-          <span class="material-symbols-outlined">close</span>
-        </button>
       </div>
     {/each}
 
@@ -225,6 +229,17 @@
       </div>
     {/if}
   </nav>
+
+  <div class="footer">
+    <button
+      class="footer-btn"
+      title="Settings"
+      onclick={() => settingsOpen.set(true)}
+    >
+      <span class="material-symbols-outlined">settings</span>
+      <span class="footer-btn-label">Settings</span>
+    </button>
+  </div>
 </aside>
 
 <WorkspaceQuickSwitcher
@@ -336,13 +351,11 @@
   .session-row {
     position: relative;
     display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.3rem 0.4rem 0.3rem 0.65rem;
+    align-items: stretch;
+    padding: 0.4rem 0.4rem 0.4rem 0.65rem;
     border-radius: var(--radius-sm);
     cursor: pointer;
     transition: background 0.12s;
-    min-height: 26px;
   }
   .session-row:hover { background: color-mix(in srgb, var(--surface-container-high) 60%, transparent); }
   .session-row.active { background: var(--surface-container-high); }
@@ -350,10 +363,35 @@
   .ws-stripe {
     position: absolute;
     left: 0;
-    top: 4px;
-    bottom: 4px;
-    width: 3px;
-    border-radius: 2px;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    border-top-left-radius: var(--radius-sm);
+    border-bottom-left-radius: var(--radius-sm);
+  }
+
+  .row-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .row-primary {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+  }
+
+  .row-secondary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    padding-left: calc(0.7rem + 4px); /* align under session label past the status icon */
+    min-width: 0;
   }
 
   .session-status-icon {
@@ -373,40 +411,28 @@
     to { transform: rotate(360deg); }
   }
 
-  .row-label {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: baseline;
-    gap: 3px;
-    overflow: hidden;
-  }
-  .row-ws {
-    font-size: 0.68rem;
-    color: var(--on-surface-variant);
-    white-space: nowrap;
-    flex-shrink: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0;
-    max-width: 45%;
-  }
-  .row-sep {
-    color: var(--on-surface-variant);
-    opacity: 0.5;
-    font-size: 0.65rem;
-    flex-shrink: 0;
-  }
   .row-session {
-    font-size: 0.68rem;
+    font-size: 0.75rem;
     color: var(--on-surface-variant);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     flex: 1;
     min-width: 0;
+    font-weight: 500;
   }
   .row-session.open { color: var(--on-surface); }
+
+  .row-ws {
+    font-size: 0.65rem;
+    color: var(--on-surface-variant);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex: 1;
+    opacity: 0.75;
+  }
 
   .diff-badge {
     display: inline-flex;
@@ -461,4 +487,37 @@
     transition: background 0.15s;
   }
   .empty-cta:hover { background: var(--surface-container-highest); }
+
+  .footer {
+    flex-shrink: 0;
+    display: flex;
+    align-items: stretch;
+    padding: 0.5rem 0.6rem 0.75rem;
+    margin-top: 0.5rem;
+    border-top: 1px solid color-mix(in srgb, var(--outline-variant) 25%, transparent);
+  }
+
+  .footer-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: none;
+    border: none;
+    color: var(--on-surface-variant);
+    cursor: pointer;
+    padding: 0.45rem 0.55rem;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-body);
+    font-size: 0.75rem;
+    transition: color 0.15s, background 0.15s;
+  }
+  .footer-btn:hover {
+    color: var(--on-surface);
+    background: color-mix(in srgb, var(--surface-container-high) 60%, transparent);
+  }
+  .footer-btn :global(.material-symbols-outlined) { font-size: 1rem; }
+  .footer-btn-label {
+    font-weight: 500;
+  }
 </style>
