@@ -7,7 +7,6 @@ export interface WorkspaceSession {
   label: string;
   status: "complete" | "running" | "error" | "idle" | "starting";
   age: string;
-  claudeSessionId: string | null;
   terminalTabId: string | null;
   createdAt: string;
 }
@@ -171,7 +170,6 @@ export async function addSession(
     label: formatLabel(label),
     status: "starting",
     age: "",
-    claudeSessionId: null,
     terminalTabId,
     createdAt: new Date().toISOString(),
   };
@@ -185,21 +183,6 @@ export async function addSession(
   activeSessionId.set(session.id);
   await persist();
   return session;
-}
-
-export async function setClaudeSessionId(
-  sessionId: string,
-  claudeSessionId: string,
-) {
-  workspaces.update((ws) =>
-    ws.map((w) => ({
-      ...w,
-      sessions: w.sessions.map((s) =>
-        s.id === sessionId ? { ...s, claudeSessionId } : s,
-      ),
-    })),
-  );
-  await persist();
 }
 
 export async function resumeSession(

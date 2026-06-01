@@ -170,7 +170,7 @@ describe("workspace store", () => {
             name: "a",
             color: "#fff",
             sessions: [
-              { id: "s1", label: "S1", status: "running", age: "", claudeSessionId: null, terminalTabId: null, createdAt: "" },
+              { id: "s1", label: "S1", status: "running", age: "", terminalTabId: null, createdAt: "" },
             ],
           },
         ]),

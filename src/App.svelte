@@ -19,7 +19,6 @@
     loadWorkspaces,
     addWorkspace as storeAddWorkspace,
     addSession,
-    setClaudeSessionId,
     removeSession,
     removeWorkspace,
     resumeSession,
@@ -210,27 +209,20 @@
   }
 
   /**
-   * Spawn a terminal tab in the given workspace directory, run `claude`
-   * (or `claude --resume <id>` for existing sessions).
-   * New sessions get a pre-generated UUID passed via `--session-id`.
+   * Spawn a terminal tab in the given workspace directory and run `claude`.
    */
-  async function spawnClaudeSession(workspacePath: string, resumeId?: string, existingSessionId?: string) {
+  async function spawnClaudeSession(workspacePath: string, existingSessionId?: string) {
     const tabId = crypto.randomUUID();
     const terminal = new Terminal();
     let session: { id: string };
-    let claudeSessionId: string | undefined;
 
     if (existingSessionId) {
       await resumeSession(existingSessionId, tabId);
       session = { id: existingSessionId };
     } else {
-      // Generate a Claude session ID upfront so we can pass it via --session-id
-      // and store it immediately — no need to capture it from terminal output.
-      claudeSessionId = crypto.randomUUID();
       const wsName = get(workspaces).find((w) => w.path === workspacePath)?.name
         ?? stripBundleExtension(workspacePath.split("/").filter(Boolean).pop() ?? "New session");
       session = await addSession(workspacePath, wsName, tabId);
-      await setClaudeSessionId(session.id, claudeSessionId);
     }
 
     addTab({ type: "terminal", id: tabId, title: "", ptyId: -1, terminal, cwd: workspacePath, ready: false });
@@ -251,12 +243,7 @@
       if (tab.type === "terminal" && tab.ptyId >= 0) {
         clearInterval(poll);
         const skip = get(skipPermissions) ? " --dangerously-skip-permissions" : "";
-        let cmd: string;
-        if (resumeId) {
-          cmd = `claude --resume ${resumeId}${skip}\n`;
-        } else {
-          cmd = `claude --session-id ${claudeSessionId}${skip}\n`;
-        }
+        const cmd = `claude${skip}\n`;
         // Small delay to let the shell prompt render
         setTimeout(() => {
           ptyWrite(tab.ptyId, cmd);
@@ -334,11 +321,10 @@
         }
       }
 
-      // Spawn/resume if not actively running (or running with a missing tab)
+      // Spawn a fresh Claude session if not actively running (or running with a missing tab)
       if (session.status !== "running" || !get(tabs).find((t) => t.id === session.terminalTabId)) {
         spawningSessionIds.add(session.id);
-        const resumeId = session.claudeSessionId ?? undefined;
-        spawnClaudeSession(e.detail.workspacePath, resumeId, session.id)
+        spawnClaudeSession(e.detail.workspacePath, session.id)
           .finally(() => spawningSessionIds.delete(session.id));
       }
     }}
