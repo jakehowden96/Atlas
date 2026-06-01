@@ -281,6 +281,7 @@
   }
 </script>
 
+<div class="titlebar" data-tauri-drag-region></div>
 <div class="app">
   <div class="sidebar" style="width: {sidebarWidth}px">
   <AgentManager
@@ -554,10 +555,24 @@
     background: var(--outline-variant);
   }
 
+  .titlebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 28px;
+    z-index: 1000;
+    background: var(--surface);
+    border-bottom: 1px solid var(--outline-variant);
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
   .app {
     display: flex;
-    height: 100vh;
+    height: calc(100vh - 28px);
     width: 100vw;
+    margin-top: 28px;
   }
 
   .sidebar {
