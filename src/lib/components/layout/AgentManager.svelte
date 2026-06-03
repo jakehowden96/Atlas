@@ -13,8 +13,16 @@
     setWorkspaceColor: { workspacePath: string; color: string };
     addWorkspace: void;
     newTerminal: void;
+    selectTerminal: { tabId: string };
+    closeTerminal: { tabId: string };
     openPrs: void;
   }>();
+
+  interface TerminalRow {
+    id: string;
+    title: string;
+    cwd?: string;
+  }
 
   interface Session {
     id: string;
@@ -36,12 +44,16 @@
     workspaces = [] as Workspace[],
     activeWorkspacePath = "",
     activeSessionId = "",
+    activeTabId = "",
     openTabIds = new Set<string>(),
+    terminalRows = [] as TerminalRow[],
   }: {
     workspaces?: Workspace[];
     activeWorkspacePath?: string;
     activeSessionId?: string;
+    activeTabId?: string;
     openTabIds?: Set<string>;
+    terminalRows?: TerminalRow[];
   } = $props();
 
   function isSessionOpen(session: Session): boolean {
@@ -118,6 +130,44 @@
       />
     </div>
   </div>
+
+  {#if terminalRows.length > 0}
+    <div class="list-header subtle">
+      <span class="list-label">Terminals</span>
+    </div>
+    <div class="terminal-list">
+      {#each terminalRows as t (t.id)}
+        {@const isActive = t.id === activeTabId}
+        <div
+          class="terminal-row"
+          class:active={isActive}
+          role="button"
+          tabindex="0"
+          title={t.cwd ?? t.title}
+          onclick={() => dispatch("selectTerminal", { tabId: t.id })}
+          onkeydown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              dispatch("selectTerminal", { tabId: t.id });
+            }
+          }}
+        >
+          <span class="material-symbols-outlined term-icon">terminal</span>
+          <span class="term-label">{t.title || "Terminal"}</span>
+          <button
+            class="close-btn"
+            title="Close terminal"
+            onclick={(e) => {
+              e.stopPropagation();
+              dispatch("closeTerminal", { tabId: t.id });
+            }}
+          >
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+      {/each}
+    </div>
+  {/if}
 
   <div class="list-header">
     <span class="list-label">Sessions</span>
@@ -312,6 +362,53 @@
     justify-content: space-between;
     padding: 0.2rem 0.6rem 0.3rem;
   }
+  .list-header.subtle {
+    margin-top: 0.2rem;
+  }
+
+  .terminal-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 0 0.3rem 0.3rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--outline-variant) 25%, transparent);
+    margin-bottom: 0.2rem;
+  }
+  .terminal-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.5rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: var(--on-surface-variant);
+    transition: background 0.12s, color 0.12s;
+  }
+  .terminal-row:hover {
+    background: color-mix(in srgb, var(--surface-container-high) 60%, transparent);
+    color: var(--on-surface);
+  }
+  .terminal-row.active {
+    background: var(--surface-container-high);
+    color: var(--on-surface);
+  }
+  .term-icon {
+    font-size: 0.85rem !important;
+    flex-shrink: 0;
+    color: var(--on-surface-variant);
+  }
+  .terminal-row.active .term-icon { color: var(--primary); }
+  .term-label {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.72rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .terminal-row .close-btn { opacity: 0; }
+  .terminal-row:hover .close-btn { opacity: 1; }
   .list-label {
     font-size: 10px;
     font-family: var(--font-display);
