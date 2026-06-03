@@ -44,6 +44,27 @@
 
   let openTabIds = $derived(new Set($tabs.map(t => t.id)));
 
+  // Generic terminal tabs the user has opened via the terminal button —
+  // anything of type "terminal" that isn't tied to a workspace session and
+  // isn't a singleton screen (PRs). These get a dedicated sidebar list so
+  // the user can return to them after switching away.
+  let sessionTabIds = $derived(
+    new Set(
+      $workspaces.flatMap((w) =>
+        w.sessions.map((s) => s.terminalTabId).filter((id): id is string => !!id),
+      ),
+    ),
+  );
+  let terminalRows = $derived(
+    $tabs
+      .filter((t) => t.type === "terminal" && !t.role && !sessionTabIds.has(t.id))
+      .map((t) => ({
+        id: t.id,
+        title: t.type === "terminal" ? t.title : "",
+        cwd: t.type === "terminal" ? t.cwd : undefined,
+      })),
+  );
+
   // Panel auto-hides when there are no tabs. When the first tab appears
   // we auto-open it. Beyond that the user owns visibility via togglePanel —
   // we don't reopen on every panelData update (that broke the close button).
@@ -275,12 +296,24 @@
     workspaces={$workspaces}
     activeWorkspacePath={$activeWorkspacePath}
     activeSessionId={$activeSessionId}
+    activeTabId={$activeTabId}
     {openTabIds}
+    {terminalRows}
     on:newTerminal={() => {
       const id = crypto.randomUUID();
       const terminal = new Terminal();
       const wsPath = get(activeWorkspacePath);
       addTab({ type: "terminal", id, title: "Terminal", ptyId: -1, terminal, cwd: wsPath || undefined });
+    }}
+    on:selectTerminal={(e) => {
+      activeTabId.set(e.detail.tabId);
+    }}
+    on:closeTerminal={async (e) => {
+      const tab = get(tabs).find((t) => t.id === e.detail.tabId);
+      if (tab && tab.type === "terminal" && tab.ptyId >= 0) {
+        try { await ptyKill(tab.ptyId); } catch {}
+      }
+      removeTab(e.detail.tabId);
     }}
     on:openPrs={() => {
       // Toggle: if the PRs tab is already showing, return to the
