@@ -12,9 +12,11 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
 import {
   skipPermissions,
   enableNotifications,
+  watchedRepos,
   loadSettings,
   setSkipPermissions,
   setEnableNotifications,
+  setWatchedRepos,
 } from "../stores/settings";
 import { exists, readTextFile, writeTextFile, mkdir } from "@tauri-apps/plugin-fs";
 
@@ -23,6 +25,7 @@ describe("settings store", () => {
     // Reset to defaults
     skipPermissions.set(false);
     enableNotifications.set(true);
+    watchedRepos.set([]);
     vi.clearAllMocks();
   });
 
@@ -79,6 +82,37 @@ describe("settings store", () => {
       await setEnableNotifications(false);
       expect(get(enableNotifications)).toBe(false);
       expect(writeTextFile).toHaveBeenCalled();
+    });
+  });
+
+  describe("watchedRepos", () => {
+    it("loads watchedRepos from file", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify({ watchedRepos: ["owner/repo-a", "owner/repo-b"] }),
+      );
+      await loadSettings();
+      expect(get(watchedRepos)).toEqual(["owner/repo-a", "owner/repo-b"]);
+    });
+
+    it("ignores non-array watchedRepos in file", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify({ watchedRepos: "not-an-array" }),
+      );
+      await loadSettings();
+      expect(get(watchedRepos)).toEqual([]);
+    });
+
+    it("setWatchedRepos updates store and persists", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(mkdir).mockResolvedValue(undefined);
+      vi.mocked(writeTextFile).mockResolvedValue(undefined);
+      await setWatchedRepos(["owner/repo"]);
+      expect(get(watchedRepos)).toEqual(["owner/repo"]);
+      expect(writeTextFile).toHaveBeenCalled();
+      const [, body] = vi.mocked(writeTextFile).mock.calls[0];
+      expect(JSON.parse(body as string).watchedRepos).toEqual(["owner/repo"]);
     });
   });
 });

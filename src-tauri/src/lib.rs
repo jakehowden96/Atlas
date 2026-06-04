@@ -165,6 +165,8 @@ pub fn run() {
             commands::git::git_list_branches,
             commands::git::git_checkout_branch,
             commands::git::git_create_branch,
+            commands::prs::list_repo_prs,
+            commands::prs::open_url,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

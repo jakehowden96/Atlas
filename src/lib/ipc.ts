@@ -1,6 +1,7 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { PanelData, GitStatus, RepoInfo, BranchInfo } from "../types/panel";
+import type { RepoPrs } from "../types/prs";
 import { log } from "./logger";
 
 export async function ptySpawn(
@@ -133,6 +134,14 @@ export async function gitCheckoutBranch(cwd: string, branch: string): Promise<vo
 
 export async function gitCreateBranch(cwd: string, branch: string): Promise<void> {
   return invoke("git_create_branch", { cwd, branch });
+}
+
+export async function listRepoPrs(repos: string[]): Promise<RepoPrs[]> {
+  return invoke("list_repo_prs", { repos });
+}
+
+export async function openUrl(url: string): Promise<void> {
+  return invoke("open_url", { url });
 }
 
 export async function onPanelUpdate(

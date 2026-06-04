@@ -5,6 +5,7 @@ import { log } from "../logger";
 export const settingsOpen = writable(false);
 export const skipPermissions = writable(false);
 export const enableNotifications = writable(true);
+export const watchedRepos = writable<string[]>([]);
 
 const SETTINGS_DIR = ".atlas";
 const SETTINGS_FILE = ".atlas/settings.json";
@@ -12,6 +13,7 @@ const SETTINGS_FILE = ".atlas/settings.json";
 interface PersistedSettings {
   skipPermissions?: boolean;
   enableNotifications?: boolean;
+  watchedRepos?: string[];
 }
 
 async function ensureDir() {
@@ -31,6 +33,7 @@ export async function loadSettings() {
     const data = JSON.parse(raw) as PersistedSettings;
     if (data.skipPermissions) skipPermissions.set(true);
     if (data.enableNotifications === false) enableNotifications.set(false);
+    if (Array.isArray(data.watchedRepos)) watchedRepos.set(data.watchedRepos);
     log.info("settings", "settings loaded");
   } catch (e) {
     log.error("settings", "failed to load settings", e);
@@ -44,6 +47,7 @@ async function persistSettings() {
     const data: PersistedSettings = {
       skipPermissions: get(skipPermissions),
       enableNotifications: get(enableNotifications),
+      watchedRepos: get(watchedRepos),
     };
     await writeTextFile(SETTINGS_FILE, JSON.stringify(data, null, 2), {
       baseDir: BaseDirectory.Home,
@@ -61,6 +65,11 @@ export async function setSkipPermissions(value: boolean) {
 
 export async function setEnableNotifications(value: boolean) {
   enableNotifications.set(value);
+  await persistSettings();
+}
+
+export async function setWatchedRepos(repos: string[]) {
+  watchedRepos.set(repos);
   await persistSettings();
 }
 

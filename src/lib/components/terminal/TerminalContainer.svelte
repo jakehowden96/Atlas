@@ -2,6 +2,7 @@
   import { get } from "svelte/store";
   import TerminalTab from "./TerminalTab.svelte";
   import FileTabView from "./FileTabView.svelte";
+  import PrsView from "../panel/PrsView.svelte";
   import {
     tabs,
     activeTabId,
@@ -66,6 +67,10 @@
           {tab}
           visible={tab.id === $activeTabId}
         />
+      {:else if tab.type === "prs"}
+        <div class="screen-host" class:hidden={tab.id !== $activeTabId}>
+          <PrsView />
+        </div>
       {/if}
     {/each}
     {#if !$activeTabId}
@@ -91,6 +96,17 @@
     position: relative;
     overflow: hidden;
     background: var(--surface);
+  }
+
+  .screen-host {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+  }
+
+  .screen-host.hidden {
+    visibility: hidden;
+    pointer-events: none;
   }
 
   .empty-state {

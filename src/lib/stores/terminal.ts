@@ -142,12 +142,9 @@ export function removeTab(id: string) {
 
   if (wasActive) {
     const remaining = get(tabs);
-    // Skip tabs that suppress the panel (e.g. pre-spawned PRs tab) when
-    // picking a fallback — those are singleton screens the user invokes
-    // explicitly, not natural fallbacks after closing a session.
-    const eligible = remaining.filter(
-      (t) => !(t.type === "terminal" && t.suppressPanel === true),
-    );
+    // Skip singleton-screen tabs (PRs) when picking a fallback — those are
+    // explicit-invocation screens, not natural fallbacks after closing a session.
+    const eligible = remaining.filter((t) => t.type !== "prs");
     // Prefer falling back to another tab in the same workspace
     const sameWsTabs = eligible.filter((t) => getTabWorkspacePath(t) === removedWs);
     if (sameWsTabs.length > 0) {

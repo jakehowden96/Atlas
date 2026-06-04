@@ -9,7 +9,7 @@
   import { Terminal } from "@xterm/xterm";
   import { panelVisible, panelData } from "./lib/stores/panel";
   import { tabs, activeTabId, activeTab, addTab, removeTab, setTabNeedsInput, setTabReady } from "./lib/stores/terminal";
-  import { onPanelUpdate, onClaudeNotification, ptyWrite, ptyKill, ptyResize } from "./lib/ipc";
+  import { onPanelUpdate, onClaudeNotification, ptyWrite, ptyKill } from "./lib/ipc";
   import { skipPermissions, enableNotifications, loadSettings } from "./lib/stores/settings";
   import { sendNotification, isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
   import {
@@ -45,9 +45,9 @@
   let openTabIds = $derived(new Set($tabs.map(t => t.id)));
 
   // Generic terminal tabs the user has opened via the terminal button —
-  // anything of type "terminal" that isn't tied to a workspace session and
-  // isn't a singleton screen (PRs). These get a dedicated sidebar list so
-  // the user can return to them after switching away.
+  // anything of type "terminal" that isn't tied to a workspace session.
+  // These get a dedicated sidebar list so the user can return to them
+  // after switching away.
   let sessionTabIds = $derived(
     new Set(
       $workspaces.flatMap((w) =>
@@ -57,7 +57,7 @@
   );
   let terminalRows = $derived(
     $tabs
-      .filter((t) => t.type === "terminal" && !t.role && !sessionTabIds.has(t.id))
+      .filter((t) => t.type === "terminal" && !sessionTabIds.has(t.id))
       .map((t) => ({
         id: t.id,
         title: t.type === "terminal" ? t.title : "",
@@ -68,13 +68,13 @@
   // Panel auto-hides when there are no tabs. When the first tab appears
   // we auto-open it. Beyond that the user owns visibility via togglePanel —
   // we don't reopen on every panelData update (that broke the close button).
-  // Tabs with suppressPanel (e.g. the PRs screen) force the panel closed
-  // while active; leaving them restores the panel so the diff comes back.
+  // The PRs screen is a full-pane takeover (no diff context), so we force
+  // the panel closed while it's active and restore it when leaving.
   let hadActiveTab = $state(false);
   let prevSuppress = $state(false);
   $effect(() => {
     const hasActiveTab = !!$activeTabId;
-    const suppress = $activeTab?.type === "terminal" && $activeTab.suppressPanel === true;
+    const suppress = $activeTab?.type === "prs";
     if (!hasActiveTab) {
       panelVisible.set(false);
       hadActiveTab = false;
@@ -126,14 +126,11 @@
       log.info("app", `active workspace set: ${ws[0].path}`);
     }
     await loadSettings();
-    // Pre-spawn the PRs tab AND start `prs` immediately so the live
-    // dashboard is already populated by the time the user opens it.
-    runPrsOnce(spawnPrsTab(false));
     unlisten = await onPanelUpdate((sessionId, data) => {
       if (sessionId === get(activeTabId)) {
         const active = get(tabs).find((t) => t.id === sessionId);
-        const suppress = active?.type === "terminal" && active.suppressPanel === true;
-        if (!suppress) panelData.set(data);
+        // PRs is a non-terminal full-pane screen; everything else feeds the diff panel.
+        if (active?.type !== "prs") panelData.set(data);
       }
       // Update diff badge for any session, not just the active one
       if (data.diff && (data.diff.files_changed > 0 || data.diff.lines_added > 0 || data.diff.lines_removed > 0)) {
@@ -184,49 +181,14 @@
   });
 
   /**
-   * Spawn the PRs terminal tab (singleton). With `activate=false` the shell
-   * boots in the background; `prs` is a live-updating dashboard that polls
-   * GitHub every 3 minutes, so we kick it off immediately and just hide
-   * the tab until the user toggles it open.
+   * Singleton PRs screen. Native Svelte view backed by `gh pr list` per
+   * watched repo — no PTY, no `prs` CLI dependency.
    */
-  let prsCommandWritten = false;
   let prevTabBeforePrs = "";
   function spawnPrsTab(activate: boolean): string {
     const id = crypto.randomUUID();
-    const terminal = new Terminal();
-    addTab({
-      type: "terminal",
-      id,
-      title: "PRs",
-      ptyId: -1,
-      terminal,
-      role: "prs",
-      suppressPanel: true,
-    }, { activate });
+    addTab({ type: "prs", id, title: "PRs" }, { activate });
     return id;
-  }
-
-  function runPrsOnce(tabId: string) {
-    if (prsCommandWritten || !tabId) return;
-    let attempts = 0;
-    const poll = setInterval(() => {
-      attempts++;
-      const t = get(tabs).find((x) => x.id === tabId);
-      if (!t || attempts > 100) {
-        clearInterval(poll);
-        return;
-      }
-      if (t.type === "terminal" && t.ptyId >= 0) {
-        clearInterval(poll);
-        // The hidden terminal is 0×0, so force a sensible PTY size before
-        // running prs — otherwise the output has no buffer to render into.
-        // The ResizeObserver in TerminalSession refits to the real container
-        // size as soon as the tab becomes visible.
-        ptyResize(t.ptyId, 200, 60);
-        ptyWrite(t.ptyId, "prs\n");
-        prsCommandWritten = true;
-      }
-    }, 100);
   }
 
   /**
@@ -318,16 +280,19 @@
     on:openPrs={() => {
       // Toggle: if the PRs tab is already showing, return to the
       // previously active tab. Otherwise activate it (creating the
-      // singleton on the fly if the pre-spawn somehow hasn't happened).
-      const existing = get(tabs).find((t) => t.type === "terminal" && t.role === "prs");
-      const id = existing ? existing.id : spawnPrsTab(false);
-      if (get(activeTabId) === id) {
-        activeTabId.set(prevTabBeforePrs);
+      // singleton lazily — first click is the first render).
+      const existing = get(tabs).find((t) => t.type === "prs");
+      const id = existing ? existing.id : spawnPrsTab(true);
+      if (existing) {
+        if (get(activeTabId) === id) {
+          activeTabId.set(prevTabBeforePrs);
+        } else {
+          prevTabBeforePrs = get(activeTabId);
+          activeTabId.set(id);
+        }
       } else {
         prevTabBeforePrs = get(activeTabId);
-        activeTabId.set(id);
       }
-      runPrsOnce(id);
     }}
     on:addWorkspace={async () => {
       const selected = await open({ directory: true, multiple: false, title: "Select workspace folder" });

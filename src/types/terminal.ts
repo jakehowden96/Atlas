@@ -11,10 +11,13 @@ export interface TerminalTab {
   needsInput?: boolean;
   ready?: boolean;
   commandWrittenAt?: number;
-  /** Stable role marker for singleton terminal tabs (e.g. "prs"). */
-  role?: "prs";
-  /** When true, the right-side diff panel stays hidden while this tab is active. */
-  suppressPanel?: boolean;
+}
+
+/** Singleton screen showing open PRs across watched repos. Not a PTY. */
+export interface PrsTab {
+  type: "prs";
+  id: string;
+  title: string;
 }
 
 export type FileLanguage =
@@ -45,4 +48,4 @@ export interface FileTab {
   originalContent: string;
 }
 
-export type TabItem = TerminalTab | FileTab;
+export type TabItem = TerminalTab | FileTab | PrsTab;

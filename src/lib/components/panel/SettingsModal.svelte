@@ -1,22 +1,46 @@
 <script lang="ts">
-  import { settingsOpen, skipPermissions, setSkipPermissions, enableNotifications, setEnableNotifications } from "../../stores/settings";
+  import {
+    settingsOpen,
+    skipPermissions,
+    setSkipPermissions,
+    enableNotifications,
+    setEnableNotifications,
+    watchedRepos,
+    setWatchedRepos,
+  } from "../../stores/settings";
 
-  type Tab = "general" | "danger";
+  type Tab = "general" | "prs" | "danger";
 
   let activeTab = $state<Tab>("general");
   let modalEl: HTMLDivElement | null = $state(null);
 
+  // PRs tab: edited as plain text (one slug per line) and only persisted on Save.
+  let watchedReposDraft = $state("");
+  let watchedReposSaved = $state(false);
+
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: "general", label: "General", icon: "tune" },
+    { id: "prs", label: "Pull Requests", icon: "account_tree" },
     { id: "danger", label: "Danger Zone", icon: "warning" },
   ];
 
   $effect(() => {
     if ($settingsOpen) {
       activeTab = "general";
+      watchedReposDraft = $watchedRepos.join("\n");
+      watchedReposSaved = false;
       requestAnimationFrame(() => modalEl?.focus());
     }
   });
+
+  async function saveWatchedRepos() {
+    const repos = watchedReposDraft
+      .split("\n")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    await setWatchedRepos(repos);
+    watchedReposSaved = true;
+  }
 
   function handleModalKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
@@ -78,6 +102,29 @@
                   onchange={(e) => setEnableNotifications(e.currentTarget.checked)}
                 />
               </label>
+            </div>
+          {:else if activeTab === "prs"}
+            <div class="section">
+              <div class="section-label">Watched repos</div>
+              <p class="section-help">
+                One <code>owner/repo</code> per line. The Pull Requests screen
+                groups open PRs by repo using <code>gh</code>, which must be
+                installed and authenticated.
+              </p>
+              <textarea
+                class="repos-textarea"
+                spellcheck="false"
+                rows="8"
+                bind:value={watchedReposDraft}
+                oninput={() => (watchedReposSaved = false)}
+                placeholder="confusedcom/partner-portal-web-app&#10;confusedcom/partner-portal-service"
+              ></textarea>
+              <div class="repos-actions">
+                {#if watchedReposSaved}
+                  <span class="saved-hint">Saved</span>
+                {/if}
+                <button class="save-btn" onclick={saveWatchedRepos}>Save</button>
+              </div>
             </div>
           {:else if activeTab === "danger"}
             <div class="section danger-section">
@@ -242,6 +289,72 @@
     color: var(--on-surface-variant);
     font-family: var(--font-body);
     margin-bottom: 0.35rem;
+  }
+
+  /* ── PRs tab ── */
+  .section-help {
+    margin: 0 0 0.6rem;
+    font-size: 11px;
+    color: var(--on-surface-variant);
+    line-height: 1.45;
+  }
+
+  .section-help code {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    background: var(--surface-container-high);
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: var(--on-surface);
+  }
+
+  .repos-textarea {
+    width: 100%;
+    resize: vertical;
+    background: var(--surface);
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--radius-sm);
+    color: var(--on-surface);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 0.5rem 0.6rem;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .repos-textarea:focus {
+    border-color: color-mix(in srgb, var(--primary) 60%, transparent);
+  }
+
+  .repos-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    margin-top: 0.6rem;
+  }
+
+  .saved-hint {
+    font-size: 11px;
+    color: var(--secondary);
+  }
+
+  .save-btn {
+    background: var(--primary);
+    color: var(--on-primary);
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 0.35rem 0.9rem;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--font-body);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .save-btn:hover {
+    background: var(--primary-container);
   }
 
   /* ── Settings checkbox (neutral toggle) ── */
