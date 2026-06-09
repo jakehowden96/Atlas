@@ -1,5 +1,6 @@
 <script lang="ts">
   import DiffViewer from "./DiffViewer.svelte";
+  import ReviewDrawer from "./ReviewDrawer.svelte";
   import { panelData, togglePanel } from "../../stores/panel";
 </script>
 
@@ -10,6 +11,7 @@
       <span class="material-symbols-outlined">right_panel_close</span>
     </button>
   </div>
+  <ReviewDrawer />
   <div class="panel-content">
     <DiffViewer data={$panelData?.diff} cwd={$panelData?.cwd ?? ''} />
   </div>

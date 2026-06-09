@@ -83,6 +83,12 @@ pub struct ClaudeNotificationEvent {
     pub notification: ClaudeNotification,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewAckEvent {
+    pub session_id: String,
+    pub acked_ids: Vec<String>,
+}
+
 pub fn sessions_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir()
         .ok_or_else(|| "Could not determine home directory".to_string())?;

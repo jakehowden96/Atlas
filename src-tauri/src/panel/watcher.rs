@@ -74,6 +74,42 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
                                     log::warn!("Failed to read panel.json: {}", e);
                                 }
                             }
+                        } else if path.file_name().map_or(false, |f| f == "review-acks.txt") {
+                            // Append-only file Claude writes via `echo <id> >> ...` to
+                            // mark review comments addressed. Read the whole file, dedupe
+                            // IDs (Claude may echo the same id twice on retries), and let
+                            // the frontend reconcile against its pending comments.
+                            let session_id = path
+                                .parent()
+                                .and_then(|p| p.file_name())
+                                .map(|f| f.to_string_lossy().to_string())
+                                .unwrap_or_default();
+
+                            match std::fs::read_to_string(path) {
+                                Ok(contents) => {
+                                    let mut seen = std::collections::HashSet::new();
+                                    let mut acked_ids: Vec<String> = Vec::new();
+                                    for line in contents.lines() {
+                                        let id = line.trim();
+                                        if id.is_empty() {
+                                            continue;
+                                        }
+                                        if seen.insert(id.to_string()) {
+                                            acked_ids.push(id.to_string());
+                                        }
+                                    }
+                                    let _ = handle.emit(
+                                        "review-ack",
+                                        ReviewAckEvent {
+                                            session_id,
+                                            acked_ids,
+                                        },
+                                    );
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to read review-acks.txt: {}", e);
+                                }
+                            }
                         } else if path.file_name().map_or(false, |f| f == "notification.json") {
                             let session_id = path
                                 .parent()

@@ -1,11 +1,18 @@
 <script lang="ts">
   import { get } from "svelte/store";
-  import { parseDiff, type DiffFile } from "../../diff-parser";
+  import { parseDiff, type DiffFile, type DiffHunk } from "../../diff-parser";
   import type { DiffData } from "../../../types/panel";
   import { refreshPanel } from "../../ipc";
   import { panelData } from "../../stores/panel";
   import { activeTabId } from "../../stores/terminal";
   import { showToast } from "../../stores/toast";
+  import {
+    activeSessionComments,
+    addComment,
+    removeComment,
+    anchorDomKey,
+    type ReviewAnchor,
+  } from "../../stores/reviewComments";
   import RepositoryClean from "./RepositoryClean.svelte";
 
   interface Props {
@@ -293,11 +300,87 @@
     return totalLines(file) > MAX_VISIBLE_LINES && !expandedFiles.has(key);
   }
 
-  // Build paired lines for split view: align add/remove rows.
+  // ---------- Review comments ----------
+  // composerKey identifies the line whose inline composer is open. Null when no
+  // composer is showing. The key matches anchorDomKey() so badge rendering can
+  // look up "is the composer open right here?" cheaply.
+  let composerKey = $state<string | null>(null);
+  let composerBody = $state("");
+
+  // Group active-session comments by anchor key for fast badge rendering.
+  let commentsByAnchorKey = $derived.by(() => {
+    const m = new Map<string, typeof $activeSessionComments>();
+    for (const c of $activeSessionComments) {
+      const k = anchorDomKey(c.anchor);
+      const list = m.get(k) ?? [];
+      list.push(c);
+      m.set(k, list);
+    }
+    return m;
+  });
+
+  function buildAnchor(
+    fileKey: string,
+    hunk: DiffHunk,
+    side: "+" | "-" | " ",
+    oldNum: number | null,
+    newNum: number | null,
+    content: string,
+  ): ReviewAnchor {
+    return {
+      fileKey,
+      side,
+      oldNum,
+      newNum,
+      hunkHeader: hunk.header,
+      contentSnippet: content,
+    };
+  }
+
+  function openComposer(anchor: ReviewAnchor) {
+    composerKey = anchorDomKey(anchor);
+    composerBody = "";
+  }
+
+  function closeComposer() {
+    composerKey = null;
+    composerBody = "";
+  }
+
+  function saveComposer(anchor: ReviewAnchor) {
+    const body = composerBody.trim();
+    if (!body) {
+      closeComposer();
+      return;
+    }
+    const sid = get(activeTabId);
+    if (!sid) return;
+    addComment(sid, anchor, body);
+    closeComposer();
+  }
+
+  function dismissComment(id: string) {
+    const sid = get(activeTabId);
+    if (!sid) return;
+    removeComment(sid, id);
+  }
+
+  function composerKeydown(e: KeyboardEvent, anchor: ReviewAnchor) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeComposer();
+    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      saveComposer(anchor);
+    }
+  }
+
+  // Build paired lines for split view: align add/remove rows. Each non-hunk
+  // row carries the enclosing hunk so we can build a ReviewAnchor on click.
   type SplitRow =
     | { kind: "hunk"; header: string }
-    | { kind: "context"; left: { num: number | null; content: string }; right: { num: number | null; content: string } }
-    | { kind: "change"; left: { num: number | null; content: string } | null; right: { num: number | null; content: string } | null };
+    | { kind: "context"; hunk: DiffHunk; left: { num: number | null; content: string }; right: { num: number | null; content: string } }
+    | { kind: "change"; hunk: DiffHunk; left: { num: number | null; content: string } | null; right: { num: number | null; content: string } | null };
 
   function toSplitRows(file: DiffFile): SplitRow[] {
     const rows: SplitRow[] = [];
@@ -310,6 +393,7 @@
         for (let i = 0; i < max; i++) {
           rows.push({
             kind: "change",
+            hunk,
             left: pendingRemoves[i] ?? null,
             right: pendingAdds[i] ?? null,
           });
@@ -325,6 +409,7 @@
           flushPair();
           rows.push({
             kind: "context",
+            hunk,
             left: { num: line.oldNum, content: line.content },
             right: { num: line.newNum, content: line.content },
           });
@@ -501,14 +586,23 @@
                 <div class="hunk-cell">{row.header}</div>
               </div>
             {:else if row.kind === "context"}
-              <div class="row ctx-row">
+              {@const ctxAnchor = buildAnchor(item.key, row.hunk, " ", row.left.num, row.right.num, row.right.content)}
+              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+              <div class="row ctx-row commentable" onclick={() => openComposer(ctxAnchor)}>
                 <div class="num">{row.left.num ?? ""}</div>
                 <div class="code">{row.left.content}</div>
                 <div class="num">{row.right.num ?? ""}</div>
                 <div class="code">{row.right.content}</div>
               </div>
+              {@render commentRow(ctxAnchor)}
             {:else}
-              <div class="row chg-row">
+              {@const side = row.right ? "+" : "-"}
+              {@const oldNum = row.left?.num ?? null}
+              {@const newNum = row.right?.num ?? null}
+              {@const content = row.right?.content ?? row.left?.content ?? ""}
+              {@const chgAnchor = buildAnchor(item.key, row.hunk, side, oldNum, newNum, content)}
+              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+              <div class="row chg-row commentable" onclick={() => openComposer(chgAnchor)}>
                 {#if row.left}
                   <div class="num num-rem">{row.left.num ?? ""}</div>
                   <div class="code code-rem"><span class="sign">-</span>{row.left.content}</div>
@@ -524,6 +618,7 @@
                   <div class="code empty-code"></div>
                 {/if}
               </div>
+              {@render commentRow(chgAnchor)}
             {/if}
           {/each}
         </div>
@@ -536,23 +631,32 @@
                   <div class="hunk-cell">{hunk.header}</div>
                 </div>
               {:else if line.type === "add"}
-                <div class="row add-row">
+                {@const anchor = buildAnchor(item.key, hunk, "+", line.oldNum, line.newNum, line.content)}
+                <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+                <div class="row add-row commentable" onclick={() => openComposer(anchor)}>
                   <div class="num"></div>
                   <div class="num num-add">{line.newNum ?? ""}</div>
                   <div class="code code-add"><span class="sign">+</span>{line.content}</div>
                 </div>
+                {@render commentRow(anchor)}
               {:else if line.type === "remove"}
-                <div class="row rem-row">
+                {@const anchor = buildAnchor(item.key, hunk, "-", line.oldNum, line.newNum, line.content)}
+                <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+                <div class="row rem-row commentable" onclick={() => openComposer(anchor)}>
                   <div class="num num-rem">{line.oldNum ?? ""}</div>
                   <div class="num"></div>
                   <div class="code code-rem"><span class="sign">-</span>{line.content}</div>
                 </div>
+                {@render commentRow(anchor)}
               {:else}
-                <div class="row ctx-row-uni">
+                {@const anchor = buildAnchor(item.key, hunk, " ", line.oldNum, line.newNum, line.content)}
+                <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+                <div class="row ctx-row-uni commentable" onclick={() => openComposer(anchor)}>
                   <div class="num">{line.oldNum ?? ""}</div>
                   <div class="num">{line.newNum ?? ""}</div>
                   <div class="code">{line.content}</div>
                 </div>
+                {@render commentRow(anchor)}
               {/if}
             {/each}
           {/each}
@@ -591,6 +695,47 @@
         {/if}
       {/each}
     {/if}
+  {/if}
+{/snippet}
+
+{#snippet commentRow(anchor: ReviewAnchor)}
+  {@const key = anchorDomKey(anchor)}
+  {@const list = commentsByAnchorKey.get(key) ?? []}
+  {#if list.length > 0 || composerKey === key}
+    <div class="comment-row" data-anchor={key}>
+      {#each list as c (c.id)}
+        <div class="comment-item">
+          <span class="comment-marker material-symbols-outlined">chat</span>
+          <span class="comment-body">{c.body}</span>
+          <button
+            type="button"
+            class="comment-dismiss"
+            title="Dismiss this comment"
+            aria-label="Dismiss comment"
+            onclick={() => dismissComment(c.id)}
+          >
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+      {/each}
+      {#if composerKey === key}
+        <div class="comment-composer">
+          <!-- svelte-ignore a11y_autofocus -->
+          <textarea
+            class="comment-input"
+            placeholder="Leave a review comment… (⌘+Enter to save, Esc to cancel)"
+            bind:value={composerBody}
+            onkeydown={(e) => composerKeydown(e, anchor)}
+            autofocus
+            rows="2"
+          ></textarea>
+          <div class="comment-actions">
+            <button type="button" class="comment-btn cancel" onclick={closeComposer}>Cancel</button>
+            <button type="button" class="comment-btn save" onclick={() => saveComposer(anchor)}>Save</button>
+          </div>
+        </div>
+      {/if}
+    </div>
   {/if}
 {/snippet}
 
@@ -1088,5 +1233,116 @@
   /* When the panel is narrow, hide the file tree automatically */
   @container (max-width: 540px) {
     .file-tree { display: none; }
+  }
+
+  /* ============ Review comments ============ */
+  .row.commentable { cursor: pointer; }
+  .row.commentable:hover .num {
+    background: color-mix(in srgb, var(--primary) 14%, var(--surface-container-low));
+  }
+
+  .comment-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 10px 8px;
+    background: color-mix(in srgb, var(--primary) 6%, var(--surface));
+    border-top: 1px solid color-mix(in srgb, var(--primary) 25%, var(--outline-variant));
+    border-bottom: 1px solid color-mix(in srgb, var(--primary) 25%, var(--outline-variant));
+  }
+
+  .comment-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 4px 8px;
+    background: var(--surface-container-low);
+    border: 1px solid var(--outline-variant);
+    border-radius: 6px;
+    font-family: var(--font-body);
+    font-size: 12px;
+    color: var(--on-surface);
+    line-height: 1.4;
+  }
+  .comment-marker {
+    color: var(--primary);
+    font-size: 0.9rem !important;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .comment-body {
+    flex: 1;
+    white-space: pre-wrap;
+    word-break: break-word;
+    min-width: 0;
+  }
+  .comment-dismiss {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--on-surface-variant);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .comment-dismiss :global(.material-symbols-outlined) { font-size: 0.9rem; }
+  .comment-dismiss:hover { background: var(--surface-container-high); color: var(--error); }
+
+  .comment-composer {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px;
+    background: var(--surface-container-low);
+    border: 1px solid var(--primary);
+    border-radius: 6px;
+  }
+  .comment-input {
+    width: 100%;
+    min-height: 44px;
+    padding: 6px 8px;
+    background: var(--surface);
+    border: 1px solid var(--outline-variant);
+    border-radius: 4px;
+    color: var(--on-surface);
+    font-family: var(--font-body);
+    font-size: 12px;
+    line-height: 1.4;
+    resize: vertical;
+    outline: none;
+  }
+  .comment-input:focus { border-color: var(--primary); }
+  .comment-input::placeholder { color: var(--on-surface-variant); opacity: 0.6; }
+
+  .comment-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .comment-btn {
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-family: var(--font-body);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--outline-variant);
+    background: var(--surface-container-high);
+    color: var(--on-surface);
+  }
+  .comment-btn.cancel { background: transparent; color: var(--on-surface-variant); }
+  .comment-btn.cancel:hover { color: var(--on-surface); background: var(--surface-container-high); }
+  .comment-btn.save {
+    background: var(--primary);
+    color: var(--on-primary);
+    border-color: var(--primary);
+  }
+  .comment-btn.save:hover {
+    background: color-mix(in srgb, var(--primary) 88%, var(--on-surface));
   }
 </style>
