@@ -134,8 +134,27 @@ fn install_notification_hook(script_path: &str) {
     }
 }
 
+/// macOS GUI apps inherit launchd's bare PATH (/usr/bin:/bin:...), which lacks
+/// Homebrew's bin dir — so direct `Command::new("gh")` spawns fail when Atlas
+/// is launched from Finder/Dock rather than a terminal. Append the standard
+/// Homebrew locations (Apple Silicon and Intel) if they're missing.
+fn extend_path_for_gui_launch() {
+    let current = std::env::var("PATH").unwrap_or_default();
+    let mut parts: Vec<std::path::PathBuf> = std::env::split_paths(&current).collect();
+    for dir in ["/opt/homebrew/bin", "/usr/local/bin"] {
+        let dir = std::path::Path::new(dir);
+        if dir.is_dir() && !parts.iter().any(|p| p == dir) {
+            parts.push(dir.to_path_buf());
+        }
+    }
+    if let Ok(joined) = std::env::join_paths(parts) {
+        std::env::set_var("PATH", joined);
+    }
+}
+
 pub fn run() {
     setup_logging();
+    extend_path_for_gui_launch();
 
     let pty_manager = PtyManager::new();
 
