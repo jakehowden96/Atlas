@@ -133,7 +133,15 @@ export function markFileSaved(id: string, filePath?: string) {
   );
 }
 
+const titleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 export function removeTab(id: string) {
+  const pendingTitle = titleTimers.get(id);
+  if (pendingTitle) {
+    clearTimeout(pendingTitle);
+    titleTimers.delete(id);
+  }
+
   const wasActive = get(activeTabId) === id;
   const removedTab = get(tabs).find((t) => t.id === id);
   const removedWs = removedTab ? getTabWorkspacePath(removedTab) : "";
@@ -182,8 +190,6 @@ export function cycleTab(direction: 1 | -1) {
   const nextIndex = (currentIndex + direction + wsTabs.length) % wsTabs.length;
   activeTabId.set(wsTabs[nextIndex].id);
 }
-
-const titleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export function setTabTitle(id: string, title: string) {
   const existing = titleTimers.get(id);

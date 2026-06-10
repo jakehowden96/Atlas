@@ -4,6 +4,22 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
+/// Extract the session ID from a watched file path: .../sessions/<session_id>/<file>
+fn session_id_from_path(path: &std::path::Path) -> String {
+    let session_id = path
+        .parent()
+        .and_then(|p| p.file_name())
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_default();
+    if session_id.is_empty() {
+        log::warn!(
+            "Could not extract session id from watched path: {}",
+            path.display()
+        );
+    }
+    session_id
+}
+
 pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String> {
     let sessions = sessions_dir()?;
     std::fs::create_dir_all(&sessions).map_err(|e| e.to_string())?;
@@ -36,12 +52,7 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
                 EventKind::Create(_) | EventKind::Modify(_) => {
                     for path in &event.paths {
                         if path.file_name().map_or(false, |f| f == "panel.json") {
-                            // Extract session ID from path: .../sessions/<session_id>/panel.json
-                            let session_id = path
-                                .parent()
-                                .and_then(|p| p.file_name())
-                                .map(|f| f.to_string_lossy().to_string())
-                                .unwrap_or_default();
+                            let session_id = session_id_from_path(path);
 
                             let last_emit = last_emit_per_session
                                 .entry(session_id.clone())
@@ -79,11 +90,7 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
                             // mark review comments addressed. Read the whole file, dedupe
                             // IDs (Claude may echo the same id twice on retries), and let
                             // the frontend reconcile against its pending comments.
-                            let session_id = path
-                                .parent()
-                                .and_then(|p| p.file_name())
-                                .map(|f| f.to_string_lossy().to_string())
-                                .unwrap_or_default();
+                            let session_id = session_id_from_path(path);
 
                             match std::fs::read_to_string(path) {
                                 Ok(contents) => {
@@ -111,11 +118,7 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
                                 }
                             }
                         } else if path.file_name().map_or(false, |f| f == "notification.json") {
-                            let session_id = path
-                                .parent()
-                                .and_then(|p| p.file_name())
-                                .map(|f| f.to_string_lossy().to_string())
-                                .unwrap_or_default();
+                            let session_id = session_id_from_path(path);
 
                             match std::fs::read_to_string(path) {
                                 Ok(contents) => {

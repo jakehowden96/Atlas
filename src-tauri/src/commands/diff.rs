@@ -156,10 +156,17 @@ pub(crate) fn discover_diff(git_root: &str) -> DiffBundle {
     // Build `full` diff: working tree vs upstream/base (includes both local and committed changes)
     let mut full = if let Some(ref base) = base_ref {
         // Diff working tree (including uncommitted changes) against the base ref
-        git_cmd(git_root, &["diff", "--unified=3", base])
-            .ok()
-            .filter(|d| !d.is_empty())
-            .unwrap_or_else(|| local.clone())
+        match git_cmd(git_root, &["diff", "--unified=3", base]) {
+            Ok(diff) if !diff.is_empty() => diff,
+            Ok(_) => {
+                log::debug!("diff against base {base} is empty; falling back to local diff");
+                local.clone()
+            }
+            Err(e) => {
+                log::warn!("diff against base {base} failed ({e}); falling back to local diff");
+                local.clone()
+            }
+        }
     } else {
         local.clone()
     };
@@ -172,7 +179,42 @@ pub(crate) fn discover_diff(git_root: &str) -> DiffBundle {
         full.push_str(&untracked);
     }
 
-    DiffBundle { local, full }
+    DiffBundle {
+        local: truncate_diff(local),
+        full: truncate_diff(full),
+    }
+}
+
+/// Cap on tracked diff output. Untracked diffs are already capped at
+/// generation time, but `git diff` output is unbounded — a huge diff would
+/// be buffered, written to panel.json, and shipped to the frontend whole.
+const MAX_DIFF_SIZE: usize = 2 * 1024 * 1024; // 2 MB
+
+/// Truncate an oversized diff, cutting at the last file boundary under the
+/// cap so the remaining output stays well-formed. Falls back to a plain cut
+/// if a single file's diff exceeds the cap on its own.
+fn truncate_diff(diff: String) -> String {
+    if diff.len() <= MAX_DIFF_SIZE {
+        return diff;
+    }
+
+    let mut end = MAX_DIFF_SIZE;
+    while !diff.is_char_boundary(end) {
+        end -= 1;
+    }
+    if let Some(boundary) = diff[..end].rfind("\ndiff --git ") {
+        if boundary > 0 {
+            end = boundary + 1; // keep the trailing newline of the previous file
+        }
+    }
+
+    log::warn!(
+        "diff output truncated from {} to {} bytes (cap {})",
+        diff.len(),
+        end,
+        MAX_DIFF_SIZE
+    );
+    diff[..end].to_string()
 }
 
 pub(crate) fn count_diff_stats(raw: &str) -> (u32, u32, u32) {
@@ -286,5 +328,36 @@ diff --git a/file.rs b/file.rs
     fn untracked_diffs_non_git_dir() {
         let result = generate_untracked_diffs("/tmp");
         assert!(result.is_empty());
+    }
+
+    // --- truncate_diff ---
+
+    #[test]
+    fn truncate_diff_under_cap_unchanged() {
+        let diff = "diff --git a/a.rs b/a.rs\n+small\n".to_string();
+        assert_eq!(truncate_diff(diff.clone()), diff);
+    }
+
+    #[test]
+    fn truncate_diff_cuts_at_file_boundary() {
+        // First file fits under the cap; second file pushes past it.
+        let first = format!("diff --git a/a.rs b/a.rs\n{}", "+x\n".repeat(100));
+        let second = format!(
+            "diff --git a/b.rs b/b.rs\n+{}\n",
+            "y".repeat(MAX_DIFF_SIZE)
+        );
+        let result = truncate_diff(format!("{first}{second}"));
+        assert_eq!(result, first);
+    }
+
+    #[test]
+    fn truncate_diff_single_huge_file_plain_cut() {
+        let diff = format!(
+            "diff --git a/a.rs b/a.rs\n+{}\n",
+            "x".repeat(MAX_DIFF_SIZE * 2)
+        );
+        let result = truncate_diff(diff);
+        assert_eq!(result.len(), MAX_DIFF_SIZE);
+        assert!(result.starts_with("diff --git a/a.rs"));
     }
 }

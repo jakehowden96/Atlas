@@ -1,9 +1,18 @@
 # Atlas
 
-A desktop terminal with an intelligent side panel that automatically detects git changes and shows diffs, AI-generated summaries, and flow diagrams. Built with Tauri v2 and Svelte 5. Named after my dog.
+A desktop cockpit for running [Claude Code](https://claude.com/claude-code) sessions. Organise sessions by workspace in a sidebar, watch live git diffs in a side panel as Claude works, leave inline review comments that are sent straight back to the session, and keep an eye on open PRs across your repos. Built with Tauri v2 and Svelte 5. Named after my dog.
 <p align="center">
   <img src="dog.png" alt="Atlas mascot" width="100">
 </p>
+
+## Features
+
+- **Workspace sidebar** — add project folders, spawn Claude sessions in each, and switch between them. Sessions show live diff badges and a "needs input" indicator when Claude is waiting on you.
+- **Diff panel** — automatically detects git changes in the active session's repo and renders them as split or unified diffs, with per-file collapse and viewed-state tracking.
+- **Inline review comments** — comment on diff lines and send the batch to the Claude session as a prompt; Claude acknowledges each comment as it addresses it.
+- **Pull Requests screen** — native view of open PRs (CI and review status) across your watched repos, backed by the `gh` CLI.
+- **Terminal & file tabs** — plain terminals and read/edit file tabs alongside Claude sessions.
+- **Notifications** — installs a Claude Code hook so the app (and macOS) can notify you when a session needs input.
 
 ## Install
 
@@ -12,6 +21,8 @@ A desktop terminal with an intelligent side panel that automatically detects git
 - [Rust](https://rustup.rs/) (stable)
 - [Node.js](https://nodejs.org/) (v20+)
 - [pnpm](https://pnpm.io/)
+- [Claude Code](https://claude.com/claude-code) CLI (`claude`)
+- [GitHub CLI](https://cli.github.com/) (`gh`) — only needed for the Pull Requests screen
 - Tauri system dependencies: see [Tauri prerequisites](https://tauri.app/start/prerequisites/)
 
 ### macOS
@@ -32,10 +43,13 @@ The installer will be in `src-tauri\target\release\bundle\nsis\`.
 
 ## Configuration
 
-Atlas stores its config at `~/.atlas/config.json`:
+Settings are managed from the in-app Settings modal (gear icon) and persisted to `~/.atlas/settings.json`:
 
-- **API key** — configure via the UI (Summary or Flow view) or set the `ANTHROPIC_API_KEY` environment variable
-- **Excluded folders** — configure via Settings (gear icon in the side panel)
+- **Skip permissions** — launch sessions with `claude --dangerously-skip-permissions`
+- **Notifications** — OS notifications when a session needs input
+- **Watched repos** — `owner/repo` slugs shown on the Pull Requests screen
+
+Logs are written to `~/.atlas/logs/` and per-session panel data to `~/.atlas/sessions/`.
 
 ## Development
 
@@ -48,11 +62,10 @@ pnpm tauri dev
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+T` | New tab |
-| `Ctrl+W` | Close tab |
+| `Ctrl+O` | Open file |
+| `Ctrl+S` | Save active file |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Cycle tabs |
 | `Ctrl+1-9` | Switch to tab |
+| `Ctrl+Shift+[` / `Ctrl+Shift+]` | Previous / next workspace |
 | `Ctrl+Shift+\` | Toggle side panel |
-| `Ctrl+Shift+D` | Diff view |
-| `Ctrl+Shift+S` | Summary view |
-| `Ctrl+Shift+F` | Flow diagram |
 | `Ctrl+Shift+R` | Refresh panel |

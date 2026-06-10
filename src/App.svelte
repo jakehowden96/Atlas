@@ -235,7 +235,11 @@
         const cmd = `claude${skip}\n`;
         // Small delay to let the shell prompt render
         setTimeout(() => {
-          ptyWrite(tab.ptyId, cmd);
+          // Re-check: the tab may have been closed during the delay,
+          // in which case its PTY is dead and the write must be skipped.
+          const current = get(tabs).find((t) => t.id === tabId);
+          if (current?.type !== "terminal" || current.ptyId < 0) return;
+          ptyWrite(current.ptyId, cmd);
           tabs.update((t) =>
             t.map((x) => (x.id === tabId && x.type === "terminal" ? { ...x, commandWrittenAt: Date.now() } : x)),
           );
