@@ -213,7 +213,7 @@ export function setTabReady(id: string) {
 export function setTabNeedsInput(id: string, needsInput: boolean) {
   const t = get(tabs);
   const tab = t.find((x) => x.id === id);
-  if (!tab || tab.type !== "terminal" || tab.needsInput === needsInput) return;
+  if (tab?.type !== "terminal" || tab.needsInput === needsInput) return;
   tabs.update((arr) =>
     arr.map((x) =>
       x.id === id && x.type === "terminal" ? { ...x, needsInput } : x,

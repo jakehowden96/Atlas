@@ -16,7 +16,7 @@
 
   const dispatch = createEventDispatcher<{
     pickWorkspace: { workspacePath: string };
-    addWorkspace: void;
+    addWorkspace: undefined;
     setWorkspaceColor: { workspacePath: string; color: string };
     deleteWorkspace: { workspacePath: string };
   }>();

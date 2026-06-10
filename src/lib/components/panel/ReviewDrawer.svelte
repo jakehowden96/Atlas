@@ -37,7 +37,7 @@
     const sid = get(activeTabId);
     if (!sid) return;
     const tab = get(tabs).find((t) => t.id === sid);
-    if (!tab || tab.type !== "terminal" || tab.ptyId < 0) {
+    if (tab?.type !== "terminal" || tab.ptyId < 0) {
       showToast("No active Claude terminal to send the review to.");
       return;
     }

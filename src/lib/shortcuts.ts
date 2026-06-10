@@ -35,7 +35,7 @@ export function handleGlobalKeydown(e: KeyboardEvent): boolean {
   // Ctrl+1-9: switch tabs
   if (e.ctrlKey && !e.shiftKey && e.key >= "1" && e.key <= "9") {
     e.preventDefault();
-    switchToTab(parseInt(e.key) - 1);
+    switchToTab(parseInt(e.key, 10) - 1);
     return true;
   }
 

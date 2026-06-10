@@ -11,11 +11,11 @@
     deleteWorkspace: { workspacePath: string };
     selectWorkspace: { workspacePath: string };
     setWorkspaceColor: { workspacePath: string; color: string };
-    addWorkspace: void;
-    newTerminal: void;
+    addWorkspace: undefined;
+    newTerminal: undefined;
     selectTerminal: { tabId: string };
     closeTerminal: { tabId: string };
-    openPrs: void;
+    openPrs: undefined;
   }>();
 
   interface TerminalRow {

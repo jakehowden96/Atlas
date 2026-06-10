@@ -9,7 +9,7 @@ export async function saveActiveFile() {
   const id = get(activeTabId);
   const tabList = get(tabs);
   const tab = tabList.find((t) => t.id === id);
-  if (!tab || tab.type !== "file") return;
+  if (tab?.type !== "file") return;
 
   let filePath = tab.filePath;
 
