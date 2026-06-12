@@ -261,8 +261,8 @@
   <AgentManager
     workspaces={$workspaces}
     activeWorkspacePath={$activeWorkspacePath}
-    activeSessionId={$activeSessionId}
     activeTabId={$activeTabId}
+    prsActive={$activeTab?.type === "prs"}
     {openTabIds}
     {terminalRows}
     on:newTerminal={() => {

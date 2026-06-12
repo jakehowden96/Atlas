@@ -43,17 +43,17 @@
   let {
     workspaces = [] as Workspace[],
     activeWorkspacePath = "",
-    activeSessionId = "",
     activeTabId = "",
     openTabIds = new Set<string>(),
     terminalRows = [] as TerminalRow[],
+    prsActive = false,
   }: {
     workspaces?: Workspace[];
     activeWorkspacePath?: string;
-    activeSessionId?: string;
     activeTabId?: string;
     openTabIds?: Set<string>;
     terminalRows?: TerminalRow[];
+    prsActive?: boolean;
   } = $props();
 
   function isSessionOpen(session: Session): boolean {
@@ -181,6 +181,7 @@
       </button>
       <button
         class="hdr-btn"
+        class:active={prsActive}
         title="Pull requests"
         onclick={() => dispatch("openPrs")}
       >
@@ -199,7 +200,7 @@
   <nav class="session-list">
     {#each filteredRows as row (row.session.id)}
       {@const stats = getStats(row.session.terminalTabId)}
-      {@const isActive = row.session.id === activeSessionId}
+      {@const isActive = !!row.session.terminalTabId && row.session.terminalTabId === activeTabId}
       <div
         class="session-row"
         class:active={isActive}
@@ -435,6 +436,7 @@
     transition: color 0.15s, background 0.15s;
   }
   .hdr-btn:hover { color: var(--primary); background: var(--surface-container-high); }
+  .hdr-btn.active { color: var(--primary); background: var(--surface-container-high); }
   .hdr-btn :global(.material-symbols-outlined) { font-size: 1rem; }
 
   .session-list {
