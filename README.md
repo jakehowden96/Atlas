@@ -9,7 +9,7 @@ A desktop cockpit for running [Claude Code](https://claude.com/claude-code) sess
 
 - **Workspace sidebar** — add project folders, spawn Claude sessions in each, and switch between them. Sessions show live diff badges and a "needs input" indicator when Claude is waiting on you.
 - **Diff panel** — automatically detects git changes in the active session's repo and renders them as split or unified diffs, with per-file collapse and viewed-state tracking.
-- **Inline review comments** — comment on diff lines and send the batch to the Claude session as a prompt; Claude acknowledges each comment as it addresses it.
+- **Inline review comments** — comment on diff lines and send the batch to the Claude session as a prompt.
 - **Pull Requests screen** — native view of open PRs (CI and review status) across your watched repos, backed by the `gh` CLI.
 - **Terminal & file tabs** — plain terminals and read/edit file tabs alongside Claude sessions.
 - **Notifications** — installs a Claude Code hook so the app (and macOS) can notify you when a session needs input.

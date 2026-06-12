@@ -1,15 +1,13 @@
 <script lang="ts">
   import { get } from "svelte/store";
-  import { writeTextFile } from "@tauri-apps/plugin-fs";
   import { activeTabId, tabs } from "../../stores/terminal";
   import {
     activeSessionComments,
-    assignShortIdsForSubmit,
     clearForSession,
     removeComment,
     anchorDomKey,
   } from "../../stores/reviewComments";
-  import { getSessionDir, ptyWrite } from "../../ipc";
+  import { ptyWrite } from "../../ipc";
   import { formatReviewPrompt } from "../../review/formatPrompt";
   import { showToast } from "../../stores/toast";
 
@@ -44,24 +42,15 @@
 
     submitting = true;
     try {
-      const stamped = assignShortIdsForSubmit(sid);
-      if (stamped.length === 0) return;
+      const comments = get(activeSessionComments);
+      if (comments.length === 0) return;
 
-      // Session dir = ~/.atlas/sessions/<sid>. The Rust command creates it
-      // on demand. The watcher picks up appends to review-acks.txt and emits
-      // 'review-ack', which the App.svelte listener feeds back to the store.
-      const sessionDir = await getSessionDir(sid);
-      const ackPath = `${sessionDir}/review-acks.txt`;
-
-      // Truncate any prior contents so a stale id from a previous round
-      // doesn't immediately mark a fresh comment as acked.
-      await writeTextFile(ackPath, "");
-
-      const prompt = formatReviewPrompt(stamped, ackPath);
+      const prompt = formatReviewPrompt(comments);
       // Trailing CR submits Claude's input line. If Claude is mid-turn,
       // Claude Code's own terminal queues the line until it's ready.
       await ptyWrite(tab.ptyId, prompt + "\r");
-      showToast(`Sent ${stamped.length} review comment${stamped.length === 1 ? "" : "s"} to Claude`, "info");
+      clearForSession(sid);
+      showToast(`Sent ${comments.length} review comment${comments.length === 1 ? "" : "s"} to Claude`, "info");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       showToast(`Failed to submit review: ${msg}`);

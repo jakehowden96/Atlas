@@ -171,16 +171,3 @@ export async function onClaudeNotification(
     callback(event.payload);
   });
 }
-
-export interface ReviewAckEvent {
-  session_id: string;
-  acked_ids: string[];
-}
-
-export async function onReviewAck(
-  callback: (event: ReviewAckEvent) => void,
-): Promise<UnlistenFn> {
-  return listen<ReviewAckEvent>("review-ack", (event) => {
-    callback(event.payload);
-  });
-}

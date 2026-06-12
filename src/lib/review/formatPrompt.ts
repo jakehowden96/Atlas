@@ -2,26 +2,19 @@ import type { ReviewComment } from "../stores/reviewComments";
 
 /**
  * Format a batch of review comments into the prompt Atlas pastes into the
- * Claude Code PTY. Includes the ack-file path so Claude can mark each item
- * complete via `echo <id> >> <path>` — Atlas's file watcher picks that up and
- * removes the comment from the drawer.
+ * Claude Code PTY.
  */
-export function formatReviewPrompt(
-  comments: ReviewComment[],
-  ackFilePath: string,
-): string {
+export function formatReviewPrompt(comments: ReviewComment[]): string {
   const lines: string[] = [];
   lines.push("Please address these review comments from Atlas, in order.");
-  lines.push("After completing each item, run:");
-  lines.push(`  echo <id> >> ${ackFilePath}`);
   lines.push("");
 
-  for (const c of comments) {
+  for (const [i, c] of comments.entries()) {
     const a = c.anchor;
     // Prefer the newNum (the "live" side after the change). Falling back to
     // oldNum keeps deleted-line comments addressable.
     const lineNum = a.newNum ?? a.oldNum ?? 0;
-    lines.push(`[${c.shortId}] ${a.fileKey}:${lineNum}`);
+    lines.push(`[${i + 1}] ${a.fileKey}:${lineNum}`);
     if (a.hunkHeader) {
       lines.push(`   (hunk: ${a.hunkHeader})`);
     }

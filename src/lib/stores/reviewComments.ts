@@ -1,4 +1,4 @@
-import { writable, derived, get } from "svelte/store";
+import { writable, derived } from "svelte/store";
 import { activeTabId } from "./terminal";
 
 /**
@@ -18,7 +18,6 @@ export interface ReviewAnchor {
 
 export interface ReviewComment {
   id: string;          // internal uuid
-  shortId: string;     // r1/r2/... assigned at submit time
   sessionId: string;
   anchor: ReviewAnchor;
   body: string;
@@ -54,7 +53,6 @@ export function addComment(
 ): ReviewComment {
   const comment: ReviewComment = {
     id: crypto.randomUUID(),
-    shortId: "",
     sessionId,
     anchor,
     body,
@@ -75,32 +73,6 @@ export function clearForSession(sessionId: string) {
     next.delete(sessionId);
     return next;
   });
-}
-
-/**
- * Assign stable short IDs (r1, r2, ...) to every comment in the session and
- * return the updated list. Called immediately before submission so the IDs
- * Claude sees match what the user sees in the drawer.
- */
-export function assignShortIdsForSubmit(sessionId: string): ReviewComment[] {
-  const list = get(_comments).get(sessionId) ?? [];
-  const stamped = list.map((c, i) => ({ ...c, shortId: `r${i + 1}` }));
-  _comments.update((m) => {
-    const next = new Map(m);
-    next.set(sessionId, stamped);
-    return next;
-  });
-  return stamped;
-}
-
-/**
- * Remove every comment whose shortId appears in `ackedIds`. Called when the
- * watcher sees Claude append to review-acks.txt.
- */
-export function markAckedIds(sessionId: string, ackedIds: string[]) {
-  if (ackedIds.length === 0) return;
-  const set = new Set(ackedIds);
-  mutate(sessionId, (list) => list.filter((c) => !c.shortId || !set.has(c.shortId)));
 }
 
 /** Stable DOM key for a comment anchor — used to find/scroll to the line. */

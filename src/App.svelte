@@ -9,8 +9,7 @@
   import { Terminal } from "@xterm/xterm";
   import { panelVisible, panelData } from "./lib/stores/panel";
   import { tabs, activeTabId, activeTab, addTab, removeTab, setTabNeedsInput, setTabReady } from "./lib/stores/terminal";
-  import { onPanelUpdate, onClaudeNotification, onReviewAck, ptyWrite, ptyKill } from "./lib/ipc";
-  import { markAckedIds as markReviewAckedIds } from "./lib/stores/reviewComments";
+  import { onPanelUpdate, onClaudeNotification, ptyWrite, ptyKill } from "./lib/ipc";
   import { skipPermissions, enableNotifications, loadSettings } from "./lib/stores/settings";
   import { sendNotification, isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
   import {
@@ -40,7 +39,6 @@
   let panelWidth = $derived(Math.round(mainStageWidth * panelFraction));
   let unlisten: UnlistenFn | null = null;
   let unlistenNotification: UnlistenFn | null = null;
-  let unlistenReviewAck: UnlistenFn | null = null;
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   const spawningSessionIds = new Set<string>();
 
@@ -145,9 +143,6 @@
         setSessionDiffStats(sessionId, null);
       }
     });
-    unlistenReviewAck = await onReviewAck((event) => {
-      markReviewAckedIds(event.session_id, event.acked_ids);
-    });
     unlistenNotification = await onClaudeNotification(async (event) => {
       const { session_id, notification } = event;
       // Only mark as needing input for notification types that require user action.
@@ -183,7 +178,6 @@
   onDestroy(() => {
     unlisten?.();
     unlistenNotification?.();
-    unlistenReviewAck?.();
   });
 
   /**
