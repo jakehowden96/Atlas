@@ -7,7 +7,7 @@
   import Toast from "./lib/components/Toast.svelte";
   import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
   import { Terminal } from "@xterm/xterm";
-  import { panelVisible, panelData } from "./lib/stores/panel";
+  import { panelVisible, panelData, togglePanel } from "./lib/stores/panel";
   import { tabs, activeTabId, activeTab, addTab, removeTab, setTabNeedsInput, setTabReady } from "./lib/stores/terminal";
   import { onPanelUpdate, onClaudeNotification, ptyWrite, ptyKill } from "./lib/ipc";
   import { skipPermissions, enableNotifications, loadSettings } from "./lib/stores/settings";
@@ -382,6 +382,10 @@
       <div class="panel-section" class:resizing={isResizing} style="width: {panelWidth}px">
         <SidePanel />
       </div>
+    {:else}
+      <button class="panel-open-btn" onclick={togglePanel} title="Open Diff Panel">
+        <span class="material-symbols-outlined">right_panel_open</span>
+      </button>
     {/if}
   </div>
 </div>
@@ -593,6 +597,34 @@
   .panel-section.resizing {
     pointer-events: none;
     will-change: width;
+  }
+
+  .panel-open-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: none;
+    border: none;
+    color: var(--on-surface-variant);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    padding: 0;
+    transition: background 0.15s, color 0.15s;
+    z-index: 10;
+  }
+
+  .panel-open-btn:hover {
+    background: var(--surface-container-high);
+    color: var(--on-surface);
+  }
+
+  .panel-open-btn :global(.material-symbols-outlined) {
+    font-size: 1rem;
   }
 
 </style>
