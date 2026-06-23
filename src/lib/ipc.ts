@@ -1,7 +1,8 @@
-import { invoke, Channel } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { PanelData, GitStatus, RepoInfo, BranchInfo } from "../types/panel";
+import type { BranchInfo, GitStatus, PanelData, RepoInfo } from "../types/panel";
 import type { RepoPrs } from "../types/prs";
+import type { StatsSummary } from "../types/stats";
 import { log } from "./logger";
 
 export async function ptySpawn(
@@ -142,6 +143,18 @@ export async function listRepoPrs(repos: string[]): Promise<RepoPrs[]> {
 
 export async function openUrl(url: string): Promise<void> {
   return invoke("open_url", { url });
+}
+
+export async function getClaudeStats(): Promise<StatsSummary> {
+  return invoke("get_claude_stats");
+}
+
+export async function onStatsUpdate(
+  callback: (summary: StatsSummary) => void,
+): Promise<UnlistenFn> {
+  return listen<StatsSummary>("stats-update", (event) => {
+    callback(event.payload);
+  });
 }
 
 export async function onPanelUpdate(

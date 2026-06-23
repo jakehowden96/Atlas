@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
   import { settingsOpen } from "../../stores/settings";
-  import { sessionDiffStats, type DiffStats } from "../../stores/workspace";
+  import { type DiffStats, sessionDiffStats } from "../../stores/workspace";
   import WorkspaceQuickSwitcher from "./WorkspaceQuickSwitcher.svelte";
 
   const dispatch = createEventDispatcher<{
@@ -16,6 +16,7 @@
     selectTerminal: { tabId: string };
     closeTerminal: { tabId: string };
     openPrs: undefined;
+    openStats: undefined;
   }>();
 
   interface TerminalRow {
@@ -47,6 +48,7 @@
     openTabIds = new Set<string>(),
     terminalRows = [] as TerminalRow[],
     prsActive = false,
+    statsActive = false,
   }: {
     workspaces?: Workspace[];
     activeWorkspacePath?: string;
@@ -54,6 +56,7 @@
     openTabIds?: Set<string>;
     terminalRows?: TerminalRow[];
     prsActive?: boolean;
+    statsActive?: boolean;
   } = $props();
 
   function isSessionOpen(session: Session): boolean {
@@ -186,6 +189,14 @@
         onclick={() => dispatch("openPrs")}
       >
         <span class="material-symbols-outlined">account_tree</span>
+      </button>
+      <button
+        class="hdr-btn"
+        class:active={statsActive}
+        title="Claude Code stats"
+        onclick={() => dispatch("openStats")}
+      >
+        <span class="material-symbols-outlined">monitoring</span>
       </button>
       <button
         class="hdr-btn"

@@ -1,6 +1,6 @@
-import { writable, derived, get } from "svelte/store";
 import type { Terminal } from "@xterm/xterm";
-import type { FileTab, FileLanguage, TabItem } from "../../types/terminal";
+import { derived, get, writable } from "svelte/store";
+import type { FileLanguage, FileTab, TabItem } from "../../types/terminal";
 import { panelData } from "./panel";
 import { activeWorkspacePath } from "./workspace";
 
@@ -150,9 +150,9 @@ export function removeTab(id: string) {
 
   if (wasActive) {
     const remaining = get(tabs);
-    // Skip singleton-screen tabs (PRs) when picking a fallback — those are
+    // Skip singleton-screen tabs (PRs, Stats) when picking a fallback — those are
     // explicit-invocation screens, not natural fallbacks after closing a session.
-    const eligible = remaining.filter((t) => t.type !== "prs");
+    const eligible = remaining.filter((t) => t.type !== "prs" && t.type !== "stats");
     // Prefer falling back to another tab in the same workspace
     const sameWsTabs = eligible.filter((t) => getTabWorkspacePath(t) === removedWs);
     if (sameWsTabs.length > 0) {

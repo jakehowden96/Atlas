@@ -1,36 +1,37 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
-  import TerminalContainer from "./lib/components/terminal/TerminalContainer.svelte";
-  import SidePanel from "./lib/components/panel/SidePanel.svelte";
-  import Resizer from "./lib/components/layout/Resizer.svelte";
-  import AgentManager from "./lib/components/layout/AgentManager.svelte";
-  import Toast from "./lib/components/Toast.svelte";
-  import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
+  
+  import type { UnlistenFn } from "@tauri-apps/api/event";
+  import { open } from "@tauri-apps/plugin-dialog";
+  import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
   import { Terminal } from "@xterm/xterm";
-  import { panelVisible, panelData, togglePanel } from "./lib/stores/panel";
-  import { tabs, activeTabId, activeTab, addTab, removeTab, setTabNeedsInput, setTabReady } from "./lib/stores/terminal";
-  import { onPanelUpdate, onClaudeNotification, ptyWrite, ptyKill } from "./lib/ipc";
-  import { skipPermissions, enableNotifications, loadSettings } from "./lib/stores/settings";
-  import { sendNotification, isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
+import { onDestroy, onMount } from "svelte";
+  import { get } from "svelte/store";
+  import AgentManager from "./lib/components/layout/AgentManager.svelte";
+  import Resizer from "./lib/components/layout/Resizer.svelte";
+  import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
+  import SidePanel from "./lib/components/panel/SidePanel.svelte";
+  import Toast from "./lib/components/Toast.svelte";
+  import TerminalContainer from "./lib/components/terminal/TerminalContainer.svelte";
+  import { onClaudeNotification, onPanelUpdate, ptyKill, ptyWrite } from "./lib/ipc";
+  import { log } from "./lib/logger";
+  import { panelData, panelVisible, togglePanel } from "./lib/stores/panel";
+  import { enableNotifications, loadSettings, skipPermissions } from "./lib/stores/settings";
+  import { activeTab, activeTabId, addTab, removeTab, setTabNeedsInput, setTabReady, tabs } from "./lib/stores/terminal";
   import {
-    workspaces,
-    activeWorkspacePath,
     activeSessionId,
-    loadWorkspaces,
-    addWorkspace as storeAddWorkspace,
+    activeWorkspacePath,
     addSession,
+    loadWorkspaces,
     removeSession,
     removeWorkspace,
     resumeSession,
-    updateSessionStatus,
-    setWorkspaceColor,
-    stripBundleExtension,
     setSessionDiffStats,
+    setWorkspaceColor,
+    addWorkspace as storeAddWorkspace,
+    stripBundleExtension,
+    updateSessionStatus,
+    workspaces,
   } from "./lib/stores/workspace";
-  import { open } from "@tauri-apps/plugin-dialog";
-  import { get } from "svelte/store";
-  import type { UnlistenFn } from "@tauri-apps/api/event";
-  import { log } from "./lib/logger";
 
   let panelFraction = $state(0.5);
   let sidebarWidth = $state(160);
@@ -74,7 +75,7 @@
   let prevSuppress = $state(false);
   $effect(() => {
     const hasActiveTab = !!$activeTabId;
-    const suppress = $activeTab?.type === "prs";
+    const suppress = $activeTab?.type === "prs" || $activeTab?.type === "stats";
     if (!hasActiveTab) {
       panelVisible.set(false);
       hadActiveTab = false;
@@ -191,6 +192,14 @@
     return id;
   }
 
+  /** Singleton Stats screen — Claude Code session analytics. */
+  let prevTabBeforeStats = "";
+  function spawnStatsTab(activate: boolean): string {
+    const id = crypto.randomUUID();
+    addTab({ type: "stats", id, title: "Stats" }, { activate });
+    return id;
+  }
+
   /**
    * Spawn a terminal tab in the given workspace directory and run `claude`.
    */
@@ -263,6 +272,7 @@
     activeWorkspacePath={$activeWorkspacePath}
     activeTabId={$activeTabId}
     prsActive={$activeTab?.type === "prs"}
+    statsActive={$activeTab?.type === "stats"}
     {openTabIds}
     {terminalRows}
     on:newTerminal={() => {
@@ -296,6 +306,20 @@
         }
       } else {
         prevTabBeforePrs = get(activeTabId);
+      }
+    }}
+    on:openStats={() => {
+      const existing = get(tabs).find((t) => t.type === "stats");
+      const id = existing ? existing.id : spawnStatsTab(true);
+      if (existing) {
+        if (get(activeTabId) === id) {
+          activeTabId.set(prevTabBeforeStats);
+        } else {
+          prevTabBeforeStats = get(activeTabId);
+          activeTabId.set(id);
+        }
+      } else {
+        prevTabBeforeStats = get(activeTabId);
       }
     }}
     on:addWorkspace={async () => {
