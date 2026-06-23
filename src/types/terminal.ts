@@ -20,6 +20,13 @@ export interface PrsTab {
   title: string;
 }
 
+/** Singleton screen showing Claude Code session stats. Not a PTY. */
+export interface StatsTab {
+  type: "stats";
+  id: string;
+  title: string;
+}
+
 export type FileLanguage =
   | "markdown"
   | "plaintext"
@@ -48,4 +55,4 @@ export interface FileTab {
   originalContent: string;
 }
 
-export type TabItem = TerminalTab | FileTab | PrsTab;
+export type TabItem = TerminalTab | FileTab | PrsTab | StatsTab;

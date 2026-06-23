@@ -1,16 +1,17 @@
 <script lang="ts">
   import { get } from "svelte/store";
-  import TerminalTab from "./TerminalTab.svelte";
-  import FileTabView from "./FileTabView.svelte";
-  import PrsView from "../panel/PrsView.svelte";
+  import { getSessionDir, ptyKill } from "../../ipc";
+  import { handleGlobalKeydown } from "../../shortcuts";
   import {
-    tabs,
     activeTabId,
     removeTab,
+    tabs,
   } from "../../stores/terminal";
-  import { ptyKill, getSessionDir } from "../../ipc";
   import { showToast } from "../../stores/toast";
-  import { handleGlobalKeydown } from "../../shortcuts";
+  import PrsView from "../panel/PrsView.svelte";
+  import StatsView from "../panel/StatsView.svelte";
+  import FileTabView from "./FileTabView.svelte";
+  import TerminalTab from "./TerminalTab.svelte";
 
   async function closeTab(id: string) {
     const tabList = get(tabs);
@@ -70,6 +71,10 @@
       {:else if tab.type === "prs"}
         <div class="screen-host" class:hidden={tab.id !== $activeTabId}>
           <PrsView />
+        </div>
+      {:else if tab.type === "stats"}
+        <div class="screen-host" class:hidden={tab.id !== $activeTabId}>
+          <StatsView />
         </div>
       {/if}
     {/each}

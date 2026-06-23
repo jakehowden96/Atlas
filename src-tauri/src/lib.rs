@@ -3,7 +3,7 @@ mod panel;
 mod pty;
 
 use pty::manager::PtyManager;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 fn setup_logging() {
     let log_dir = dirs::home_dir()
@@ -186,6 +186,7 @@ pub fn run() {
             commands::git::git_create_branch,
             commands::prs::list_repo_prs,
             commands::prs::open_url,
+            commands::stats::get_claude_stats,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -193,6 +194,24 @@ pub fn run() {
                 Ok(watcher) => { app.manage(watcher); }
                 Err(e) => log::error!("Failed to start panel watcher: {} — panel updates will not work", e),
             }
+
+            let stats_handle = app.handle().clone();
+            match commands::stats::start_stats_watcher(stats_handle) {
+                Ok(watcher) => { app.manage(watcher); }
+                Err(e) => log::warn!("Failed to start stats watcher: {} — live stats updates will not work", e),
+            }
+
+            // Back-fill stats from all historical transcripts on launch (off the UI thread).
+            let launch_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match tokio::task::spawn_blocking(commands::stats::recompute).await {
+                    Ok(Ok(summary)) => {
+                        let _ = launch_handle.emit("stats-update", &summary);
+                    }
+                    Ok(Err(e)) => log::warn!("Initial stats recompute failed: {}", e),
+                    Err(e) => log::warn!("Initial stats recompute task failed: {}", e),
+                }
+            });
 
             // Install notification hook — resolve script path from bundled
             // resources (production) or fall back to the repo scripts/ dir (dev).
