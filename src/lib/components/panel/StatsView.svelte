@@ -83,8 +83,8 @@ import { onDestroy, onMount } from "svelte";
   const MODEL_COLOURS: Record<string, string> = {
     Opus: "#a78bfa",
     Fable: "#f59e0b",
-    Sonnet: "#2dd4bf",
-    Haiku: "#34d399",
+    Sonnet: "#38bdf8",
+    Haiku: "#f472b6",
   };
   const MODEL_ORDER = ["Opus", "Fable", "Sonnet", "Haiku"];
 
@@ -288,8 +288,8 @@ import { onDestroy, onMount } from "svelte";
       {/if}
 
       <!-- Subagent usage -->
-      {@const subagent_models = sorted_models(subagent_models_for(summary, range))}
-      {#if subagent_models.length > 0}
+      {#if sorted_models(subagent_models_for(summary, range)).length > 0}
+        {@const subagent_models = sorted_models(subagent_models_for(summary, range))}
         <section class="stats-section">
           <h2 class="section-title">
             <span class="material-symbols-outlined">account_tree</span>
@@ -388,7 +388,6 @@ import { onDestroy, onMount } from "svelte";
         {@const maxSessions = Math.max(...weeks.map(([, ws]) => ws.sessions))}
         {@const maxSubagents = Math.max(...weeks.map(([, ws]) => Object.values(ws.byModelSubagents ?? {}).reduce((a, b) => a + b, 0)), 1)}
         {@const families = legend_families(weeks)}
-        {@const subagent_families = legend_subagent_families(weeks)}
         <section class="stats-section">
           <h2 class="section-title">
             <span class="material-symbols-outlined">calendar_month</span>
@@ -403,15 +402,6 @@ import { onDestroy, onMount } from "svelte";
                 {family}
               </span>
             {/each}
-            {#if subagent_families.length > 0}
-              <span class="legend-divider">·</span>
-              {#each subagent_families as family}
-                <span class="legend-item legend-item--subagent">
-                  <span class="legend-dot legend-dot--stripe" style="--c: {model_colour(family)}"></span>
-                  {family} (agents)
-                </span>
-              {/each}
-            {/if}
           </div>
 
           <div class="bar-list">
@@ -420,6 +410,7 @@ import { onDestroy, onMount } from "svelte";
               <div class="week-group">
                 <span class="bar-label day-label" title={week}>{week_label(week)}</span>
                 <div class="week-bars">
+                  <span></span>
                   <div class="bar-track">
                     {#each sorted_week_families(ws.byModel) as [family, count]}
                       <div
@@ -429,21 +420,18 @@ import { onDestroy, onMount } from "svelte";
                       ></div>
                     {/each}
                   </div>
+                  <span class="bar-count">{ws.sessions}</span>
                   {#if subagent_total > 0}
+                    <span class="bar-type-label">Subagents</span>
                     <div class="bar-track bar-track--agents">
                       {#each sorted_week_families(ws.byModelSubagents ?? {}) as [family, count]}
                         <div
                           class="bar-segment"
-                          style="width: {(count / maxSubagents) * 100}%; background: {model_colour(family)}; opacity: 0.55;"
+                          style="width: {(count / maxSubagents) * 100}%; background: {model_colour(family)};"
                           title="{family} agents: {count}"
                         ></div>
                       {/each}
                     </div>
-                  {/if}
-                </div>
-                <div class="week-counts">
-                  <span class="bar-count">{ws.sessions}</span>
-                  {#if subagent_total > 0}
                     <span class="bar-count bar-count--agents">{subagent_total}</span>
                   {/if}
                 </div>
@@ -733,7 +721,7 @@ import { onDestroy, onMount } from "svelte";
   .bar-list {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: 0.3rem;
   }
 
   /* Legacy single-row layout (kept for non-week bar usage) */
@@ -749,21 +737,26 @@ import { onDestroy, onMount } from "svelte";
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    background: var(--surface-container-low);
+    border-radius: var(--radius-sm);
+    padding: 0.3rem 0.5rem;
   }
 
   .week-bars {
     flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 52px 1fr 36px;
+    row-gap: 3px;
+    column-gap: 4px;
+    align-items: center;
   }
 
-  .week-counts {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    min-width: 36px;
-    gap: 2px;
+  .bar-type-label {
+    font-size: 0.6rem;
+    color: var(--on-surface-variant);
+    opacity: 0.7;
+    text-align: right;
   }
 
   .bar-label {
