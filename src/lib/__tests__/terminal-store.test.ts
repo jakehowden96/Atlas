@@ -27,12 +27,13 @@ import {
   getTabsByWorkspace,
   getTabWorkspacePath,
   activeWorkspaceTabs,
+  sidebarTabOrder,
   lastActiveTabByWorkspace,
   updateFileContent,
   setFileEditing,
   markFileSaved,
 } from "../stores/terminal";
-import { activeWorkspacePath } from "../stores/workspace";
+import { activeWorkspacePath, workspaces } from "../stores/workspace";
 import { panelData } from "../stores/panel";
 import type { TabItem, FileTab } from "../../types/terminal";
 import type { Terminal } from "@xterm/xterm";
@@ -67,6 +68,7 @@ describe("terminal store", () => {
     tabs.set([]);
     activeTabId.set("");
     activeWorkspacePath.set("");
+    workspaces.set([]);
     lastActiveTabByWorkspace.set(new Map());
     vi.useFakeTimers();
     vi.clearAllMocks();
@@ -176,24 +178,24 @@ describe("terminal store", () => {
   });
 
   describe("switchToTab", () => {
-    it("switches to tab at valid index within active workspace", () => {
+    it("indexes across all open tabs regardless of active workspace", () => {
       addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
       addTab(makeTerminalTab({ id: "t2", cwd: "/a" }));
       addTab(makeTerminalTab({ id: "t3", cwd: "/b" }));
       activeWorkspacePath.set("/a");
-      switchToTab(0);
-      expect(get(activeTabId)).toBe("t1");
+      switchToTab(2);
+      expect(get(activeTabId)).toBe("t3");
     });
 
-    it("indexes within workspace-scoped tabs only", () => {
+    it("switches by overall tab order, not workspace-scoped order", () => {
       addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
       addTab(makeTerminalTab({ id: "t2", cwd: "/b" }));
       addTab(makeTerminalTab({ id: "t3", cwd: "/b" }));
       activeWorkspacePath.set("/b");
       switchToTab(0);
-      expect(get(activeTabId)).toBe("t2");
+      expect(get(activeTabId)).toBe("t1");
       switchToTab(1);
-      expect(get(activeTabId)).toBe("t3");
+      expect(get(activeTabId)).toBe("t2");
     });
 
     it("ignores negative index", () => {
@@ -206,6 +208,35 @@ describe("terminal store", () => {
       addTab(makeTerminalTab({ id: "t1" }));
       switchToTab(5);
       expect(get(activeTabId)).toBe("t1");
+    });
+  });
+
+  describe("sidebarTabOrder", () => {
+    it("orders generic terminals before workspace sessions", () => {
+      addTab(makeTerminalTab({ id: "t1" }));
+      addTab(makeTerminalTab({ id: "t2", cwd: "/a" }));
+      workspaces.set([
+        { path: "/a", name: "A", sessions: [{ id: "s1", label: "S1", status: "running", age: "", terminalTabId: "t2", createdAt: "" }] },
+      ]);
+      expect(get(sidebarTabOrder)).toEqual(["t1", "t2"]);
+    });
+
+    it("orders sessions by workspace order, independent of active workspace", () => {
+      addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
+      addTab(makeTerminalTab({ id: "t2", cwd: "/b" }));
+      workspaces.set([
+        { path: "/a", name: "A", sessions: [{ id: "s1", label: "S1", status: "running", age: "", terminalTabId: "t1", createdAt: "" }] },
+        { path: "/b", name: "B", sessions: [{ id: "s2", label: "S2", status: "running", age: "", terminalTabId: "t2", createdAt: "" }] },
+      ]);
+      activeWorkspacePath.set("/b");
+      expect(get(sidebarTabOrder)).toEqual(["t1", "t2"]);
+    });
+
+    it("excludes closed sessions with no matching open tab", () => {
+      workspaces.set([
+        { path: "/a", name: "A", sessions: [{ id: "s1", label: "S1", status: "idle", age: "", terminalTabId: "old-tab", createdAt: "" }] },
+      ]);
+      expect(get(sidebarTabOrder)).toEqual([]);
     });
   });
 
