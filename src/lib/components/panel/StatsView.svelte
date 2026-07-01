@@ -423,6 +423,7 @@ import { onDestroy, onMount } from "svelte";
                   <span class="bar-count">{ws.sessions}</span>
                   {#if subagent_total > 0}
                     <span class="bar-type-label">Subagents</span>
+                    <span></span>
                     <div class="bar-track bar-track--agents">
                       {#each sorted_week_families(ws.byModelSubagents ?? {}) as [family, count]}
                         <div
@@ -753,10 +754,12 @@ import { onDestroy, onMount } from "svelte";
   }
 
   .bar-type-label {
+    grid-column: 1 / -1;
     font-size: 0.6rem;
     color: var(--on-surface-variant);
     opacity: 0.7;
-    text-align: right;
+    text-align: left;
+    margin-top: 2px;
   }
 
   .bar-label {

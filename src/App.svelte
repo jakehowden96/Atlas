@@ -1,6 +1,7 @@
 <script lang="ts">
   
   import type { UnlistenFn } from "@tauri-apps/api/event";
+  import type { FileTab } from "./types/terminal";
   import { open } from "@tauri-apps/plugin-dialog";
   import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
   import { Terminal } from "@xterm/xterm";
@@ -16,7 +17,7 @@ import { onDestroy, onMount } from "svelte";
   import { log } from "./lib/logger";
   import { panelData, panelVisible, togglePanel } from "./lib/stores/panel";
   import { enableNotifications, loadSettings, skipPermissions } from "./lib/stores/settings";
-  import { activeTab, activeTabId, addTab, removeTab, setTabNeedsInput, setTabReady, tabs } from "./lib/stores/terminal";
+  import { activeTab, activeTabId, addTab, removeTab, setTabNeedsInput, setTabReady, sidebarTabOrder, tabs } from "./lib/stores/terminal";
   import {
     activeSessionId,
     activeWorkspacePath,
@@ -34,6 +35,16 @@ import { onDestroy, onMount } from "svelte";
   } from "./lib/stores/workspace";
 
   let panelFraction = $state(0.5);
+  let tabIndexMap = $derived(new Map($sidebarTabOrder.map((id, i) => [id, i + 1])));
+  let fileRows = $derived(
+    ($tabs.filter((t): t is FileTab => t.type === "file")).map((t) => ({
+      id: t.id,
+      title: t.title,
+      filePath: t.filePath,
+      workspacePath: t.workspacePath,
+      dirty: t.dirty,
+    })),
+  );
   let sidebarWidth = $state(160);
   let isResizing = $state(false);
   let mainStageWidth = $state(0);
@@ -275,6 +286,8 @@ import { onDestroy, onMount } from "svelte";
     statsActive={$activeTab?.type === "stats"}
     {openTabIds}
     {terminalRows}
+    {fileRows}
+    {tabIndexMap}
     on:newTerminal={() => {
       const id = crypto.randomUUID();
       const terminal = new Terminal();
@@ -289,6 +302,12 @@ import { onDestroy, onMount } from "svelte";
       if (tab && tab.type === "terminal" && tab.ptyId >= 0) {
         try { await ptyKill(tab.ptyId); } catch {}
       }
+      removeTab(e.detail.tabId);
+    }}
+    on:selectFile={(e) => {
+      activeTabId.set(e.detail.tabId);
+    }}
+    on:closeFile={(e) => {
       removeTab(e.detail.tabId);
     }}
     on:openPrs={() => {
@@ -473,7 +492,7 @@ import { onDestroy, onMount } from "svelte";
     --spacing-5: 1.1rem;
 
     /* Typography */
-    --font-display: "Space Grotesk Variable", "Space Grotesk", sans-serif;
+    --font-display: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --font-body: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --font-mono: "JetBrains Mono Variable", "JetBrains Mono", "Fira Code", Menlo, monospace;
 

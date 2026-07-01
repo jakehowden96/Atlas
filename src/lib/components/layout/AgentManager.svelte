@@ -15,6 +15,8 @@
     newTerminal: undefined;
     selectTerminal: { tabId: string };
     closeTerminal: { tabId: string };
+    selectFile: { tabId: string };
+    closeFile: { tabId: string };
     openPrs: undefined;
     openStats: undefined;
   }>();
@@ -23,6 +25,14 @@
     id: string;
     title: string;
     cwd?: string;
+  }
+
+  interface FileRow {
+    id: string;
+    title: string;
+    filePath?: string;
+    workspacePath?: string;
+    dirty: boolean;
   }
 
   interface Session {
@@ -47,6 +57,8 @@
     activeTabId = "",
     openTabIds = new Set<string>(),
     terminalRows = [] as TerminalRow[],
+    fileRows = [] as FileRow[],
+    tabIndexMap = new Map<string, number>(),
     prsActive = false,
     statsActive = false,
   }: {
@@ -55,6 +67,8 @@
     activeTabId?: string;
     openTabIds?: Set<string>;
     terminalRows?: TerminalRow[];
+    fileRows?: FileRow[];
+    tabIndexMap?: Map<string, number>;
     prsActive?: boolean;
     statsActive?: boolean;
   } = $props();
@@ -101,6 +115,46 @@
       : flatRows,
   );
 
+  let filteredFileRows = $derived(
+    filterText
+      ? fileRows.filter((f) => f.title.toLowerCase().includes(filterText.toLowerCase()))
+      : fileRows,
+  );
+
+  interface WorkspaceGroup {
+    path: string;
+    name: string;
+    color: string;
+    sessions: FlatRow[];
+    files: FileRow[];
+  }
+
+  let workspaceGroups = $derived.by<WorkspaceGroup[]>(() => {
+    const groups: WorkspaceGroup[] = [];
+    for (const ws of workspaces) {
+      const sessions = filteredRows.filter((r) => r.workspacePath === ws.path);
+      const files = filteredFileRows.filter((f) => f.workspacePath === ws.path);
+      if (sessions.length > 0 || files.length > 0) {
+        groups.push({ path: ws.path, name: ws.name, color: ws.color ?? "#888", sessions, files });
+      }
+    }
+    return groups;
+  });
+
+  let orphanFiles = $derived(
+    filteredFileRows.filter(
+      (f) => !f.workspacePath || !workspaces.some((w) => w.path === f.workspacePath),
+    ),
+  );
+
+  function shortenPath(filePath: string, workspacePath: string): string {
+    if (filePath.startsWith(workspacePath)) {
+      return filePath.slice(workspacePath.length).replace(/^\//, "");
+    }
+    const parts = filePath.split("/");
+    return parts.slice(-2).join("/");
+  }
+
   function sessionIcon(session: Session): string {
     if (session.status === "error") return "error";
     return isSessionOpen(session) ? "circle" : "radio_button_unchecked";
@@ -134,13 +188,14 @@
     </div>
   </div>
 
-  {#if terminalRows.length > 0}
+  {#if terminalRows.length > 0 || orphanFiles.length > 0}
     <div class="list-header subtle">
       <span class="list-label">Terminals</span>
     </div>
     <div class="terminal-list">
       {#each terminalRows as t (t.id)}
         {@const isActive = t.id === activeTabId}
+        {@const tNum = tabIndexMap.get(t.id)}
         <div
           class="terminal-row"
           class:active={isActive}
@@ -156,6 +211,9 @@
           }}
         >
           <span class="material-symbols-outlined term-icon">terminal</span>
+          {#if tNum !== undefined && tNum <= 9}
+            <span class="tab-num">{tNum}</span>
+          {/if}
           <span class="term-label">{t.title || "Terminal"}</span>
           <button
             class="close-btn"
@@ -163,6 +221,40 @@
             onclick={(e) => {
               e.stopPropagation();
               dispatch("closeTerminal", { tabId: t.id });
+            }}
+          >
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+      {/each}
+      {#each orphanFiles as f (f.id)}
+        {@const isActive = f.id === activeTabId}
+        {@const fNum = tabIndexMap.get(f.id)}
+        <div
+          class="terminal-row"
+          class:active={isActive}
+          role="button"
+          tabindex="0"
+          title={f.filePath ?? f.title}
+          onclick={() => dispatch("selectFile", { tabId: f.id })}
+          onkeydown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              dispatch("selectFile", { tabId: f.id });
+            }
+          }}
+        >
+          <span class="material-symbols-outlined term-icon file-icon">description</span>
+          {#if fNum !== undefined && fNum <= 9}
+            <span class="tab-num">{fNum}</span>
+          {/if}
+          <span class="term-label">{f.dirty ? "* " : ""}{f.title}</span>
+          <button
+            class="close-btn"
+            title="Close file"
+            onclick={(e) => {
+              e.stopPropagation();
+              dispatch("closeFile", { tabId: f.id });
             }}
           >
             <span class="material-symbols-outlined">close</span>
@@ -209,77 +301,134 @@
   </div>
 
   <nav class="session-list">
-    {#each filteredRows as row (row.session.id)}
-      {@const stats = getStats(row.session.terminalTabId)}
-      {@const isActive = !!row.session.terminalTabId && row.session.terminalTabId === activeTabId}
-      <div
-        class="session-row"
-        class:active={isActive}
-        role="button"
-        tabindex="0"
-        title="{row.workspaceName} / {row.session.label}"
-        onclick={() => {
-          if (row.workspacePath !== activeWorkspacePath) {
-            dispatch("selectWorkspace", { workspacePath: row.workspacePath });
-          }
-          dispatch("selectSession", {
-            workspacePath: row.workspacePath,
-            sessionId: row.session.id,
-          });
-        }}
-        onkeydown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
+    {#each workspaceGroups as group (group.path)}
+      {#each group.sessions as row (row.session.id)}
+        {@const stats = getStats(row.session.terminalTabId)}
+        {@const isActive = !!row.session.terminalTabId && row.session.terminalTabId === activeTabId}
+        {@const sNum = tabIndexMap.get(row.session.terminalTabId ?? "")}
+        <div
+          class="session-row"
+          class:active={isActive}
+          role="button"
+          tabindex="0"
+          title="{row.workspaceName} / {row.session.label}"
+          onclick={() => {
+            if (row.workspacePath !== activeWorkspacePath) {
+              dispatch("selectWorkspace", { workspacePath: row.workspacePath });
+            }
             dispatch("selectSession", {
               workspacePath: row.workspacePath,
               sessionId: row.session.id,
             });
-          }
-        }}
-      >
-        <span class="ws-stripe" style="background: {row.workspaceColor}"></span>
+          }}
+          onkeydown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              dispatch("selectSession", {
+                workspacePath: row.workspacePath,
+                sessionId: row.session.id,
+              });
+            }
+          }}
+        >
+          <span class="ws-stripe" style="background: {row.workspaceColor}"></span>
 
-        <div class="row-content">
-          <div class="row-primary">
-            {#if row.session.status === "starting"}
-              <span class="material-symbols-outlined session-spinner">progress_activity</span>
-            {:else}
-              <span
-                class="material-symbols-outlined session-status-icon"
-                style="color: {sessionIconColor(row.session)}; font-variation-settings: 'FILL' {sessionIconFill(row.session)}"
+          <div class="row-content">
+            <div class="row-primary">
+              {#if row.session.status === "starting"}
+                <span class="material-symbols-outlined session-spinner">progress_activity</span>
+              {:else}
+                <span
+                  class="material-symbols-outlined session-status-icon"
+                  style="color: {sessionIconColor(row.session)}; font-variation-settings: 'FILL' {sessionIconFill(row.session)}"
+                >
+                  {sessionIcon(row.session)}
+                </span>
+              {/if}
+
+              {#if sNum !== undefined && sNum <= 9}
+                <span class="tab-num">{sNum}</span>
+              {/if}
+
+              <span class="row-session" class:open={isSessionOpen(row.session)}>{row.session.label}</span>
+
+              <button
+                class="close-btn"
+                title="Close session"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  dispatch("deleteSession", {
+                    workspacePath: row.workspacePath,
+                    sessionId: row.session.id,
+                  });
+                }}
               >
-                {sessionIcon(row.session)}
-              </span>
-            {/if}
+                <span class="material-symbols-outlined">close</span>
+              </button>
+            </div>
 
-            <span class="row-session" class:open={isSessionOpen(row.session)}>{row.session.label}</span>
-
-            <button
-              class="close-btn"
-              title="Close session"
-              onclick={(e) => {
-                e.stopPropagation();
-                dispatch("deleteSession", {
-                  workspacePath: row.workspacePath,
-                  sessionId: row.session.id,
-                });
-              }}
-            >
-              <span class="material-symbols-outlined">close</span>
-            </button>
+            <div class="row-secondary">
+              <span class="row-ws">{row.workspaceName}</span>
+              {#if stats}
+                <span class="diff-badge">
+                  <span class="add">+{stats.linesAdded}</span>
+                  <span class="rem">−{stats.linesRemoved}</span>
+                </span>
+              {/if}
+            </div>
           </div>
+        </div>
+      {/each}
 
-          <div class="row-secondary">
-            <span class="row-ws">{row.workspaceName}</span>
-            {#if stats}
-              <span class="diff-badge">
-                <span class="add">+{stats.linesAdded}</span>
-                <span class="rem">−{stats.linesRemoved}</span>
-              </span>
+      {#each group.files as f (f.id)}
+        {@const isActive = f.id === activeTabId}
+        {@const fNum = tabIndexMap.get(f.id)}
+        <div
+          class="session-row file-tab-row"
+          class:active={isActive}
+          role="button"
+          tabindex="0"
+          title={f.filePath ?? f.title}
+          onclick={() => dispatch("selectFile", { tabId: f.id })}
+          onkeydown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              dispatch("selectFile", { tabId: f.id });
+            }
+          }}
+        >
+          <span class="ws-stripe" style="background: {group.color}"></span>
+
+          <div class="row-content">
+            <div class="row-primary">
+              <span class="material-symbols-outlined file-tab-icon">description</span>
+
+              {#if fNum !== undefined && fNum <= 9}
+                <span class="tab-num">{fNum}</span>
+              {/if}
+
+              <span class="row-session open">{f.dirty ? "* " : ""}{f.title}</span>
+
+              <button
+                class="close-btn"
+                title="Close file"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  dispatch("closeFile", { tabId: f.id });
+                }}
+              >
+                <span class="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            {#if f.filePath}
+              <div class="row-secondary">
+                <span class="row-ws">{shortenPath(f.filePath, group.path)}</span>
+              </div>
             {/if}
           </div>
         </div>
-      </div>
+      {/each}
     {/each}
 
     {#if flatRows.length === 0}
@@ -557,6 +706,20 @@
   .diff-badge .add { color: var(--secondary); }
   .diff-badge .rem { color: var(--error); }
 
+  .tab-num {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    color: var(--on-surface-variant);
+    background: var(--surface-container);
+    border-radius: 3px;
+    padding: 1px 4px;
+    flex-shrink: 0;
+    opacity: 0.65;
+    line-height: 1.4;
+    min-width: 14px;
+    text-align: center;
+  }
+
   .close-btn {
     background: none;
     border: none;
@@ -630,5 +793,17 @@
   .footer-btn :global(.material-symbols-outlined) { font-size: 1rem; }
   .footer-btn-label {
     font-weight: 500;
+  }
+
+  .file-icon {
+    color: var(--cyan) !important;
+    font-variation-settings: 'FILL' 0 !important;
+  }
+
+  .file-tab-icon {
+    font-size: 0.7rem !important;
+    flex-shrink: 0;
+    color: var(--cyan);
+    opacity: 0.8;
   }
 </style>

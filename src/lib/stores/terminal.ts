@@ -2,7 +2,7 @@ import type { Terminal } from "@xterm/xterm";
 import { derived, get, writable } from "svelte/store";
 import type { FileLanguage, FileTab, TabItem } from "../../types/terminal";
 import { panelData } from "./panel";
-import { activeWorkspacePath } from "./workspace";
+import { activeWorkspacePath, workspaces } from "./workspace";
 
 export const tabs = writable<TabItem[]>([]);
 export const activeTabId = writable<string>("");
@@ -26,6 +26,39 @@ export const activeWorkspaceTabs = derived(
     return $tabs.filter((t) => getTabWorkspacePath(t) === $activeWorkspacePath);
   },
 );
+
+/**
+ * Every open tab's ID, ordered the way the sidebar lists them: generic
+ * terminals, then orphan files, then each workspace's sessions and files
+ * in turn. This is the canonical order for Ctrl+number switching and tab
+ * numbering — it spans all open sessions, not just the active workspace.
+ */
+export const sidebarTabOrder = derived([tabs, workspaces], ([$tabs, $workspaces]) => {
+  const sessionTabIds = new Set(
+    $workspaces.flatMap((w) => w.sessions.map((s) => s.terminalTabId).filter((id): id is string => !!id)),
+  );
+  const order: string[] = [];
+
+  for (const t of $tabs) {
+    if (t.type === "terminal" && !sessionTabIds.has(t.id)) order.push(t.id);
+  }
+  for (const t of $tabs) {
+    if (t.type === "file" && (!t.workspacePath || !$workspaces.some((w) => w.path === t.workspacePath))) {
+      order.push(t.id);
+    }
+  }
+  for (const ws of $workspaces) {
+    for (const s of ws.sessions) {
+      if (s.terminalTabId && $tabs.some((t) => t.id === s.terminalTabId)) {
+        order.push(s.terminalTabId);
+      }
+    }
+    for (const t of $tabs) {
+      if (t.type === "file" && t.workspacePath === ws.path) order.push(t.id);
+    }
+  }
+  return order;
+});
 
 /** Tracks the last active tab ID per workspace path. */
 export const lastActiveTabByWorkspace = writable<Map<string, string>>(new Map());
@@ -94,7 +127,7 @@ export function addFileTab(
     workspacePath,
     language,
     dirty: false,
-    editing: false,
+    editing: true,
     originalContent: content,
   };
   addTab(tab);
@@ -176,9 +209,9 @@ export function removeTab(id: string) {
 }
 
 export function switchToTab(index: number) {
-  const wsTabs = get(activeWorkspaceTabs);
-  if (index >= 0 && index < wsTabs.length) {
-    activeTabId.set(wsTabs[index].id);
+  const order = get(sidebarTabOrder);
+  if (index >= 0 && index < order.length) {
+    activeTabId.set(order[index]);
   }
 }
 
