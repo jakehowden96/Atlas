@@ -436,158 +436,19 @@ import { onDestroy, onMount } from "svelte";
 <Toast />
 
 <style>
-  :global(:root) {
-    /* Everforest Hard Dark palette — canonical values
-       Contrast targets (against bg0 #272e33):
-         fg #d3c6aa  → 7.97:1  AAA  (default body, headings)
-         grey2       → 5.36:1  AA   (captions, hints)
-         primary     → 6.92:1  AAA  (links, accents)
-       Surface hierarchy (tonal depth) */
-    --surface: #272e33;              /* bg0 */
-    --surface-container-lowest: #1e2326; /* bg_dim */
-    --surface-container-low: #2e383c;  /* bg1 */
-    --surface-container: #374145;     /* bg2 */
-    --surface-container-high: #414b50; /* bg3 */
-    --surface-container-highest: #495156; /* bg4 */
-    --surface-bright: #4f5b58;       /* bg5 */
-
-    /* Foreground */
-    --on-surface: #d3c6aa;           /* fg — AAA on bg0 */
-    --on-surface-variant: #9da9a0;   /* grey2 — AA on bg0 */
-
-    /* Outline — at least 3:1 against surface for non-text contrast */
-    --outline-variant: #7a8478;      /* grey0 — 3.66:1 on bg0 */
-
-    /* Primary (blue) */
-    --primary: #7fbbb3;
-    --primary-container: #6ba89f;
-    --on-primary: #272e33;
-    --primary-dim: #5a948c;
-
-    /* Secondary (green) */
-    --secondary: #a7c080;
-    --secondary-container: #404d44; /* bg_green */
-
-    /* Error (red) */
-    --error: #e67e80;
-    --error-container: #4e3e43;     /* bg_red */
-
-    /* Tertiary (orange) */
-    --tertiary: #e69875;
-
-    /* Named colors */
-    --yellow: #dbbc7f;
-    --cyan: #83c092;
-    --amber: #e69875;
-
-    /* Radius */
-    --radius: 8px;
-    --radius-sm: 6px;
-    --radius-md: 10px;
-    --radius-lg: 14px;
-
-    /* Spacing scale */
-    --spacing-2-5: 0.5rem;
-    --spacing-4: 0.9rem;
-    --spacing-5: 1.1rem;
-
-    /* Typography */
-    --font-display: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    --font-body: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    --font-mono: "JetBrains Mono Variable", "JetBrains Mono", "Fira Code", Menlo, monospace;
-
-    font-size: 115%;
-  }
-
-  /* Everforest Hard Light — applied when the OS is in light mode.
-     Contrast targets (against bg0 #fffbef):
-       on-surface #3a464c → 10.3:1  AAA   (default body)
-       grey1     #939f91 → 3.28:1  large/icon only
-       primary   #3a94c5 → 3.91:1  AA-large + non-text
-       error     #f85552 → 3.69:1  non-text contrast
-     Hard light uses #fffbef (warm bg0); we slightly cool the fg vs the
-     Everforest grey scale so body text comfortably clears AAA. */
-  @media (prefers-color-scheme: light) {
-    :global(:root) {
-      --surface: #fffbef;              /* bg0 */
-      --surface-container-lowest: #f3ead3; /* bg_dim */
-      --surface-container-low: #f8f5e4;  /* bg1 */
-      --surface-container: #f2efdf;     /* bg2 */
-      --surface-container-high: #edeada; /* bg3 */
-      --surface-container-highest: #e6e2cc; /* bg4 */
-      --surface-bright: #bec5b2;        /* bg5 */
-
-      --on-surface: #3a464c;            /* darker than Everforest fg for AAA */
-      --on-surface-variant: #5c6a72;    /* Everforest fg — AA on bg0 */
-
-      --outline-variant: #939f91;       /* grey1 — 3.28:1 non-text */
-
-      --primary: #3a94c5;
-      --primary-container: #2b7faa;
-      --on-primary: #fffbef;
-      --primary-dim: #2f7ea6;
-
-      --secondary: #8da101;
-      --secondary-container: #e5e6c5;   /* bg_green */
-
-      --error: #f85552;
-      --error-container: #fbe3da;       /* bg_red */
-
-      --tertiary: #f57d26;
-
-      --yellow: #dfa000;
-      --cyan: #35a77c;
-      --amber: #f57d26;
-    }
-  }
-
   /* Keep terminal at its own font size — xterm manages this internally */
   :global(.xterm) {
     font-size: initial;
-  }
-
-  :global(body) {
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    background: var(--surface);
-    color: var(--on-surface);
-    font-family: var(--font-body);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
   }
 
   :global(*) {
     box-sizing: border-box;
   }
 
-  :global(::selection) {
-    background: color-mix(in srgb, var(--primary) 35%, transparent);
-    color: var(--on-surface);
-  }
-
   :global(.material-symbols-outlined) {
     font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
     font-size: 1.25rem;
     vertical-align: middle;
-  }
-
-  :global(::-webkit-scrollbar) {
-    width: 6px;
-    height: 6px;
-  }
-
-  :global(::-webkit-scrollbar-track) {
-    background: transparent;
-  }
-
-  :global(::-webkit-scrollbar-thumb) {
-    background: color-mix(in srgb, var(--outline-variant) 50%, transparent);
-    border-radius: 3px;
-  }
-
-  :global(::-webkit-scrollbar-thumb:hover) {
-    background: var(--outline-variant);
   }
 
   .titlebar {
@@ -598,7 +459,7 @@ import { onDestroy, onMount } from "svelte";
     height: 28px;
     z-index: 1000;
     background: var(--surface);
-    border-bottom: 1px solid var(--outline-variant);
+    border-bottom: 1px solid var(--border);
     -webkit-app-region: drag;
     app-region: drag;
   }
@@ -633,7 +494,7 @@ import { onDestroy, onMount } from "svelte";
   .panel-section {
     flex-shrink: 0;
     overflow: hidden;
-    border-left: 1px solid var(--outline-variant);
+    border-left: 1px solid var(--border);
     contain: inline-size layout style;
   }
 
@@ -653,17 +514,17 @@ import { onDestroy, onMount } from "svelte";
     height: 24px;
     background: none;
     border: none;
-    color: var(--on-surface-variant);
+    color: var(--muted);
     cursor: pointer;
-    border-radius: var(--radius-sm);
+    border-radius: var(--r-md);
     padding: 0;
     transition: background 0.15s, color 0.15s;
     z-index: 10;
   }
 
   .panel-open-btn:hover {
-    background: var(--surface-container-high);
-    color: var(--on-surface);
+    background: var(--surface2);
+    color: var(--text);
   }
 
   .panel-open-btn :global(.material-symbols-outlined) {

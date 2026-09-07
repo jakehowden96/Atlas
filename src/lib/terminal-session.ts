@@ -10,7 +10,7 @@ import { updateSessionLabelByTabId } from "./stores/workspace";
 import { get } from "svelte/store";
 import { showToast } from "./stores/toast";
 import { setRefreshHandler } from "./shortcuts";
-import { xtermTheme } from "./theme";
+import { activeXtermTheme, themeMode } from "./theme";
 import { log } from "./logger";
 
 export interface TerminalSessionOptions {
@@ -34,6 +34,14 @@ export class TerminalSession {
   private _visible: boolean;
   private initialCwd?: string;
   private externalOnData?: (data: string) => void;
+  private unsubscribeTheme: (() => void) | null = null;
+  private prefersDark: MediaQueryList | null = null;
+
+  /** Re-read the palette for the current mode; also fires on OS-preference
+      changes so a terminal on "system" follows the OS without a respawn. */
+  private applyXtermTheme = () => {
+    this.terminal.options.theme = activeXtermTheme(get(themeMode));
+  };
 
   constructor(opts: TerminalSessionOptions) {
     this.tabId = opts.tabId;
@@ -44,10 +52,14 @@ export class TerminalSession {
     this.terminal = new Terminal({
       cursorBlink: true,
       fontSize: 14,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
-      theme: xtermTheme,
+      fontFamily: "'Geist Mono Variable', 'Geist Mono', monospace",
+      theme: activeXtermTheme(get(themeMode)),
       allowProposedApi: true,
     });
+
+    this.unsubscribeTheme = themeMode.subscribe(this.applyXtermTheme);
+    this.prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
+    this.prefersDark.addEventListener("change", this.applyXtermTheme);
 
     this.fitAddon = new FitAddon();
     this.terminal.loadAddon(this.fitAddon);
@@ -338,6 +350,8 @@ export class TerminalSession {
   destroy() {
     log.info("terminal", `destroy tab=${this.tabId} ptyId=${this.ptyId}`);
     this.resizeObserver?.disconnect();
+    this.unsubscribeTheme?.();
+    this.prefersDark?.removeEventListener("change", this.applyXtermTheme);
     this.stopPolling();
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     if (this.ptyId !== null) {
