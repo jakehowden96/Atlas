@@ -23,6 +23,7 @@ import {
   removeSession,
   loadWorkspaces,
   cycleWorkspace,
+  resumeSession,
 } from "../stores/workspace";
 import { exists, readTextFile } from "@tauri-apps/plugin-fs";
 
@@ -67,7 +68,7 @@ describe("workspace store", () => {
   describe("addSession", () => {
     it("creates session with formatted label", async () => {
       await addWorkspace("/Users/jake/my-project");
-      await addSession("/Users/jake/my-project", "my-project", "tab-1");
+      await addSession("/Users/jake/my-project", "my-project", "tab-1", "claude-1");
       const ws = get(workspaces);
       expect(ws[0].sessions).toHaveLength(1);
       expect(ws[0].sessions[0].label).toBe("My Project");
@@ -75,8 +76,8 @@ describe("workspace store", () => {
 
     it("prepends to workspace sessions array", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "first", "tab-1");
-      await addSession("/a", "second", "tab-2");
+      await addSession("/a", "first", "tab-1", "claude-1");
+      await addSession("/a", "second", "tab-2", "claude-2");
       const ws = get(workspaces);
       expect(ws[0].sessions).toHaveLength(2);
       // Most recent session should be first
@@ -85,15 +86,40 @@ describe("workspace store", () => {
 
     it("sets activeSessionId", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1");
+      await addSession("/a", "test", "tab-1", "claude-1");
       expect(get(activeSessionId)).toBeTruthy();
+    });
+
+    it("stores the claude session id", async () => {
+      await addWorkspace("/a");
+      await addSession("/a", "test", "tab-1", "claude-1");
+      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe("claude-1");
+    });
+
+    it("stores a null claude session id", async () => {
+      await addWorkspace("/a");
+      await addSession("/a", "test", "tab-1", null);
+      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBeNull();
+    });
+  });
+
+  describe("resumeSession", () => {
+    it("reattaches the tab and records the claude session id", async () => {
+      await addWorkspace("/a");
+      await addSession("/a", "test", "tab-1", null);
+      const sessionId = get(workspaces)[0].sessions[0].id;
+      await resumeSession(sessionId, "tab-2", "claude-9");
+      const session = get(workspaces)[0].sessions[0];
+      expect(session.status).toBe("running");
+      expect(session.terminalTabId).toBe("tab-2");
+      expect(session.claudeSessionId).toBe("claude-9");
     });
   });
 
   describe("removeSession", () => {
     it("removes session from workspace", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1");
+      await addSession("/a", "test", "tab-1", "claude-1");
       const sessionId = get(workspaces)[0].sessions[0].id;
       await removeSession("/a", sessionId);
       expect(get(workspaces)[0].sessions).toHaveLength(0);
@@ -101,7 +127,7 @@ describe("workspace store", () => {
 
     it("clears activeSessionId if it matches", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1");
+      await addSession("/a", "test", "tab-1", "claude-1");
       const sessionId = get(workspaces)[0].sessions[0].id;
       activeSessionId.set(sessionId);
       await removeSession("/a", sessionId);
@@ -110,8 +136,8 @@ describe("workspace store", () => {
 
     it("does not clear activeSessionId if it does not match", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "first", "tab-1");
-      await addSession("/a", "second", "tab-2");
+      await addSession("/a", "first", "tab-1", "claude-1");
+      await addSession("/a", "second", "tab-2", "claude-2");
       const sessions = get(workspaces)[0].sessions;
       activeSessionId.set(sessions[0].id);
       await removeSession("/a", sessions[1].id);
@@ -170,7 +196,7 @@ describe("workspace store", () => {
             name: "a",
             color: "#fff",
             sessions: [
-              { id: "s1", label: "S1", status: "running", age: "", terminalTabId: null, createdAt: "" },
+              { id: "s1", label: "S1", status: "running", age: "", terminalTabId: null, createdAt: "", claudeSessionId: "claude-1" },
             ],
           },
         ]),
@@ -179,6 +205,44 @@ describe("workspace store", () => {
       const ws = get(workspaces);
       expect(ws).toHaveLength(1);
       expect(ws[0].sessions[0].status).toBe("idle");
+    });
+
+    it("preserves claudeSessionId across a reload", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify([
+          {
+            path: "/a",
+            name: "a",
+            color: "#fff",
+            sessions: [
+              { id: "s1", label: "S1", status: "running", age: "", terminalTabId: "tab-1", createdAt: "", claudeSessionId: "claude-1" },
+            ],
+          },
+        ]),
+      );
+      await loadWorkspaces();
+      const session = get(workspaces)[0].sessions[0];
+      expect(session.claudeSessionId).toBe("claude-1");
+      expect(session.terminalTabId).toBeNull();
+    });
+
+    it("migrates sessions written without claudeSessionId to null", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify([
+          {
+            path: "/a",
+            name: "a",
+            color: "#fff",
+            sessions: [
+              { id: "s1", label: "S1", status: "idle", age: "", terminalTabId: null, createdAt: "" },
+            ],
+          },
+        ]),
+      );
+      await loadWorkspaces();
+      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBeNull();
     });
 
     it("handles missing file gracefully", async () => {

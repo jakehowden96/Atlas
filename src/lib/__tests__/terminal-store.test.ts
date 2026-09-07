@@ -216,7 +216,7 @@ describe("terminal store", () => {
       addTab(makeTerminalTab({ id: "t1" }));
       addTab(makeTerminalTab({ id: "t2", cwd: "/a" }));
       workspaces.set([
-        { path: "/a", name: "A", sessions: [{ id: "s1", label: "S1", status: "running", age: "", terminalTabId: "t2", createdAt: "" }] },
+        { path: "/a", name: "A", sessions: [{ id: "s1", label: "S1", status: "running", age: "", terminalTabId: "t2", createdAt: "", claudeSessionId: null }] },
       ]);
       expect(get(sidebarTabOrder)).toEqual(["t1", "t2"]);
     });
@@ -225,8 +225,8 @@ describe("terminal store", () => {
       addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
       addTab(makeTerminalTab({ id: "t2", cwd: "/b" }));
       workspaces.set([
-        { path: "/a", name: "A", sessions: [{ id: "s1", label: "S1", status: "running", age: "", terminalTabId: "t1", createdAt: "" }] },
-        { path: "/b", name: "B", sessions: [{ id: "s2", label: "S2", status: "running", age: "", terminalTabId: "t2", createdAt: "" }] },
+        { path: "/a", name: "A", sessions: [{ id: "s1", label: "S1", status: "running", age: "", terminalTabId: "t1", createdAt: "", claudeSessionId: null }] },
+        { path: "/b", name: "B", sessions: [{ id: "s2", label: "S2", status: "running", age: "", terminalTabId: "t2", createdAt: "", claudeSessionId: null }] },
       ]);
       activeWorkspacePath.set("/b");
       expect(get(sidebarTabOrder)).toEqual(["t1", "t2"]);
@@ -234,7 +234,7 @@ describe("terminal store", () => {
 
     it("excludes closed sessions with no matching open tab", () => {
       workspaces.set([
-        { path: "/a", name: "A", sessions: [{ id: "s1", label: "S1", status: "idle", age: "", terminalTabId: "old-tab", createdAt: "" }] },
+        { path: "/a", name: "A", sessions: [{ id: "s1", label: "S1", status: "idle", age: "", terminalTabId: "old-tab", createdAt: "", claudeSessionId: null }] },
       ]);
       expect(get(sidebarTabOrder)).toEqual([]);
     });

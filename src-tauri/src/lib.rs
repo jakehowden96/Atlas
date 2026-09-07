@@ -2,6 +2,7 @@ mod commands;
 pub mod hook;
 mod panel;
 mod pty;
+mod session;
 
 use pty::manager::PtyManager;
 use tauri::{Emitter, Manager};
@@ -217,6 +218,7 @@ pub fn run() {
             commands::prs::list_repo_prs,
             commands::prs::open_url,
             commands::stats::get_claude_stats,
+            commands::session::get_session_transcript_path,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

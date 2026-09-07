@@ -213,19 +213,30 @@ import { onDestroy, onMount } from "svelte";
 
   /**
    * Spawn a terminal tab in the given workspace directory and run `claude`.
+   *
+   * `existingSessionId` reattaches an existing Atlas session row to the new tab.
+   * `resumeSessionId` is the Claude session UUID to `--resume`; without it a
+   * fresh UUID is minted and passed as `--session-id`, so the conversation can
+   * be resumed later and its transcript located.
    */
-  async function spawnClaudeSession(workspacePath: string, existingSessionId?: string) {
+  async function spawnClaudeSession(
+    workspacePath: string,
+    opts?: { existingSessionId?: string; resumeSessionId?: string },
+  ) {
     const tabId = crypto.randomUUID();
     const terminal = new Terminal();
     let session: { id: string };
 
-    if (existingSessionId) {
-      await resumeSession(existingSessionId, tabId);
-      session = { id: existingSessionId };
+    const resumeSessionId = opts?.resumeSessionId;
+    const claudeSessionId = resumeSessionId ?? crypto.randomUUID();
+
+    if (opts?.existingSessionId) {
+      await resumeSession(opts.existingSessionId, tabId, claudeSessionId);
+      session = { id: opts.existingSessionId };
     } else {
       const wsName = get(workspaces).find((w) => w.path === workspacePath)?.name
         ?? stripBundleExtension(workspacePath.split("/").filter(Boolean).pop() ?? "New session");
-      session = await addSession(workspacePath, wsName, tabId);
+      session = await addSession(workspacePath, wsName, tabId, claudeSessionId);
     }
 
     addTab({ type: "terminal", id: tabId, title: "", ptyId: -1, terminal, cwd: workspacePath, ready: false });
@@ -246,7 +257,10 @@ import { onDestroy, onMount } from "svelte";
       if (tab.type === "terminal" && tab.ptyId >= 0) {
         clearInterval(poll);
         const skip = get(skipPermissions) ? " --dangerously-skip-permissions" : "";
-        const cmd = `claude${skip}\n`;
+        const sessionFlag = resumeSessionId
+          ? `--resume ${resumeSessionId}`
+          : `--session-id ${claudeSessionId}`;
+        const cmd = `claude ${sessionFlag}${skip}\n`;
         // Small delay to let the shell prompt render
         setTimeout(() => {
           // Re-check: the tab may have been closed during the delay,
@@ -369,8 +383,10 @@ import { onDestroy, onMount } from "svelte";
       // Spawn a fresh Claude session if not actively running (or running with a missing tab)
       if (session.status !== "running" || !get(tabs).find((t) => t.id === session.terminalTabId)) {
         spawningSessionIds.add(session.id);
-        spawnClaudeSession(e.detail.workspacePath, session.id)
-          .finally(() => spawningSessionIds.delete(session.id));
+        spawnClaudeSession(e.detail.workspacePath, {
+          existingSessionId: session.id,
+          resumeSessionId: session.claudeSessionId ?? undefined,
+        }).finally(() => spawningSessionIds.delete(session.id));
       }
     }}
     on:deleteSession={async (e) => {
