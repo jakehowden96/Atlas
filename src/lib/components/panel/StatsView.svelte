@@ -140,17 +140,6 @@ import { onDestroy, onMount } from "svelte";
     });
   }
 
-  function legend_subagent_families(weeks: [string, WeekStats][]): string[] {
-    const seen = new Set<string>();
-    for (const [, ws] of weeks) {
-      for (const f of Object.keys(ws.byModelSubagents ?? {})) seen.add(f);
-    }
-    return [...seen].sort((a, b) => {
-      const oa = MODEL_ORDER.indexOf(a);
-      const ob = MODEL_ORDER.indexOf(b);
-      return (oa === -1 ? 99 : oa) - (ob === -1 ? 99 : ob);
-    });
-  }
 </script>
 
 <div class="stats-view">
