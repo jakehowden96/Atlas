@@ -231,6 +231,7 @@ fn build_panel_multi(
     Ok(Some(data))
 }
 
+// superseded by transcript TodoWrite (phase 02)
 fn read_existing_plan(panel_path: &std::path::Path) -> Option<String> {
     let contents = fs::read_to_string(panel_path).ok()?;
     let existing: PanelData = serde_json::from_str(&contents).ok()?;

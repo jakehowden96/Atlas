@@ -1,4 +1,5 @@
 mod commands;
+pub mod hook;
 mod panel;
 mod pty;
 
@@ -52,9 +53,86 @@ fn clean_old_logs(log_dir: &std::path::Path, max_age_days: u64) {
     }
 }
 
+/// Identifies Atlas's own entry in `hooks.Notification`. The command is
+/// `"<exe>" hook notification`, so the argv tail is the part that is stable
+/// across install locations and platforms.
+const HOOK_MARKER: &str = "hook notification";
+
+/// The now-deleted `scripts/atlas-notify-hook.sh` entry, removed on upgrade so
+/// users do not end up running both.
+const LEGACY_HOOK_MARKER: &str = "atlas-notify-hook";
+
+/// `"<exe>" hook notification` — quoted because the path contains spaces on
+/// both Windows (`C:\Program Files\...`) and macOS (`/Applications/Atlas.app/...`).
+fn notification_hook_command() -> Result<String, std::io::Error> {
+    Ok(format!(
+        "\"{}\" hook notification",
+        std::env::current_exe()?.display()
+    ))
+}
+
+fn hook_command_str(hook: &serde_json::Value) -> &str {
+    hook.get("command").and_then(|c| c.as_str()).unwrap_or("")
+}
+
+/// Merge Atlas's notification hook into a parsed `settings.json`, dropping any
+/// stale shell-script entry. Returns true when `settings` was modified.
+fn merge_notification_hook(settings: &mut serde_json::Value, command: &str) -> bool {
+    let Some(root) = settings.as_object_mut() else {
+        return false;
+    };
+    let hooks = root.entry("hooks").or_insert_with(|| serde_json::json!({}));
+    let Some(hooks_obj) = hooks.as_object_mut() else {
+        return false;
+    };
+    let notification = hooks_obj
+        .entry("Notification")
+        .or_insert_with(|| serde_json::json!([]));
+    let Some(entries) = notification.as_array_mut() else {
+        return false;
+    };
+
+    let mut changed = false;
+
+    entries.retain_mut(|entry| {
+        let Some(inner) = entry.get_mut("hooks").and_then(|h| h.as_array_mut()) else {
+            return true;
+        };
+        let before = inner.len();
+        inner.retain(|hook| !hook_command_str(hook).contains(LEGACY_HOOK_MARKER));
+        if inner.len() == before {
+            return true;
+        }
+        changed = true;
+        // Drop the wrapper too if the legacy command was all it held.
+        !inner.is_empty()
+    });
+
+    let already_installed = entries.iter().any(|entry| {
+        entry
+            .get("hooks")
+            .and_then(|h| h.as_array())
+            .is_some_and(|inner| {
+                inner
+                    .iter()
+                    .any(|hook| hook_command_str(hook).contains(HOOK_MARKER))
+            })
+    });
+
+    if !already_installed {
+        entries.push(serde_json::json!({
+            "matcher": "",
+            "hooks": [{ "type": "command", "command": command }]
+        }));
+        changed = true;
+    }
+
+    changed
+}
+
 /// Install the Atlas notification hook into ~/.claude/settings.json
 /// so Claude Code notifies Atlas when it needs input.
-fn install_notification_hook(script_path: &str) {
+fn install_notification_hook(command: &str) {
     let claude_settings_path = match dirs::home_dir() {
         Some(h) => h.join(".claude").join("settings.json"),
         None => return,
@@ -69,57 +147,9 @@ fn install_notification_hook(script_path: &str) {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_else(|| serde_json::json!({}));
 
-    let Some(hooks) = settings
-        .as_object_mut()
-        .map(|obj| obj.entry("hooks").or_insert_with(|| serde_json::json!({})))
-    else {
-        return;
-    };
-
-    let Some(notification_hooks) = hooks
-        .as_object_mut()
-        .map(|obj| obj.entry("Notification").or_insert_with(|| serde_json::json!([])))
-    else {
-        return;
-    };
-
-    let already_installed = notification_hooks
-        .as_array()
-        .map(|arr| {
-            arr.iter().any(|entry| {
-                entry
-                    .get("hooks")
-                    .and_then(|h| h.as_array())
-                    .map(|hooks| {
-                        hooks.iter().any(|hook| {
-                            hook.get("command")
-                                .and_then(|c| c.as_str())
-                                .map(|c| c.contains("atlas-notify-hook"))
-                                .unwrap_or(false)
-                        })
-                    })
-                    .unwrap_or(false)
-            })
-        })
-        .unwrap_or(false);
-
-    if already_installed {
+    if !merge_notification_hook(&mut settings, command) {
         log::info!("Atlas notification hook already installed");
         return;
-    }
-
-    let hook_entry = serde_json::json!({
-        "matcher": "",
-        "hooks": [
-            {
-                "type": "command",
-                "command": script_path
-            }
-        ]
-    });
-
-    if let Some(arr) = notification_hooks.as_array_mut() {
-        arr.push(hook_entry);
     }
 
     match serde_json::to_string_pretty(&settings) {
@@ -127,7 +157,7 @@ fn install_notification_hook(script_path: &str) {
             if let Err(e) = std::fs::write(&claude_settings_path, json) {
                 log::warn!("Failed to write Claude settings: {}", e);
             } else {
-                log::info!("Installed Atlas notification hook at {}", script_path);
+                log::info!("Installed Atlas notification hook: {}", command);
             }
         }
         Err(e) => log::warn!("Failed to serialize Claude settings: {}", e),
@@ -213,29 +243,105 @@ pub fn run() {
                 }
             });
 
-            // Install notification hook — resolve script path from bundled
-            // resources (production) or fall back to the repo scripts/ dir (dev).
-            let script_path = app
-                .path()
-                .resource_dir()
-                .ok()
-                .map(|r| r.join("atlas-notify-hook.sh"))
-                .filter(|p| p.exists())
-                .or_else(|| {
-                    let dev_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                        .parent()
-                        .map(|p| p.join("scripts").join("atlas-notify-hook.sh"))?;
-                    if dev_path.exists() { Some(dev_path) } else { None }
-                });
-
-            if let Some(path) = script_path {
-                install_notification_hook(&path.to_string_lossy());
-            } else {
-                log::warn!("Could not locate atlas-notify-hook.sh — notification hook not installed");
+            // Install the notification hook, pointing at this executable —
+            // `current_exe()` resolves in both dev and bundled builds.
+            match notification_hook_command() {
+                Ok(command) => install_notification_hook(&command),
+                Err(e) => log::warn!(
+                    "Could not resolve the Atlas executable — notification hook not installed: {}",
+                    e
+                ),
             }
 
             Ok(())
         })
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| log::error!("Tauri application error: {}", e));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every `command` string under `hooks.Notification`, flattened.
+    fn commands(settings: &serde_json::Value) -> Vec<String> {
+        settings["hooks"]["Notification"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|entry| entry["hooks"].as_array().unwrap())
+            .map(|hook| hook["command"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    const NEW: &str = "\"C:\\Program Files\\Atlas\\Atlas.exe\" hook notification";
+
+    #[test]
+    fn installs_into_empty_settings() {
+        let mut settings = serde_json::json!({});
+        assert!(merge_notification_hook(&mut settings, NEW));
+        assert_eq!(commands(&settings), vec![NEW]);
+        assert_eq!(settings["hooks"]["Notification"][0]["matcher"], "");
+        assert_eq!(
+            settings["hooks"]["Notification"][0]["hooks"][0]["type"],
+            "command"
+        );
+    }
+
+    #[test]
+    fn second_install_is_a_no_op() {
+        let mut settings = serde_json::json!({});
+        assert!(merge_notification_hook(&mut settings, NEW));
+        assert!(!merge_notification_hook(&mut settings, NEW));
+        assert_eq!(commands(&settings), vec![NEW]);
+    }
+
+    #[test]
+    fn replaces_the_legacy_shell_hook() {
+        let mut settings = serde_json::json!({
+            "hooks": {
+                "Notification": [{
+                    "matcher": "",
+                    "hooks": [{ "type": "command", "command": "/repo/scripts/atlas-notify-hook.sh" }]
+                }]
+            }
+        });
+        assert!(merge_notification_hook(&mut settings, NEW));
+        assert_eq!(commands(&settings), vec![NEW]);
+    }
+
+    #[test]
+    fn keeps_other_hooks_and_other_keys() {
+        let mut settings = serde_json::json!({
+            "model": "opus",
+            "hooks": {
+                "Stop": [{ "matcher": "", "hooks": [{ "type": "command", "command": "other-stop" }] }],
+                "Notification": [{
+                    "matcher": "",
+                    "hooks": [
+                        { "type": "command", "command": "someone-elses-hook" },
+                        { "type": "command", "command": "/repo/scripts/atlas-notify-hook.sh" }
+                    ]
+                }]
+            }
+        });
+        assert!(merge_notification_hook(&mut settings, NEW));
+        assert_eq!(
+            commands(&settings),
+            vec!["someone-elses-hook".to_string(), NEW.to_string()]
+        );
+        assert_eq!(settings["model"], "opus");
+        assert_eq!(
+            settings["hooks"]["Stop"][0]["hooks"][0]["command"],
+            "other-stop"
+        );
+    }
+
+    #[test]
+    fn quotes_the_executable_path() {
+        let command = notification_hook_command().unwrap();
+        assert!(command.starts_with('"'));
+        assert!(command.ends_with("\" hook notification"));
+        assert!(command.contains(HOOK_MARKER));
+    }
 }

@@ -248,24 +248,53 @@ pub async fn list_repo_prs(repos: Vec<String>) -> Result<Vec<RepoPrs>, String> {
     Ok(results.into_iter().flatten().collect())
 }
 
-/// Open an external URL in the user's default browser. macOS-targeted (uses
-/// `open`); rejects anything that isn't `https://`. Tauri 2 doesn't ship the
-/// opener plugin in this project, so we shell out ourselves.
+/// The platform's "open this in the default handler" launcher.
+/// Tauri 2 doesn't ship the opener plugin in this project, so we shell out.
+fn browser_launcher(url: &str) -> Command {
+    #[cfg(target_os = "macos")]
+    {
+        let mut cmd = Command::new("open");
+        cmd.arg(url);
+        cmd
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let mut cmd = Command::new("cmd");
+        // The empty "" is `start`'s window-title argument — without it `start`
+        // consumes the URL as the title and opens nothing.
+        cmd.args(["/C", "start", "", url]);
+        cmd
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let mut cmd = Command::new("xdg-open");
+        cmd.arg(url);
+        cmd
+    }
+}
+
+/// Open an external URL in the user's default browser. Rejects anything that
+/// isn't `https://` — that scheme check is the guard against launching
+/// arbitrary handlers.
 #[tauri::command(async)]
 pub async fn open_url(url: String) -> Result<(), String> {
     if !url.starts_with("https://") {
         return Err("Only https:// URLs are allowed".to_string());
     }
+    // `cmd /C start` re-parses its command line, so a shell metacharacter in
+    // the URL would escape argument quoting on Windows.
+    if url.contains(['&', '|', '^', '<', '>', '"', '%']) {
+        return Err("URL contains characters that cannot be passed to the shell".to_string());
+    }
     tokio::task::spawn_blocking(move || {
-        Command::new("open")
-            .arg(&url)
+        browser_launcher(&url)
             .status()
             .map_err(|e| format!("Failed to open URL: {}", e))
             .and_then(|status| {
                 if status.success() {
                     Ok(())
                 } else {
-                    Err(format!("open exited with status {}", status))
+                    Err(format!("URL launcher exited with status {}", status))
                 }
             })
     })
@@ -365,5 +394,46 @@ mod tests {
         assert_eq!(map_review("REVIEW_REQUIRED"), "review_required");
         assert_eq!(map_review(""), "none");
         assert_eq!(map_review("anything-else"), "none");
+    }
+
+    #[tokio::test]
+    async fn open_url_rejects_non_https_schemes() {
+        assert!(open_url("file:///etc/passwd".to_string()).await.is_err());
+        assert!(open_url("http://example.com".to_string()).await.is_err());
+        assert!(open_url("calculator".to_string()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn open_url_rejects_shell_metacharacters() {
+        assert!(open_url("https://example.com/&calc".to_string())
+            .await
+            .is_err());
+        assert!(open_url("https://example.com/a|b".to_string()).await.is_err());
+    }
+
+    #[test]
+    fn browser_launcher_targets_the_platform_opener() {
+        let cmd = browser_launcher("https://example.com");
+        let program = cmd.get_program().to_string_lossy().to_string();
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect();
+
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(program, "open");
+            assert_eq!(args, vec!["https://example.com"]);
+        }
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(program, "cmd");
+            assert_eq!(args, vec!["/C", "start", "", "https://example.com"]);
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            assert_eq!(program, "xdg-open");
+            assert_eq!(args, vec!["https://example.com"]);
+        }
     }
 }

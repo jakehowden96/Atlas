@@ -10,6 +10,7 @@ pub struct PanelData {
     #[serde(default)]
     pub is_git: bool,
     pub diff: Option<DiffData>,
+    // superseded by transcript TodoWrite (phase 02)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<String>,
 }
