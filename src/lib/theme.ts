@@ -1,95 +1,101 @@
 /**
- * Everforest Hard Dark palette — runtime mirror of the CSS vars defined in
- * App.svelte. xterm.js takes a static theme object at init, so it cannot
- * read CSS vars — this file is the single source of truth for any code path
- * that needs the colors as plain hex strings (terminal, canvas, etc.).
+ * Runtime mirror of the Mission Control CSS custom properties defined in
+ * `src/app.css`. xterm.js takes a static theme object at init and cannot read
+ * CSS vars, so this file is the source of truth for any code path that needs
+ * the palette as plain hex strings.
  *
- * WCAG contrast on bg0 #272e33:
- *   fg #d3c6aa  → 7.97:1  AAA  default text
- *   grey2       → 5.36:1  AA   muted text
- *   accents     → ≥4.5:1  AA   (all named ANSI colors)
+ * Contrast: every ANSI colour below clears 4.5:1 against its own `--term-bg`
+ * (verified against WCAG relative luminance). The single exception is `black`,
+ * which is the ANSI *background* tone rather than an ink — it is deliberately
+ * close to `--term-bg` so `ESC[40m` fills read as the terminal surface.
  *
- * Keep this aligned with the `:global(:root)` block in App.svelte; the
- * theme.test.ts assertions guard the surface/fg shape.
+ * Keep this aligned with the token blocks in `src/app.css`.
  */
-export const theme = {
-  /* Surface hierarchy (Everforest Hard Dark bg scale) */
-  surface: "#272e33",                /* bg0 */
-  surfaceContainerLowest: "#1e2326", /* bg_dim */
-  surfaceContainerLow: "#2e383c",    /* bg1 */
-  surfaceContainer: "#374145",       /* bg2 */
-  surfaceContainerHigh: "#414b50",   /* bg3 */
-  surfaceContainerHighest: "#495156",/* bg4 */
-  surfaceBright: "#4f5b58",          /* bg5 */
+import { writable } from "svelte/store";
 
-  /* Foreground / on-surface */
-  onSurface: "#d3c6aa",              /* fg — AAA on bg0 */
-  onSurfaceVariant: "#9da9a0",       /* grey2 — AA on bg0 */
-
-  /* Outline (≥3:1 against surface for non-text contrast) */
-  outlineVariant: "#7a8478",         /* grey0 */
-
-  /* Primary (blue) */
-  primary: "#7fbbb3",
-  primaryContainer: "#6ba89f",
-  onPrimary: "#272e33",
-  primaryDim: "#5a948c",
-
-  /* Secondary (green — additions) */
-  secondary: "#a7c080",
-  secondaryContainer: "#425047",     /* bg_green */
-
-  /* Error (red — deletions) */
-  error: "#e67e80",
-  errorContainer: "#514045",         /* bg_red */
-
-  /* Tertiary (orange) */
-  tertiary: "#e69875",
-
-  /* Named ANSI colors for xterm — Everforest accent set */
-  red: "#e67e80",
-  redBright: "#ee8c8e",
-  green: "#a7c080",
-  greenBright: "#b6cd92",
-  yellow: "#dbbc7f",
-  yellowBright: "#e4c98a",
-  blue: "#7fbbb3",
-  blueBright: "#92c8c0",
-  magenta: "#d699b6",
-  magentaBright: "#e0a8c1",
-  cyan: "#83c092",
-  cyanBright: "#92cda0",
-  /* Greyscale: black = bg, bright black = grey for dim text */
-  black: "#272e33",
-  blackBright: "#859289",            /* grey1 */
-  white: "#9da9a0",                  /* grey2 */
-  whiteBright: "#d3c6aa",            /* fg */
+/** xterm ITheme for `--term-bg: #fafafb` / `--term-text: #2b2e35`. */
+export const lightXtermTheme = {
+  background: "#fafafb", // --term-bg
+  foreground: "#2b2e35", // --term-text
+  cursor: "#2fa37a", // --accent
+  cursorAccent: "#fafafb",
+  selectionBackground: "#cfe8dd",
+  selectionForeground: "#17181b",
+  black: "#17181b",
+  red: "#c0392f",
+  green: "#207a58",
+  yellow: "#8a6013",
+  blue: "#1a6bad",
+  magenta: "#9a3d8c",
+  cyan: "#0f7370",
+  white: "#6b7079",
+  brightBlack: "#5a5f67",
+  brightRed: "#a52f26",
+  brightGreen: "#1b6f4e",
+  brightYellow: "#74510f",
+  brightBlue: "#14578c",
+  brightMagenta: "#7f3273",
+  brightCyan: "#0b5f5c",
+  brightWhite: "#2b2e35",
 } as const;
 
-/** xterm.js ITheme config derived from the shared palette. */
-export const xtermTheme = {
-  background: theme.surface,
-  /* Use full fg (not grey2) so terminal output sits at AAA contrast */
-  foreground: theme.onSurface,
-  cursor: theme.primary,
-  cursorAccent: theme.surface,
-  /* Everforest "bg_visual" — a desaturated muted blue selection */
-  selectionBackground: "#3c4841",
-  selectionForeground: theme.onSurface,
-  black: theme.black,
-  red: theme.red,
-  green: theme.green,
-  yellow: theme.yellow,
-  blue: theme.blue,
-  magenta: theme.magenta,
-  cyan: theme.cyan,
-  white: theme.white,
-  brightBlack: theme.blackBright,
-  brightRed: theme.redBright,
-  brightGreen: theme.greenBright,
-  brightYellow: theme.yellowBright,
-  brightBlue: theme.blueBright,
-  brightMagenta: theme.magentaBright,
-  brightCyan: theme.cyanBright,
-  brightWhite: theme.whiteBright,
+/** xterm ITheme for `--term-bg: #111214` / `--term-text: #c9cbd1`. */
+export const darkXtermTheme = {
+  background: "#111214", // --term-bg
+  foreground: "#c9cbd1", // --term-text
+  cursor: "#2fa37a", // --accent
+  cursorAccent: "#111214",
+  selectionBackground: "#2c3b36",
+  selectionForeground: "#e6e7ea",
+  black: "#25272c",
+  red: "#f0736b",
+  green: "#46c294",
+  yellow: "#e0a53a",
+  blue: "#6bb6ec",
+  magenta: "#d48ac0",
+  cyan: "#4fc4bd",
+  white: "#c9cbd1",
+  brightBlack: "#8b8f98",
+  brightRed: "#f79890",
+  brightGreen: "#6fd3ad",
+  brightYellow: "#edc06a",
+  brightBlue: "#93cdf3",
+  brightMagenta: "#e3a8d3",
+  brightCyan: "#7ad7d1",
+  brightWhite: "#e6e7ea",
 } as const;
+
+export type ThemeMode = "system" | "light" | "dark";
+
+/** User's appearance choice. Persisted via `stores/settings.ts`. */
+export const themeMode = writable<ThemeMode>("system");
+
+/** Collapse `system` to the OS preference. Defaults to light off-DOM. */
+export function resolvedTheme(mode: ThemeMode): "light" | "dark" {
+  if (mode !== "system") return mode;
+  if (typeof matchMedia !== "function") return "light";
+  return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+/**
+ * Stamp the choice on `<html>`. `system` removes the attribute so the
+ * `prefers-color-scheme` block in `app.css` takes over. No-ops under the Node
+ * test env, where there is no document.
+ */
+export function applyTheme(mode: ThemeMode): void {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  if (mode === "system") {
+    delete root.dataset.theme;
+  } else {
+    root.dataset.theme = mode;
+  }
+}
+
+/** The xterm ITheme matching `mode` right now. */
+export function activeXtermTheme(mode: ThemeMode) {
+  return resolvedTheme(mode) === "dark" ? darkXtermTheme : lightXtermTheme;
+}
+
+/* Keep <html data-theme> in step with the store for the lifetime of the app. */
+themeMode.subscribe(applyTheme);
