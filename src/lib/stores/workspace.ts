@@ -9,6 +9,9 @@ export interface WorkspaceSession {
   age: string;
   terminalTabId: string | null;
   createdAt: string;
+  /** UUID handed to `claude --session-id`; null for rows written before Atlas
+   *  assigned session ids — those can only be started fresh, never resumed. */
+  claudeSessionId: string | null;
 }
 
 export interface Workspace {
@@ -88,6 +91,8 @@ export async function loadWorkspaces() {
       for (const s of ws.sessions) {
         if (s.status === "running" || s.status === "starting") s.status = "idle";
         s.terminalTabId = null;
+        // Written by a version of Atlas that did not track Claude session ids.
+        s.claudeSessionId = s.claudeSessionId ?? null;
       }
     }
     workspaces.set(data);
@@ -183,6 +188,7 @@ export async function addSession(
   workspacePath: string,
   label: string,
   terminalTabId: string,
+  claudeSessionId: string | null,
 ): Promise<WorkspaceSession> {
   const session: WorkspaceSession = {
     id: crypto.randomUUID(),
@@ -191,6 +197,7 @@ export async function addSession(
     age: "",
     terminalTabId,
     createdAt: new Date().toISOString(),
+    claudeSessionId,
   };
   workspaces.update((ws) =>
     ws.map((w) =>
@@ -207,12 +214,15 @@ export async function addSession(
 export async function resumeSession(
   sessionId: string,
   terminalTabId: string,
+  claudeSessionId: string,
 ) {
   workspaces.update((ws) =>
     ws.map((w) => ({
       ...w,
       sessions: w.sessions.map((s) =>
-        s.id === sessionId ? { ...s, status: "running" as const, terminalTabId } : s,
+        s.id === sessionId
+          ? { ...s, status: "running" as const, terminalTabId, claudeSessionId }
+          : s,
       ),
     })),
   );

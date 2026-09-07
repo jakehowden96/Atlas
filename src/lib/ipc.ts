@@ -145,6 +145,17 @@ export async function openUrl(url: string): Promise<void> {
   return invoke("open_url", { url });
 }
 
+/**
+ * Path to the `<uuid>.jsonl` transcript under `~/.claude/projects/` for a
+ * session started with `claude --session-id <uuid>`.
+ * Null while the transcript does not yet exist.
+ */
+export async function getSessionTranscriptPath(
+  sessionUuid: string,
+): Promise<string | null> {
+  return invoke("get_session_transcript_path", { sessionUuid });
+}
+
 export async function getClaudeStats(): Promise<StatsSummary> {
   return invoke("get_claude_stats");
 }
