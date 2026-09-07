@@ -79,11 +79,12 @@ export async function loadWorkspaces() {
     const raw = await readTextFile(STORAGE_FILE, { baseDir: BaseDirectory.Home });
     const data = JSON.parse(raw) as Workspace[];
     log.info("workspace", `parsed ${data.length} workspaces`);
-    const validColors = new Set(WORKSPACE_COLORS);
+    const seen: Workspace[] = [];
     for (const ws of data) {
-      if (!ws.color || !validColors.has(ws.color)) {
-        ws.color = nextAvailableColor(data.filter((w) => w !== ws));
+      if (!ws.color || seen.some((w) => w.color === ws.color)) {
+        ws.color = nextAvailableColor(seen);
       }
+      seen.push(ws);
       for (const s of ws.sessions) {
         if (s.status === "running" || s.status === "starting") s.status = "idle";
         s.terminalTabId = null;
@@ -130,7 +131,17 @@ export const WORKSPACE_COLORS = [
 
 export function nextAvailableColor(existing: Workspace[]): string {
   const used = new Set(existing.map((w) => w.color).filter(Boolean));
-  return WORKSPACE_COLORS.find((c) => !used.has(c)) ?? WORKSPACE_COLORS[0];
+  const fromPalette = WORKSPACE_COLORS.find((c) => !used.has(c));
+  if (fromPalette) return fromPalette;
+  // Palette exhausted (12th+ workspace) — keep generating distinct hues rather
+  // than collide back onto WORKSPACE_COLORS[0].
+  let hue = (existing.length * 47) % 360;
+  let color = `hsl(${hue}, 45%, 65%)`;
+  while (used.has(color)) {
+    hue = (hue + 47) % 360;
+    color = `hsl(${hue}, 45%, 65%)`;
+  }
+  return color;
 }
 
 export async function addWorkspace(path: string): Promise<boolean> {
@@ -156,9 +167,15 @@ export async function removeWorkspace(path: string) {
 }
 
 export async function setWorkspaceColor(path: string, color: string) {
-  workspaces.update((ws) =>
-    ws.map((w) => (w.path === path ? { ...w, color } : w)),
-  );
+  workspaces.update((ws) => {
+    const target = ws.find((w) => w.path === path);
+    const clash = ws.find((w) => w.path !== path && w.color === color);
+    return ws.map((w) => {
+      if (w.path === path) return { ...w, color };
+      if (clash && w.path === clash.path) return { ...w, color: target?.color };
+      return w;
+    });
+  });
   await persist();
 }
 

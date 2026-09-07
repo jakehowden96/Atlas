@@ -241,9 +241,15 @@ import { onDestroy, onMount } from "svelte";
                   {/each}
                 </tr>
                 <tr>
-                  <td class="metric-label">Avg message length</td>
+                  <td class="metric-label">Avg message (you → Claude)</td>
                   {#each models as [, ms]}
                     <td class="model-val">{Math.round(ms.avgMessageChars)} chars</td>
+                  {/each}
+                </tr>
+                <tr>
+                  <td class="metric-label">Avg prompt (Claude → subagent)</td>
+                  {#each models as [, ms]}
+                    <td class="model-val">{Math.round(ms.avgSubagentPromptChars ?? 0)} chars</td>
                   {/each}
                 </tr>
                 <tr>
@@ -410,7 +416,6 @@ import { onDestroy, onMount } from "svelte";
               <div class="week-group">
                 <span class="bar-label day-label" title={week}>{week_label(week)}</span>
                 <div class="week-bars">
-                  <span></span>
                   <div class="bar-track">
                     {#each sorted_week_families(ws.byModel) as [family, count]}
                       <div
@@ -423,7 +428,6 @@ import { onDestroy, onMount } from "svelte";
                   <span class="bar-count">{ws.sessions}</span>
                   {#if subagent_total > 0}
                     <span class="bar-type-label">Subagents</span>
-                    <span></span>
                     <div class="bar-track bar-track--agents">
                       {#each sorted_week_families(ws.byModelSubagents ?? {}) as [family, count]}
                         <div
@@ -747,7 +751,7 @@ import { onDestroy, onMount } from "svelte";
     flex: 1;
     min-width: 0;
     display: grid;
-    grid-template-columns: 52px 1fr 36px;
+    grid-template-columns: 1fr 36px;
     row-gap: 3px;
     column-gap: 4px;
     align-items: center;
@@ -763,7 +767,8 @@ import { onDestroy, onMount } from "svelte";
   }
 
   .bar-label {
-    min-width: 120px;
+    width: 120px;
+    flex-shrink: 0;
     font-size: 0.74rem;
     color: var(--on-surface);
     white-space: nowrap;
@@ -772,7 +777,7 @@ import { onDestroy, onMount } from "svelte";
   }
 
   .day-label {
-    min-width: 98px;
+    width: 112px;
     font-family: var(--font-mono);
     font-size: 0.7rem;
   }

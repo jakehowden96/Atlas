@@ -36,6 +36,25 @@ fn pricing_for(model: &str) -> Pricing {
     }
 }
 
+/// A "user" line can be genuinely typed by the human, or injected by a skill/hook/
+/// background-task notification. Only the former should count as "a message from you" —
+/// `promptSource: "sdk"/"system"` and `origin.kind: "task-notification"` mark the latter,
+/// as does the `<local-command-caveat>` wrapper Claude Code puts around local-command output.
+fn is_human_authored(obj: &Value, content: &str) -> bool {
+    let prompt_source = obj.get("promptSource").and_then(|v| v.as_str());
+    if matches!(prompt_source, Some("sdk") | Some("system")) {
+        return false;
+    }
+    let origin_kind = obj
+        .get("origin")
+        .and_then(|o| o.get("kind"))
+        .and_then(|v| v.as_str());
+    if origin_kind == Some("task-notification") {
+        return false;
+    }
+    !content.starts_with("<local-command-caveat>")
+}
+
 fn model_family(model: &str) -> String {
     let m = model.to_ascii_lowercase();
     if m.contains("opus") { "Opus".to_string() }
@@ -63,7 +82,7 @@ fn stats_path() -> Result<PathBuf, String> {
 
 // ── Version ───────────────────────────────────────────────────────────────────
 
-const STATS_FILE_VERSION: u32 = 3;
+const STATS_FILE_VERSION: u32 = 5;
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
@@ -76,6 +95,18 @@ pub(crate) struct ModelSessionData {
     pub cost_estimate: f64,
     pub tool_calls: u32,
     pub peak_context: u64,
+    /// Chars/count from the human's own messages that this model family answered
+    /// (attributed per-turn, not blindly summed across every family in the session).
+    #[serde(default)]
+    pub user_chars: u64,
+    #[serde(default)]
+    pub user_messages: u32,
+    /// Chars/count of prompts this model family sent when spawning a subagent
+    /// (the `Agent` tool's `prompt` input) — distinct from the human's own messages.
+    #[serde(default)]
+    pub subagent_prompt_chars: u64,
+    #[serde(default)]
+    pub subagent_prompt_count: u32,
 }
 
 /// One session's parsed stats. Stored in stats.json as the incremental cache.
@@ -138,6 +169,12 @@ pub struct ModelStats {
     pub subagents_per_session: f64,
     pub avg_output_per_msg: f64,
     pub cost_per_k_output: f64,
+    #[serde(default)]
+    pub subagent_prompt_chars: u64,
+    #[serde(default)]
+    pub subagent_prompt_count: u64,
+    #[serde(default)]
+    pub avg_subagent_prompt_chars: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -333,6 +370,10 @@ fn merge_model_data(
         entry.cache_creation_tokens += data.cache_creation_tokens;
         entry.cost_estimate += data.cost_estimate;
         entry.tool_calls += data.tool_calls;
+        entry.user_chars += data.user_chars;
+        entry.user_messages += data.user_messages;
+        entry.subagent_prompt_chars += data.subagent_prompt_chars;
+        entry.subagent_prompt_count += data.subagent_prompt_count;
         if data.peak_context > entry.peak_context {
             entry.peak_context = data.peak_context;
         }
@@ -391,6 +432,14 @@ fn parse_session(path: &Path) -> Result<SessionRecord, String> {
     let mut user_chars: u64 = 0;
     let mut tool_errors: u32 = 0;
 
+    // Buffered until the next assistant turn, so chars are attributed to whichever
+    // model family actually answered — not summed into every family in the session.
+    let mut pending_user_chars: u64 = 0;
+    let mut pending_user_messages: u32 = 0;
+    let mut by_model_user: HashMap<String, (u64, u32)> = HashMap::new();
+    // Chars of `Agent` tool prompts, attributed to the model family that sent them.
+    let mut by_model_subagent_prompts: HashMap<String, (u64, u32)> = HashMap::new();
+
     // Keyed by requestId (or uuid fallback for requestId-less lines)
     let mut requests: HashMap<String, ReqData> = HashMap::new();
 
@@ -436,8 +485,14 @@ fn parse_session(path: &Path) -> Result<SessionRecord, String> {
                     .and_then(|m| m.get("content"))
                     .unwrap_or(&Value::Null);
                 if !is_meta && content.is_string() {
-                    user_messages += 1;
-                    user_chars += content.as_str().map(|s| s.chars().count()).unwrap_or(0) as u64;
+                    let s = content.as_str().unwrap_or("");
+                    if is_human_authored(&obj, s) {
+                        user_messages += 1;
+                        let chars = s.chars().count() as u64;
+                        user_chars += chars;
+                        pending_user_chars += chars;
+                        pending_user_messages += 1;
+                    }
                 } else if let Some(arr) = content.as_array() {
                     for item in arr {
                         if item.get("type").and_then(|v| v.as_str()) == Some("tool_result")
@@ -453,6 +508,16 @@ fn parse_session(path: &Path) -> Result<SessionRecord, String> {
                 let model = msg.get("model").and_then(|v| v.as_str()).unwrap_or("");
                 if model.is_empty() || model == "<synthetic>" {
                     continue;
+                }
+                let family = model_family(model);
+
+                // Attribute any buffered human message(s) to the model that answered them.
+                if pending_user_messages > 0 {
+                    let entry = by_model_user.entry(family.clone()).or_insert((0, 0));
+                    entry.0 += pending_user_chars;
+                    entry.1 += pending_user_messages;
+                    pending_user_chars = 0;
+                    pending_user_messages = 0;
                 }
 
                 // Use requestId as key; fall back to uuid if absent
@@ -477,6 +542,19 @@ fn parse_session(path: &Path) -> Result<SessionRecord, String> {
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("unknown")
                                 .to_string();
+                            if name == "Agent" {
+                                if let Some(prompt) = item
+                                    .get("input")
+                                    .and_then(|i| i.get("prompt"))
+                                    .and_then(|v| v.as_str())
+                                {
+                                    let entry = by_model_subagent_prompts
+                                        .entry(family.clone())
+                                        .or_insert((0, 0));
+                                    entry.0 += prompt.chars().count() as u64;
+                                    entry.1 += 1;
+                                }
+                            }
                             new_tools.push(name);
                         }
                     }
@@ -542,7 +620,17 @@ fn parse_session(path: &Path) -> Result<SessionRecord, String> {
     }
 
     let assistant_messages = requests.len() as u32;
-    let by_model = requests_to_by_model(requests);
+    let mut by_model = requests_to_by_model(requests);
+    for (family, (chars, messages)) in by_model_user {
+        let entry = by_model.entry(family).or_default();
+        entry.user_chars += chars;
+        entry.user_messages += messages;
+    }
+    for (family, (chars, count)) in by_model_subagent_prompts {
+        let entry = by_model.entry(family).or_default();
+        entry.subagent_prompt_chars += chars;
+        entry.subagent_prompt_count += count;
+    }
 
     // Parse subagents separately so primary vs delegated usage are tracked independently.
     let mut by_model_subagents: HashMap<String, ModelSessionData> = HashMap::new();
@@ -659,8 +747,10 @@ fn accumulate_model(model_acc: &mut HashMap<String, ModelStats>, rec: &SessionRe
         let ms = model_acc.entry(family.clone()).or_default();
         ms.sessions += 1;
         ms.assistant_msgs += model_data.assistant_msgs as u64;
-        ms.user_messages += rec.user_messages as u64;
-        ms.user_chars += rec.user_chars;
+        ms.user_messages += model_data.user_messages as u64;
+        ms.user_chars += model_data.user_chars;
+        ms.subagent_prompt_chars += model_data.subagent_prompt_chars;
+        ms.subagent_prompt_count += model_data.subagent_prompt_count as u64;
         ms.output_tokens += model_data.output_tokens;
         ms.cache_creation_tokens += model_data.cache_creation_tokens;
         ms.cost += model_data.cost_estimate;
@@ -702,6 +792,10 @@ fn finalize_model(model_acc: &mut HashMap<String, ModelStats>) {
         }
         if ms.user_messages > 0 {
             ms.avg_message_chars = ms.user_chars as f64 / ms.user_messages as f64;
+        }
+        if ms.subagent_prompt_count > 0 {
+            ms.avg_subagent_prompt_chars =
+                ms.subagent_prompt_chars as f64 / ms.subagent_prompt_count as f64;
         }
         if ms.assistant_msgs > 0 {
             ms.avg_output_per_msg = ms.output_tokens as f64 / ms.assistant_msgs as f64;
@@ -866,11 +960,14 @@ pub fn recompute() -> Result<StatsSummary, String> {
         .unwrap_or_default();
 
     let session_files = collect_session_files(&projects_dir);
+    let mut seen_paths: std::collections::HashSet<String> =
+        std::collections::HashSet::with_capacity(session_files.len());
     let mut records: Vec<SessionRecord> = Vec::with_capacity(session_files.len());
 
     for path in &session_files {
         let path_str = path.to_string_lossy().to_string();
         let (mtime, size) = file_mtime_size(path);
+        seen_paths.insert(path_str.clone());
 
         if let Some(cached) = cache.get(&path_str) {
             if cached.mtime == mtime && cached.size == size {
@@ -882,6 +979,15 @@ pub fn recompute() -> Result<StatsSummary, String> {
         match parse_session(path) {
             Ok(rec) => records.push(rec),
             Err(e) => log::warn!("Failed to parse session {}: {}", path.display(), e),
+        }
+    }
+
+    // Keep cached records whose source .jsonl has since been deleted (e.g. by the
+    // CLI's own transcript retention cleanup) — otherwise historical stats vanish
+    // from Atlas's cache the moment the underlying file is pruned.
+    for (path_str, cached) in &cache {
+        if !seen_paths.contains(path_str) {
+            records.push(cached.clone());
         }
     }
 
@@ -1083,6 +1189,57 @@ mod tests {
         let rec = parse_session(f.path()).unwrap();
         assert_eq!(rec.user_messages, 2);
         assert_eq!(rec.user_chars, 7, "only counts chars from plain-string non-meta messages");
+    }
+
+    #[test]
+    fn attributes_user_chars_to_the_model_that_answered_not_every_model_in_session() {
+        // A short message answered by Sonnet, then a long message answered by Opus.
+        // Each family's user_chars should reflect only the turn it actually answered.
+        let lines = &[
+            r#"{"type":"user","message":{"role":"user","content":"hi"},"timestamp":"2026-01-01T00:00:00Z","cwd":"/tmp"}"#,
+            r#"{"type":"assistant","requestId":"req1","message":{"model":"claude-sonnet-4-6","content":[],"usage":{"input_tokens":10,"output_tokens":10}},"timestamp":"2026-01-01T00:00:01Z","cwd":"/tmp"}"#,
+            r#"{"type":"user","message":{"role":"user","content":"a much longer follow-up message here"},"timestamp":"2026-01-01T00:00:02Z","cwd":"/tmp"}"#,
+            r#"{"type":"assistant","requestId":"req2","message":{"model":"claude-opus-4-8","content":[],"usage":{"input_tokens":10,"output_tokens":10}},"timestamp":"2026-01-01T00:00:03Z","cwd":"/tmp"}"#,
+        ];
+        let f = write_lines(lines);
+        let rec = parse_session(f.path()).unwrap();
+        assert_eq!(rec.by_model["Sonnet"].user_chars, 2, "Sonnet only answered the 2-char message");
+        assert_eq!(rec.by_model["Sonnet"].user_messages, 1);
+        assert_eq!(rec.by_model["Opus"].user_chars, 36, "Opus only answered the 36-char message");
+        assert_eq!(rec.by_model["Opus"].user_messages, 1);
+        // Session-level totals still cover both turns
+        assert_eq!(rec.user_messages, 2);
+        assert_eq!(rec.user_chars, 38);
+    }
+
+    #[test]
+    fn captures_agent_tool_prompt_chars_per_spawning_model() {
+        let lines = &[
+            r#"{"type":"assistant","requestId":"req1","message":{"model":"claude-opus-4-8","content":[{"type":"tool_use","name":"Agent","id":"t1","input":{"prompt":"go find the bug"}}],"usage":{"input_tokens":10,"output_tokens":10}},"timestamp":"2026-01-01T00:00:00Z","cwd":"/tmp"}"#,
+        ];
+        let f = write_lines(lines);
+        let rec = parse_session(f.path()).unwrap();
+        assert_eq!(rec.by_model["Opus"].subagent_prompt_chars, 15);
+        assert_eq!(rec.by_model["Opus"].subagent_prompt_count, 1);
+        assert_eq!(rec.by_model["Opus"].user_chars, 0, "subagent prompts aren't counted as human messages");
+    }
+
+    #[test]
+    fn excludes_sdk_and_task_notification_and_local_command_caveat_from_user_chars() {
+        let lines = &[
+            // Genuinely typed by the human — counts.
+            r#"{"type":"user","message":{"role":"user","content":"hello there"},"timestamp":"2026-01-01T00:00:00Z","cwd":"/tmp","promptSource":"typed"}"#,
+            // Skill/hook-injected via the SDK (e.g. security-review) — doesn't count.
+            r#"{"type":"user","message":{"role":"user","content":"Review this change for security vulnerabilities."},"timestamp":"2026-01-01T00:00:01Z","cwd":"/tmp","promptSource":"sdk"}"#,
+            // Background task completion ping — doesn't count.
+            r#"{"type":"user","message":{"role":"user","content":"<task-notification>done</task-notification>"},"timestamp":"2026-01-01T00:00:02Z","cwd":"/tmp","origin":{"kind":"task-notification"}}"#,
+            // Wrapper around local-command output — doesn't count.
+            r#"{"type":"user","message":{"role":"user","content":"<local-command-caveat>Caveat: ...</local-command-caveat>"},"timestamp":"2026-01-01T00:00:03Z","cwd":"/tmp"}"#,
+        ];
+        let f = write_lines(lines);
+        let rec = parse_session(f.path()).unwrap();
+        assert_eq!(rec.user_messages, 1, "only the typed human message counts");
+        assert_eq!(rec.user_chars, 11, "\"hello there\" is 11 chars");
     }
 
     #[test]

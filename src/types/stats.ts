@@ -22,6 +22,9 @@ export interface ModelStats {
   subagentsPerSession: number;
   avgOutputPerMsg: number;
   costPerKOutput: number;
+  subagentPromptChars: number;
+  subagentPromptCount: number;
+  avgSubagentPromptChars: number;
 }
 
 export interface ProjectStats {
