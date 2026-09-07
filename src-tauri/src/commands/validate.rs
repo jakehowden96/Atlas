@@ -134,7 +134,8 @@ mod tests {
 
     #[test]
     fn validate_cwd_accepts_existing_dir() {
-        assert!(validate_cwd("/tmp").is_ok());
+        let tmp = std::env::temp_dir();
+        assert!(validate_cwd(tmp.to_str().unwrap()).is_ok());
     }
 
     #[test]
@@ -187,7 +188,10 @@ mod tests {
 
     #[test]
     fn validate_file_paths_accepts_relative() {
-        assert!(validate_file_paths("/tmp", &["subdir/file.txt".to_string()]).is_ok());
+        let tmp = std::env::temp_dir();
+        assert!(
+            validate_file_paths(tmp.to_str().unwrap(), &["subdir/file.txt".to_string()]).is_ok()
+        );
     }
 
     #[test]
