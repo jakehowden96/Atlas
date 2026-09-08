@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { chord } from "../../platform";
   import { getSessionDir } from "../../ipc";
   import { tabs } from "../../stores/terminal";
   import { showToast } from "../../stores/toast";
@@ -39,7 +40,7 @@
   {#if !$tabs.some((t) => t.id === visibleTabId)}
     <div class="empty-state">
       <span class="material-symbols-outlined empty-icon">terminal</span>
-      <p class="empty-text">No session open — start one with ⌘N</p>
+      <p class="empty-text">No session open — start one with {chord("N")}</p>
     </div>
   {/if}
 </div>

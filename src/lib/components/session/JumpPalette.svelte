@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { chord } from "../../platform";
   /**
    * ⌘K — a session jumper, not a command palette. A flat filtered list of the
    * sessions Atlas is running; ⏎ focuses one in Session view.
@@ -103,7 +104,7 @@
       {#if rows.length === 0}
         <p class="empty">
           {tiles.length === 0
-            ? "Nothing is running. ⌘N starts a session."
+            ? `Nothing is running. ${chord("N")} starts a session.`
             : `No session matches “${query}”.`}
         </p>
       {:else}

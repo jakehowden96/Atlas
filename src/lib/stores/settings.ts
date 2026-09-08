@@ -10,7 +10,6 @@ export type OverviewOrdering = "attention" | "workspace" | "manual";
 export type PrRefreshMinutes = 1 | 3 | 10;
 
 export const settingsOpen = writable(false);
-export const skipPermissions = writable(false);
 export const enableNotifications = writable(true);
 /** Repos the user typed in by hand. Auto-added ones are unioned in `stores/prs`. */
 export const watchedRepos = writable<string[]>([]);
@@ -31,7 +30,6 @@ const SETTINGS_DIR = ".atlas";
 const SETTINGS_FILE = ".atlas/settings.json";
 
 interface PersistedSettings {
-  skipPermissions?: boolean;
   enableNotifications?: boolean;
   watchedRepos?: string[];
   theme?: ThemeMode;
@@ -72,7 +70,6 @@ export async function loadSettings() {
     if (!fileExists) return;
     const raw = await readTextFile(SETTINGS_FILE, { baseDir: BaseDirectory.Home });
     const data = JSON.parse(raw) as PersistedSettings;
-    if (data.skipPermissions) skipPermissions.set(true);
     if (data.enableNotifications === false) enableNotifications.set(false);
     if (Array.isArray(data.watchedRepos)) watchedRepos.set(data.watchedRepos);
     if (data.theme === "system" || data.theme === "light" || data.theme === "dark") {
@@ -103,7 +100,6 @@ async function persistSettings() {
   try {
     await ensureDir();
     const data: PersistedSettings = {
-      skipPermissions: get(skipPermissions),
       enableNotifications: get(enableNotifications),
       watchedRepos: get(watchedRepos),
       theme: get(themeMode),
@@ -125,11 +121,6 @@ async function persistSettings() {
 
 export function clampFontSize(size: number): number {
   return Math.min(MAX_TERMINAL_FONT_SIZE, Math.max(MIN_TERMINAL_FONT_SIZE, size));
-}
-
-export async function setSkipPermissions(value: boolean) {
-  skipPermissions.set(value);
-  await persistSettings();
 }
 
 export async function setEnableNotifications(value: boolean) {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { chord } from "../../platform";
   import { onDestroy } from "svelte";
   import { get } from "svelte/store";
   import type { SessionState } from "../../../types/session";
@@ -109,7 +110,7 @@
         type="button"
         class="rail-toggle"
         class:on={$railOpen}
-        title="Toggle activity rail (⌘\)"
+        title={`Toggle activity rail (${chord("\\")})`}
         aria-label="Toggle activity rail"
         onclick={() => railOpen.update((v) => !v)}
       >▥</button>

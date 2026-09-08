@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { chord } from "../../platform";
   import { onDestroy } from "svelte";
   import { buildTiles, filterByWorkspace, tileComparator } from "../../overview";
   import { addWorkspaceFolder } from "../../session-actions";
@@ -88,7 +89,7 @@
           </button>
         </div>
         <div class="hints">
-          <span>⌘N new</span><span>⌘K jump</span><span>⌘, settings</span>
+          <span>{chord("N")} new</span><span>{chord("K")} jump</span><span>{chord(",")} settings</span>
         </div>
       </div>
     </div>

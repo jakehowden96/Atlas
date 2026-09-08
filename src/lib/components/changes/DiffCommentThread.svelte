@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { chord } from "../../platform";
   import {
     anchorDomKey,
     type ReviewAnchor,
@@ -66,7 +67,7 @@
       <!-- svelte-ignore a11y_autofocus -->
       <textarea
         class="input"
-        placeholder="Leave a review comment… (⌘+Enter to save, Esc to cancel)"
+        placeholder={`Leave a review comment… (${chord("Enter")} to save, Esc to cancel)`}
         bind:value={body}
         onkeydown={composerKeydown}
         autofocus

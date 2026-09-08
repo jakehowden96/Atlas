@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { chord } from "./lib/platform";
   import type { UnlistenFn } from "@tauri-apps/api/event";
   import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
   import { onDestroy, onMount } from "svelte";
@@ -170,14 +171,14 @@
 
     <button type="button" class="jump" onclick={() => jumpOpen.set(true)}>
       Jump to session…
-      <span class="kbd">⌘K</span>
+      <span class="kbd">{chord("K")}</span>
     </button>
 
     <button type="button" class="new-session" onclick={() => openNewSession()}>
-      + Session <span class="kbd-inline">⌘N</span>
+      + Session <span class="kbd-inline">{chord("N")}</span>
     </button>
 
-    <button type="button" class="gear" title="Settings (⌘,)" onclick={() => settingsOpen.set(true)}>
+    <button type="button" class="gear" title={`Settings (${chord(",")})`} onclick={() => settingsOpen.set(true)}>
       <span class="material-symbols-outlined">settings</span>
     </button>
   </header>

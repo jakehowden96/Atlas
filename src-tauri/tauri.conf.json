@@ -31,7 +31,8 @@
         "minHeight": 500,
         "backgroundColor": "#0f1012",
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-lcd-text"
       }
     ],
     "security": {

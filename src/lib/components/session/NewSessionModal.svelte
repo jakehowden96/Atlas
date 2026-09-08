@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { chord, enterLabel } from "../../platform";
   /**
    * The command-style New Session modal: pick a workspace on the left, then
    * start a Fresh conversation or Resume a prior one on the right.
@@ -305,7 +306,7 @@
           {:else}
             <span class="add-label">Add folder…</span>
           {/if}
-          <span class="add-kbd">⌘O</span>
+          <span class="add-kbd">{chord("O")}</span>
         </button>
       </div>
 
@@ -365,7 +366,7 @@
 
         <button type="button" class="start" disabled={!canStart} onclick={start}>
           {view.mode === "resume" ? "Resume session" : "Start session"}
-          <span class="start-kbd">⏎</span>
+          <span class="start-kbd">{enterLabel()}</span>
         </button>
       </div>
     </div>

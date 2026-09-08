@@ -24,13 +24,11 @@ import {
   setEnableNotifications,
   setOverviewOrdering,
   setPrRefreshMinutes,
-  setSkipPermissions,
   setSoundOnNeedsYou,
   setTailTranscripts,
   setTerminalFontSize,
   setTheme,
   setWatchedRepos,
-  skipPermissions,
   soundOnNeedsYou,
   tailTranscripts,
   terminalFontSize,
@@ -57,7 +55,6 @@ function allowWrites() {
 describe("settings store", () => {
   beforeEach(() => {
     // Reset to defaults
-    skipPermissions.set(false);
     enableNotifications.set(true);
     watchedRepos.set([]);
     themeMode.set("system");
@@ -73,19 +70,10 @@ describe("settings store", () => {
   });
 
   describe("loadSettings", () => {
-    it("loads skipPermissions from file", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
-        JSON.stringify({ skipPermissions: true, enableNotifications: true }),
-      );
-      await loadSettings();
-      expect(get(skipPermissions)).toBe(true);
-    });
-
     it("loads enableNotifications false from file", async () => {
       vi.mocked(exists).mockResolvedValue(true);
       vi.mocked(readTextFile).mockResolvedValue(
-        JSON.stringify({ skipPermissions: false, enableNotifications: false }),
+        JSON.stringify({ enableNotifications: false }),
       );
       await loadSettings();
       expect(get(enableNotifications)).toBe(false);
@@ -94,7 +82,6 @@ describe("settings store", () => {
     it("handles missing file gracefully", async () => {
       vi.mocked(exists).mockResolvedValue(false);
       await loadSettings();
-      expect(get(skipPermissions)).toBe(false);
       expect(get(enableNotifications)).toBe(true);
     });
 
@@ -102,7 +89,7 @@ describe("settings store", () => {
       vi.mocked(exists).mockResolvedValue(true);
       vi.mocked(readTextFile).mockResolvedValue("{not valid json");
       await loadSettings();
-      expect(get(skipPermissions)).toBe(false);
+      expect(get(enableNotifications)).toBe(true);
     });
 
     /** The 4.x on-disk shape. Every key added since must fall back to a default. */
@@ -110,6 +97,8 @@ describe("settings store", () => {
       vi.mocked(exists).mockResolvedValue(true);
       vi.mocked(readTextFile).mockResolvedValue(
         JSON.stringify({
+          // `skipPermissions` was removed in 5.0; an old file still carries it
+          // and must load without error rather than throwing on an unknown key.
           skipPermissions: true,
           enableNotifications: false,
           watchedRepos: ["owner/repo"],
@@ -117,7 +106,6 @@ describe("settings store", () => {
       );
       await loadSettings();
 
-      expect(get(skipPermissions)).toBe(true);
       expect(get(enableNotifications)).toBe(false);
       expect(get(watchedRepos)).toEqual(["owner/repo"]);
       // Absent keys keep their defaults rather than becoming undefined.
@@ -175,15 +163,6 @@ describe("settings store", () => {
       vi.mocked(readTextFile).mockResolvedValue(JSON.stringify({ terminalFontSize: 400 }));
       await loadSettings();
       expect(get(terminalFontSize)).toBe(24);
-    });
-  });
-
-  describe("setSkipPermissions", () => {
-    it("updates store value and persists", async () => {
-      allowWrites();
-      await setSkipPermissions(true);
-      expect(get(skipPermissions)).toBe(true);
-      expect(writeTextFile).toHaveBeenCalled();
     });
   });
 

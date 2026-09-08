@@ -8,6 +8,59 @@ use tauri::ipc::Channel;
 
 use super::session::PtySession;
 
+/// The interactive shell to run inside a PTY, plus its startup arguments.
+///
+/// `SHELL` is authoritative on Unix. On Windows it is deliberately ignored
+/// unless it names a real Windows executable: MSYS/Git Bash export POSIX paths
+/// such as `/bin/bash`, and handing one of those to `CreateProcessW` fails with
+/// "The system cannot find the path specified" (os error 3) — which is exactly
+/// how a hardcoded `/bin/zsh` used to break every session on Windows.
+fn default_shell() -> (String, Vec<String>) {
+    #[cfg(windows)]
+    {
+        if let Some(sh) = std::env::var("SHELL").ok().filter(|s| is_windows_exe(s)) {
+            return (sh, Vec::new());
+        }
+        if let Some(pwsh) = find_on_path("pwsh.exe") {
+            return (pwsh, vec!["-NoLogo".to_string()]);
+        }
+        if let Some(ps) = find_on_path("powershell.exe") {
+            return (ps, vec!["-NoLogo".to_string()]);
+        }
+        (
+            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string()),
+            Vec::new(),
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        // `-l` (login shell) is a POSIX-shell convention; it has no Windows analogue.
+        let fallback = if cfg!(target_os = "macos") {
+            "/bin/zsh"
+        } else {
+            "/bin/bash"
+        };
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| fallback.to_string());
+        (shell, vec!["-l".to_string()])
+    }
+}
+
+/// True when `s` looks like a Windows executable path rather than a POSIX one.
+#[cfg(windows)]
+fn is_windows_exe(s: &str) -> bool {
+    !s.starts_with('/') && std::path::Path::new(s).is_file()
+}
+
+/// Resolve a bare executable name against `PATH`.
+#[cfg(windows)]
+fn find_on_path(exe: &str) -> Option<String> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(exe))
+        .find(|candidate| candidate.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
 pub struct PtyManager {
     sessions: Arc<RwLock<HashMap<u32, PtySession>>>,
     shutdown_flags: Arc<RwLock<HashMap<u32, Arc<AtomicBool>>>>,
@@ -42,9 +95,11 @@ impl PtyManager {
 
         let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
 
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        let (shell, shell_args) = default_shell();
         let mut cmd = CommandBuilder::new(&shell);
-        cmd.arg("-l"); // login shell
+        for arg in &shell_args {
+            cmd.arg(arg);
+        }
 
         if let Some(dir) = cwd {
             cmd.cwd(dir);
@@ -181,5 +236,36 @@ impl PtyManager {
         }
         sessions.remove(&id);
         Ok(())
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::default_shell;
+
+    #[test]
+    fn default_shell_is_runnable_on_this_platform() {
+        let (shell, args) = default_shell();
+        assert!(!shell.is_empty(), "shell must not be empty");
+
+        if cfg!(windows) {
+            // The old hardcoded POSIX path is what CreateProcessW choked on.
+            assert!(
+                !shell.starts_with('/'),
+                "Windows shell must not be a POSIX path, got {shell}"
+            );
+            assert!(
+                std::path::Path::new(&shell).is_file() || shell.eq_ignore_ascii_case("cmd.exe"),
+                "Windows shell must resolve to a real executable, got {shell}"
+            );
+            assert!(
+                !args.iter().any(|a| a == "-l"),
+                "-l is a POSIX login-shell flag and must not be passed on Windows"
+            );
+        } else {
+            assert!(shell.starts_with('/'), "unix shell should be absolute");
+            assert_eq!(args, vec!["-l".to_string()]);
+        }
     }
 }

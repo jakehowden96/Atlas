@@ -11,7 +11,7 @@ import { get } from "svelte/store";
 import { ptyKill, ptyWrite, startSessionTail, stopSessionTail } from "./ipc";
 import { log } from "./logger";
 import { removeLiveSession } from "./stores/liveSessions";
-import { skipPermissions, tailTranscripts } from "./stores/settings";
+import { tailTranscripts } from "./stores/settings";
 import { focusedSessionId } from "./stores/view";
 import {
   activeTabId,
@@ -111,11 +111,10 @@ export async function spawnClaudeSession(
     }
     if (tab.ptyId >= 0) {
       clearInterval(poll);
-      const skip = get(skipPermissions) ? " --dangerously-skip-permissions" : "";
       const sessionFlag = resumeSessionId
         ? `--resume ${resumeSessionId}`
         : `--session-id ${claudeSessionId}`;
-      const cmd = `claude ${sessionFlag}${skip}\n`;
+      const cmd = `claude ${sessionFlag}\n`;
       // Small delay to let the shell prompt render
       setTimeout(() => {
         // Re-check: the tab may have been closed during the delay,

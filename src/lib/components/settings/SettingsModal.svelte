@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { enterLabel } from "../../platform";
   import { claudeInfo, type ClaudeInfo } from "../../ipc";
   import { log } from "../../logger";
   import { addWorkspaceFolder, deleteWorkspaceCascade } from "../../session-actions";
@@ -14,14 +15,12 @@
     setEnableNotifications,
     setOverviewOrdering,
     setPrRefreshMinutes,
-    setSkipPermissions,
     setSoundOnNeedsYou,
     setTailTranscripts,
     setTerminalFontSize,
     setTheme,
     setWatchedRepos,
     settingsOpen,
-    skipPermissions,
     soundOnNeedsYou,
     tailTranscripts,
     terminalFontSize,
@@ -206,22 +205,6 @@
               />
             </div>
 
-            <div class="row warn-row">
-              <div class="row-text">
-                <div class="row-title">Skip permissions</div>
-                <div class="row-desc">
-                  Launches every session with
-                  <code>--dangerously-skip-permissions</code>. Claude will edit files
-                  and run commands without asking — only turn this on in a workspace
-                  you can throw away.
-                </div>
-              </div>
-              <Toggle
-                checked={$skipPermissions}
-                label="Skip permissions"
-                onChange={(v) => void setSkipPermissions(v)}
-              />
-            </div>
           </div>
         {:else if section === "workspaces"}
           <div class="stack">
@@ -291,7 +274,7 @@
               {/each}
               <input
                 class="chip-input"
-                placeholder="owner/repo ⏎"
+                placeholder={`owner/repo ${enterLabel()}`}
                 spellcheck="false"
                 bind:value={repoDraft}
                 onkeydown={onRepoKeydown}
@@ -521,10 +504,6 @@
     font-size: 11.5px;
     line-height: 1.45;
     color: var(--muted);
-  }
-
-  .warn-row .row-title {
-    color: var(--danger);
   }
 
   code {
