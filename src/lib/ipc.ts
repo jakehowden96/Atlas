@@ -1,5 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { DocEntry, DocsChangedEvent, PlanEntry } from "../types/files";
 import type { GitStatus, PanelData } from "../types/panel";
 import type { GhViewer, RepoPrs } from "../types/prs";
 import type { LiveSession, SessionUpdateEvent } from "../types/session";
@@ -190,5 +191,54 @@ export async function onClaudeNotification(
 ): Promise<UnlistenFn> {
   return listen<ClaudeNotificationEvent>("claude-notification", (event) => {
     callback(event.payload);
+  });
+}
+
+/**
+ * Markdown and text files under a workspace, directories included, already
+ * sorted directories-first then by name. Capped at depth 8 and 2000 entries.
+ */
+export async function listWorkspaceDocs(
+  workspacePath: string,
+): Promise<DocEntry[]> {
+  return invoke("list_workspace_docs", { workspacePath });
+}
+
+/** `~/.claude/plans/*.md`; empty — never rejects — when there are none. */
+export async function listClaudePlans(): Promise<PlanEntry[]> {
+  return invoke("list_claude_plans");
+}
+
+/** Documents only: rejects anything that is not `.md`/`.markdown`/`.txt`. */
+export async function readTextFileAt(path: string): Promise<string> {
+  return invoke("read_text_file_at", { path });
+}
+
+/** Creates parent directories for a new note. Documents only, as above. */
+export async function writeTextFileAt(
+  path: string,
+  contents: string,
+): Promise<void> {
+  return invoke("write_text_file_at", { path, contents });
+}
+
+/**
+ * Watch a workspace for document edits made outside Atlas. Changes then arrive
+ * as debounced `docs-changed` events until `stopDocsWatch`.
+ */
+export async function startDocsWatch(workspacePath: string): Promise<void> {
+  log.info("ipc", `startDocsWatch ${workspacePath}`);
+  return invoke("start_docs_watch", { workspacePath });
+}
+
+export async function stopDocsWatch(workspacePath: string): Promise<void> {
+  return invoke("stop_docs_watch", { workspacePath });
+}
+
+export async function onDocsChanged(
+  callback: (workspacePath: string, relPath: string) => void,
+): Promise<UnlistenFn> {
+  return listen<DocsChangedEvent>("docs-changed", (event) => {
+    callback(event.payload.workspacePath, event.payload.relPath);
   });
 }

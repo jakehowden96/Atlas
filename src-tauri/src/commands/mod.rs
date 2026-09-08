@@ -1,4 +1,5 @@
 mod diff;
+pub mod files;
 pub mod git;
 pub mod panel;
 pub mod prs;

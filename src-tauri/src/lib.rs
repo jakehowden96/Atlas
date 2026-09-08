@@ -199,6 +199,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(pty_manager)
         .manage(live_sessions.clone())
+        .manage(commands::files::DocsWatchers::default())
         .invoke_handler(tauri::generate_handler![
             commands::terminal::pty_spawn,
             commands::terminal::pty_write,
@@ -218,6 +219,12 @@ pub fn run() {
             commands::session::start_session_tail,
             commands::session::stop_session_tail,
             commands::session::claude_info,
+            commands::files::list_workspace_docs,
+            commands::files::list_claude_plans,
+            commands::files::read_text_file_at,
+            commands::files::write_text_file_at,
+            commands::files::start_docs_watch,
+            commands::files::stop_docs_watch,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
