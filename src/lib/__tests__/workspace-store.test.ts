@@ -16,6 +16,10 @@ vi.stubGlobal("crypto", {
 
 import {
   workspaces,
+  removedWorkspaces,
+  visibleWorkspaces,
+  hideWorkspace,
+  unhideWorkspace,
   activeWorkspacePath,
   activeSessionId,
   addWorkspace,
@@ -26,11 +30,12 @@ import {
   nextAvailableColor,
   WORKSPACE_COLORS,
 } from "../stores/workspace";
-import { exists, readTextFile } from "@tauri-apps/plugin-fs";
+import { exists, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 
 describe("workspace store", () => {
   beforeEach(() => {
     workspaces.set([]);
+    removedWorkspaces.set([]);
     activeWorkspacePath.set("");
     activeSessionId.set("");
     uuidCounter = 0;
@@ -275,6 +280,89 @@ describe("workspace store", () => {
       vi.mocked(readTextFile).mockResolvedValue("not json");
       await loadWorkspaces();
       expect(get(workspaces)).toEqual([]);
+    });
+  });
+
+  describe("hideWorkspace / unhideWorkspace", () => {
+    it("drops a hidden workspace from visibleWorkspaces but keeps it in workspaces", async () => {
+      await addWorkspace("/a");
+      await addWorkspace("/b");
+      await hideWorkspace("/a");
+
+      expect(get(visibleWorkspaces).map((w) => w.path)).toEqual(["/b"]);
+      expect(get(workspaces).map((w) => w.path)).toEqual(["/a", "/b"]);
+    });
+
+    it("keeps a hidden workspace's sessions in the store", async () => {
+      await addWorkspace("/a");
+      await addSession("/a", "work", "tab-1", "claude-1");
+      await hideWorkspace("/a");
+
+      const ws = get(workspaces).find((w) => w.path === "/a");
+      expect(ws?.sessions).toHaveLength(1);
+      expect(ws?.sessions[0].terminalTabId).toBe("tab-1");
+    });
+
+    it("restores an unhidden workspace in its original position", async () => {
+      await addWorkspace("/a");
+      await addWorkspace("/b");
+      await addWorkspace("/c");
+
+      await hideWorkspace("/b");
+      expect(get(visibleWorkspaces).map((w) => w.path)).toEqual(["/a", "/c"]);
+
+      await unhideWorkspace("/b");
+      expect(get(visibleWorkspaces).map((w) => w.path)).toEqual(["/a", "/b", "/c"]);
+    });
+
+    it("is a no-op when the workspace is already hidden", async () => {
+      await addWorkspace("/a");
+      await hideWorkspace("/a");
+      vi.mocked(writeTextFile).mockClear();
+
+      await hideWorkspace("/a");
+      expect(get(removedWorkspaces)).toEqual(["/a"]);
+      expect(writeTextFile).not.toHaveBeenCalled();
+    });
+
+    it("is a no-op when unhiding a workspace that is not hidden", async () => {
+      await addWorkspace("/a");
+      vi.mocked(writeTextFile).mockClear();
+
+      await unhideWorkspace("/a");
+      expect(get(removedWorkspaces)).toEqual([]);
+      expect(writeTextFile).not.toHaveBeenCalled();
+    });
+
+    it("persists a hide and reloads it", async () => {
+      await addWorkspace("/a");
+      await addWorkspace("/b");
+      await hideWorkspace("/a");
+
+      const calls = vi.mocked(writeTextFile).mock.calls;
+      const written = calls[calls.length - 1][1] as string;
+      expect(JSON.parse(written).removedWorkspaces).toEqual(["/a"]);
+
+      workspaces.set([]);
+      removedWorkspaces.set([]);
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(written);
+      await loadWorkspaces();
+
+      expect(get(removedWorkspaces)).toEqual(["/a"]);
+      expect(get(visibleWorkspaces).map((w) => w.path)).toEqual(["/b"]);
+      expect(get(workspaces)).toHaveLength(2);
+    });
+
+    it("reads a legacy bare-array file as nothing hidden", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify([{ path: "/a", name: "a", color: WORKSPACE_COLORS[0], sessions: [] }]),
+      );
+      await loadWorkspaces();
+
+      expect(get(removedWorkspaces)).toEqual([]);
+      expect(get(visibleWorkspaces)).toHaveLength(1);
     });
   });
 });

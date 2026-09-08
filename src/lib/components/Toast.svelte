@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { dismissToast, toasts, type Toast } from "../stores/toast";
+  import { dismissToast, runToastAction, toasts, type Toast } from "../stores/toast";
 
   const EXIT_MS = 200;
 
@@ -57,6 +57,12 @@
             <div class="body">{toast.body}</div>
           {/if}
         </div>
+        {#if toast.action}
+          <button
+            type="button"
+            class="action"
+            onclick={() => runToastAction(toast.id)}>{toast.action.label}</button>
+        {/if}
         <button type="button" class="close" onclick={() => dismissToast(toast.id)}>✕</button>
       </div>
     {/each}
@@ -117,6 +123,23 @@
     font-size: 11.5px;
     color: var(--muted);
     overflow-wrap: anywhere;
+  }
+
+  .action {
+    flex-shrink: 0;
+    padding: 3px 8px;
+    border: 1px solid var(--border2);
+    border-radius: var(--r-sm);
+    background: var(--surface2);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 11.5px;
+    line-height: 1.2;
+    cursor: pointer;
+  }
+
+  .action:hover {
+    border-color: var(--accent);
   }
 
   .close {

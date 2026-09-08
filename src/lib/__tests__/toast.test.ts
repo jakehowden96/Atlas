@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { toasts, showToast, dismissToast } from "../stores/toast";
+import { toasts, showToast, dismissToast, runToastAction } from "../stores/toast";
 import { get } from "svelte/store";
 
 describe("toast store", () => {
@@ -76,6 +76,69 @@ describe("toast store", () => {
     // Dismiss a toast that doesn't exist
     dismissToast("non-existent-id");
     expect(get(toasts)).toHaveLength(1);
+  });
+
+  describe("action toasts", () => {
+    it("carries an action alongside the title", () => {
+      const run = vi.fn();
+      showToast("Atlas removed", { action: { label: "Undo", run } });
+      const toast = get(toasts)[0];
+      expect(toast.action?.label).toBe("Undo");
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it("holds an action toast for 6s, not 4s", () => {
+      showToast("Atlas removed", { action: { label: "Undo", run: vi.fn() } });
+      vi.advanceTimersByTime(4000);
+      expect(get(toasts)).toHaveLength(1);
+      vi.advanceTimersByTime(1999);
+      expect(get(toasts)).toHaveLength(1);
+      vi.advanceTimersByTime(2);
+      expect(get(toasts)).toHaveLength(0);
+    });
+
+    it("still dismisses a plain toast at 4s", () => {
+      showToast("Plain");
+      vi.advanceTimersByTime(4001);
+      expect(get(toasts)).toHaveLength(0);
+    });
+
+    it("runs the action once and removes the toast", () => {
+      const run = vi.fn();
+      showToast("Atlas removed", { action: { label: "Undo", run } });
+      const id = get(toasts)[0].id;
+
+      runToastAction(id);
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(get(toasts)).toHaveLength(0);
+
+      // The auto-dismiss timer was cleared with it, so nothing fires later.
+      vi.advanceTimersByTime(6000);
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(get(toasts)).toHaveLength(0);
+    });
+
+    it("does not run the action when dismissed by the close button", () => {
+      const run = vi.fn();
+      showToast("Atlas removed", { action: { label: "Undo", run } });
+      dismissToast(get(toasts)[0].id);
+      expect(get(toasts)).toHaveLength(0);
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it("does not run the action when it auto-dismisses", () => {
+      const run = vi.fn();
+      showToast("Atlas removed", { action: { label: "Undo", run } });
+      vi.advanceTimersByTime(6001);
+      expect(get(toasts)).toHaveLength(0);
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it("ignores runToastAction for an unknown id", () => {
+      showToast("Exists");
+      expect(() => runToastAction("non-existent-id")).not.toThrow();
+      expect(get(toasts)).toHaveLength(1);
+    });
   });
 
   it("can show multiple toasts and dismiss them independently", () => {

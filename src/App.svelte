@@ -26,7 +26,7 @@
     activeWorkspacePath,
     loadWorkspaces,
     setSessionDiffStats,
-    workspaces,
+    visibleWorkspaces,
   } from "./lib/stores/workspace";
 
   let unlisten: UnlistenFn | null = null;
@@ -80,7 +80,7 @@
     await log.init();
     log.info("app", "onMount started");
     await loadWorkspaces();
-    const ws = get(workspaces);
+    const ws = get(visibleWorkspaces);
     log.info("app", `workspaces loaded: ${ws.length}`);
     if (ws.length > 0 && !get(activeWorkspacePath)) {
       activeWorkspacePath.set(ws[0].path);

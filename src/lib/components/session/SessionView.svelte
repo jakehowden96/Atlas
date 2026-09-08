@@ -11,7 +11,7 @@
   import { panelData } from "../../stores/panel";
   import { activeTabId, tabs } from "../../stores/terminal";
   import { activeView, diffOpen, focusedSessionId, railOpen, showView } from "../../stores/view";
-  import { sessionDiffStats, workspaces } from "../../stores/workspace";
+  import { sessionDiffStats, visibleWorkspaces, workspaces } from "../../stores/workspace";
   import ChangesDrawer from "../changes/ChangesDrawer.svelte";
   import TerminalContainer from "../terminal/TerminalContainer.svelte";
   import StatePill, { type PillState } from "../ui/StatePill.svelte";
@@ -34,7 +34,7 @@
 
   let needsInputTabs = $derived(new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)));
   let tiles = $derived(
-    [...buildTiles($liveSessionList, $workspaces, $sessionDiffStats, needsInputTabs)].sort(
+    [...buildTiles($liveSessionList, $visibleWorkspaces, $sessionDiffStats, needsInputTabs)].sort(
       compareByAttention,
     ),
   );

@@ -2,7 +2,7 @@
   import { enterLabel } from "../../platform";
   import { claudeInfo, type ClaudeInfo } from "../../ipc";
   import { log } from "../../logger";
-  import { addWorkspaceFolder, deleteWorkspaceCascade } from "../../session-actions";
+  import { addWorkspaceFolder, removeWorkspaceWithUndo } from "../../session-actions";
   import { prViewer, repoSlugsByWorkspace } from "../../stores/prs";
   import {
     autoAddReposFromWorkspaces,
@@ -29,7 +29,7 @@
     type PrRefreshMinutes,
   } from "../../stores/settings";
   import { themeMode, type ThemeMode } from "../../theme";
-  import { setWorkspaceColor, workspaces, WORKSPACE_COLORS } from "../../stores/workspace";
+  import { setWorkspaceColor, visibleWorkspaces, WORKSPACE_COLORS } from "../../stores/workspace";
   import Modal from "../ui/Modal.svelte";
   import SegmentedControl from "../ui/SegmentedControl.svelte";
   import Toggle from "../ui/Toggle.svelte";
@@ -213,7 +213,7 @@
               linking a GitHub repo lets you start sessions from its pull requests.
             </p>
             <div class="list">
-              {#each $workspaces as ws (ws.path)}
+              {#each $visibleWorkspaces as ws (ws.path)}
                 <div class="list-row">
                   <div class="swatches">
                     {#each WORKSPACE_COLORS as colour (colour)}
@@ -236,7 +236,7 @@
                     </div>
                   </div>
                   <span class="ws-count">{ws.sessions.length} sessions</span>
-                  <button type="button" class="remove" onclick={() => void deleteWorkspaceCascade(ws.path)}>
+                  <button type="button" class="remove" onclick={() => void removeWorkspaceWithUndo(ws.path)}>
                     Remove
                   </button>
                 </div>

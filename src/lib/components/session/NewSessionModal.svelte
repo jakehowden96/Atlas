@@ -27,7 +27,11 @@
     type NewSessionMode,
     type NewSessionState,
   } from "../../new-session";
-  import { addWorkspaceFolder, spawnClaudeSession } from "../../session-actions";
+  import {
+    addWorkspaceFolder,
+    removeWorkspaceWithUndo,
+    spawnClaudeSession,
+  } from "../../session-actions";
   import { showToast } from "../../stores/toast";
   import {
     focusedSessionId,
@@ -35,7 +39,7 @@
     newSessionSeed,
     showView,
   } from "../../stores/view";
-  import { addWorkspace, workspaces, type Workspace } from "../../stores/workspace";
+  import { addWorkspace, visibleWorkspaces, type Workspace } from "../../stores/workspace";
   import Modal, { closeWith } from "../ui/Modal.svelte";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
 
@@ -47,10 +51,10 @@
   /** Frozen at open — the ages in the list would otherwise re-render constantly. */
   let now = $state(new Date());
 
-  let filtered = $derived(filterWorkspaces($workspaces, query));
+  let filtered = $derived(filterWorkspaces($visibleWorkspaces, query));
   /** A typed or pasted path that is not a workspace yet — the add row offers it. */
   let addPath = $derived(
-    looksLikeAbsolutePath(query) && !findWorkspace($workspaces, query.trim())
+    looksLikeAbsolutePath(query) && !findWorkspace($visibleWorkspaces, query.trim())
       ? query.trim()
       : "",
   );
@@ -135,7 +139,7 @@
 
     if (seed?.workspacePath) {
       const want = normalizePath(seed.workspacePath);
-      const index = filterWorkspaces(get(workspaces), "").findIndex(
+      const index = filterWorkspaces(get(visibleWorkspaces), "").findIndex(
         (w) => normalizePath(w.path) === want,
       );
       if (index >= 0) {
@@ -171,7 +175,7 @@
   function selectPath(path: string) {
     query = "";
     const want = normalizePath(path);
-    const index = filterWorkspaces(get(workspaces), "").findIndex(
+    const index = filterWorkspaces(get(visibleWorkspaces), "").findIndex(
       (w) => normalizePath(w.path) === want,
     );
     nav = { ...nav, wsIndex: Math.max(0, index), column: "workspaces" };
@@ -272,19 +276,28 @@
         <div class="col-head">Workspaces · recent first</div>
 
         {#each filtered as ws, i (ws.path)}
-          <button
-            type="button"
-            class="ws-row"
-            class:selected={view.column === "workspaces" && i === view.wsIndex}
-            onclick={() => pickWorkspace(i)}
-          >
-            <span class="swatch" style="background: {ws.color ?? 'var(--accent)'}"></span>
-            <span class="ws-text">
-              <span class="ws-name">{ws.name}</span>
-              <span class="ws-path" title={ws.path}>{ws.path}</span>
-            </span>
-            <span class="ws-last">{lastUsed(ws)}</span>
-          </button>
+          <div class="ws-row-wrap">
+            <button
+              type="button"
+              class="ws-row"
+              class:selected={view.column === "workspaces" && i === view.wsIndex}
+              onclick={() => pickWorkspace(i)}
+            >
+              <span class="swatch" style="background: {ws.color ?? 'var(--accent)'}"></span>
+              <span class="ws-text">
+                <span class="ws-name">{ws.name}</span>
+                <span class="ws-path" title={ws.path}>{ws.path}</span>
+              </span>
+              <span class="ws-last">{lastUsed(ws)}</span>
+            </button>
+            <button
+              type="button"
+              class="ws-remove"
+              aria-label="Remove {ws.name}"
+              title="Remove workspace"
+              onclick={() => void removeWorkspaceWithUndo(ws.path)}
+            >✕</button>
+          </div>
         {/each}
 
         {#if filtered.length === 0 && !addPath}
@@ -459,7 +472,8 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    flex-shrink: 0;
+    flex: 1;
+    min-width: 0;
     padding: 8px 10px;
     border: none;
     border-radius: var(--r-md);
@@ -470,8 +484,44 @@
     cursor: pointer;
   }
 
+  .ws-row-wrap {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
   .ws-row:hover {
     background: var(--surface2);
+  }
+
+  /* Stays out of the way until the row is hovered, but remains reachable by
+     keyboard — focus-visible brings it back regardless of pointer. */
+  .ws-remove {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    margin-left: 2px;
+    padding: 0;
+    border: none;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+
+  .ws-row-wrap:hover .ws-remove,
+  .ws-remove:focus-visible {
+    opacity: 1;
+  }
+
+  .ws-remove:hover {
+    color: var(--text);
   }
 
   .ws-row.selected {

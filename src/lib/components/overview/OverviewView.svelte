@@ -7,7 +7,7 @@
   import { tabs } from "../../stores/terminal";
   import { overviewOrdering, pinnedSessions, tailTranscripts } from "../../stores/settings";
   import { newSessionOpen, wsFilter } from "../../stores/view";
-  import { sessionDiffStats, workspaces } from "../../stores/workspace";
+  import { sessionDiffStats, visibleWorkspaces } from "../../stores/workspace";
   import Chip from "../ui/Chip.svelte";
   import SessionTile from "./SessionTile.svelte";
 
@@ -23,7 +23,7 @@
     new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)),
   );
   let allTiles = $derived(
-    buildTiles($liveSessionList, $workspaces, $sessionDiffStats, needsInputTabs),
+    buildTiles($liveSessionList, $visibleWorkspaces, $sessionDiffStats, needsInputTabs),
   );
   let pinned = $derived(new Set($pinnedSessions));
   let comparator = $derived(tileComparator($overviewOrdering, pinned));
@@ -44,7 +44,7 @@
      grid — noise, not a control. Only workspaces with a session on screen get
      a chip; the rest stay reachable through the New Session modal. */
   let activeWorkspaces = $derived(
-    $workspaces.filter((ws) => tilesPerWorkspace.has(ws.path)),
+    $visibleWorkspaces.filter((ws) => tilesPerWorkspace.has(ws.path)),
   );
 
   /* A filter pinned to a workspace that no longer has sessions would strand the
@@ -99,8 +99,8 @@
         <div class="glyph">›_</div>
         <div class="empty-title">Nothing running</div>
         <p class="empty-copy">
-          Start a Claude session in one of your {$workspaces.length}
-          workspace{$workspaces.length === 1 ? "" : "s"}. Sessions you've run before stay listed
+          Start a Claude session in one of your {$visibleWorkspaces.length}
+          workspace{$visibleWorkspaces.length === 1 ? "" : "s"}. Sessions you've run before stay listed
           here and can be resumed.
         </p>
         <div class="empty-actions">

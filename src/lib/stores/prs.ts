@@ -8,7 +8,7 @@ import { ghViewer, gitRemoteSlug, listRepoPrs } from "../ipc";
 import { log } from "../logger";
 import { autoAddReposFromWorkspaces, prRefreshMinutes, watchedRepos } from "./settings";
 import { showToast } from "./toast";
-import { workspaces } from "./workspace";
+import { visibleWorkspaces } from "./workspace";
 import type { GhViewer, Pr, RepoPrs } from "../../types/prs";
 
 export type PrFilter = "all" | "mine" | "review";
@@ -147,7 +147,7 @@ export function startPrPolling(): () => void {
   void loadViewer();
   // Resolve remotes from the shell, not just from PrsView: the auto-add union
   // has to be right before the Pull requests screen is ever opened.
-  const stopSlugs = workspaces.subscribe((ws) => {
+  const stopSlugs = visibleWorkspaces.subscribe((ws) => {
     void loadWorkspaceSlugs(ws.map((w) => w.path));
   });
   // Fires immediately on subscribe, which is the initial fetch.

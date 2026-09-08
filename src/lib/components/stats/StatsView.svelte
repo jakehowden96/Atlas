@@ -36,7 +36,7 @@
     type Range,
   } from "../../stats-derive";
   import { openNewSession } from "../../stores/view";
-  import { workspaces } from "../../stores/workspace";
+  import { visibleWorkspaces } from "../../stores/workspace";
   import Sparkline from "../ui/Sparkline.svelte";
   import SegmentedControl from "../ui/SegmentedControl.svelte";
 
@@ -167,7 +167,7 @@
   function workspaceColour(path: string | null): string {
     if (!path) return "var(--surface3)";
     const key = normalise(path);
-    const match = $workspaces.find((w) => normalise(w.path) === key);
+    const match = $visibleWorkspaces.find((w) => normalise(w.path) === key);
     return match?.color ?? "var(--surface3)";
   }
 
