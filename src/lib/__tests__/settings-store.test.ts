@@ -22,6 +22,8 @@ import {
   prRefreshMinutes,
   setAutoAddReposFromWorkspaces,
   setEnableNotifications,
+  setFileSources,
+  setOpenFiles,
   setOverviewOrdering,
   setPrRefreshMinutes,
   setSoundOnNeedsYou,
@@ -34,6 +36,7 @@ import {
   terminalFontSize,
   watchedRepos,
 } from "../stores/settings";
+import { openFiles, sources } from "../stores/files";
 import { liveSessions } from "../stores/liveSessions";
 import { themeMode } from "../theme";
 import { workspaces } from "../stores/workspace";
@@ -66,6 +69,8 @@ describe("settings store", () => {
     tailTranscripts.set(true);
     liveSessions.set(new Map());
     workspaces.set([]);
+    openFiles.set([]);
+    sources.set([]);
     vi.clearAllMocks();
   });
 
@@ -254,6 +259,35 @@ describe("settings store", () => {
       allowWrites();
       await setAutoAddReposFromWorkspaces(true);
       expect(lastWritten().autoAddReposFromWorkspaces).toBe(true);
+    });
+  });
+
+  /** The Files screen's two persisted stores live in `stores/files.ts` but ride
+   *  along in this file, so the round trip crosses both modules. */
+  describe("the Files screen's state", () => {
+    it("persists the open tabs and the disk sources", async () => {
+      allowWrites();
+      await setOpenFiles(["wsdocs/guide.md"]);
+      await setFileSources(["/home/me/notes"]);
+
+      expect(get(openFiles)).toEqual(["wsdocs/guide.md"]);
+      expect(get(sources)).toEqual(["/home/me/notes"]);
+      expect(lastWritten().openFiles).toEqual(["wsdocs/guide.md"]);
+      expect(lastWritten().fileSources).toEqual(["/home/me/notes"]);
+    });
+
+    it("loads them back, ignoring malformed entries", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify({
+          openFiles: ["wsnote.md", 7],
+          fileSources: ["/home/me/notes", null],
+        }),
+      );
+      await loadSettings();
+
+      expect(get(openFiles)).toEqual(["wsnote.md"]);
+      expect(get(sources)).toEqual(["/home/me/notes"]);
     });
   });
 
