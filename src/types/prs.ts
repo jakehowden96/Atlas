@@ -13,7 +13,14 @@ export interface Pr {
   headRefName: string;
   ciState: CiState;
   reviewState: ReviewState;
+  /** Logins of individually requested reviewers; team requests are dropped. */
+  reviewRequestLogins: string[];
   commentsCount: number;
+}
+
+/** The signed-in GitHub user, or null when `gh` is missing or logged out. */
+export interface GhViewer {
+  login: string;
 }
 
 /** Per-repo result. `error` carries gh's stderr when the call failed. */
