@@ -3,6 +3,7 @@ import { BaseDirectory, readTextFile, writeTextFile, mkdir, exists } from "@taur
 import { startSessionTail, stopSessionTail } from "../ipc";
 import { log } from "../logger";
 import { themeMode, type ThemeMode } from "../theme";
+import { openFiles, sources } from "./files";
 import { liveSessions } from "./liveSessions";
 import { workspaces } from "./workspace";
 
@@ -45,6 +46,11 @@ interface PersistedSettings {
   autoAddReposFromWorkspaces?: boolean;
   tailTranscripts?: boolean;
   pinnedSessions?: string[];
+  /** Files screen: the open tabs and the folders registered under "From disk".
+   *  The stores live in `stores/files.ts`; they ride along here because this
+   *  file is already read on boot. */
+  openFiles?: string[];
+  fileSources?: string[];
 }
 
 /** The three intervals the Pull requests screen offers. */
@@ -98,6 +104,12 @@ export async function loadSettings() {
     if (Array.isArray(data.pinnedSessions)) {
       pinnedSessions.set(data.pinnedSessions.filter((id) => typeof id === "string"));
     }
+    if (Array.isArray(data.openFiles)) {
+      openFiles.set(data.openFiles.filter((key) => typeof key === "string"));
+    }
+    if (Array.isArray(data.fileSources)) {
+      sources.set(data.fileSources.filter((path) => typeof path === "string"));
+    }
     log.info("settings", "settings loaded");
   } catch (e) {
     log.error("settings", "failed to load settings", e);
@@ -119,6 +131,8 @@ async function persistSettings() {
       autoAddReposFromWorkspaces: get(autoAddReposFromWorkspaces),
       tailTranscripts: get(tailTranscripts),
       pinnedSessions: get(pinnedSessions),
+      openFiles: get(openFiles),
+      fileSources: get(sources),
     };
     await writeTextFile(SETTINGS_FILE, JSON.stringify(data, null, 2), {
       baseDir: BaseDirectory.Home,
@@ -175,6 +189,18 @@ export async function togglePinnedSession(key: string) {
   pinnedSessions.set(
     current.includes(key) ? current.filter((id) => id !== key) : [...current, key],
   );
+  await persistSettings();
+}
+
+/** Files-screen setters. They live here rather than in `stores/files.ts` so
+ *  that only one module writes `~/.atlas/settings.json`. */
+export async function setOpenFiles(keys: string[]) {
+  openFiles.set(keys);
+  await persistSettings();
+}
+
+export async function setFileSources(paths: string[]) {
+  sources.set(paths);
   await persistSettings();
 }
 

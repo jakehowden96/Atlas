@@ -1,19 +1,30 @@
-<!-- Stub. Phases 02–04 build the tree, editor and rail on top of this shell.
-     The empty lang="ts" block is what makes svelte-check emit a typed
-     declaration for the module; without it App.svelte's import is `any`. -->
-<script lang="ts"></script>
+<!-- The three-column Files screen: tree (240px) · editor (flex) · rail (240px).
+     Phase 02 builds the tree; phase 03 fills the editor column and phase 04
+     adds the rail. -->
+<script lang="ts">
+  import FileTree from "./FileTree.svelte";
+</script>
 
 <div class="files">
-  <p class="stub">Files</p>
+  <FileTree />
+  <div class="editor">
+    <p class="stub">Select a file</p>
+  </div>
 </div>
 
 <style>
   .files {
     display: flex;
-    align-items: center;
-    justify-content: center;
     flex: 1;
     min-height: 0;
+  }
+
+  .editor {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
   }
 
   .stub {
