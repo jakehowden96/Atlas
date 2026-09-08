@@ -7,6 +7,8 @@ export const settingsOpen = writable(false);
 export const skipPermissions = writable(false);
 export const enableNotifications = writable(true);
 export const watchedRepos = writable<string[]>([]);
+/** How often the Pull requests screen re-polls `gh`, in minutes. */
+export const prRefreshMinutes = writable(3);
 
 const SETTINGS_DIR = ".atlas";
 const SETTINGS_FILE = ".atlas/settings.json";
@@ -15,8 +17,12 @@ interface PersistedSettings {
   skipPermissions?: boolean;
   enableNotifications?: boolean;
   watchedRepos?: string[];
+  prRefreshMinutes?: number;
   theme?: ThemeMode;
 }
+
+/** The three intervals the Pull requests screen offers; phase 11 adds the UI. */
+const PR_REFRESH_CHOICES = [1, 3, 10];
 
 async function ensureDir() {
   const dirExists = await exists(SETTINGS_DIR, { baseDir: BaseDirectory.Home });
@@ -36,6 +42,9 @@ export async function loadSettings() {
     if (data.skipPermissions) skipPermissions.set(true);
     if (data.enableNotifications === false) enableNotifications.set(false);
     if (Array.isArray(data.watchedRepos)) watchedRepos.set(data.watchedRepos);
+    if (PR_REFRESH_CHOICES.includes(data.prRefreshMinutes as number)) {
+      prRefreshMinutes.set(data.prRefreshMinutes as number);
+    }
     if (data.theme === "system" || data.theme === "light" || data.theme === "dark") {
       themeMode.set(data.theme);
     }
@@ -53,6 +62,7 @@ async function persistSettings() {
       skipPermissions: get(skipPermissions),
       enableNotifications: get(enableNotifications),
       watchedRepos: get(watchedRepos),
+      prRefreshMinutes: get(prRefreshMinutes),
       theme: get(themeMode),
     };
     await writeTextFile(SETTINGS_FILE, JSON.stringify(data, null, 2), {

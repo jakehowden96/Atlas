@@ -1,3 +1,4 @@
+use super::prs::validate_repo_slug;
 use super::validate::{validate_branch_name, validate_cwd, validate_file_paths};
 use crate::panel::types::{BranchInfo, GitStatus, RepoInfo};
 use std::fs;
@@ -240,6 +241,60 @@ pub async fn git_list_branches(cwd: String) -> Result<Vec<BranchInfo>, String> {
     }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
+/// Parse a git remote URL into an `owner/repo` slug.
+///
+/// Handles both remote forms git hands out: scp-like SSH
+/// (`user@host:owner/repo.git`) and URL-shaped
+/// (`https://host/owner/repo`, `ssh://user@host:22/owner/repo.git`).
+/// Anything that isn't a two-segment path under a hostname — local paths
+/// included — yields `None`.
+pub(crate) fn parse_remote_slug(url: &str) -> Option<String> {
+    let url = url.trim();
+    let path = match url.split_once("://") {
+        // scheme://[user@]host[:port]/owner/repo
+        Some((_, rest)) => rest.split_once('/')?.1,
+        None => {
+            // scp-like [user@]host:owner/repo. `C:/repos/foo` also splits on a
+            // colon, so require a dotted hostname to tell the two apart.
+            let (authority, rest) = url.split_once(':')?;
+            if !authority.contains('.') {
+                return None;
+            }
+            rest
+        }
+    };
+    let path = path.trim_end_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    let path = path.trim_end_matches('/');
+
+    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    if segments.len() < 2 {
+        return None;
+    }
+    let slug = format!(
+        "{}/{}",
+        segments[segments.len() - 2],
+        segments[segments.len() - 1]
+    );
+    validate_repo_slug(&slug).ok()?;
+    Some(slug)
+}
+
+/// The `owner/repo` slug of a workspace's `origin` remote, or `None` when it
+/// has no origin or the URL isn't a recognisable host path. Maps watched repos
+/// onto workspaces so the PRs screen knows where to start a session.
+#[tauri::command(async)]
+pub async fn git_remote_slug(cwd: String) -> Result<Option<String>, String> {
+    validate_cwd(&cwd)?;
+    tokio::task::spawn_blocking(move || {
+        Ok(git_cmd(&cwd, &["remote", "get-url", "origin"])
+            .ok()
+            .and_then(|url| parse_remote_slug(&url)))
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
 /// Checkout an existing local branch.
 #[tauri::command(async)]
 pub async fn git_checkout_branch(cwd: String, branch: String) -> Result<(), String> {
@@ -282,6 +337,75 @@ mod tests {
     fn allow_normal_dirs() {
         assert!(!should_skip_dir("src"));
         assert!(!should_skip_dir("my-project"));
+    }
+
+    // --- parse_remote_slug tests ---
+
+    #[test]
+    fn slug_from_scp_ssh_remote() {
+        assert_eq!(
+            parse_remote_slug("git@github.com:jakehowden/Atlas.git"),
+            Some("jakehowden/Atlas".to_string())
+        );
+        assert_eq!(
+            parse_remote_slug("git@github.com:jakehowden/Atlas"),
+            Some("jakehowden/Atlas".to_string())
+        );
+    }
+
+    #[test]
+    fn slug_from_ssh_url_remote() {
+        assert_eq!(
+            parse_remote_slug("ssh://git@github.com/jakehowden/Atlas.git"),
+            Some("jakehowden/Atlas".to_string())
+        );
+        assert_eq!(
+            parse_remote_slug("ssh://git@github.com:22/jakehowden/Atlas.git"),
+            Some("jakehowden/Atlas".to_string())
+        );
+    }
+
+    #[test]
+    fn slug_from_https_remote() {
+        assert_eq!(
+            parse_remote_slug("https://github.com/jakehowden/Atlas.git"),
+            Some("jakehowden/Atlas".to_string())
+        );
+        assert_eq!(
+            parse_remote_slug("https://github.com/jakehowden/Atlas"),
+            Some("jakehowden/Atlas".to_string())
+        );
+        assert_eq!(
+            parse_remote_slug("https://user@github.com/jakehowden/Atlas.git/"),
+            Some("jakehowden/Atlas".to_string())
+        );
+    }
+
+    #[test]
+    fn slug_takes_the_last_two_segments() {
+        assert_eq!(
+            parse_remote_slug("https://gitlab.com/group/subgroup/repo.git"),
+            Some("subgroup/repo".to_string())
+        );
+    }
+
+    #[test]
+    fn slug_rejects_local_paths() {
+        assert_eq!(parse_remote_slug("/home/me/repo.git"), None);
+        assert_eq!(parse_remote_slug("C:/Users/me/repo"), None);
+        assert_eq!(parse_remote_slug("../sibling/repo"), None);
+    }
+
+    #[test]
+    fn slug_rejects_short_or_empty_paths() {
+        assert_eq!(parse_remote_slug(""), None);
+        assert_eq!(parse_remote_slug("https://github.com/repo"), None);
+        assert_eq!(parse_remote_slug("https://github.com/"), None);
+    }
+
+    #[test]
+    fn slug_rejects_invalid_characters() {
+        assert_eq!(parse_remote_slug("https://github.com/own er/repo"), None);
     }
 
     // --- git_cmd error handling ---

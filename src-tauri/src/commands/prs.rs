@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::process::Command;
+use tokio::sync::OnceCell;
 use tokio::task::JoinSet;
 
 /// One open pull request. We over-fetch from gh and then collapse the noisy
@@ -20,6 +21,9 @@ pub struct Pr {
     pub ci_state: String,
     /// "approved" | "changes_requested" | "review_required" | "none"
     pub review_state: String,
+    /// Logins of individually requested reviewers. Team requests carry no
+    /// login and are dropped — "Needs my review" matches the viewer's login.
+    pub review_request_logins: Vec<String>,
     pub comments_count: u32,
 }
 
@@ -39,6 +43,8 @@ struct RawPr {
     head_ref_name: String,
     #[serde(rename = "reviewDecision", default)]
     review_decision: String,
+    #[serde(rename = "reviewRequests", default)]
+    review_requests: Vec<serde_json::Value>,
     #[serde(rename = "statusCheckRollup", default)]
     status_check_rollup: Vec<serde_json::Value>,
     #[serde(default)]
@@ -106,6 +112,17 @@ fn map_review(decision: &str) -> &'static str {
     }
 }
 
+/// Pull the individual reviewer logins out of gh's `reviewRequests`. The
+/// array mixes `User` entries (which have `login`) with `Team` entries (which
+/// do not); only users can be matched against the viewer.
+fn review_request_logins(requests: &[serde_json::Value]) -> Vec<String> {
+    requests
+        .iter()
+        .filter_map(|r| r.get("login").and_then(|v| v.as_str()))
+        .map(|s| s.to_string())
+        .collect()
+}
+
 fn flatten(raw: RawPr) -> Pr {
     Pr {
         number: raw.number,
@@ -118,6 +135,7 @@ fn flatten(raw: RawPr) -> Pr {
         head_ref_name: raw.head_ref_name,
         ci_state: rollup_ci_state(&raw.status_check_rollup).to_string(),
         review_state: map_review(&raw.review_decision).to_string(),
+        review_request_logins: review_request_logins(&raw.review_requests),
         comments_count: raw.comments.len() as u32,
     }
 }
@@ -135,7 +153,7 @@ pub struct RepoPrs {
 /// constraints (letters, digits, dot, underscore, hyphen) — keeps stray shell
 /// metacharacters out of the `--repo` argument even though we never go through
 /// a shell.
-fn validate_repo_slug(slug: &str) -> Result<(), String> {
+pub(crate) fn validate_repo_slug(slug: &str) -> Result<(), String> {
     if slug.is_empty() {
         return Err("Repo slug cannot be empty".to_string());
     }
@@ -171,7 +189,7 @@ fn fetch_one(repo: &str) -> RepoPrs {
             "--state",
             "open",
             "--json",
-            "number,title,author,createdAt,updatedAt,url,isDraft,headRefName,reviewDecision,statusCheckRollup,comments",
+            "number,title,author,createdAt,updatedAt,url,isDraft,headRefName,reviewDecision,reviewRequests,statusCheckRollup,comments",
             "--limit",
             "50",
         ])
@@ -246,6 +264,53 @@ pub async fn list_repo_prs(repos: Vec<String>) -> Result<Vec<RepoPrs>, String> {
     }
 
     Ok(results.into_iter().flatten().collect())
+}
+
+/// The signed-in GitHub user, as reported by `gh`.
+#[derive(Debug, Serialize, Clone)]
+pub struct GhViewer {
+    pub login: String,
+}
+
+/// Cached for the life of the process: the login cannot change without a new
+/// `gh auth login`, and this sits on every Pull-requests render path. Only
+/// successful lookups are cached, so signing in mid-session still resolves.
+static VIEWER: OnceCell<GhViewer> = OnceCell::const_new();
+
+fn fetch_viewer_login() -> Option<String> {
+    let output = Command::new("gh")
+        .args(["api", "user", "--jq", ".login"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let login = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if login.is_empty() {
+        None
+    } else {
+        Some(login)
+    }
+}
+
+/// Who "me" is, for the Mine / Needs-my-review filters.
+///
+/// `gh` missing or signed out yields `Ok(None)`, never an error: the screen
+/// degrades to All-only rather than breaking. `None` doubles as the auth state
+/// Settings shows for "gh not authenticated".
+#[tauri::command(async)]
+pub async fn gh_viewer() -> Result<Option<GhViewer>, String> {
+    if let Some(viewer) = VIEWER.get() {
+        return Ok(Some(viewer.clone()));
+    }
+    let login = tokio::task::spawn_blocking(fetch_viewer_login)
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?;
+    Ok(login.map(|login| {
+        let viewer = GhViewer { login };
+        let _ = VIEWER.set(viewer.clone());
+        viewer
+    }))
 }
 
 /// The platform's "open this in the default handler" launcher.
@@ -394,6 +459,32 @@ mod tests {
         assert_eq!(map_review("REVIEW_REQUIRED"), "review_required");
         assert_eq!(map_review(""), "none");
         assert_eq!(map_review("anything-else"), "none");
+    }
+
+    #[test]
+    fn review_requests_keep_users_and_drop_teams() {
+        let requests = vec![
+            serde_json::json!({ "__typename": "User", "login": "octocat" }),
+            serde_json::json!({ "__typename": "Team", "slug": "reviewers", "name": "Reviewers" }),
+            serde_json::json!({ "__typename": "User", "login": "hubot" }),
+        ];
+        assert_eq!(review_request_logins(&requests), vec!["octocat", "hubot"]);
+    }
+
+    #[test]
+    fn review_requests_empty_when_none() {
+        assert!(review_request_logins(&[]).is_empty());
+    }
+
+    #[tokio::test]
+    async fn gh_viewer_degrades_instead_of_erroring() {
+        // Whether or not gh is installed and authenticated here, the command
+        // must resolve — All-only is the fallback, an error is not. When it
+        // does find a viewer the login is never blank; the filters match on it.
+        let viewer = gh_viewer().await.expect("gh_viewer must never error");
+        if let Some(viewer) = viewer {
+            assert!(!viewer.login.is_empty());
+        }
     }
 
     #[tokio::test]

@@ -4,7 +4,7 @@
   import { onDestroy, onMount } from "svelte";
   import { get } from "svelte/store";
   import Toast from "./lib/components/Toast.svelte";
-  import PrsView from "./lib/components/panel/PrsView.svelte";
+  import PrsView from "./lib/components/prs/PrsView.svelte";
   import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
   import StatsView from "./lib/components/panel/StatsView.svelte";
   import TerminalContainer from "./lib/components/terminal/TerminalContainer.svelte";
@@ -16,6 +16,7 @@
   import { handleGlobalKeydown } from "./lib/shortcuts";
   import { liveSessionList, upsertLiveSession } from "./lib/stores/liveSessions";
   import { panelData } from "./lib/stores/panel";
+  import { prsAttentionCount, startPrPolling } from "./lib/stores/prs";
   import { enableNotifications, loadSettings, settingsOpen } from "./lib/stores/settings";
   import { activeTabId, setTabNeedsInput } from "./lib/stores/terminal";
   import { activeView, jumpOpen, newSessionOpen, showView, type View } from "./lib/stores/view";
@@ -29,6 +30,7 @@
   let unlisten: UnlistenFn | null = null;
   let unlistenNotification: UnlistenFn | null = null;
   let unlistenSession: UnlistenFn | null = null;
+  let stopPrPolling: (() => void) | null = null;
 
   // ── Top-bar status, straight off the live transcript tails ────────────────
   let running = $derived($liveSessionList.filter((s) => s.state === "running").length);
@@ -51,12 +53,17 @@
     );
   }
 
-  // The Pull requests badge stays undefined until phase 08 lifts PR data out of
-  // PrsView into a store — a fabricated count would be worse than none.
+  // The Pull requests badge counts PRs asking for action; at zero it is left
+  // off entirely rather than shown as a "0" alert pill.
   let viewOptions = $derived<Segment[]>([
     { id: "overview", label: "Overview", count: $liveSessionList.length },
     { id: "session", label: "Session" },
-    { id: "prs", label: "Pull requests" },
+    {
+      id: "prs",
+      label: "Pull requests",
+      count: $prsAttentionCount > 0 ? $prsAttentionCount : undefined,
+      alert: true,
+    },
     { id: "stats", label: "Stats" },
   ]);
 
@@ -89,6 +96,9 @@
       log.info("app", `active workspace set: ${ws[0].path}`);
     }
     await loadSettings();
+    // Poll from the shell, not from PrsView: the top-bar badge has to stay
+    // current while the Pull requests screen is unmounted.
+    stopPrPolling = startPrPolling();
     unlisten = await onPanelUpdate((sessionId, data) => {
       if (sessionId === get(activeTabId)) {
         panelData.set(data);
@@ -143,6 +153,7 @@
     unlisten?.();
     unlistenNotification?.();
     unlistenSession?.();
+    stopPrPolling?.();
   });
 </script>
 

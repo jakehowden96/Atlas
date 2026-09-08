@@ -1,7 +1,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { BranchInfo, GitStatus, PanelData, RepoInfo } from "../types/panel";
-import type { RepoPrs } from "../types/prs";
+import type { GhViewer, RepoPrs } from "../types/prs";
 import type { LiveSession, SessionUpdateEvent } from "../types/session";
 import type { StatsSummary } from "../types/stats";
 import { log } from "./logger";
@@ -138,8 +138,21 @@ export async function gitCreateBranch(cwd: string, branch: string): Promise<void
   return invoke("git_create_branch", { cwd, branch });
 }
 
+/** `owner/repo` for a workspace's origin remote, or null if it has none. */
+export async function gitRemoteSlug(cwd: string): Promise<string | null> {
+  return invoke("git_remote_slug", { cwd });
+}
+
 export async function listRepoPrs(repos: string[]): Promise<RepoPrs[]> {
   return invoke("list_repo_prs", { repos });
+}
+
+/**
+ * The signed-in GitHub user. Resolves to null — never rejects — when `gh` is
+ * missing or logged out, so the PRs screen can degrade to All-only.
+ */
+export async function ghViewer(): Promise<GhViewer | null> {
+  return invoke("gh_viewer");
 }
 
 export async function openUrl(url: string): Promise<void> {
