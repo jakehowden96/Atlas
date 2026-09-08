@@ -116,6 +116,9 @@ export class TerminalSession {
       if (mod && !e.shiftKey && ["n", "k", ","].includes(e.key.toLowerCase())) return false;
       // ⌘\ (macOS) and Ctrl+Shift+\ (Windows/Linux) — activity rail
       if (mod && e.key === "\\") return false;
+      // ⌘1–4 — top-bar tabs. Matched on e.code for the same reason the global
+      // handler does: with the modifier held, non-US layouts report punctuation.
+      if (mod && !e.shiftKey && /^Digit[1-4]$/.test(e.code)) return false;
       // Escape is absent by design: the Claude Code TUI owns it while the
       // terminal has focus.
       return true;
