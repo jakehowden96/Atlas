@@ -1,16 +1,31 @@
 import { writable, get } from "svelte/store";
 import { BaseDirectory, readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs";
+import { startSessionTail, stopSessionTail } from "../ipc";
 import { log } from "../logger";
 import { themeMode, type ThemeMode } from "../theme";
+import { liveSessions } from "./liveSessions";
+import { workspaces } from "./workspace";
+
+export type OverviewOrdering = "attention" | "workspace" | "manual";
+export type PrRefreshMinutes = 1 | 3 | 10;
 
 export const settingsOpen = writable(false);
 export const skipPermissions = writable(false);
 export const enableNotifications = writable(true);
+/** Repos the user typed in by hand. Auto-added ones are unioned in `stores/prs`. */
 export const watchedRepos = writable<string[]>([]);
 /** How often the Pull requests screen re-polls `gh`, in minutes. */
-export const prRefreshMinutes = writable(3);
-/** xterm font size in px. The design specifies 12.5; phase 11 adds the stepper. */
+export const prRefreshMinutes = writable<PrRefreshMinutes>(3);
+/** xterm font size in px. The design specifies 12.5 for the terminal pane. */
 export const terminalFontSize = writable(12.5);
+/** A short ping when a permission prompt appears. */
+export const soundOnNeedsYou = writable(false);
+/** Overview tile order. "attention" is the design default. */
+export const overviewOrdering = writable<OverviewOrdering>("attention");
+/** Union every workspace's GitHub remote into the watched-repo list. */
+export const autoAddReposFromWorkspaces = writable(false);
+/** Read `~/.claude/projects/**.jsonl` live. Off degrades Overview tiles. */
+export const tailTranscripts = writable(true);
 
 const SETTINGS_DIR = ".atlas";
 const SETTINGS_FILE = ".atlas/settings.json";
@@ -19,13 +34,24 @@ interface PersistedSettings {
   skipPermissions?: boolean;
   enableNotifications?: boolean;
   watchedRepos?: string[];
-  prRefreshMinutes?: number;
-  terminalFontSize?: number;
   theme?: ThemeMode;
+  soundOnNeedsYou?: boolean;
+  terminalFontSize?: number;
+  overviewOrdering?: OverviewOrdering;
+  prRefreshMinutes?: PrRefreshMinutes;
+  autoAddReposFromWorkspaces?: boolean;
+  tailTranscripts?: boolean;
 }
 
-/** The three intervals the Pull requests screen offers; phase 11 adds the UI. */
-const PR_REFRESH_CHOICES = [1, 3, 10];
+/** The three intervals the Pull requests screen offers. */
+export const PR_REFRESH_CHOICES: PrRefreshMinutes[] = [1, 3, 10];
+
+const ORDERING_CHOICES: OverviewOrdering[] = ["attention", "workspace", "manual"];
+
+/** Terminal stepper bounds. Below 8 xterm stops being legible; above 24 a
+    session pane holds too few columns for Claude Code's TUI to lay out. */
+export const MIN_TERMINAL_FONT_SIZE = 8;
+export const MAX_TERMINAL_FONT_SIZE = 24;
 
 async function ensureDir() {
   const dirExists = await exists(SETTINGS_DIR, { baseDir: BaseDirectory.Home });
@@ -34,6 +60,10 @@ async function ensureDir() {
   }
 }
 
+/**
+ * Every key is optional and every absent key keeps the store's default, so a
+ * settings file written by any earlier Atlas still loads.
+ */
 export async function loadSettings() {
   log.info("settings", "loadSettings started");
   try {
@@ -45,15 +75,23 @@ export async function loadSettings() {
     if (data.skipPermissions) skipPermissions.set(true);
     if (data.enableNotifications === false) enableNotifications.set(false);
     if (Array.isArray(data.watchedRepos)) watchedRepos.set(data.watchedRepos);
-    if (PR_REFRESH_CHOICES.includes(data.prRefreshMinutes as number)) {
-      prRefreshMinutes.set(data.prRefreshMinutes as number);
-    }
-    if (typeof data.terminalFontSize === "number" && data.terminalFontSize > 0) {
-      terminalFontSize.set(data.terminalFontSize);
-    }
     if (data.theme === "system" || data.theme === "light" || data.theme === "dark") {
       themeMode.set(data.theme);
     }
+    if (typeof data.soundOnNeedsYou === "boolean") soundOnNeedsYou.set(data.soundOnNeedsYou);
+    if (typeof data.terminalFontSize === "number" && data.terminalFontSize > 0) {
+      terminalFontSize.set(clampFontSize(data.terminalFontSize));
+    }
+    if (data.overviewOrdering && ORDERING_CHOICES.includes(data.overviewOrdering)) {
+      overviewOrdering.set(data.overviewOrdering);
+    }
+    if (data.prRefreshMinutes && PR_REFRESH_CHOICES.includes(data.prRefreshMinutes)) {
+      prRefreshMinutes.set(data.prRefreshMinutes);
+    }
+    if (typeof data.autoAddReposFromWorkspaces === "boolean") {
+      autoAddReposFromWorkspaces.set(data.autoAddReposFromWorkspaces);
+    }
+    if (typeof data.tailTranscripts === "boolean") tailTranscripts.set(data.tailTranscripts);
     log.info("settings", "settings loaded");
   } catch (e) {
     log.error("settings", "failed to load settings", e);
@@ -68,9 +106,13 @@ async function persistSettings() {
       skipPermissions: get(skipPermissions),
       enableNotifications: get(enableNotifications),
       watchedRepos: get(watchedRepos),
-      prRefreshMinutes: get(prRefreshMinutes),
-      terminalFontSize: get(terminalFontSize),
       theme: get(themeMode),
+      soundOnNeedsYou: get(soundOnNeedsYou),
+      terminalFontSize: get(terminalFontSize),
+      overviewOrdering: get(overviewOrdering),
+      prRefreshMinutes: get(prRefreshMinutes),
+      autoAddReposFromWorkspaces: get(autoAddReposFromWorkspaces),
+      tailTranscripts: get(tailTranscripts),
     };
     await writeTextFile(SETTINGS_FILE, JSON.stringify(data, null, 2), {
       baseDir: BaseDirectory.Home,
@@ -79,6 +121,10 @@ async function persistSettings() {
     log.error("settings", "failed to persist settings", e);
     console.error("Failed to persist settings:", e);
   }
+}
+
+export function clampFontSize(size: number): number {
+  return Math.min(MAX_TERMINAL_FONT_SIZE, Math.max(MIN_TERMINAL_FONT_SIZE, size));
 }
 
 export async function setSkipPermissions(value: boolean) {
@@ -101,3 +147,69 @@ export async function setTheme(mode: ThemeMode) {
   await persistSettings();
 }
 
+export async function setSoundOnNeedsYou(value: boolean) {
+  soundOnNeedsYou.set(value);
+  await persistSettings();
+}
+
+export async function setTerminalFontSize(size: number) {
+  terminalFontSize.set(clampFontSize(size));
+  await persistSettings();
+}
+
+export async function setOverviewOrdering(value: OverviewOrdering) {
+  overviewOrdering.set(value);
+  await persistSettings();
+}
+
+export async function setPrRefreshMinutes(value: PrRefreshMinutes) {
+  prRefreshMinutes.set(value);
+  await persistSettings();
+}
+
+export async function setAutoAddReposFromWorkspaces(value: boolean) {
+  autoAddReposFromWorkspaces.set(value);
+  await persistSettings();
+}
+
+/**
+ * Turning this off has to stop the tails, not just hide the numbers — a tail
+ * left running keeps re-reading the transcript and pushing `session-update`.
+ * The tracked set is exactly `liveSessions`' keys, which is what
+ * `session-update` populates.
+ */
+export async function setTailTranscripts(value: boolean) {
+  tailTranscripts.set(value);
+  if (value) {
+    // Turning it back on re-arms the sessions that are still running; their
+    // `liveSessions` entries survived the pause, so tiles fill back in.
+    for (const uuid of runningSessionUuids()) {
+      try {
+        await startSessionTail(uuid);
+      } catch (e) {
+        log.warn("settings", `startSessionTail failed for ${uuid}: ${e}`);
+      }
+    }
+  } else {
+    for (const uuid of get(liveSessions).keys()) {
+      try {
+        await stopSessionTail(uuid);
+      } catch (e) {
+        log.warn("settings", `stopSessionTail failed for ${uuid}: ${e}`);
+      }
+    }
+  }
+  await persistSettings();
+}
+
+function runningSessionUuids(): string[] {
+  const uuids: string[] = [];
+  for (const ws of get(workspaces)) {
+    for (const session of ws.sessions) {
+      if (session.status === "running" && session.claudeSessionId) {
+        uuids.push(session.claudeSessionId);
+      }
+    }
+  }
+  return uuids;
+}

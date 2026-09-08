@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
-  import { buildTiles, compareByAttention, filterByWorkspace } from "../../overview";
+  import { buildTiles, filterByWorkspace, tileComparator } from "../../overview";
   import { addWorkspaceFolder } from "../../session-actions";
   import { liveSessionList } from "../../stores/liveSessions";
   import { tabs } from "../../stores/terminal";
+  import { overviewOrdering, tailTranscripts } from "../../stores/settings";
   import { newSessionOpen, wsFilter } from "../../stores/view";
   import { sessionDiffStats, workspaces } from "../../stores/workspace";
   import Chip from "../ui/Chip.svelte";
@@ -23,9 +24,17 @@
   let allTiles = $derived(
     buildTiles($liveSessionList, $workspaces, $sessionDiffStats, needsInputTabs),
   );
-  let tiles = $derived(
-    [...filterByWorkspace(allTiles, $wsFilter)].sort(compareByAttention),
-  );
+  let comparator = $derived(tileComparator($overviewOrdering));
+  let tiles = $derived.by(() => {
+    const filtered = [...filterByWorkspace(allTiles, $wsFilter)];
+    return comparator ? filtered.sort(comparator) : filtered;
+  });
+
+  const ORDER_LABEL: Record<string, string> = {
+    attention: "Sorted by attention · needs-you first",
+    workspace: "Grouped by workspace",
+    manual: "In the order sessions started",
+  };
 
   async function addWorkspace() {
     await addWorkspaceFolder();
@@ -49,17 +58,15 @@
         onClick={() => wsFilter.set(ws.path)}
       />
     {/each}
-    <!-- The design points this at Settings → Workspaces; that tab arrives in
-         phase 11, so until then it opens the folder picker directly. -->
     <Chip label="+ Add workspace" dashed onClick={addWorkspace} />
     <div class="chip-spacer"></div>
-    <span class="sorted">Sorted by attention · needs-you first</span>
+    <span class="sorted">{ORDER_LABEL[$overviewOrdering]}</span>
   </div>
 
   {#if tiles.length > 0}
     <div class="grid">
       {#each tiles as tile (tile.sessionUuid)}
-        <SessionTile {tile} {now} />
+        <SessionTile {tile} {now} tailing={$tailTranscripts} />
       {/each}
     </div>
   {:else}

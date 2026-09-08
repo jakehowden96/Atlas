@@ -5,8 +5,10 @@ import {
   buildTiles,
   compareByAttention,
   filterByWorkspace,
+  compareByWorkspace,
   formatElapsed,
   planSegments,
+  tileComparator,
 } from "../overview";
 import type { DiffStats, Workspace } from "../stores/workspace";
 
@@ -57,6 +59,33 @@ const diff = (linesAdded: number, linesRemoved: number): DiffStats => ({
   filesChanged: 1,
   linesAdded,
   linesRemoved,
+});
+
+describe("compareByWorkspace", () => {
+  const rows = [
+    { workspaceName: "Zebra", label: "b" },
+    { workspaceName: "Atlas", label: "b" },
+    { workspaceName: "Atlas", label: "a" },
+  ];
+
+  it("groups by workspace, then orders by label", () => {
+    expect([...rows].sort(compareByWorkspace)).toEqual([
+      { workspaceName: "Atlas", label: "a" },
+      { workspaceName: "Atlas", label: "b" },
+      { workspaceName: "Zebra", label: "b" },
+    ]);
+  });
+});
+
+describe("tileComparator", () => {
+  it("maps attention and workspace to their comparators", () => {
+    expect(tileComparator("attention")).toBe(compareByAttention);
+    expect(tileComparator("workspace")).toBe(compareByWorkspace);
+  });
+
+  it("returns null for manual, leaving arrival order alone", () => {
+    expect(tileComparator("manual")).toBeNull();
+  });
 });
 
 describe("compareByAttention", () => {

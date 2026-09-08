@@ -1,4 +1,3 @@
-@import "tailwindcss";
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
 @import "material-symbols/outlined.css";
@@ -115,6 +114,42 @@
     --overlay: rgba(0, 0, 0, 0.55);
     --shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   }
+}
+
+/* ── Reset ─────────────────────────────────────────────────────────────────
+   Tailwind was dropped in 5.0.0 — it was installed but never used (not one
+   utility class anywhere in src/). Its preflight *was* doing work, though:
+   every component styles its own buttons and assumes no UA margin, padding or
+   border underneath. This is that part of preflight and nothing else, so the
+   rendering is unchanged by the removal.
+   ------------------------------------------------------------------------ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0 solid;
+}
+
+button,
+input,
+optgroup,
+select,
+textarea {
+  border-radius: 0;
+  background-color: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  opacity: 1;
+}
+
+img,
+video {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 
 /* ── Base elements ───────────────────────────────────────────────────────── */

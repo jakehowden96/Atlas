@@ -24,7 +24,6 @@ export interface PanelData {
   cwd: string;
   is_git: boolean;
   diff?: DiffData;
-  plan?: string;
 }
 
 export interface GitStatus {

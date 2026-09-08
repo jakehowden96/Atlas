@@ -4,6 +4,7 @@
   import { log } from "../../logger";
   import { spawnClaudeSession } from "../../session-actions";
   import {
+    effectiveWatchedRepos,
     loadWorkspaceSlugs,
     matchesFilter,
     prFilter,
@@ -16,7 +17,7 @@
     repoSlugsByWorkspace,
     type PrFilter,
   } from "../../stores/prs";
-  import { prRefreshMinutes, settingsOpen, watchedRepos } from "../../stores/settings";
+  import { prRefreshMinutes, settingsOpen } from "../../stores/settings";
   import { showToast } from "../../stores/toast";
   import { showView } from "../../stores/view";
   import { workspaces } from "../../stores/workspace";
@@ -130,7 +131,7 @@
   }
 
   function openPr(pr: Pr) {
-    openUrl(pr.url).catch((e) => showToast(`Failed to open PR: ${e}`));
+    openUrl(pr.url).catch((e) => showToast("Failed to open PR", { body: String(e) }));
   }
 
   /**
@@ -140,26 +141,26 @@
   async function workOnIt(repo: string, pr: Pr) {
     const ws = workspaceFor(repo);
     if (!ws) {
-      showToast(
-        `No workspace is linked to ${repo} — add its folder in Settings › Workspaces.`,
-        "warning",
-      );
+      showToast("No workspace linked", {
+        body: `Add ${repo}'s folder in Settings › Workspaces to work on its PRs.`,
+        type: "warning",
+      });
       settingsOpen.set(true);
       return;
     }
     try {
       const status = await getGitStatus(ws.path);
       if (status.has_unstaged || status.has_staged) {
-        showToast(
-          `${ws.name} has uncommitted changes — commit or stash them before switching to ${pr.headRefName}.`,
-          "warning",
-        );
+        showToast(`${ws.name} has uncommitted changes`, {
+          body: `Commit or stash them before switching to ${pr.headRefName}.`,
+          type: "warning",
+        });
         return;
       }
       await gitCheckoutBranch(ws.path, pr.headRefName);
     } catch (e) {
       log.error("prs", `checkout ${pr.headRefName} in ${ws.path} failed`, e);
-      showToast(`Could not check out ${pr.headRefName}: ${e}`);
+      showToast(`Could not check out ${pr.headRefName}`, { body: String(e) });
       return;
     }
     await spawnClaudeSession(ws.path);
@@ -186,7 +187,7 @@
   </div>
 
   <div class="cards">
-    {#if $watchedRepos.length === 0}
+    {#if $effectiveWatchedRepos.length === 0}
       <p class="empty">
         No watched repos yet.
         <button type="button" class="link" onclick={() => settingsOpen.set(true)}>

@@ -20,7 +20,7 @@
     try {
       await getSessionDir(tabId);
     } catch (e) {
-      showToast(`Failed to create session directory: ${e}`);
+      showToast("Failed to create session directory", { body: String(e) });
     }
   }
 </script>

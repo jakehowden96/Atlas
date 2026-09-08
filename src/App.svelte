@@ -6,7 +6,7 @@
   import Toast from "./lib/components/Toast.svelte";
   import OverviewView from "./lib/components/overview/OverviewView.svelte";
   import PrsView from "./lib/components/prs/PrsView.svelte";
-  import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
+  import SettingsModal from "./lib/components/settings/SettingsModal.svelte";
   import JumpPalette from "./lib/components/session/JumpPalette.svelte";
   import NewSessionModal from "./lib/components/session/NewSessionModal.svelte";
   import StatsView from "./lib/components/stats/StatsView.svelte";

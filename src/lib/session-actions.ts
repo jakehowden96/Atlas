@@ -11,7 +11,7 @@ import { get } from "svelte/store";
 import { ptyKill, ptyWrite, startSessionTail, stopSessionTail } from "./ipc";
 import { log } from "./logger";
 import { removeLiveSession } from "./stores/liveSessions";
-import { skipPermissions } from "./stores/settings";
+import { skipPermissions, tailTranscripts } from "./stores/settings";
 import { focusedSessionId } from "./stores/view";
 import {
   activeTabId,
@@ -26,6 +26,7 @@ import {
   activeWorkspacePath,
   addSession,
   addWorkspace,
+  basename,
   removeSession,
   removeWorkspace,
   resumeSession,
@@ -84,7 +85,7 @@ export async function spawnClaudeSession(
   } else {
     const wsName =
       get(workspaces).find((w) => w.path === workspacePath)?.name ??
-      stripBundleExtension(workspacePath.split("/").filter(Boolean).pop() ?? "New session");
+      stripBundleExtension(basename(workspacePath) || "New session");
     session = await addSession(workspacePath, wsName, tabId, claudeSessionId);
   }
 
@@ -126,10 +127,13 @@ export async function spawnClaudeSession(
           t.map((x) => (x.id === tabId ? { ...x, commandWrittenAt: Date.now() } : x)),
         );
         updateSessionStatus(session.id, "running");
-        // Tail the session's own transcript for structured live state.
-        startSessionTail(claudeSessionId).catch((e) =>
-          log.warn("session", `startSessionTail failed for ${claudeSessionId}: ${e}`),
-        );
+        // Tail the session's own transcript for structured live state, unless
+        // the user has turned transcript tailing off in Settings.
+        if (get(tailTranscripts)) {
+          startSessionTail(claudeSessionId).catch((e) =>
+            log.warn("session", `startSessionTail failed for ${claudeSessionId}: ${e}`),
+          );
+        }
         // Readiness is triggered by TerminalSession detecting Claude Code's
         // OSC title (after a 300ms gate to skip shell-emitted titles) or
         // alternate screen buffer activation. Safety fallback after 5s.

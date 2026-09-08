@@ -35,12 +35,26 @@ export class TerminalSession {
   private initialCwd?: string;
   private externalOnData?: (data: string) => void;
   private unsubscribeTheme: (() => void) | null = null;
+  private unsubscribeFontSize: (() => void) | null = null;
   private prefersDark: MediaQueryList | null = null;
 
   /** Re-read the palette for the current mode; also fires on OS-preference
       changes so a terminal on "system" follows the OS without a respawn. */
   private applyXtermTheme = () => {
     this.terminal.options.theme = activeXtermTheme(get(themeMode));
+  };
+
+  /** Settings' font-size stepper reaches every open terminal through this.
+      xterm reflows the buffer on the change, so the pane has to be refit and
+      the PTY told its new dimensions. The subscribe fires once immediately
+      with the size the terminal was built at, where this is a no-op. */
+  private applyFontSize = (size: number) => {
+    if (this.terminal.options.fontSize === size) return;
+    this.terminal.options.fontSize = size;
+    this.fitAddon.fit();
+    if (this.ptyId !== null) {
+      ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
+    }
   };
 
   constructor(opts: TerminalSessionOptions) {
@@ -51,8 +65,6 @@ export class TerminalSession {
 
     this.terminal = new Terminal({
       cursorBlink: true,
-      // Read once at construction: xterm reflows the whole buffer on a font
-      // change, so an existing session keeps the size it was opened with.
       fontSize: get(terminalFontSize),
       lineHeight: 1.65,
       fontFamily: "'Geist Mono Variable', 'Geist Mono', monospace",
@@ -77,6 +89,8 @@ export class TerminalSession {
     }
 
     this.fitAddon.fit();
+    // After the fit addon exists — the first emission has to be able to refit.
+    this.unsubscribeFontSize = terminalFontSize.subscribe(this.applyFontSize);
     this.registerKeyHandler();
     this.registerOscHandlers();
     this.registerReadinessHandler();
@@ -224,7 +238,7 @@ export class TerminalSession {
       }
     } catch (e) {
       log.error("terminal", `spawnPty failed for tab=${this.tabId}`, e);
-      showToast(`Failed to spawn terminal: ${e}`);
+      showToast("Failed to spawn terminal", { body: String(e) });
       return;
     }
 
@@ -282,7 +296,7 @@ export class TerminalSession {
         }
       } catch (e) {
         log.error("terminal", `panel refresh failed for tab=${this.tabId}`, e);
-        showToast(`Panel refresh failed: ${e}`);
+        showToast("Panel refresh failed", { body: String(e) });
       }
     }, 300);
   }
@@ -348,6 +362,7 @@ export class TerminalSession {
     log.info("terminal", `destroy tab=${this.tabId} ptyId=${this.ptyId}`);
     this.resizeObserver?.disconnect();
     this.unsubscribeTheme?.();
+    this.unsubscribeFontSize?.();
     this.prefersDark?.removeEventListener("change", this.applyXtermTheme);
     this.stopPolling();
     if (this.refreshTimer) clearTimeout(this.refreshTimer);

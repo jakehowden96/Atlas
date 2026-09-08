@@ -197,7 +197,7 @@
     if (!ws || !canStart) return;
     const resumeSessionId = pickedResume?.sessionId;
     close();
-    showToast(`Starting in ${ws.name}`, "info");
+    showToast(`Starting in ${ws.name}`, { type: "info" });
     try {
       // Reattach the workspace row that already owns this conversation rather
       // than minting a second row for the same transcript.
@@ -212,7 +212,7 @@
       showView("session");
     } catch (e) {
       log.error("session", `failed to start a session in ${ws.path}`, e);
-      showToast(`Could not start a session in ${ws.name}`);
+      showToast("Could not start a session", { body: `Nothing spawned in ${ws.name}.` });
     }
   }
 

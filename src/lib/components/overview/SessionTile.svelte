@@ -10,9 +10,13 @@
     tile: SessionTile;
     /** `Date.now()` ticked once a second by the view, for the elapsed clock. */
     now: number;
+    /** Settings › Claude Code › Tail transcripts. Off means everything below
+        the header is stale, so the tile shows only what other sources feed:
+        state, workspace and the diff badge. */
+    tailing: boolean;
   }
 
-  let { tile, now }: Props = $props();
+  let { tile, now, tailing }: Props = $props();
 
   const PILL: Record<SessionState, PillState> = {
     running: "running",
@@ -83,11 +87,15 @@
     <span class="elapsed">{elapsed}</span>
   </div>
 
-  <div class="preview">
-    {#each preview as line, i (i)}
-      <div class="line" style="color: {LINE_COLOUR[line.role]}">{line.text || " "}</div>
-    {/each}
-  </div>
+  {#if tailing}
+    <div class="preview">
+      {#each preview as line, i (i)}
+        <div class="line" style="color: {LINE_COLOUR[line.role]}">{line.text || " "}</div>
+      {/each}
+    </div>
+  {:else}
+    <div class="preview paused">Transcript tailing is off.</div>
+  {/if}
 
   {#if needsYou}
     <div class="permission">
@@ -100,30 +108,36 @@
   {/if}
 
   <div class="foot">
-    <div class="step-col">
-      <span class="step">{live.lastTool ?? "—"}</span>
-      <div class="plan">
-        {#each segments as done, i (i)}
-          <span class="seg" class:done></span>
-        {/each}
+    {#if tailing}
+      <div class="step-col">
+        <span class="step">{live.lastTool ?? "—"}</span>
+        <div class="plan">
+          {#each segments as done, i (i)}
+            <span class="seg" class:done></span>
+          {/each}
+        </div>
       </div>
-    </div>
+    {:else}
+      <div class="step-col"><span class="step">—</span></div>
+    {/if}
 
-    {#if live.subagents.length > 0}
+    {#if tailing && live.subagents.length > 0}
       <span class="agents">
         <span class="agent-dot" class:pulsing={activeAgents}></span>
         {live.subagents.length} subagents
       </span>
     {/if}
 
-    <span class="context">
-      <span class="ctx-track">
-        <span class="ctx-fill" class:hot={contextPct > 75} style="width: {contextPct}%"></span>
+    {#if tailing}
+      <span class="context">
+        <span class="ctx-track">
+          <span class="ctx-fill" class:hot={contextPct > 75} style="width: {contextPct}%"></span>
+        </span>
+        {contextPct}%
       </span>
-      {contextPct}%
-    </span>
 
-    <span class="cost">${live.costEstimate.toFixed(2)}</span>
+      <span class="cost">${live.costEstimate.toFixed(2)}</span>
+    {/if}
 
     <span class="diff">
       <span class="added">+{tile.diff?.linesAdded ?? 0}</span>
@@ -217,6 +231,12 @@
     background: var(--term-bg);
     color: var(--term-text);
     font: 11.5px/1.6 var(--font-mono);
+  }
+
+  .preview.paused {
+    display: grid;
+    place-items: center;
+    color: var(--muted);
   }
 
   .line {

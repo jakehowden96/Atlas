@@ -5,6 +5,7 @@
  * they can be unit-tested without a Svelte compiler (README → Conventions).
  */
 import type { LiveSession, PlanItem, SessionState } from "../types/session";
+import type { OverviewOrdering } from "./stores/settings";
 import type { DiffStats, Workspace, WorkspaceSession } from "./stores/workspace";
 
 /** Design default ordering: needs-you first, then running/error, then idle. */
@@ -85,6 +86,33 @@ export function compareByAttention(
   b: { state: SessionState },
 ): number {
   return ATTENTION_RANK[a.state] - ATTENTION_RANK[b.state];
+}
+
+/** Workspace order: grouped by workspace name, then by label inside each. */
+export function compareByWorkspace(
+  a: { workspaceName: string; label: string },
+  b: { workspaceName: string; label: string },
+): number {
+  return (
+    a.workspaceName.localeCompare(b.workspaceName) || a.label.localeCompare(b.label)
+  );
+}
+
+/**
+ * The comparator behind Settings › General › Overview ordering. "manual" has
+ * no comparator: the grid keeps the order sessions arrived in.
+ */
+export function tileComparator(
+  ordering: OverviewOrdering,
+): ((a: SessionTile, b: SessionTile) => number) | null {
+  switch (ordering) {
+    case "workspace":
+      return compareByWorkspace;
+    case "manual":
+      return null;
+    default:
+      return compareByAttention;
+  }
 }
 
 /** `"all"` keeps everything; any other value matches on workspace path. */

@@ -183,6 +183,18 @@ export async function stopSessionTail(sessionUuid: string): Promise<void> {
   return invoke("stop_session_tail", { sessionUuid });
 }
 
+/** What Settings › Claude Code reports about the local Claude Code install. */
+export interface ClaudeInfo {
+  binary: string | null;
+  version: string | null;
+  notificationHookInstalled: boolean;
+}
+
+/** Never rejects for a missing `claude` — every field degrades instead. */
+export async function claudeInfo(): Promise<ClaudeInfo> {
+  return invoke("claude_info");
+}
+
 /** Current live state, or null when the session is not being tailed. */
 export async function getLiveSession(
   sessionUuid: string,

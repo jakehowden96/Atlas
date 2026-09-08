@@ -1,12 +1,11 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
-import tailwindcss from "@tailwindcss/vite";
 
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
-  plugins: [svelte(), tailwindcss()],
+  plugins: [svelte()],
   clearScreen: false,
   server: {
     port: 1420,

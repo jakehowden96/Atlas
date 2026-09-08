@@ -24,6 +24,8 @@ import {
   loadWorkspaces,
   cycleWorkspace,
   resumeSession,
+  nextAvailableColor,
+  WORKSPACE_COLORS,
 } from "../stores/workspace";
 import { exists, readTextFile } from "@tauri-apps/plugin-fs";
 
@@ -62,6 +64,43 @@ describe("workspace store", () => {
     it("sets activeWorkspacePath", async () => {
       await addWorkspace("/a");
       expect(get(activeWorkspacePath)).toBe("/a");
+    });
+
+    it("names a Windows backslash path from its last segment", async () => {
+      await addWorkspace("C:\\Users\\jake\\Documents\\GitHub\\Atlas");
+      expect(get(workspaces)[0].name).toBe("Atlas");
+    });
+
+    it("names a mixed-separator path from its last segment", async () => {
+      await addWorkspace("C:/Users/jake\\projects\\my-app");
+      expect(get(workspaces)[0].name).toBe("my-app");
+    });
+
+    it("assigns colours from the six-colour palette", async () => {
+      for (let i = 0; i < 6; i++) await addWorkspace(`/ws-${i}`);
+      expect(get(workspaces).map((w) => w.color)).toEqual(WORKSPACE_COLORS);
+    });
+  });
+
+  describe("nextAvailableColor", () => {
+    it("returns the first unused palette colour", () => {
+      const taken = WORKSPACE_COLORS.slice(0, 2).map((color) => ({
+        path: color,
+        name: color,
+        color,
+        sessions: [],
+      }));
+      expect(nextAvailableColor(taken)).toBe(WORKSPACE_COLORS[2]);
+    });
+
+    it("repeats from the top once all six are taken", () => {
+      const taken = WORKSPACE_COLORS.map((color) => ({
+        path: color,
+        name: color,
+        color,
+        sessions: [],
+      }));
+      expect(nextAvailableColor(taken)).toBe(WORKSPACE_COLORS[0]);
     });
   });
 
@@ -194,9 +233,9 @@ describe("workspace store", () => {
           {
             path: "/a",
             name: "a",
-            color: "#fff",
+            color: "#e67e80",
             sessions: [
-              { id: "s1", label: "S1", status: "running", age: "", terminalTabId: null, createdAt: "", claudeSessionId: "claude-1" },
+              { id: "s1", label: "S1", status: "running", terminalTabId: null, createdAt: "", claudeSessionId: "claude-1" },
             ],
           },
         ]),
@@ -214,9 +253,9 @@ describe("workspace store", () => {
           {
             path: "/a",
             name: "a",
-            color: "#fff",
+            color: "#e67e80",
             sessions: [
-              { id: "s1", label: "S1", status: "running", age: "", terminalTabId: "tab-1", createdAt: "", claudeSessionId: "claude-1" },
+              { id: "s1", label: "S1", status: "running", terminalTabId: "tab-1", createdAt: "", claudeSessionId: "claude-1" },
             ],
           },
         ]),
@@ -234,15 +273,37 @@ describe("workspace store", () => {
           {
             path: "/a",
             name: "a",
-            color: "#fff",
+            color: "#e67e80",
             sessions: [
-              { id: "s1", label: "S1", status: "idle", age: "", terminalTabId: null, createdAt: "" },
+              { id: "s1", label: "S1", status: "idle", terminalTabId: null, createdAt: "" },
             ],
           },
         ]),
       );
       await loadWorkspaces();
       expect(get(workspaces)[0].sessions[0].claudeSessionId).toBeNull();
+    });
+
+    it("migrates a retired Everforest colour onto the new palette", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify([
+          { path: "/a", name: "a", color: "#e67e80", sessions: [] },
+          { path: "/b", name: "b", color: "#a7c080", sessions: [] },
+        ]),
+      );
+      await loadWorkspaces();
+      const colours = get(workspaces).map((w) => w.color);
+      expect(colours).toEqual([WORKSPACE_COLORS[0], WORKSPACE_COLORS[1]]);
+    });
+
+    it("keeps a colour that is already in the palette", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify([{ path: "/a", name: "a", color: WORKSPACE_COLORS[3], sessions: [] }]),
+      );
+      await loadWorkspaces();
+      expect(get(workspaces)[0].color).toBe(WORKSPACE_COLORS[3]);
     });
 
     it("handles missing file gracefully", async () => {

@@ -6,8 +6,9 @@
 import { derived, get, writable } from "svelte/store";
 import { ghViewer, gitRemoteSlug, listRepoPrs } from "../ipc";
 import { log } from "../logger";
-import { prRefreshMinutes, watchedRepos } from "./settings";
+import { autoAddReposFromWorkspaces, prRefreshMinutes, watchedRepos } from "./settings";
 import { showToast } from "./toast";
+import { workspaces } from "./workspace";
 import type { GhViewer, Pr, RepoPrs } from "../../types/prs";
 
 export type PrFilter = "all" | "mine" | "review";
@@ -95,6 +96,24 @@ export async function loadWorkspaceSlugs(paths: string[]): Promise<void> {
   repoSlugsByWorkspace.update((current) => ({ ...current, ...Object.fromEntries(resolved) }));
 }
 
+/**
+ * What actually gets polled: the user's own list, plus every workspace remote
+ * when `autoAddReposFromWorkspaces` is on. The union is derived rather than
+ * written back into `watchedRepos`, so turning the toggle off restores the
+ * manual list intact instead of deleting the auto-added entries with it.
+ */
+export const effectiveWatchedRepos = derived(
+  [watchedRepos, autoAddReposFromWorkspaces, repoSlugsByWorkspace],
+  ([$manual, $auto, $slugs]) => {
+    if (!$auto) return $manual;
+    const union = new Set($manual);
+    for (const slug of Object.values($slugs)) {
+      if (slug) union.add(slug);
+    }
+    return [...union];
+  },
+);
+
 async function loadViewer(): Promise<void> {
   try {
     prViewer.set(await ghViewer());
@@ -109,11 +128,11 @@ async function loadViewer(): Promise<void> {
 export async function refreshPrs(): Promise<void> {
   prsLoading.set(true);
   try {
-    prRepos.set(await listRepoPrs(get(watchedRepos)));
+    prRepos.set(await listRepoPrs(get(effectiveWatchedRepos)));
     prsLastUpdated.set(Date.now());
   } catch (e) {
     log.error("prs", "list_repo_prs failed", e);
-    showToast(`Failed to list PRs: ${e}`);
+    showToast("Failed to list PRs", { body: String(e) });
   } finally {
     prsLoading.set(false);
   }
@@ -126,13 +145,19 @@ export async function refreshPrs(): Promise<void> {
 export function startPrPolling(): () => void {
   let timer: ReturnType<typeof setInterval> | null = null;
   void loadViewer();
+  // Resolve remotes from the shell, not just from PrsView: the auto-add union
+  // has to be right before the Pull requests screen is ever opened.
+  const stopSlugs = workspaces.subscribe((ws) => {
+    void loadWorkspaceSlugs(ws.map((w) => w.path));
+  });
   // Fires immediately on subscribe, which is the initial fetch.
-  const stopRepos = watchedRepos.subscribe(() => void refreshPrs());
+  const stopRepos = effectiveWatchedRepos.subscribe(() => void refreshPrs());
   const stopInterval = prRefreshMinutes.subscribe((minutes) => {
     if (timer) clearInterval(timer);
     timer = setInterval(() => void refreshPrs(), Math.max(1, minutes) * 60_000);
   });
   return () => {
+    stopSlugs();
     stopRepos();
     stopInterval();
     if (timer) clearInterval(timer);

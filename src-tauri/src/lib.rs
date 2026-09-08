@@ -59,7 +59,7 @@ fn clean_old_logs(log_dir: &std::path::Path, max_age_days: u64) {
 /// Identifies Atlas's own entry in `hooks.Notification`. The command is
 /// `"<exe>" hook notification`, so the argv tail is the part that is stable
 /// across install locations and platforms.
-const HOOK_MARKER: &str = "hook notification";
+pub(crate) const HOOK_MARKER: &str = "hook notification";
 
 /// The now-deleted `scripts/atlas-notify-hook.sh` entry, removed on upgrade so
 /// users do not end up running both.
@@ -229,6 +229,7 @@ pub fn run() {
             commands::session::start_session_tail,
             commands::session::stop_session_tail,
             commands::session::get_live_session,
+            commands::session::claude_info,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

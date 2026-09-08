@@ -109,7 +109,7 @@ describe("submitReview", () => {
     await submitReview("tab-a");
 
     expect(ptyWrite).not.toHaveBeenCalled();
-    expect(get(toasts)[0].message).toMatch(/No active Claude terminal/);
+    expect(get(toasts)[0].body).toMatch(/No active Claude terminal/);
     // The comments survive a failed send.
     expect(get(reviewComments).get("tab-a")).toHaveLength(1);
   });
@@ -122,6 +122,6 @@ describe("submitReview", () => {
     await submitReview("tab-a");
 
     expect(get(reviewComments).get("tab-a")).toHaveLength(1);
-    expect(get(toasts)[0].message).toMatch(/pty gone/);
+    expect(get(toasts)[0].body).toMatch(/pty gone/);
   });
 });

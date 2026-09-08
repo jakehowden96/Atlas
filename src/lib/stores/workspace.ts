@@ -6,7 +6,6 @@ export interface WorkspaceSession {
   id: string;
   label: string;
   status: "complete" | "running" | "error" | "idle" | "starting";
-  age: string;
   terminalTabId: string | null;
   createdAt: string;
   /** UUID handed to `claude --session-id`; null for rows written before Atlas
@@ -84,7 +83,13 @@ export async function loadWorkspaces() {
     log.info("workspace", `parsed ${data.length} workspaces`);
     const seen: Workspace[] = [];
     for (const ws of data) {
-      if (!ws.color || seen.some((w) => w.color === ws.color)) {
+      // Retagging anything outside the six-colour palette is what migrates
+      // workspaces off the retired Everforest hexes.
+      if (
+        !ws.color ||
+        !WORKSPACE_COLORS.includes(ws.color) ||
+        seen.some((w) => w.color === ws.color)
+      ) {
         ws.color = nextAvailableColor(seen);
       }
       seen.push(ws);
@@ -116,37 +121,32 @@ async function persist() {
   }
 }
 
-// Everforest Hard accents (same hexes work for both dark and light modes).
-// Pink/teal use the bright/dim accent variants; Everforest has no lavender,
-// so that slot uses a muted purple in the same desaturated register (6.2:1
-// on bg0), plus grey2 — distinct from every accent.
+// The Mission Control workspace tag palette. Settings → Workspaces offers
+// exactly these six as a swatch picker; `loadWorkspaces` reassigns anything
+// outside the set, so workspaces tagged with the old Everforest hexes migrate
+// on the next load.
 export const WORKSPACE_COLORS = [
-  "#e67e80", // red
-  "#a7c080", // green
-  "#dbbc7f", // yellow
-  "#7fbbb3", // blue
-  "#e69875", // orange (tertiary)
-  "#83c092", // cyan (aqua)
-  "#d699b6", // magenta
-  "#e0a8c1", // pink (magenta bright)
-  "#5a948c", // teal (primary dim)
-  "#9da9a0", // grey2
-  "#b4a7d6", // lavender
+  "#2fa37a",
+  "#5b8def",
+  "#7c6cf2",
+  "#e0873a",
+  "#d9455f",
+  "#8a8f98",
 ];
 
 export function nextAvailableColor(existing: Workspace[]): string {
   const used = new Set(existing.map((w) => w.color).filter(Boolean));
-  const fromPalette = WORKSPACE_COLORS.find((c) => !used.has(c));
-  if (fromPalette) return fromPalette;
-  // Palette exhausted (12th+ workspace) — keep generating distinct hues rather
-  // than collide back onto WORKSPACE_COLORS[0].
-  let hue = (existing.length * 47) % 360;
-  let color = `hsl(${hue}, 45%, 65%)`;
-  while (used.has(color)) {
-    hue = (hue + 47) % 360;
-    color = `hsl(${hue}, 45%, 65%)`;
-  }
-  return color;
+  // Past six workspaces the palette repeats from the top. Deliberate: the
+  // picker offers six swatches and no seventh colour exists to offer.
+  return WORKSPACE_COLORS.find((c) => !used.has(c)) ?? WORKSPACE_COLORS[0];
+}
+
+/**
+ * Last path segment, for either separator. `split("/")` alone returns the
+ * whole string for a Windows path, which then becomes the workspace name.
+ */
+export function basename(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
 export async function addWorkspace(path: string): Promise<boolean> {
@@ -156,7 +156,7 @@ export async function addWorkspace(path: string): Promise<boolean> {
     activeWorkspacePath.set(path);
     return false;
   }
-  const name = stripBundleExtension(path.split("/").filter(Boolean).pop() ?? path);
+  const name = stripBundleExtension(basename(path));
   const color = nextAvailableColor(current);
   workspaces.set([...current, { path, name, color, sessions: [] }]);
   activeWorkspacePath.set(path);
@@ -194,7 +194,6 @@ export async function addSession(
     id: crypto.randomUUID(),
     label: formatLabel(label),
     status: "starting",
-    age: "",
     terminalTabId,
     createdAt: new Date().toISOString(),
     claudeSessionId,

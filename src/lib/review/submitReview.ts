@@ -24,7 +24,9 @@ export async function submitReview(sessionId: string): Promise<void> {
 
   const tab = get(tabs).find((t) => t.id === sessionId);
   if (!tab || tab.ptyId < 0) {
-    showToast("No active Claude terminal to send the review to.");
+    showToast("Nothing to send", {
+      body: "No active Claude terminal to send the review to.",
+    });
     return;
   }
 
@@ -34,12 +36,12 @@ export async function submitReview(sessionId: string): Promise<void> {
     // Claude Code's own terminal queues the line until it's ready.
     await ptyWrite(tab.ptyId, prompt + "\r");
     clearForSession(sessionId);
-    showToast(
-      `Sent ${comments.length} review comment${comments.length === 1 ? "" : "s"} to Claude`,
-      "info",
-    );
+    showToast("Review sent", {
+      body: `${comments.length} comment${comments.length === 1 ? "" : "s"} added to the session prompt.`,
+      type: "info",
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    showToast(`Failed to submit review: ${msg}`);
+    showToast("Failed to submit review", { body: msg });
   }
 }

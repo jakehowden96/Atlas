@@ -29,10 +29,3 @@ export interface RepoPrs {
   prs: Pr[];
   error: string | null;
 }
-
-/** What PrsView holds in component state. */
-export interface PrsSnapshot {
-  data: RepoPrs[] | null;
-  lastUpdated: number | null;
-  loading: boolean;
-}
