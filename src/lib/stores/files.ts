@@ -1,7 +1,7 @@
 import { derived, get, writable } from "svelte/store";
 import type { DocEntry, PlanEntry } from "../../types/files";
 import { absolutePath, fileKey, parseFileKey, type FileSource } from "../files";
-import { listClaudePlans, listWorkspaceDocs, writeTextFileAt } from "../ipc";
+import { listClaudePlans, listWorkspaceDocs, readTextFileAt, writeTextFileAt } from "../ipc";
 import { log } from "../logger";
 import { setOpenFiles } from "./settings";
 import { showToast } from "./toast";
@@ -15,6 +15,10 @@ export const activeFile = writable<string>("");
 export const fileMode = writable<"source" | "split" | "preview">("source");
 /** Unsaved edits by file key. A key is present only while it differs from disk. */
 export const docs = writable<Map<string, string>>(new Map());
+/** Last-known text on disk, by file key. The editor shows `docs` when a file
+ *  has an unsaved edit and this otherwise, so a save has something to fall back
+ *  to the instant the edit is dropped. Filled by `loadFileText`. */
+export const diskDocs = writable<Map<string, string>>(new Map());
 /** Collapsed folders, keyed like a file so the state is per workspace. */
 export const collapsed = writable<Set<string>>(new Set());
 /** Folders registered from disk. Phase 04 lists them; persisted like `openFiles`. */
@@ -67,8 +71,15 @@ export function closeFile(key: string): void {
   const next = current.filter((k) => k !== key);
   void setOpenFiles(next);
   // The unsaved edit goes with the tab: with no tab left nothing can reach it,
-  // and `dirtyFiles` would otherwise report it as unsaved forever.
+  // and `dirtyFiles` would otherwise report it as unsaved forever. The cached
+  // disk text goes too, so reopening the file shows what is on disk now.
   dropDoc(key);
+  diskDocs.update((current) => {
+    if (!current.has(key)) return current;
+    const next = new Map(current);
+    next.delete(key);
+    return next;
+  });
   if (get(activeFile) === key) activeFile.set(next[at] ?? next[at - 1] ?? "");
 }
 
@@ -89,6 +100,27 @@ function dropDoc(key: string) {
   });
 }
 
+function setDiskDoc(key: string, text: string) {
+  diskDocs.update((current) => new Map(current).set(key, text));
+}
+
+/** Read a file's text into `diskDocs` unless it is already known. A file that
+ *  cannot be read opens empty with a toast rather than leaving the editor
+ *  stuck on the file before it. */
+export async function loadFileText(key: string): Promise<void> {
+  if (!key || get(diskDocs).has(key)) return;
+  // A brand-new note is an unsaved buffer with nothing on disk to read yet.
+  if (get(docs).has(key)) return;
+  const { source, path } = parseFileKey(key);
+  try {
+    setDiskDoc(key, await readTextFileAt(absolutePath(source, path)));
+  } catch (e) {
+    log.error("files", `read failed for ${key}`, e);
+    showToast("Could not open that file", { body: String(e) });
+    setDiskDoc(key, "");
+  }
+}
+
 /** Write the active file's pending edit to disk. A failed write keeps the edit,
  *  so the only thing lost is the save. */
 export async function saveActiveFile(): Promise<void> {
@@ -98,6 +130,9 @@ export async function saveActiveFile(): Promise<void> {
   const { source, path } = parseFileKey(key);
   try {
     await writeTextFileAt(absolutePath(source, path), text);
+    // What was just written is now what is on disk, so the editor keeps showing
+    // it the moment the unsaved edit is dropped.
+    setDiskDoc(key, text);
     dropDoc(key);
   } catch (e) {
     log.error("files", `save failed for ${key}`, e);

@@ -9,7 +9,19 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
   BaseDirectory: { Home: 0 },
 }));
 
+vi.mock("../ipc", () => ({
+  listClaudePlans: vi.fn(),
+  listWorkspaceDocs: vi.fn(),
+  readTextFileAt: vi.fn(),
+  writeTextFileAt: vi.fn(),
+  startSessionTail: vi.fn(),
+  stopSessionTail: vi.fn(),
+}));
+
+import { fileKey } from "../files";
+import { writeTextFileAt } from "../ipc";
 import { handleGlobalKeydown } from "../shortcuts";
+import { activeFile, docs, setDoc } from "../stores/files";
 import { settingsOpen } from "../stores/settings";
 import { activeView, diffOpen, jumpOpen, newSessionOpen, railOpen } from "../stores/view";
 
@@ -34,6 +46,29 @@ describe("handleGlobalKeydown", () => {
     newSessionOpen.set(false);
     jumpOpen.set(false);
     settingsOpen.set(false);
+    activeFile.set("");
+    docs.set(new Map());
+  });
+
+  it("⌘S saves the active file on the Files view", async () => {
+    const key = fileKey("/ws", "notes.md");
+    activeView.set("files");
+    activeFile.set(key);
+    setDoc(key, "edited");
+    const e = makeKeyEvent({ metaKey: true, key: "s" });
+    expect(handleGlobalKeydown(e)).toBe(true);
+    expect(e.preventDefault).toHaveBeenCalled();
+    await vi.waitFor(() => expect(writeTextFileAt).toHaveBeenCalledWith("/ws/notes.md", "edited"));
+  });
+
+  it("⌘S is left unhandled on Overview", () => {
+    const key = fileKey("/ws", "notes.md");
+    activeFile.set(key);
+    setDoc(key, "edited");
+    const e = makeKeyEvent({ metaKey: true, key: "s" });
+    expect(handleGlobalKeydown(e)).toBe(false);
+    expect(e.preventDefault).not.toHaveBeenCalled();
+    expect(writeTextFileAt).not.toHaveBeenCalled();
   });
 
   it("⌘N opens the new session modal", () => {

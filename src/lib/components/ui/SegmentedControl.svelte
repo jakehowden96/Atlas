@@ -6,6 +6,8 @@
     count?: number;
     /** Renders the count as a --warn pill instead (PRs needing attention). */
     alert?: boolean;
+    /** Shown but not selectable — Preview on a file that is not markdown. */
+    disabled?: boolean;
   }
 </script>
 
@@ -29,6 +31,7 @@
       type="button"
       class="seg"
       class:active={option.id === value}
+      disabled={option.disabled}
       onclick={() => onChange(option.id)}
     >
       {option.label}
@@ -83,8 +86,13 @@
     flex: 1;
   }
 
-  .seg:hover {
+  .seg:hover:not(:disabled) {
     color: var(--text);
+  }
+
+  .seg:disabled {
+    opacity: 0.45;
+    cursor: default;
   }
 
   .seg.active {
