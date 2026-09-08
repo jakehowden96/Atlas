@@ -6,7 +6,7 @@
   import Toast from "./lib/components/Toast.svelte";
   import PrsView from "./lib/components/panel/PrsView.svelte";
   import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
-  import StatsView from "./lib/components/panel/StatsView.svelte";
+  import StatsView from "./lib/components/stats/StatsView.svelte";
   import TerminalContainer from "./lib/components/terminal/TerminalContainer.svelte";
   import Modal from "./lib/components/ui/Modal.svelte";
   import SegmentedControl, { type Segment } from "./lib/components/ui/SegmentedControl.svelte";
