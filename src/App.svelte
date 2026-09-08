@@ -7,20 +7,20 @@
   import OverviewView from "./lib/components/overview/OverviewView.svelte";
   import PrsView from "./lib/components/prs/PrsView.svelte";
   import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
+  import JumpPalette from "./lib/components/session/JumpPalette.svelte";
+  import NewSessionModal from "./lib/components/session/NewSessionModal.svelte";
   import StatsView from "./lib/components/stats/StatsView.svelte";
   import SessionView from "./lib/components/session/SessionView.svelte";
-  import Modal from "./lib/components/ui/Modal.svelte";
   import SegmentedControl, { type Segment } from "./lib/components/ui/SegmentedControl.svelte";
   import { onClaudeNotification, onPanelUpdate, onSessionUpdate } from "./lib/ipc";
   import { log } from "./lib/logger";
-  import { addWorkspaceFolder, spawnClaudeSession } from "./lib/session-actions";
   import { handleGlobalKeydown } from "./lib/shortcuts";
   import { liveSessionList, upsertLiveSession } from "./lib/stores/liveSessions";
   import { panelData } from "./lib/stores/panel";
   import { prsAttentionCount, startPrPolling } from "./lib/stores/prs";
   import { enableNotifications, loadSettings, settingsOpen } from "./lib/stores/settings";
   import { activeTabId, setTabNeedsInput } from "./lib/stores/terminal";
-  import { activeView, jumpOpen, newSessionOpen, showView, type View } from "./lib/stores/view";
+  import { activeView, jumpOpen, openNewSession, showView, type View } from "./lib/stores/view";
   import {
     activeWorkspacePath,
     loadWorkspaces,
@@ -74,17 +74,6 @@
       setTabNeedsInput($activeTabId, false);
     }
   });
-
-  async function startSession(workspacePath: string) {
-    newSessionOpen.set(false);
-    await spawnClaudeSession(workspacePath);
-    showView("session");
-  }
-
-  async function addWorkspace() {
-    const path = await addWorkspaceFolder();
-    if (path) activeWorkspacePath.set(path);
-  }
 
   onMount(async () => {
     await log.init();
@@ -184,7 +173,7 @@
       <span class="kbd">⌘K</span>
     </button>
 
-    <button type="button" class="new-session" onclick={() => newSessionOpen.set(true)}>
+    <button type="button" class="new-session" onclick={() => openNewSession()}>
       + Session <span class="kbd-inline">⌘N</span>
     </button>
 
@@ -210,41 +199,8 @@
   </div>
 </div>
 
-<Modal
-  open={$newSessionOpen}
-  onClose={() => newSessionOpen.set(false)}
-  align="top"
-  width="520px"
->
-  <div class="sheet">
-    <div class="sheet-head">
-      <span class="sheet-title">New session</span>
-      <span class="kbd">esc</span>
-    </div>
-    <div class="sheet-body">
-      {#each $workspaces as ws (ws.path)}
-        <button type="button" class="ws-row" onclick={() => startSession(ws.path)}>
-          <span class="ws-dot" style="background: {ws.color ?? 'var(--accent)'}"></span>
-          <span class="ws-name">{ws.name}</span>
-          <span class="ws-path">{ws.path}</span>
-        </button>
-      {/each}
-      <button type="button" class="ws-row add" onclick={addWorkspace}>Add folder…</button>
-    </div>
-  </div>
-</Modal>
-
-<Modal open={$jumpOpen} onClose={() => jumpOpen.set(false)} align="top" width="520px">
-  <div class="sheet">
-    <div class="sheet-head">
-      <span class="sheet-title">Jump to session</span>
-      <span class="kbd">esc</span>
-    </div>
-    <div class="sheet-body">
-      <p class="placeholder-text">The command palette lands with the New Session flow.</p>
-    </div>
-  </div>
-</Modal>
+<NewSessionModal />
+<JumpPalette />
 
 <SettingsModal />
 <Toast />
@@ -444,86 +400,4 @@
     display: none;
   }
 
-  .placeholder-text {
-    margin: 0;
-    color: var(--muted);
-    font-size: 12.5px;
-  }
-
-  /* ── Placeholder modal sheets (phase 10 replaces both) ─────────────────── */
-  .sheet {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .sheet-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: 44px;
-    padding: 0 14px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .sheet-title {
-    font-size: 13px;
-    font-weight: 600;
-  }
-
-  .sheet-head .kbd {
-    margin-left: auto;
-    color: var(--muted);
-  }
-
-  .sheet-body {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    max-height: 320px;
-    padding: 10px;
-    overflow-y: auto;
-  }
-
-  .ws-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 10px;
-    border: none;
-    border-radius: var(--r-lg);
-    background: transparent;
-    color: var(--text);
-    font-family: var(--font-ui);
-    font-size: 12.5px;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .ws-row:hover {
-    background: var(--surface2);
-  }
-
-  .ws-row.add {
-    color: var(--muted);
-  }
-
-  .ws-dot {
-    flex-shrink: 0;
-    width: 10px;
-    height: 10px;
-    border-radius: var(--r-xs);
-  }
-
-  .ws-name {
-    font-weight: 500;
-  }
-
-  .ws-path {
-    overflow: hidden;
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 </style>
