@@ -62,7 +62,7 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: var(--surface);
+    background: var(--term-bg);
   }
 
   .terminal-container.hidden {
@@ -77,11 +77,11 @@
     padding: 0 0 0 6px;
     height: 100%;
     margin-top: 2px;
-    background: var(--surface);
+    background: var(--term-bg);
   }
 
   .terminal-container :global(.xterm .xterm-viewport) {
-    background-color: var(--surface) !important;
+    background-color: var(--term-bg) !important;
   }
 
   .loading-overlay {
@@ -92,19 +92,19 @@
     gap: 0.75rem;
     width: 100%;
     height: 100%;
-    background: var(--surface);
+    background: var(--term-bg);
   }
 
   .loading-spinner {
     font-size: 1.5rem;
-    color: var(--primary);
+    color: var(--accent);
     animation: spin 1s linear infinite;
   }
 
   .loading-text {
-    font-size: 0.8rem;
-    color: var(--on-surface-variant);
-    font-family: var(--font-body);
+    color: var(--muted);
+    font-family: var(--font-ui);
+    font-size: 12.5px;
   }
 
   @keyframes spin {

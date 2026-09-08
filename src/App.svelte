@@ -8,7 +8,7 @@
   import PrsView from "./lib/components/prs/PrsView.svelte";
   import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
   import StatsView from "./lib/components/stats/StatsView.svelte";
-  import TerminalContainer from "./lib/components/terminal/TerminalContainer.svelte";
+  import SessionView from "./lib/components/session/SessionView.svelte";
   import Modal from "./lib/components/ui/Modal.svelte";
   import SegmentedControl, { type Segment } from "./lib/components/ui/SegmentedControl.svelte";
   import { onClaudeNotification, onPanelUpdate, onSessionUpdate } from "./lib/ipc";
@@ -205,7 +205,7 @@
     <!-- Session stays mounted: an xterm instance cannot survive a remount, so
          hiding it is the only way to keep PTYs alive across view switches. -->
     <div class="view" class:hidden={$activeView !== "session"}>
-      <TerminalContainer />
+      <SessionView />
     </div>
   </div>
 </div>

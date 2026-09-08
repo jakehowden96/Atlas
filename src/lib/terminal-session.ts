@@ -5,6 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel, getPanelData } from "./ipc";
 import { setTabTitle, activeTabId, setTabNeedsInput, setTabReady, tabs } from "./stores/terminal";
 import { panelData } from "./stores/panel";
+import { terminalFontSize } from "./stores/settings";
 import type { PanelData } from "../types/panel";
 import { updateSessionLabelByTabId } from "./stores/workspace";
 import { get } from "svelte/store";
@@ -50,7 +51,10 @@ export class TerminalSession {
 
     this.terminal = new Terminal({
       cursorBlink: true,
-      fontSize: 14,
+      // Read once at construction: xterm reflows the whole buffer on a font
+      // change, so an existing session keeps the size it was opened with.
+      fontSize: get(terminalFontSize),
+      lineHeight: 1.65,
       fontFamily: "'Geist Mono Variable', 'Geist Mono', monospace",
       theme: activeXtermTheme(get(themeMode)),
       allowProposedApi: true,
