@@ -19,26 +19,18 @@ import {
   activeTabId,
   addTab,
   removeTab,
-  switchToTab,
-  cycleTab,
   setTabTitle,
   setTabReady,
   setTabNeedsInput,
   getTabsByWorkspace,
   getTabWorkspacePath,
-  activeWorkspaceTabs,
-  sidebarTabOrder,
-  lastActiveTabByWorkspace,
-  updateFileContent,
-  setFileEditing,
-  markFileSaved,
 } from "../stores/terminal";
-import { activeWorkspacePath, workspaces } from "../stores/workspace";
+import { activeWorkspacePath } from "../stores/workspace";
 import { panelData } from "../stores/panel";
-import type { TabItem, FileTab } from "../../types/terminal";
+import type { TabItem } from "../../types/terminal";
 import type { Terminal } from "@xterm/xterm";
 
-function makeTerminalTab(overrides: Partial<TabItem & { type: "terminal" }> = {}): TabItem {
+function makeTerminalTab(overrides: Partial<TabItem> = {}): TabItem {
   return {
     type: "terminal",
     id: overrides.id ?? crypto.randomUUID(),
@@ -49,27 +41,11 @@ function makeTerminalTab(overrides: Partial<TabItem & { type: "terminal" }> = {}
   };
 }
 
-function makeFileTab(overrides: Partial<FileTab> = {}): TabItem {
-  return {
-    type: "file",
-    id: overrides.id ?? crypto.randomUUID(),
-    title: overrides.title ?? "",
-    content: "",
-    language: "plaintext",
-    dirty: false,
-    editing: false,
-    originalContent: "",
-    ...overrides,
-  };
-}
-
 describe("terminal store", () => {
   beforeEach(() => {
     tabs.set([]);
     activeTabId.set("");
     activeWorkspacePath.set("");
-    workspaces.set([]);
-    lastActiveTabByWorkspace.set(new Map());
     vi.useFakeTimers();
     vi.clearAllMocks();
   });
@@ -96,13 +72,10 @@ describe("terminal store", () => {
       addTab(tab);
       const t = get(tabs);
       expect(t).toHaveLength(1);
-      expect(t[0].type).toBe("terminal");
       expect(t[0].title).toBe("Terminal");
       expect(get(activeTabId)).toBe("standalone");
       // cwd is not set — tab works but panel won't refresh until OSC 7
-      if (t[0].type === "terminal") {
-        expect(t[0].cwd).toBeUndefined();
-      }
+      expect(t[0].cwd).toBeUndefined();
     });
   });
 
@@ -130,7 +103,7 @@ describe("terminal store", () => {
       expect(get(activeTabId)).toBe("");
     });
 
-    it("clears panelData when removing the active terminal tab", () => {
+    it("clears panelData when removing the active tab", () => {
       addTab(makeTerminalTab({ id: "t1" }));
       removeTab("t1");
       expect(panelData.set).toHaveBeenCalledWith(null);
@@ -140,12 +113,6 @@ describe("terminal store", () => {
       addTab(makeTerminalTab({ id: "t1" }));
       addTab(makeTerminalTab({ id: "t2" }));
       removeTab("t1");
-      expect(panelData.set).not.toHaveBeenCalledWith(null);
-    });
-
-    it("does not clear panelData when removing an active file tab", () => {
-      addTab(makeFileTab({ id: "f1" }));
-      removeTab("f1");
       expect(panelData.set).not.toHaveBeenCalledWith(null);
     });
 
@@ -177,117 +144,6 @@ describe("terminal store", () => {
     });
   });
 
-  describe("switchToTab", () => {
-    it("indexes across all open tabs regardless of active workspace", () => {
-      addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t2", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t3", cwd: "/b" }));
-      activeWorkspacePath.set("/a");
-      switchToTab(2);
-      expect(get(activeTabId)).toBe("t3");
-    });
-
-    it("switches by overall tab order, not workspace-scoped order", () => {
-      addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t2", cwd: "/b" }));
-      addTab(makeTerminalTab({ id: "t3", cwd: "/b" }));
-      activeWorkspacePath.set("/b");
-      switchToTab(0);
-      expect(get(activeTabId)).toBe("t1");
-      switchToTab(1);
-      expect(get(activeTabId)).toBe("t2");
-    });
-
-    it("ignores negative index", () => {
-      addTab(makeTerminalTab({ id: "t1" }));
-      switchToTab(-1);
-      expect(get(activeTabId)).toBe("t1");
-    });
-
-    it("ignores out-of-bounds index", () => {
-      addTab(makeTerminalTab({ id: "t1" }));
-      switchToTab(5);
-      expect(get(activeTabId)).toBe("t1");
-    });
-  });
-
-  describe("sidebarTabOrder", () => {
-    it("orders generic terminals before workspace sessions", () => {
-      addTab(makeTerminalTab({ id: "t1" }));
-      addTab(makeTerminalTab({ id: "t2", cwd: "/a" }));
-      workspaces.set([
-        { path: "/a", name: "A", sessions: [{ id: "s1", label: "S1", status: "running", age: "", terminalTabId: "t2", createdAt: "", claudeSessionId: null }] },
-      ]);
-      expect(get(sidebarTabOrder)).toEqual(["t1", "t2"]);
-    });
-
-    it("orders sessions by workspace order, independent of active workspace", () => {
-      addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t2", cwd: "/b" }));
-      workspaces.set([
-        { path: "/a", name: "A", sessions: [{ id: "s1", label: "S1", status: "running", age: "", terminalTabId: "t1", createdAt: "", claudeSessionId: null }] },
-        { path: "/b", name: "B", sessions: [{ id: "s2", label: "S2", status: "running", age: "", terminalTabId: "t2", createdAt: "", claudeSessionId: null }] },
-      ]);
-      activeWorkspacePath.set("/b");
-      expect(get(sidebarTabOrder)).toEqual(["t1", "t2"]);
-    });
-
-    it("excludes closed sessions with no matching open tab", () => {
-      workspaces.set([
-        { path: "/a", name: "A", sessions: [{ id: "s1", label: "S1", status: "idle", age: "", terminalTabId: "old-tab", createdAt: "", claudeSessionId: null }] },
-      ]);
-      expect(get(sidebarTabOrder)).toEqual([]);
-    });
-  });
-
-  describe("cycleTab", () => {
-    it("cycles forward within active workspace", () => {
-      addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t2", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t3", cwd: "/b" }));
-      activeWorkspacePath.set("/a");
-      activeTabId.set("t1");
-      cycleTab(1);
-      expect(get(activeTabId)).toBe("t2");
-    });
-
-    it("cycles backward within active workspace", () => {
-      addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t2", cwd: "/a" }));
-      activeWorkspacePath.set("/a");
-      activeTabId.set("t2");
-      cycleTab(-1);
-      expect(get(activeTabId)).toBe("t1");
-    });
-
-    it("wraps around from last to first", () => {
-      addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t2", cwd: "/a" }));
-      activeWorkspacePath.set("/a");
-      activeTabId.set("t2");
-      cycleTab(1);
-      expect(get(activeTabId)).toBe("t1");
-    });
-
-    it("wraps around from first to last", () => {
-      addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t2", cwd: "/a" }));
-      activeWorkspacePath.set("/a");
-      activeTabId.set("t1");
-      cycleTab(-1);
-      expect(get(activeTabId)).toBe("t2");
-    });
-
-    it("no-op when active workspace has fewer than 2 tabs", () => {
-      addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t2", cwd: "/b" }));
-      activeWorkspacePath.set("/a");
-      activeTabId.set("t1");
-      cycleTab(1);
-      expect(get(activeTabId)).toBe("t1");
-    });
-  });
-
   describe("setTabTitle", () => {
     it("debounces title updates", () => {
       addTab(makeTerminalTab({ id: "t1" }));
@@ -312,8 +168,7 @@ describe("terminal store", () => {
     it("sets ready flag on terminal tab", () => {
       addTab(makeTerminalTab({ id: "t1" }));
       setTabReady("t1");
-      const tab = get(tabs)[0];
-      expect(tab.type === "terminal" && tab.ready).toBe(true);
+      expect(get(tabs)[0].ready).toBe(true);
     });
   });
 
@@ -321,8 +176,7 @@ describe("terminal store", () => {
     it("sets needsInput flag", () => {
       addTab(makeTerminalTab({ id: "t1" }));
       setTabNeedsInput("t1", true);
-      const tab = get(tabs)[0];
-      expect(tab.type === "terminal" && tab.needsInput).toBe(true);
+      expect(get(tabs)[0].needsInput).toBe(true);
     });
 
     it("no-op if value unchanged", () => {
@@ -355,147 +209,11 @@ describe("terminal store", () => {
 
   describe("getTabWorkspacePath", () => {
     it("returns cwd for terminal tabs", () => {
-      const tab = makeTerminalTab({ cwd: "/a" });
-      expect(getTabWorkspacePath(tab)).toBe("/a");
+      expect(getTabWorkspacePath(makeTerminalTab({ cwd: "/a" }))).toBe("/a");
     });
 
-    it("returns empty string for terminal tabs without cwd", () => {
-      const tab = makeTerminalTab({});
-      expect(getTabWorkspacePath(tab)).toBe("");
-    });
-
-    it("returns workspacePath for file tabs", () => {
-      const tab = makeFileTab({ workspacePath: "/a" });
-      expect(getTabWorkspacePath(tab)).toBe("/a");
-    });
-
-    it("returns empty string for file tabs without workspacePath", () => {
-      const tab = makeFileTab({});
-      expect(getTabWorkspacePath(tab)).toBe("");
-    });
-  });
-
-  describe("activeWorkspaceTabs", () => {
-    it("filters tabs by active workspace", () => {
-      addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t2", cwd: "/b" }));
-      addTab(makeTerminalTab({ id: "t3", cwd: "/a" }));
-      activeWorkspacePath.set("/a");
-      const filtered = get(activeWorkspaceTabs);
-      expect(filtered).toHaveLength(2);
-      expect(filtered.map((t) => t.id)).toEqual(["t1", "t3"]);
-    });
-
-    it("returns only ungrouped tabs when no workspace is active", () => {
-      addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t2" }));
-      activeWorkspacePath.set("");
-      const filtered = get(activeWorkspaceTabs);
-      expect(filtered).toHaveLength(1);
-      expect(filtered[0].id).toBe("t2");
-    });
-  });
-
-  describe("lastActiveTabByWorkspace", () => {
-    it("tracks last active tab per workspace", () => {
-      addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t2", cwd: "/b" }));
-      activeTabId.set("t1");
-      activeTabId.set("t2");
-      const map = get(lastActiveTabByWorkspace);
-      expect(map.get("/a")).toBe("t1");
-      expect(map.get("/b")).toBe("t2");
-    });
-
-    it("does not track tabs without workspace", () => {
-      addTab(makeTerminalTab({ id: "t1" }));
-      activeTabId.set("t1");
-      const map = get(lastActiveTabByWorkspace);
-      expect(map.has("")).toBe(false);
-    });
-  });
-
-  describe("workspace switch tab restoration", () => {
-    it("restores last active tab when switching workspace", () => {
-      addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t2", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t3", cwd: "/b" }));
-      // Visit t2 in workspace /a, then switch to /b
-      activeTabId.set("t2");
-      activeWorkspacePath.set("/b");
-      expect(get(activeTabId)).toBe("t3");
-      // Switch back to /a — should restore t2
-      activeWorkspacePath.set("/a");
-      expect(get(activeTabId)).toBe("t2");
-    });
-
-    it("falls back to first tab when no history for workspace", () => {
-      // Add tabs without triggering lastActiveTabByWorkspace for /b
-      // by adding only one tab per workspace
-      addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
-      activeTabId.set("t1");
-      // Manually add a tab to /b without making it active
-      tabs.update((t) => [...t, { type: "terminal" as const, id: "t2", title: "", ptyId: -1, terminal: {} as unknown as Terminal, cwd: "/b" }]);
-      activeWorkspacePath.set("/b");
-      expect(get(activeTabId)).toBe("t2");
-    });
-
-    it("keeps active tab when it already belongs to the new workspace", () => {
-      addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t2", cwd: "/a" }));
-      activeTabId.set("t2");
-      activeWorkspacePath.set("/a");
-      expect(get(activeTabId)).toBe("t2");
-    });
-  });
-
-  describe("updateFileContent", () => {
-    it("sets dirty when content differs from originalContent", () => {
-      addTab(makeFileTab({ id: "f1", content: "hello", originalContent: "hello" }));
-      updateFileContent("f1", "hello world");
-      const tab = get(tabs)[0];
-      expect(tab.type === "file" && tab.dirty).toBe(true);
-      expect(tab.type === "file" && tab.content).toBe("hello world");
-    });
-
-    it("clears dirty when content matches originalContent", () => {
-      addTab(makeFileTab({ id: "f1", content: "changed", originalContent: "original", dirty: true }));
-      updateFileContent("f1", "original");
-      const tab = get(tabs)[0];
-      expect(tab.type === "file" && tab.dirty).toBe(false);
-    });
-
-    it("no-op for terminal tabs", () => {
-      addTab(makeTerminalTab({ id: "t1" }));
-      updateFileContent("t1", "test");
-      const tab = get(tabs)[0];
-      expect(tab.type).toBe("terminal");
-    });
-  });
-
-  describe("setFileEditing", () => {
-    it("toggles editing flag on file tab", () => {
-      addTab(makeFileTab({ id: "f1", editing: false }));
-      setFileEditing("f1", true);
-      const tab = get(tabs)[0];
-      expect(tab.type === "file" && tab.editing).toBe(true);
-    });
-  });
-
-  describe("markFileSaved", () => {
-    it("resets dirty and updates originalContent", () => {
-      addTab(makeFileTab({ id: "f1", content: "new", originalContent: "old", dirty: true }));
-      markFileSaved("f1");
-      const tab = get(tabs)[0];
-      expect(tab.type === "file" && tab.dirty).toBe(false);
-      expect(tab.type === "file" && tab.originalContent).toBe("new");
-    });
-
-    it("updates filePath when provided", () => {
-      addTab(makeFileTab({ id: "f1", content: "test", originalContent: "test" }));
-      markFileSaved("f1", "/new/path.md");
-      const tab = get(tabs)[0];
-      expect(tab.type === "file" && tab.filePath).toBe("/new/path.md");
+    it("returns empty string for tabs without cwd", () => {
+      expect(getTabWorkspacePath(makeTerminalTab({}))).toBe("");
     });
   });
 });

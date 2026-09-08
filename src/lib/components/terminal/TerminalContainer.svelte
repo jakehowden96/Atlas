@@ -1,87 +1,35 @@
 <script lang="ts">
-  import { get } from "svelte/store";
-  import { getSessionDir, ptyKill } from "../../ipc";
-  import { handleGlobalKeydown } from "../../shortcuts";
-  import {
-    activeTabId,
-    removeTab,
-    tabs,
-  } from "../../stores/terminal";
+  import { getSessionDir } from "../../ipc";
+  import { activeTabId, tabs } from "../../stores/terminal";
   import { showToast } from "../../stores/toast";
-  import PrsView from "../panel/PrsView.svelte";
-  import StatsView from "../panel/StatsView.svelte";
-  import FileTabView from "./FileTabView.svelte";
   import TerminalTab from "./TerminalTab.svelte";
 
-  async function closeTab(id: string) {
-    const tabList = get(tabs);
-    const tab = tabList.find((t) => t.id === id);
-    if (tab && tab.type === "terminal" && tab.ptyId >= 0) {
-      try {
-        await ptyKill(tab.ptyId);
-      } catch (e) {
-        showToast(`Failed to kill terminal: ${e}`);
-      }
-    }
-    removeTab(id);
-  }
-
   async function handlePtyReady(tabId: string, ptyId: number) {
-    tabs.update((t) =>
-      t.map((tab) => (tab.id === tabId && tab.type === "terminal" ? { ...tab, ptyId } : tab)),
-    );
+    tabs.update((t) => t.map((tab) => (tab.id === tabId ? { ...tab, ptyId } : tab)));
     try {
       await getSessionDir(tabId);
     } catch (e) {
       showToast(`Failed to create session directory: ${e}`);
     }
   }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (handleGlobalKeydown(e)) return;
-    if (e.ctrlKey && !e.shiftKey && e.key === "w") {
-      e.preventDefault();
-      const activeId = get(activeTabId);
-      if (activeId) {
-        closeTab(activeId);
-      }
-    }
-  }
 </script>
-
-<svelte:window onkeydown={handleKeydown} />
 
 <div class="terminal-area">
   <div class="terminal-panes">
     {#each $tabs as tab (tab.id)}
-      {#if tab.type === "terminal"}
-        <TerminalTab
-          tabId={tab.id}
-          visible={tab.id === $activeTabId}
-          ready={tab.ready !== false}
-          cwd={tab.cwd}
-          onData={tab.onData}
-          onPtyReady={(ptyId) => handlePtyReady(tab.id, ptyId)}
-        />
-      {:else if tab.type === "file"}
-        <FileTabView
-          {tab}
-          visible={tab.id === $activeTabId}
-        />
-      {:else if tab.type === "prs"}
-        <div class="screen-host" class:hidden={tab.id !== $activeTabId}>
-          <PrsView />
-        </div>
-      {:else if tab.type === "stats"}
-        <div class="screen-host" class:hidden={tab.id !== $activeTabId}>
-          <StatsView />
-        </div>
-      {/if}
+      <TerminalTab
+        tabId={tab.id}
+        visible={tab.id === $activeTabId}
+        ready={tab.ready !== false}
+        cwd={tab.cwd}
+        onData={tab.onData}
+        onPtyReady={(ptyId) => handlePtyReady(tab.id, ptyId)}
+      />
     {/each}
     {#if !$activeTabId}
       <div class="empty-state">
         <span class="material-symbols-outlined empty-icon">terminal</span>
-        <p class="empty-text">Create a session from a workspace to get started</p>
+        <p class="empty-text">No session open — start one with ⌘N</p>
       </div>
     {/if}
   </div>
@@ -103,17 +51,6 @@
     background: var(--surface);
   }
 
-  .screen-host {
-    position: absolute;
-    inset: 0;
-    overflow: hidden;
-  }
-
-  .screen-host.hidden {
-    visibility: hidden;
-    pointer-events: none;
-  }
-
   .empty-state {
     position: absolute;
     inset: 0;
@@ -122,18 +59,18 @@
     align-items: center;
     justify-content: center;
     gap: 0.75rem;
-    opacity: 0.4;
+    opacity: 0.5;
   }
 
   .empty-icon {
     font-size: 2.5rem !important;
-    color: var(--on-surface-variant);
+    color: var(--muted);
   }
 
   .empty-text {
-    font-size: 0.8rem;
-    color: var(--on-surface-variant);
-    font-family: var(--font-body);
     margin: 0;
+    color: var(--muted);
+    font-family: var(--font-ui);
+    font-size: 12.5px;
   }
 </style>

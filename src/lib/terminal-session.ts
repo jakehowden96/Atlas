@@ -9,7 +9,6 @@ import type { PanelData } from "../types/panel";
 import { updateSessionLabelByTabId } from "./stores/workspace";
 import { get } from "svelte/store";
 import { showToast } from "./stores/toast";
-import { setRefreshHandler } from "./shortcuts";
 import { activeXtermTheme, themeMode } from "./theme";
 import { log } from "./logger";
 
@@ -86,28 +85,25 @@ export class TerminalSession {
   private registerKeyHandler() {
     this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       if (e.type !== "keydown") return true;
-      // Pass through global shortcuts to the window-level handler — returning
-      // false prevents xterm from consuming the key so it bubbles up to
-      // TerminalContainer's <svelte:window onkeydown>.  We must NOT call
-      // handleGlobalKeydown here because the window handler already does,
-      // which would cause actions like openFile to fire twice.
-      if (e.ctrlKey && e.key === "Tab") return false;
-      if (e.ctrlKey && !e.shiftKey && e.key === "t") return false;
-      if (e.ctrlKey && !e.shiftKey && e.key === "w") return false;
-      if (e.ctrlKey && !e.shiftKey && e.key === "o") return false;
-      if (e.ctrlKey && !e.shiftKey && e.key === "s") return false;
-      if (e.ctrlKey && !e.shiftKey && e.key >= "1" && e.key <= "9") return false;
-      // All Ctrl+Shift combos are global shortcuts (panel toggle, section
-      // switching, manual refresh) — pass them all through rather than
-      // maintaining a duplicate list that drifts from shortcuts.ts.
-      if (e.ctrlKey && e.shiftKey) return false;
+      // Pass Mission Control's global chords through to the window-level
+      // handler — returning false prevents xterm from consuming the key so it
+      // bubbles up to App.svelte's <svelte:window onkeydown>.  We must NOT
+      // call handleGlobalKeydown here because the window handler already does,
+      // which would fire every action twice.
+      const mod = e.metaKey || e.ctrlKey;
+      // ⌘N / ⌘K / ⌘, — new session, jump palette, settings
+      if (mod && !e.shiftKey && ["n", "k", ","].includes(e.key.toLowerCase())) return false;
+      // ⌘\ (macOS) and Ctrl+Shift+\ (Windows/Linux) — activity rail
+      if (mod && e.key === "\\") return false;
+      // Escape is absent by design: the Claude Code TUI owns it while the
+      // terminal has focus.
       return true;
     });
   }
 
   private checkOscReadiness() {
     const tab = get(tabs).find(t => t.id === this.tabId);
-    if (tab?.type === "terminal" && tab.commandWrittenAt && !tab.ready) {
+    if (tab?.commandWrittenAt && !tab.ready) {
       // 300ms gate: shell preexec hooks fire within ~50ms of command entry;
       // Claude Code's title arrives 500ms+ later. This cleanly separates them.
       if (Date.now() - tab.commandWrittenAt > 300) {
@@ -161,7 +157,7 @@ export class TerminalSession {
     this.terminal.parser.registerCsiHandler({ final: "h", prefix: "?" }, (params) => {
       if (params.includes(1049)) {
         const tab = get(tabs).find(t => t.id === this.tabId);
-        if (tab?.type === "terminal" && tab.ready === false) {
+        if (tab?.ready === false) {
           setTabReady(this.tabId);
         }
       }
@@ -339,9 +335,6 @@ export class TerminalSession {
         } else {
           panelData.set(null);
         }
-        setRefreshHandler(() => {
-          if (this.currentCwd) this.scheduleRefresh(this.currentCwd);
-        });
         this.startPolling();
       });
     });

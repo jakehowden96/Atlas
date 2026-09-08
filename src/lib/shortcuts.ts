@@ -1,70 +1,83 @@
-import { switchToTab, cycleTab } from "./stores/terminal";
-import { togglePanel } from "./stores/panel";
-import { cycleWorkspace } from "./stores/workspace";
-import { openFile } from "./file-open";
-import { saveActiveFile } from "./file-save";
+import { get } from "svelte/store";
+import { settingsOpen } from "./stores/settings";
+import {
+  activeView,
+  diffOpen,
+  jumpOpen,
+  newSessionOpen,
+  railOpen,
+  showView,
+} from "./stores/view";
 
-// Set by TerminalTab when it knows its CWD — used for manual refresh
-export let requestPanelRefresh: (() => void) | null = null;
-export function setRefreshHandler(handler: () => void) {
-  requestPanelRefresh = handler;
+/** The platform's primary modifier: ⌘ on macOS, Ctrl on Windows/Linux. */
+function mod(e: KeyboardEvent): boolean {
+  return e.metaKey || e.ctrlKey;
 }
 
+/**
+ * Mission Control's global chords. Returns true when the event was consumed.
+ *
+ * Escape is deliberately *not* consumed when nothing is open — the Claude Code
+ * TUI owns it, and `TerminalSession.attachCustomKeyEventHandler` never lets it
+ * reach this handler while the terminal has focus.
+ */
 export function handleGlobalKeydown(e: KeyboardEvent): boolean {
-  // Ctrl+O: open file
-  if (e.ctrlKey && !e.shiftKey && e.key === "o") {
+  // ⌘N / Ctrl+N — new session
+  if (mod(e) && !e.shiftKey && e.key.toLowerCase() === "n") {
     e.preventDefault();
-    openFile();
+    newSessionOpen.set(true);
     return true;
   }
 
-  // Ctrl+S: save active file
-  if (e.ctrlKey && !e.shiftKey && e.key === "s") {
+  // ⌘K / Ctrl+K — jump to session
+  if (mod(e) && !e.shiftKey && e.key.toLowerCase() === "k") {
     e.preventDefault();
-    saveActiveFile();
+    jumpOpen.set(true);
     return true;
   }
 
-  // Ctrl+Tab / Ctrl+Shift+Tab: cycle tabs
-  if (e.ctrlKey && e.key === "Tab") {
+  // ⌘, / Ctrl+, — settings
+  if (mod(e) && !e.shiftKey && e.key === ",") {
     e.preventDefault();
-    cycleTab(e.shiftKey ? -1 : 1);
+    settingsOpen.set(true);
     return true;
   }
 
-  // Ctrl+1-9: switch tabs
-  if (e.ctrlKey && !e.shiftKey && e.key >= "1" && e.key <= "9") {
+  // ⌘\ / Ctrl+Shift+\ — toggle the activity rail
+  if (mod(e) && e.key === "\\") {
     e.preventDefault();
-    switchToTab(parseInt(e.key, 10) - 1);
+    railOpen.update((v) => !v);
     return true;
   }
 
-  // Ctrl+Shift+\: toggle panel
-  if (e.ctrlKey && e.shiftKey && e.key === "\\") {
-    e.preventDefault();
-    togglePanel();
-    return true;
-  }
-
-  // Ctrl+Shift+[: previous workspace
-  if (e.ctrlKey && e.shiftKey && e.key === "[") {
-    e.preventDefault();
-    cycleWorkspace(-1);
-    return true;
-  }
-
-  // Ctrl+Shift+]: next workspace
-  if (e.ctrlKey && e.shiftKey && e.key === "]") {
-    e.preventDefault();
-    cycleWorkspace(1);
-    return true;
-  }
-
-  // Ctrl+Shift+R: manual refresh panel
-  if (e.ctrlKey && e.shiftKey && e.key === "R") {
-    e.preventDefault();
-    requestPanelRefresh?.();
-    return true;
+  // Esc — topmost modal, then the Changes drawer, then back to Overview
+  if (e.key === "Escape") {
+    if (get(jumpOpen)) {
+      e.preventDefault();
+      jumpOpen.set(false);
+      return true;
+    }
+    if (get(newSessionOpen)) {
+      e.preventDefault();
+      newSessionOpen.set(false);
+      return true;
+    }
+    if (get(settingsOpen)) {
+      e.preventDefault();
+      settingsOpen.set(false);
+      return true;
+    }
+    if (get(diffOpen)) {
+      e.preventDefault();
+      diffOpen.set(false);
+      return true;
+    }
+    if (get(activeView) === "session") {
+      e.preventDefault();
+      showView("overview");
+      return true;
+    }
+    return false;
   }
 
   return false;
