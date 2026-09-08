@@ -6,7 +6,6 @@
  * (README → Conventions).
  */
 import { formatAgo } from "./format";
-import type { SessionTile } from "./overview";
 import type { Workspace } from "./stores/workspace";
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
@@ -214,19 +213,60 @@ export function handleKey(
   }
 }
 
-// ── ⌘K jump palette ───────────────────────────────────────────────────────────
+// ── ⌘K command palette ───────────────────────────────────────────────────────
+
+export type JumpKind = "session" | "doc" | "pr";
+
+/** One palette row, flattened from a session tile, a document or a PR so the
+ *  ranking never has to know which of the three it came from. */
+export interface JumpRow {
+  kind: JumpKind;
+  /** Stable across rebuilds; the `{#each}` key. */
+  id: string;
+  label: string;
+  /** The dimmer second line — workspace · branch, file path, repo slug. */
+  context: string;
+  /** Everything besides the label that the query matches against. */
+  haystack: string;
+}
+
+/** Sessions first, then docs, then PRs — the order an empty query lists in. */
+const KIND_ORDER: Record<JumpKind, number> = { session: 0, doc: 1, pr: 2 };
+
+/** 0 = label prefix, 1 = label substring, 2 = somewhere in the haystack. */
+const NO_MATCH = 3;
+
+function tierOf(row: JumpRow, q: string): number {
+  const label = row.label.toLowerCase();
+  if (label.startsWith(q)) return 0;
+  if (label.includes(q)) return 1;
+  if (row.haystack.toLowerCase().includes(q)) return 2;
+  return NO_MATCH;
+}
 
 /**
- * Sessions Atlas currently has running, narrowed by a substring of the session
- * label or its workspace name. A session jumper, not a command palette.
+ * The palette's whole search: rank every row against the query and drop the
+ * misses.
+ *
+ * A closer match wins, then the kind order, then the order the rows arrived in.
+ * Position is part of the sort rather than left to the sort's own stability so
+ * that two queries matching the same rows produce the same list — results that
+ * jitter between keystrokes are how ⏎ opens the wrong thing.
+ *
+ * Generic so callers can hang their own payload (what ⏎ should do) off the row
+ * and get it back on the other side.
  */
-export function filterJumpRows(tiles: SessionTile[], query: string): SessionTile[] {
+export function rankJumpRows<T extends JumpRow>(rows: T[], query: string): T[] {
+  const byOrder = (a: { row: T; at: number }, b: { row: T; at: number }) =>
+    KIND_ORDER[a.row.kind] - KIND_ORDER[b.row.kind] || a.at - b.at;
+  const indexed = rows.map((row, at) => ({ row, at }));
+
   const q = query.trim().toLowerCase();
-  if (!q) return tiles;
-  return tiles.filter(
-    (t) =>
-      t.label.toLowerCase().includes(q) ||
-      t.workspaceName.toLowerCase().includes(q) ||
-      t.branch.toLowerCase().includes(q),
-  );
+  if (!q) return [...indexed].sort(byOrder).map((e) => e.row);
+
+  return indexed
+    .map((e) => ({ ...e, tier: tierOf(e.row, q) }))
+    .filter((e) => e.tier !== NO_MATCH)
+    .sort((a, b) => a.tier - b.tier || byOrder(a, b))
+    .map((e) => e.row);
 }

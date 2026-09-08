@@ -173,7 +173,7 @@
     </span>
 
     <button type="button" class="jump" onclick={() => jumpOpen.set(true)}>
-      Jump to session…
+      Jump to…
       <span class="kbd">{chord("K")}</span>
     </button>
 

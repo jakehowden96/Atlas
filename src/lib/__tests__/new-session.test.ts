@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import type { SessionTile } from "../overview";
 import {
   ageLabel,
   clampState,
-  filterJumpRows,
   filterWorkspaces,
   findWorkspace,
   handleKey,
@@ -12,9 +10,11 @@ import {
   looksLikeAbsolutePath,
   moveWithin,
   normalizePath,
+  rankJumpRows,
   recencyOf,
   setMode,
   toggleColumn,
+  type JumpRow,
   type NewSessionCounts,
   type NewSessionState,
 } from "../new-session";
@@ -241,22 +241,67 @@ describe("clampState", () => {
   });
 });
 
-describe("filterJumpRows", () => {
-  const tile = (label: string, workspaceName: string, branch: string): SessionTile =>
-    ({ label, workspaceName, branch }) as SessionTile;
+describe("rankJumpRows", () => {
+  const row = (kind: JumpRow["kind"], label: string, haystack = ""): JumpRow => ({
+    kind,
+    id: `${kind}:${label}`,
+    label,
+    context: "",
+    haystack,
+  });
+
   const tiles = [
-    tile("Fix the parser", "Atlas", "main"),
-    tile("Bump deps", "RogueMagic", "chore/deps"),
+    row("session", "Fix the parser", "Atlas main"),
+    row("session", "Bump deps", "RogueMagic chore/deps"),
   ];
 
   it("returns everything for an empty query", () => {
-    expect(filterJumpRows(tiles, "  ")).toHaveLength(2);
+    expect(rankJumpRows(tiles, "  ")).toHaveLength(2);
   });
 
-  it("matches label, workspace name or branch", () => {
-    expect(filterJumpRows(tiles, "parser").map((t) => t.label)).toEqual(["Fix the parser"]);
-    expect(filterJumpRows(tiles, "roguemagic").map((t) => t.label)).toEqual(["Bump deps"]);
-    expect(filterJumpRows(tiles, "chore/").map((t) => t.label)).toEqual(["Bump deps"]);
-    expect(filterJumpRows(tiles, "nope")).toEqual([]);
+  it("matches the label or anything in the haystack", () => {
+    expect(rankJumpRows(tiles, "parser").map((r) => r.label)).toEqual(["Fix the parser"]);
+    expect(rankJumpRows(tiles, "roguemagic").map((r) => r.label)).toEqual(["Bump deps"]);
+    expect(rankJumpRows(tiles, "chore/").map((r) => r.label)).toEqual(["Bump deps"]);
+    expect(rankJumpRows(tiles, "nope")).toEqual([]);
+  });
+
+  it("groups an empty query by kind, keeping each group's incoming order", () => {
+    const mixed = [
+      row("pr", "Ship it"),
+      row("doc", "README.md"),
+      row("session", "Fix the parser"),
+      row("doc", "ARCHITECTURE.md"),
+    ];
+    expect(rankJumpRows(mixed, "").map((r) => r.label)).toEqual([
+      "Fix the parser",
+      "README.md",
+      "ARCHITECTURE.md",
+      "Ship it",
+    ]);
+  });
+
+  it("ranks a label prefix over a label substring over a haystack match", () => {
+    const rows = [
+      row("session", "Nothing to see", "auth"),
+      row("session", "Rework auth"),
+      row("session", "Auth rewrite"),
+    ];
+    expect(rankJumpRows(rows, "auth").map((r) => r.label)).toEqual([
+      "Auth rewrite",
+      "Rework auth",
+      "Nothing to see",
+    ]);
+  });
+
+  it("does not reorder between two queries matching the same rows", () => {
+    const rows = [
+      row("pr", "auth: refresh tokens"),
+      row("session", "auth rewrite"),
+      row("doc", "auth-notes.md"),
+    ];
+    expect(rankJumpRows(rows, "auth").map((r) => r.id)).toEqual(
+      rankJumpRows(rows, "au").map((r) => r.id),
+    );
   });
 });
