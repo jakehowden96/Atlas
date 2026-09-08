@@ -292,15 +292,3 @@ export function cycleWorkspace(direction: 1 | -1) {
   const nextIndex = (currentIndex + direction + ws.length) % ws.length;
   activeWorkspacePath.set(ws[nextIndex].path);
 }
-
-export function updateSessionAge(sessionId: string, age: string) {
-  workspaces.update((ws) =>
-    ws.map((w) => ({
-      ...w,
-      sessions: w.sessions.map((s) =>
-        s.id === sessionId ? { ...s, age } : s,
-      ),
-    })),
-  );
-  // Don't persist age updates — they're cosmetic and recomputed
-}

@@ -4,6 +4,7 @@
   import { onDestroy, onMount } from "svelte";
   import { get } from "svelte/store";
   import Toast from "./lib/components/Toast.svelte";
+  import OverviewView from "./lib/components/overview/OverviewView.svelte";
   import PrsView from "./lib/components/panel/PrsView.svelte";
   import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
   import StatsView from "./lib/components/panel/StatsView.svelte";
@@ -183,14 +184,7 @@
 
   <div class="view-host">
     {#if $activeView === "overview"}
-      <div class="view placeholder">
-        <span class="material-symbols-outlined placeholder-icon">grid_view</span>
-        <p class="placeholder-text">
-          {$liveSessionList.length === 0
-            ? "Nothing running — start a session with ⌘N"
-            : `${$liveSessionList.length} live session${$liveSessionList.length === 1 ? "" : "s"}`}
-        </p>
-      </div>
+      <div class="view"><OverviewView /></div>
     {:else if $activeView === "prs"}
       <div class="view"><PrsView /></div>
     {:else if $activeView === "stats"}
@@ -437,18 +431,6 @@
   /* display:none also restarts atlasFadeIn when the pane comes back. */
   .view.hidden {
     display: none;
-  }
-
-  .placeholder {
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    opacity: 0.5;
-  }
-
-  .placeholder-icon {
-    font-size: 2.5rem !important;
-    color: var(--muted);
   }
 
   .placeholder-text {

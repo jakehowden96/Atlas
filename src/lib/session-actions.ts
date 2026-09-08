@@ -12,7 +12,14 @@ import { ptyKill, ptyWrite, startSessionTail, stopSessionTail } from "./ipc";
 import { log } from "./logger";
 import { removeLiveSession } from "./stores/liveSessions";
 import { skipPermissions } from "./stores/settings";
-import { activeTabId, addTab, removeTab, setTabReady, tabs } from "./stores/terminal";
+import {
+  activeTabId,
+  addTab,
+  removeTab,
+  setTabNeedsInput,
+  setTabReady,
+  tabs,
+} from "./stores/terminal";
 import {
   activeSessionId,
   activeWorkspacePath,
@@ -190,6 +197,58 @@ export async function deleteWorkspaceCascade(workspacePath: string) {
     activeWorkspacePath.set("");
     activeSessionId.set("");
   }
+}
+
+/* ── Permission prompts ─────────────────────────────────────────────────────
+ * Answering a blocked tool call means typing into the real TUI — there is no
+ * IPC channel for it. The Overview tile and phase 06's floating permission
+ * card both call these, so the keystroke mapping lives in exactly one place.
+ *
+ * ⚠ ASSUMPTION — NOT verified against a live TUI. This build environment has
+ * no GUI, so `pnpm tauri dev` could not be run to watch what the prompt does.
+ * Claude Code's permission prompt is an arrow-key selection list whose first
+ * option ("Yes") is highlighted by default, so we send a bare CR to accept the
+ * highlighted default and ESC to dismiss. The design prototype's toast copy
+ * ("Typed 'y' into the session for you") would only be right if the prompt
+ * were a plain y/n confirm, which it is not.
+ *
+ * TO CONFIRM OR REFUTE: run `pnpm tauri dev` with skip-permissions off, make
+ * Claude run a `Bash` command, then click Allow.
+ *   - Claude proceeds            → CR is right, keep as is.
+ *   - Nothing happens            → the prompt is a y/n confirm; use "y" / "n".
+ *   - Allow works, Deny does not → ESC is not wired; deny becomes two
+ *     "\x1b[B" (ArrowDown) presses plus "\r" to pick "No, and tell Claude
+ *     what to do differently".
+ */
+
+/** Accept the highlighted default option. */
+const PERMISSION_ALLOW = "\r";
+/** Dismiss the selection list without accepting. */
+const PERMISSION_DENY = "\x1b";
+
+/**
+ * `sessionId` is the terminal tab id (`TabItem.id`) — the same id
+ * `onClaudeNotification` and `onPanelUpdate` report as `session_id`, and the
+ * one `setTabNeedsInput` takes. It is *not* the Claude session UUID.
+ */
+async function answerPendingTool(sessionId: string, keystroke: string): Promise<void> {
+  const tab = get(tabs).find((t) => t.id === sessionId);
+  if (!tab || tab.ptyId < 0) {
+    log.warn("session", `answerPendingTool: no live PTY for tab ${sessionId}`);
+    return;
+  }
+  await ptyWrite(tab.ptyId, keystroke);
+  setTabNeedsInput(sessionId, false);
+}
+
+/** Approve the tool call blocking `sessionId`'s session. */
+export async function allowPendingTool(sessionId: string): Promise<void> {
+  return answerPendingTool(sessionId, PERMISSION_ALLOW);
+}
+
+/** Decline the tool call blocking `sessionId`'s session. */
+export async function denyPendingTool(sessionId: string): Promise<void> {
+  return answerPendingTool(sessionId, PERMISSION_DENY);
 }
 
 /** Native folder picker → new workspace. Returns the path, or null if cancelled. */
