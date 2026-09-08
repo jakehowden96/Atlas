@@ -6,8 +6,8 @@
    * A documents editor, not a code editor — the source pane is a textarea, and
    * the preview is `markdown.ts` rather than a full CommonMark renderer.
    */
-  import type { DocEntry } from "../../../types/files";
-  import { absolutePath, parseFileKey } from "../../files";
+  import { untrack } from "svelte";
+  import { absolutePath, parseFileKey, resolveWikilink } from "../../files";
   import { basename, formatAgo } from "../../format";
   import { openUrl } from "../../ipc";
   import { renderMarkdown } from "../../markdown";
@@ -24,11 +24,12 @@
     loadFileText,
     openFile,
     openFiles,
+    outlineJump,
     plans,
     saveActiveFile,
     setDoc,
   } from "../../stores/files";
-  import { openNewSession } from "../../stores/view";
+  import { fileRailOpen, openNewSession } from "../../stores/view";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
 
   let key = $derived($activeFile);
@@ -48,8 +49,11 @@
 
   let files = $derived($docEntries.filter((e) => !e.is_dir));
   let html = $derived(
-    mode === "source" ? "" : renderMarkdown(text, (t) => resolveTarget(t, files) !== null),
+    mode === "source" ? "" : renderMarkdown(text, (t) => resolveWikilink(t, files) !== null),
   );
+
+  let sourceEl = $state<HTMLTextAreaElement | null>(null);
+  let previewEl = $state<HTMLDivElement | null>(null);
 
   /** Long paths would push the toolbar's controls off; the tail is the part
    *  that identifies the file. */
@@ -84,20 +88,33 @@
     void loadFileText($activeFile);
   });
 
-  /** The rel path a `[[wikilink]]` names, or null when nothing matches it.
-   *  Tried against the whole path first, then against file names. */
-  function resolveTarget(target: string, entries: DocEntry[]): string | null {
-    const want = target.trim().toLowerCase();
-    if (!want) return null;
-    const wanted = [want, `${want}.md`];
-    for (const entry of entries) {
-      if (wanted.includes(entry.rel_path.toLowerCase())) return entry.rel_path;
+  /**
+   * Scroll to a heading the outline rail was clicked on.
+   *
+   * Only the jump itself is a dependency — everything the scroll reads is
+   * untracked, or typing in the source pane would yank the caret back to the
+   * last heading on every keystroke.
+   */
+  $effect(() => {
+    const jump = $outlineJump;
+    if (jump) untrack(() => scrollToHeading(jump));
+  });
+
+  function scrollToHeading(jump: { id: string; line: number }) {
+    // The preview has real anchors; a textarea has none, so the source pane is
+    // scrolled by putting the caret on the heading's line instead.
+    const anchor = previewEl?.querySelector(`#${CSS.escape(jump.id)}`);
+    if (anchor) {
+      anchor.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
     }
-    for (const entry of entries) {
-      const name = entry.name.toLowerCase();
-      if (wanted.includes(name) || name.replace(/\.[^.]+$/, "") === want) return entry.rel_path;
-    }
-    return null;
+    if (!sourceEl) return;
+    const offset = text
+      .split("\n")
+      .slice(0, jump.line)
+      .reduce((n, line) => n + line.length + 1, 0);
+    sourceEl.focus();
+    sourceEl.setSelectionRange(offset, offset);
   }
 
   function onPreviewClick(e: MouseEvent) {
@@ -107,7 +124,7 @@
     e.preventDefault();
     const wiki = anchor.getAttribute("data-wikilink");
     if (wiki) {
-      const rel = resolveTarget(wiki, files);
+      const rel = resolveWikilink(wiki, files);
       if (rel) openFile($fileWs, rel);
       return;
     }
@@ -178,6 +195,28 @@
       >
         Save <span class="kbd">{chord("S")}</span>
       </button>
+      <button
+        type="button"
+        class="rail-toggle"
+        class:on={$fileRailOpen}
+        title="File rail"
+        aria-label="Toggle the file rail"
+        onclick={() => fileRailOpen.update((v) => !v)}
+      >
+        <svg viewBox="0 0 14 14" width="13" height="13" aria-hidden="true">
+          <rect
+            x="1.6"
+            y="2.6"
+            width="10.8"
+            height="8.8"
+            rx="1.6"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.2"
+          />
+          <line x1="9.2" y1="2.6" x2="9.2" y2="11.4" stroke="currentColor" stroke-width="1.2" />
+        </svg>
+      </button>
     </div>
 
     <div class="body">
@@ -186,6 +225,7 @@
              the eventual home of this pane. Not a dependency worth adding for
              a documents editor that has no syntax highlighting to show. -->
         <textarea
+          bind:this={sourceEl}
           class="source"
           spellcheck="false"
           value={text}
@@ -195,7 +235,12 @@
       {#if mode !== "source"}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="preview" class:split={mode === "split"} onclick={onPreviewClick}>
+        <div
+          bind:this={previewEl}
+          class="preview"
+          class:split={mode === "split"}
+          onclick={onPreviewClick}
+        >
           <div class="page">{@html html}</div>
         </div>
       {/if}
@@ -349,6 +394,23 @@
   .glyph {
     font-family: var(--font-mono);
     font-weight: 600;
+  }
+
+  .rail-toggle {
+    display: grid;
+    flex-shrink: 0;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    color: var(--muted);
+    cursor: pointer;
+  }
+
+  .rail-toggle:hover,
+  .rail-toggle.on {
+    color: var(--text);
   }
 
   .save.on {

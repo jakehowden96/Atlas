@@ -17,6 +17,9 @@ export interface OutlineItem {
   level: number;
   text: string;
   id: string;
+  /** 0-based line the heading is on, so the source pane can scroll to it —
+   *  the preview scrolls to `id`, but a textarea has no anchors. */
+  line: number;
 }
 
 /** Answers whether a `[[wikilink]]` target names a real file. Absent means
@@ -44,7 +47,9 @@ export function outline(src: string): OutlineItem[] {
   const seen = new Map<string, number>();
   const items: OutlineItem[] = [];
   let fenced = false;
-  for (const line of clean(src).split("\n")) {
+  const lines = clean(src).split("\n");
+  for (let at = 0; at < lines.length; at++) {
+    const line = lines[at];
     if (FENCE.test(line)) {
       fenced = !fenced;
       continue;
@@ -52,9 +57,34 @@ export function outline(src: string): OutlineItem[] {
     if (fenced) continue;
     const m = HEADING.exec(line);
     if (!m) continue;
-    items.push({ level: m[1].length, text: plainText(m[2]), id: headingId(m[2], seen) });
+    items.push({ level: m[1].length, text: plainText(m[2]), id: headingId(m[2], seen), line: at });
   }
   return items;
+}
+
+/**
+ * Every distinct `[[wikilink]]` target in document order, for the rail's Links
+ * section. Fenced code is skipped for the same reason `outline` skips it.
+ */
+export function wikilinks(src: string): string[] {
+  const targets: string[] = [];
+  const seen = new Set<string>();
+  let fenced = false;
+  for (const line of clean(src).split("\n")) {
+    if (FENCE.test(line)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced) continue;
+    for (const m of line.matchAll(/\[\[([^[\]\n]+)\]\]/g)) {
+      const target = m[1].trim();
+      const key = target.toLowerCase();
+      if (!target || seen.has(key)) continue;
+      seen.add(key);
+      targets.push(target);
+    }
+  }
+  return targets;
 }
 
 function clean(src: string): string {

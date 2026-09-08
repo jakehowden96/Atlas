@@ -221,6 +221,7 @@ pub fn run() {
             commands::session::claude_info,
             commands::files::list_workspace_docs,
             commands::files::list_claude_plans,
+            commands::files::list_dir,
             commands::files::read_text_file_at,
             commands::files::write_text_file_at,
             commands::files::start_docs_watch,

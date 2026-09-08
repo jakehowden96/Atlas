@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { PlanEntry } from "../../../types/files";
+  import { planWorkspace } from "../../files";
   import type { SessionTile } from "../../overview";
   import { formatElapsed } from "../../overview";
   import {
@@ -8,7 +10,9 @@
     subagentMeta,
     type TouchedFile,
   } from "../../session-view";
-  import { diffOpen } from "../../stores/view";
+  import { fileWs, loadPlans, openFile, plans } from "../../stores/files";
+  import { diffOpen, showView } from "../../stores/view";
+  import { visibleWorkspaces } from "../../stores/workspace";
   import { closeWith } from "../ui/Modal.svelte";
 
   interface Props {
@@ -44,6 +48,37 @@
     }
   });
 
+  // Plan files are read by the Files screen and the ⌘K palette; whichever gets
+  // there first fills the store, and on a session-first visit that is the rail.
+  $effect(() => {
+    if (open && $plans.length === 0) void loadPlans();
+  });
+
+  /**
+   * The plan file this session's workspace owns, newest first, or null when
+   * Claude has never written one for it — which is what disables "Open →".
+   *
+   * A plan is named after a slugified cwd, not a session, so a workspace's
+   * sessions all share its plans; the most recent one is the live plan.
+   */
+  let planFile = $derived.by<PlanEntry | null>(() => {
+    const ws = tile?.workspacePath;
+    if (!ws) return null;
+    let best: PlanEntry | null = null;
+    for (const entry of $plans) {
+      if (planWorkspace(entry, $visibleWorkspaces) !== ws) continue;
+      if (!best || (entry.modified ?? "") > (best.modified ?? "")) best = entry;
+    }
+    return best;
+  });
+
+  function openPlan() {
+    if (!planFile || !tile) return;
+    fileWs.set(tile.workspacePath);
+    openFile("plans", planFile.path);
+    showView("files");
+  }
+
   let live = $derived(tile?.live ?? null);
   let plan = $derived(planCounts(live?.plan ?? []));
   let subagents = $derived(live?.subagents ?? []);
@@ -55,7 +90,12 @@
     <section>
       <div class="heading">
         <span>Plan</span>
-        <span class="count">{plan.done}/{plan.total}</span>
+        <span class="heading-end">
+          <span class="count">{plan.done}/{plan.total}</span>
+          <button type="button" class="review" disabled={!planFile} onclick={openPlan}>
+            Open →
+          </button>
+        </span>
       </div>
       <div class="rows">
         {#each live.plan as item, i (i)}
@@ -163,6 +203,12 @@
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
+  }
+
+  .heading-end {
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
 
   .count {
@@ -314,6 +360,12 @@
     letter-spacing: 0;
     text-transform: none;
     cursor: pointer;
+  }
+
+  /* No plan file has been written for this workspace yet. */
+  .review:disabled {
+    color: var(--muted);
+    cursor: default;
   }
 
   .files {

@@ -27,6 +27,19 @@ export interface PlanEntry {
   modified: string | null;
 }
 
+/**
+ * One child of a browsed directory, from `list_dir`. Unlike `DocEntry` this is
+ * one level deep and unfiltered: the Open… dialog lists everything the folder
+ * holds and greys out what `is_text` says the editor cannot open.
+ */
+export interface DirEntry {
+  name: string;
+  /** Absolute. */
+  path: string;
+  is_dir: boolean;
+  is_text: boolean;
+}
+
 export interface DocsChangedEvent {
   workspacePath: string;
   relPath: string;

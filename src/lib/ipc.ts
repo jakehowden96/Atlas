@@ -1,6 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { DocEntry, DocsChangedEvent, PlanEntry } from "../types/files";
+import type { DirEntry, DocEntry, DocsChangedEvent, PlanEntry } from "../types/files";
 import type { GitStatus, PanelData } from "../types/panel";
 import type { GhViewer, RepoPrs } from "../types/prs";
 import type { LiveSession, SessionUpdateEvent } from "../types/session";
@@ -207,6 +207,14 @@ export async function listWorkspaceDocs(
 /** `~/.claude/plans/*.md`; empty — never rejects — when there are none. */
 export async function listClaudePlans(): Promise<PlanEntry[]> {
   return invoke("list_claude_plans");
+}
+
+/**
+ * One directory's children, flat and unfiltered, for the Open… dialog. Rejects
+ * a path that is not an existing absolute directory.
+ */
+export async function listDir(path: string): Promise<DirEntry[]> {
+  return invoke("list_dir", { path });
 }
 
 /** Documents only: rejects anything that is not `.md`/`.markdown`/`.txt`. */

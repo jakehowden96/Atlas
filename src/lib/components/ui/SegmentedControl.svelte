@@ -6,6 +6,9 @@
     count?: number;
     /** Renders the count as a --warn pill instead (PRs needing attention). */
     alert?: boolean;
+    /** A bare --warn dot after the label — Files carries one while some open
+     *  file is unsaved, which is a state rather than a count. */
+    dot?: boolean;
     /** Shown but not selectable — Preview on a file that is not markdown. */
     disabled?: boolean;
   }
@@ -35,6 +38,7 @@
       onclick={() => onChange(option.id)}
     >
       {option.label}
+      {#if option.dot}<span class="dot"></span>{/if}
       {#if option.count !== undefined}
         {#if option.alert}
           <span class="badge">{option.count}</span>
@@ -105,6 +109,13 @@
     font-family: var(--font-mono);
     font-size: 10.5px;
     opacity: 0.7;
+  }
+
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--warn);
   }
 
   .badge {

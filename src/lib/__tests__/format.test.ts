@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { basename, formatAgo } from "../format";
+import { basename, formatAgo, formatBytes } from "../format";
 
 describe("basename", () => {
   it("takes the last segment of a path on either separator", () => {
@@ -29,5 +29,17 @@ describe("formatAgo", () => {
 
   it("never counts forwards", () => {
     expect(ago("2026-09-08T12:05:00Z", "second")).toBe("0s ago");
+  });
+});
+
+describe("formatBytes", () => {
+  it("counts bytes, then KB, then MB", () => {
+    expect(formatBytes(0)).toBe("0 B");
+    expect(formatBytes(812)).toBe("812 B");
+    expect(formatBytes(1023)).toBe("1023 B");
+    expect(formatBytes(1024)).toBe("1.0 KB");
+    expect(formatBytes(4300)).toBe("4.2 KB");
+    expect(formatBytes(1024 * 1024)).toBe("1.0 MB");
+    expect(formatBytes(3 * 1024 * 1024 + 512 * 1024)).toBe("3.5 MB");
   });
 });

@@ -1,9 +1,16 @@
 import { derived, get, writable } from "svelte/store";
-import type { DocEntry, PlanEntry } from "../../types/files";
+import type { DirEntry, DocEntry, PlanEntry } from "../../types/files";
 import { absolutePath, fileKey, parseFileKey, type FileSource } from "../files";
-import { listClaudePlans, listWorkspaceDocs, readTextFileAt, writeTextFileAt } from "../ipc";
+import {
+  listClaudePlans,
+  listDir,
+  listWorkspaceDocs,
+  readTextFileAt,
+  writeTextFileAt,
+} from "../ipc";
 import { log } from "../logger";
-import { setOpenFiles } from "./settings";
+import type { OutlineItem } from "../markdown";
+import { setFileSources, setOpenFiles } from "./settings";
 import { showToast } from "./toast";
 
 /** Workspace path whose documents the tree column is showing. */
@@ -23,6 +30,13 @@ export const diskDocs = writable<Map<string, string>>(new Map());
 export const collapsed = writable<Set<string>>(new Set());
 /** Folders registered from disk. Phase 04 lists them; persisted like `openFiles`. */
 export const sources = writable<string[]>([]);
+/** The text files directly inside each registered source, by folder path.
+ *  The browser walks a folder at a time, so the tree lists one level too. */
+export const sourceFiles = writable<Map<string, DirEntry[]>>(new Map());
+
+/** The heading the rail last asked the editor to scroll to. `nonce` rises on
+ *  every click, so asking twice for the same heading scrolls twice. */
+export const outlineJump = writable<{ id: string; line: number; nonce: number } | null>(null);
 
 /** The shown workspace's listing and every Claude plan on disk. The tree draws
  *  from these, and phase 05's palette indexes them. */
@@ -55,6 +69,43 @@ export async function loadPlans(): Promise<void> {
     log.error("files", "listClaudePlans failed", e);
     plans.set([]);
   }
+}
+
+/** List every registered folder, replacing whatever `sourceFiles` held. A
+ *  folder that has gone lists as empty rather than dropping itself — forgetting
+ *  one is the user's call. */
+export async function loadSourceFiles(paths: string[]): Promise<void> {
+  const next = new Map<string, DirEntry[]>();
+  for (const dir of paths) {
+    try {
+      next.set(dir, (await listDir(dir)).filter((entry) => entry.is_text));
+    } catch (e) {
+      log.error("files", `listDir failed for ${dir}`, e);
+      next.set(dir, []);
+    }
+  }
+  sourceFiles.set(next);
+}
+
+/** Register a folder under "From disk". The tree lists it from `sources`. */
+export async function addSource(path: string): Promise<void> {
+  const current = get(sources);
+  if (current.includes(path)) return;
+  await setFileSources([...current, path]);
+}
+
+/** Forget a folder. Nothing on disk is touched and open tabs stay open. */
+export async function removeSource(path: string): Promise<void> {
+  await setFileSources(get(sources).filter((p) => p !== path));
+}
+
+/** Ask the editor to scroll to a heading the outline rail was clicked on. */
+export function jumpToHeading(item: OutlineItem): void {
+  outlineJump.update((current) => ({
+    id: item.id,
+    line: item.line,
+    nonce: (current?.nonce ?? 0) + 1,
+  }));
 }
 
 export function openFile(source: FileSource, path: string): void {

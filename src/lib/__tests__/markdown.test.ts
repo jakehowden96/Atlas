@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { outline, renderMarkdown } from "../markdown";
+import { outline, renderMarkdown, wikilinks } from "../markdown";
 
 describe("renderMarkdown", () => {
   it("renders h1–h3 with ids and leaves deeper hashes as text", () => {
@@ -144,22 +144,39 @@ describe("outline", () => {
   it("lists h1–h3 with the ids the renderer used", () => {
     const src = "# Title\n\ntext\n\n## Part one\n\n### Deep\n\n## Part one";
     expect(outline(src)).toEqual([
-      { level: 1, text: "Title", id: "title" },
-      { level: 2, text: "Part one", id: "part-one" },
-      { level: 3, text: "Deep", id: "deep" },
-      { level: 2, text: "Part one", id: "part-one-2" },
+      { level: 1, text: "Title", id: "title", line: 0 },
+      { level: 2, text: "Part one", id: "part-one", line: 4 },
+      { level: 3, text: "Deep", id: "deep", line: 6 },
+      { level: 2, text: "Part one", id: "part-one-2", line: 8 },
     ]);
     const html = renderMarkdown(src);
     for (const item of outline(src)) expect(html).toContain(`id="${item.id}"`);
   });
 
   it("ignores a heading inside a code fence", () => {
-    expect(outline("```\n# Nope\n```\n\n# Yes")).toEqual([{ level: 1, text: "Yes", id: "yes" }]);
+    expect(outline("```\n# Nope\n```\n\n# Yes")).toEqual([
+      { level: 1, text: "Yes", id: "yes", line: 4 },
+    ]);
   });
 
   it("strips inline markers from the text it reports", () => {
     expect(outline("## The `run` **loop**")).toEqual([
-      { level: 2, text: "The run loop", id: "the-run-loop" },
+      { level: 2, text: "The run loop", id: "the-run-loop", line: 0 },
     ]);
+  });
+});
+
+describe("wikilinks", () => {
+  it("lists every distinct target in document order", () => {
+    const src = "See [[Guide]] and [[notes/todo]].\n\nAgain [[guide]] — same target.";
+    expect(wikilinks(src)).toEqual(["Guide", "notes/todo"]);
+  });
+
+  it("ignores a link inside a code fence", () => {
+    expect(wikilinks("```\n[[Nope]]\n```\n\n[[Yes]]")).toEqual(["Yes"]);
+  });
+
+  it("finds nothing in a document with no links", () => {
+    expect(wikilinks("# Title\n\nJust prose.")).toEqual([]);
   });
 });

@@ -6,6 +6,7 @@ import {
   diffOpen,
   jumpOpen,
   newSessionOpen,
+  openDialogOpen,
   openNewSession,
   railOpen,
   showView,
@@ -54,6 +55,14 @@ export function handleGlobalKeydown(e: KeyboardEvent): boolean {
     return true;
   }
 
+  // ⌘O / Ctrl+O — the Open… dialog. Scoped to the Files view for the same
+  // reason ⌘S is: nothing on the other screens has a file to open.
+  if (mod(e) && !e.shiftKey && e.key.toLowerCase() === "o" && get(activeView) === "files") {
+    e.preventDefault();
+    openDialogOpen.set(true);
+    return true;
+  }
+
   // ⌘\ / Ctrl+Shift+\ — toggle the activity rail
   if (mod(e) && e.key === "\\") {
     e.preventDefault();
@@ -73,6 +82,11 @@ export function handleGlobalKeydown(e: KeyboardEvent): boolean {
     if (get(jumpOpen)) {
       e.preventDefault();
       jumpOpen.set(false);
+      return true;
+    }
+    if (get(openDialogOpen)) {
+      e.preventDefault();
+      openDialogOpen.set(false);
       return true;
     }
     if (get(newSessionOpen)) {
