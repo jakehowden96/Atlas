@@ -1,11 +1,11 @@
 <script lang="ts">
   import { chord } from "../../platform";
   import { onDestroy } from "svelte";
-  import { buildTiles, filterByWorkspace, tileComparator } from "../../overview";
+  import { buildTiles, filterByWorkspace, pinKey, tileComparator } from "../../overview";
   import { addWorkspaceFolder } from "../../session-actions";
   import { liveSessionList } from "../../stores/liveSessions";
   import { tabs } from "../../stores/terminal";
-  import { overviewOrdering, tailTranscripts } from "../../stores/settings";
+  import { overviewOrdering, pinnedSessions, tailTranscripts } from "../../stores/settings";
   import { newSessionOpen, wsFilter } from "../../stores/view";
   import { sessionDiffStats, workspaces } from "../../stores/workspace";
   import Chip from "../ui/Chip.svelte";
@@ -25,7 +25,8 @@
   let allTiles = $derived(
     buildTiles($liveSessionList, $workspaces, $sessionDiffStats, needsInputTabs),
   );
-  let comparator = $derived(tileComparator($overviewOrdering));
+  let pinned = $derived(new Set($pinnedSessions));
+  let comparator = $derived(tileComparator($overviewOrdering, pinned));
   let tiles = $derived.by(() => {
     const filtered = [...filterByWorkspace(allTiles, $wsFilter)];
     return comparator ? filtered.sort(comparator) : filtered;
@@ -82,7 +83,6 @@
         onClick={() => wsFilter.set(ws.path)}
       />
     {/each}
-    <Chip label="+ Add workspace" dashed onClick={addWorkspace} />
     <div class="chip-spacer"></div>
     <span class="sorted">{ORDER_LABEL[$overviewOrdering]}</span>
   </div>
@@ -90,7 +90,7 @@
   {#if tiles.length > 0}
     <div class="grid">
       {#each tiles as tile (tile.sessionUuid)}
-        <SessionTile {tile} {now} tailing={$tailTranscripts} />
+        <SessionTile {tile} {now} tailing={$tailTranscripts} pinned={pinned.has(pinKey(tile))} />
       {/each}
     </div>
   {:else}

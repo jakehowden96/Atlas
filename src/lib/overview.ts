@@ -154,7 +154,7 @@ export function compareByWorkspace(
  * The comparator behind Settings › General › Overview ordering. "manual" has
  * no comparator: the grid keeps the order sessions arrived in.
  */
-export function tileComparator(
+function orderingComparator(
   ordering: OverviewOrdering,
 ): ((a: SessionTile, b: SessionTile) => number) | null {
   switch (ordering) {
@@ -165,6 +165,38 @@ export function tileComparator(
     default:
       return compareByAttention;
   }
+}
+
+/**
+ * The identity a pin is stored under.
+ *
+ * The Atlas row id whenever a workspace owns the session: it survives the
+ * transcript being adopted — which swaps the tile's `sessionUuid` from the row
+ * id to the real Claude UUID — and survives a later resume. A tailed session
+ * no workspace row owns has no id to use, so it pins by transcript UUID.
+ */
+export function pinKey(tile: SessionTile): string {
+  return tile.atlasSessionId || tile.sessionUuid;
+}
+
+/**
+ * The ordering above, with pinned tiles lifted to the top of it.
+ *
+ * Pinning does not replace the ordering, it only splits the grid in two: the
+ * pinned tiles sort among themselves exactly as the unpinned ones do. "manual"
+ * still has no ordering of its own — `Array.sort` is stable, so a comparator
+ * that returns 0 for two same-pinnedness tiles leaves them in arrival order.
+ * With nothing pinned the ordering's own comparator is handed back untouched,
+ * so the "manual" grid does not get sorted at all.
+ */
+export function tileComparator(
+  ordering: OverviewOrdering,
+  pinned: ReadonlySet<string> = new Set(),
+): ((a: SessionTile, b: SessionTile) => number) | null {
+  const within = orderingComparator(ordering);
+  if (pinned.size === 0) return within;
+  const rank = (t: SessionTile) => (pinned.has(pinKey(t)) ? 0 : 1);
+  return (a, b) => rank(a) - rank(b) || (within ? within(a, b) : 0);
 }
 
 /** `"all"` keeps everything; any other value matches on workspace path. */

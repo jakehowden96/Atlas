@@ -7,8 +7,10 @@ import {
   filterByWorkspace,
   compareByWorkspace,
   formatElapsed,
+  pinKey,
   planSegments,
   tileComparator,
+  type SessionTile,
 } from "../overview";
 import type { DiffStats, Workspace } from "../stores/workspace";
 
@@ -85,6 +87,62 @@ describe("tileComparator", () => {
 
   it("returns null for manual, leaving arrival order alone", () => {
     expect(tileComparator("manual")).toBeNull();
+  });
+
+  describe("with pinned tiles", () => {
+    // The comparator only reads these fields off a tile. `atlasSessionId` is
+    // blank so these pin by transcript UUID, the unowned-session case.
+    const tile = (sessionUuid: string, state: SessionState, label = sessionUuid) =>
+      ({ sessionUuid, atlasSessionId: "", state, label, workspaceName: "ws" }) as SessionTile;
+
+    const order = (
+      tiles: SessionTile[],
+      ordering: Parameters<typeof tileComparator>[0],
+      pinned: string[],
+    ) => {
+      const cmp = tileComparator(ordering, new Set(pinned));
+      return (cmp ? [...tiles].sort(cmp) : [...tiles]).map((t) => t.sessionUuid);
+    };
+
+    it("lifts pinned tiles above the rest", () => {
+      const tiles = [tile("a", "idle"), tile("b", "needsYou"), tile("c", "idle")];
+      expect(order(tiles, "attention", ["c"])).toEqual(["c", "b", "a"]);
+    });
+
+    it("still orders within each group", () => {
+      const tiles = [tile("a", "idle"), tile("b", "needsYou"), tile("c", "running")];
+      expect(order(tiles, "attention", ["a", "b"])).toEqual(["b", "a", "c"]);
+    });
+
+    it("keeps arrival order under manual, pinned first", () => {
+      const tiles = [tile("a", "idle"), tile("b", "idle"), tile("c", "idle")];
+      expect(order(tiles, "manual", ["c", "b"])).toEqual(["b", "c", "a"]);
+    });
+
+    it("hands back the plain comparator when nothing is pinned", () => {
+      expect(tileComparator("attention", new Set())).toBe(compareByAttention);
+      expect(tileComparator("manual", new Set())).toBeNull();
+    });
+
+    it("pins an Atlas-owned session by its row id, not its transcript uuid", () => {
+      const owned = {
+        sessionUuid: "uuid-b",
+        atlasSessionId: "row-b",
+        state: "idle",
+        label: "b",
+        workspaceName: "ws",
+      } as SessionTile;
+      expect(pinKey(owned)).toBe("row-b");
+      expect(order([tile("a", "idle"), owned], "manual", ["row-b"])).toEqual([
+        "uuid-b",
+        "a",
+      ]);
+      // The transcript uuid is not what the pin is stored under.
+      expect(order([tile("a", "idle"), owned], "manual", ["uuid-b"])).toEqual([
+        "a",
+        "uuid-b",
+      ]);
+    });
   });
 });
 

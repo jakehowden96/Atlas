@@ -27,6 +27,9 @@ export const overviewOrdering = writable<OverviewOrdering>("attention");
 export const autoAddReposFromWorkspaces = writable(false);
 /** Read `~/.claude/projects/**.jsonl` live. Off degrades Overview tiles. */
 export const tailTranscripts = writable(true);
+/** Overview tiles the user pinned, by `pinKey`. Pinned tiles sort above every
+    other tile whatever the ordering is. */
+export const pinnedSessions = writable<string[]>([]);
 
 const SETTINGS_DIR = ".atlas";
 const SETTINGS_FILE = ".atlas/settings.json";
@@ -41,6 +44,7 @@ interface PersistedSettings {
   prRefreshMinutes?: PrRefreshMinutes;
   autoAddReposFromWorkspaces?: boolean;
   tailTranscripts?: boolean;
+  pinnedSessions?: string[];
 }
 
 /** The three intervals the Pull requests screen offers. */
@@ -91,6 +95,9 @@ export async function loadSettings() {
       autoAddReposFromWorkspaces.set(data.autoAddReposFromWorkspaces);
     }
     if (typeof data.tailTranscripts === "boolean") tailTranscripts.set(data.tailTranscripts);
+    if (Array.isArray(data.pinnedSessions)) {
+      pinnedSessions.set(data.pinnedSessions.filter((id) => typeof id === "string"));
+    }
     log.info("settings", "settings loaded");
   } catch (e) {
     log.error("settings", "failed to load settings", e);
@@ -111,6 +118,7 @@ async function persistSettings() {
       prRefreshMinutes: get(prRefreshMinutes),
       autoAddReposFromWorkspaces: get(autoAddReposFromWorkspaces),
       tailTranscripts: get(tailTranscripts),
+      pinnedSessions: get(pinnedSessions),
     };
     await writeTextFile(SETTINGS_FILE, JSON.stringify(data, null, 2), {
       baseDir: BaseDirectory.Home,
@@ -153,6 +161,20 @@ export async function setTerminalFontSize(size: number) {
 
 export async function setOverviewOrdering(value: OverviewOrdering) {
   overviewOrdering.set(value);
+  await persistSettings();
+}
+
+/**
+ * Pin or unpin an Overview tile. `overview.pinKey` decides the id, so a pin
+ * survives the transcript being adopted and a later resume. Pins for sessions
+ * that no longer exist are inert — they simply never match a tile — so nothing
+ * has to prune them.
+ */
+export async function togglePinnedSession(key: string) {
+  const current = get(pinnedSessions);
+  pinnedSessions.set(
+    current.includes(key) ? current.filter((id) => id !== key) : [...current, key],
+  );
   await persistSettings();
 }
 

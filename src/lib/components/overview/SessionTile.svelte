@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { LineRole, SessionState } from "../../../types/session";
-  import { formatElapsed, planSegments, type SessionTile } from "../../overview";
+  import { formatElapsed, pinKey, planSegments, type SessionTile } from "../../overview";
   import { allowPendingTool, closeSession, denyPendingTool } from "../../session-actions";
+  import { togglePinnedSession } from "../../stores/settings";
   import { activeTabId } from "../../stores/terminal";
   import { focusedSessionId, showView } from "../../stores/view";
   import StatePill, { type PillState } from "../ui/StatePill.svelte";
@@ -14,9 +15,11 @@
         the header is stale, so the tile shows only what other sources feed:
         state, workspace and the diff badge. */
     tailing: boolean;
+    /** Pinned tiles sort to the top of the Overview grid. */
+    pinned: boolean;
   }
 
-  let { tile, now, tailing }: Props = $props();
+  let { tile, now, tailing, pinned }: Props = $props();
 
   const PILL: Record<SessionState, PillState> = {
     running: "running",
@@ -68,6 +71,11 @@
     if (tile.terminalTabId) denyPendingTool(tile.terminalTabId);
   }
 
+  function togglePin(e: MouseEvent) {
+    e.stopPropagation();
+    void togglePinnedSession(pinKey(tile));
+  }
+
   /* Ends the session but keeps its row, so the conversation stays resumable
      from the New Session modal. Deleting it outright is a Settings action. */
   function close(e: MouseEvent) {
@@ -92,6 +100,17 @@
       {tile.workspaceName}{tile.branch ? ` · ${tile.branch}` : ""}
     </span>
     <span class="elapsed">{elapsed}</span>
+    <button
+      type="button"
+      class="pin"
+      class:on={pinned}
+      title={pinned ? "Unpin from the top" : "Pin to the top"}
+      aria-label="{pinned ? 'Unpin' : 'Pin'} session {tile.label}"
+      aria-pressed={pinned}
+      onclick={togglePin}
+    >
+      <span class="material-symbols-outlined">keep</span>
+    </button>
     <button
       type="button"
       class="close"
@@ -240,6 +259,7 @@
 
   /* Stays out of the way until the card is hovered, but remains reachable by
      keyboard — focus-visible brings it back regardless of pointer. */
+  .pin,
   .close {
     display: grid;
     place-items: center;
@@ -258,9 +278,30 @@
     transition: opacity 0.12s ease;
   }
 
+  .tile:hover .pin,
+  .pin:focus-visible,
   .tile:hover .close,
   .close:focus-visible {
     opacity: 1;
+  }
+
+  /* A pin is state, not just an action — it stays lit once set. */
+  .pin.on {
+    color: var(--accent);
+    opacity: 1;
+  }
+
+  .pin :global(.material-symbols-outlined) {
+    font-size: 15px;
+  }
+
+  .pin.on :global(.material-symbols-outlined) {
+    font-variation-settings: "FILL" 1;
+  }
+
+  .pin:hover {
+    background: var(--surface3);
+    color: var(--text);
   }
 
   .close:hover {
