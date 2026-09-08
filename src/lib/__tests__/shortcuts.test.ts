@@ -11,6 +11,7 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
 
 vi.mock("../ipc", () => ({
   listClaudePlans: vi.fn(),
+  listDir: vi.fn(),
   listWorkspaceDocs: vi.fn(),
   readTextFileAt: vi.fn(),
   writeTextFileAt: vi.fn(),
@@ -23,7 +24,14 @@ import { writeTextFileAt } from "../ipc";
 import { handleGlobalKeydown } from "../shortcuts";
 import { activeFile, docs, setDoc } from "../stores/files";
 import { settingsOpen } from "../stores/settings";
-import { activeView, diffOpen, jumpOpen, newSessionOpen, railOpen } from "../stores/view";
+import {
+  activeView,
+  diffOpen,
+  jumpOpen,
+  newSessionOpen,
+  openDialogOpen,
+  railOpen,
+} from "../stores/view";
 
 function makeKeyEvent(overrides: Partial<KeyboardEvent> = {}): KeyboardEvent {
   const e = {
@@ -45,6 +53,7 @@ describe("handleGlobalKeydown", () => {
     railOpen.set(true);
     newSessionOpen.set(false);
     jumpOpen.set(false);
+    openDialogOpen.set(false);
     settingsOpen.set(false);
     activeFile.set("");
     docs.set(new Map());
@@ -69,6 +78,29 @@ describe("handleGlobalKeydown", () => {
     expect(handleGlobalKeydown(e)).toBe(false);
     expect(e.preventDefault).not.toHaveBeenCalled();
     expect(writeTextFileAt).not.toHaveBeenCalled();
+  });
+
+  it("⌘O opens the Open… dialog on the Files view", () => {
+    activeView.set("files");
+    const e = makeKeyEvent({ metaKey: true, key: "o" });
+    expect(handleGlobalKeydown(e)).toBe(true);
+    expect(get(openDialogOpen)).toBe(true);
+    expect(e.preventDefault).toHaveBeenCalled();
+  });
+
+  it("⌘O is left unhandled on Overview", () => {
+    const e = makeKeyEvent({ metaKey: true, key: "o" });
+    expect(handleGlobalKeydown(e)).toBe(false);
+    expect(get(openDialogOpen)).toBe(false);
+    expect(e.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("Esc closes the Open… dialog before the new session modal", () => {
+    openDialogOpen.set(true);
+    newSessionOpen.set(true);
+    expect(handleGlobalKeydown(makeKeyEvent({ key: "Escape" }))).toBe(true);
+    expect(get(openDialogOpen)).toBe(false);
+    expect(get(newSessionOpen)).toBe(true);
   });
 
   it("⌘N opens the new session modal", () => {

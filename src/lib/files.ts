@@ -6,6 +6,9 @@
  * compiler (README → Conventions).
  */
 import type { DocEntry, PlanEntry } from "../types/files";
+import type { SessionTile } from "./overview";
+import type { TouchedFile } from "./session-view";
+import type { SessionState } from "../types/session";
 import type { Workspace } from "./stores/workspace";
 
 /**
@@ -151,4 +154,118 @@ export function planWorkspace(plan: PlanEntry, workspaces: Workspace[]): string 
     }
   }
   return best;
+}
+
+// ---------- Wikilinks ----------
+
+/**
+ * The rel path a `[[wikilink]]` names, or null when nothing in the listing
+ * matches it. The whole path is tried first, then file names with and without
+ * the `.md` the author is allowed to leave off.
+ */
+export function resolveWikilink(target: string, entries: DocEntry[]): string | null {
+  const want = target.trim().toLowerCase();
+  if (!want) return null;
+  const wanted = [want, `${want}.md`];
+  for (const entry of entries) {
+    if (wanted.includes(entry.rel_path.toLowerCase())) return entry.rel_path;
+  }
+  for (const entry of entries) {
+    const name = entry.name.toLowerCase();
+    if (wanted.includes(name) || name.replace(/\.[^.]+$/, "") === want) return entry.rel_path;
+  }
+  return null;
+}
+
+// ---------- Folder browsing ----------
+
+/** One clickable segment of the Open… dialog's path. */
+export interface Crumb {
+  label: string;
+  /** The directory that segment names — where clicking it navigates. */
+  path: string;
+}
+
+/**
+ * A path broken into the directories on the way to it, root first.
+ *
+ * Both separators are accepted because the path comes back from the backend in
+ * the platform's own form. A drive letter is its own root (`C:` → `C:\`); a
+ * posix path's root is the leading `/`.
+ */
+export function breadcrumbs(path: string): Crumb[] {
+  const windows = /^[A-Za-z]:/.test(path);
+  const sep = windows ? "\\" : "/";
+  const parts = path.split(/[\\/]+/);
+  const crumbs: Crumb[] = [];
+  let acc = windows ? `${parts[0]}\\` : "/";
+
+  crumbs.push({ label: windows ? parts[0] : "/", path: acc });
+  for (const part of parts.slice(1)) {
+    if (!part) continue;
+    acc = acc.endsWith(sep) ? `${acc}${part}` : `${acc}${sep}${part}`;
+    crumbs.push({ label: part, path: acc });
+  }
+  return crumbs;
+}
+
+/** The directory holding `path`, or null when it is already a root. */
+export function parentDir(path: string): string | null {
+  const crumbs = breadcrumbs(path);
+  return crumbs.length > 1 ? crumbs[crumbs.length - 2].path : null;
+}
+
+// ---------- Sessions touching a file ----------
+
+/** A session that has edited the file the rail is showing. */
+export interface FileTouch {
+  /** Atlas session id — what `focusedSessionId` takes. */
+  sessionId: string;
+  label: string;
+  state: SessionState;
+  added: number;
+  removed: number;
+}
+
+/**
+ * Separator-agnostic path compare, folding case.
+ *
+ * Both halves come from the same workspace string, so folding case cannot
+ * introduce a false match here — it only absorbs a drive letter that git and
+ * the workspace store spell differently.
+ */
+function samePath(a: string, b: string): boolean {
+  const norm = (p: string) => p.replace(/[\\/]+/g, "/").replace(/\/+$/, "").toLowerCase();
+  return norm(a) === norm(b);
+}
+
+/**
+ * The sessions whose working tree has this file changed, with that session's
+ * own line counts for it.
+ *
+ * `TouchedFile.path` is relative to the session's workspace — the git diff's
+ * own form — so the workspace path is what turns it back into the absolute
+ * path the Files screen holds.
+ */
+export function touchedBy(
+  absPath: string,
+  tiles: SessionTile[],
+  touched: ReadonlyMap<string, TouchedFile[]>,
+): FileTouch[] {
+  if (!absPath) return [];
+  const out: FileTouch[] = [];
+  for (const tile of tiles) {
+    if (!tile.workspacePath || !tile.terminalTabId) continue;
+    const files = touched.get(tile.terminalTabId);
+    const hit = files?.find((f) => samePath(`${tile.workspacePath}/${f.path}`, absPath));
+    if (!hit) continue;
+    out.push({
+      sessionId: tile.atlasSessionId,
+      label: tile.label,
+      state: tile.state,
+      added: hit.added,
+      removed: hit.removed,
+    });
+  }
+  return out;
 }

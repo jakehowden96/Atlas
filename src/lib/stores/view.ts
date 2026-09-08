@@ -18,6 +18,12 @@ export const diffOpen = writable(false);
 /** Session view's activity rail. Open by default. */
 export const railOpen = writable(true);
 
+/** Files view's own right-hand rail — outline, properties, links. */
+export const fileRailOpen = writable(true);
+
+/** Files view's Open… dialog (⌘O). */
+export const openDialogOpen = writable(false);
+
 export const newSessionOpen = writable(false);
 
 /**

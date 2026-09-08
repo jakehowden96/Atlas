@@ -50,6 +50,17 @@ pub struct PlanEntry {
     pub modified: Option<String>,
 }
 
+/// One child of a browsed directory, for the Open… dialog.
+#[derive(serde::Serialize)]
+pub struct DirEntry {
+    pub name: String,
+    /// Absolute.
+    pub path: String,
+    pub is_dir: bool,
+    /// A document the editor can open. Never true for a directory.
+    pub is_text: bool,
+}
+
 fn rfc3339(time: std::time::SystemTime) -> String {
     chrono::DateTime::<chrono::Utc>::from(time).to_rfc3339()
 }
@@ -157,6 +168,46 @@ fn walk_docs(root: &Path) -> Vec<DocEntry> {
 pub async fn list_workspace_docs(workspace_path: String) -> Result<Vec<DocEntry>, String> {
     validate_cwd(&workspace_path)?;
     tokio::task::spawn_blocking(move || Ok(walk_docs(Path::new(&workspace_path))))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// Every child of `dir`, one level deep and unfiltered.
+///
+/// `walk_docs` recurses and keeps only documents, which is the wrong shape for
+/// a folder browser: the Open… dialog lists what is really in the folder and
+/// greys out what it cannot open, so the folder looks like itself.
+fn list_children(dir: &Path) -> Result<Vec<DirEntry>, String> {
+    let read_dir = std::fs::read_dir(dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
+
+    let mut entries: Vec<DirEntry> = Vec::new();
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        entries.push(DirEntry {
+            name: name.to_string(),
+            path: path.to_string_lossy().to_string(),
+            is_dir,
+            is_text: !is_dir && is_doc_file(&path),
+        });
+    }
+
+    entries.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    Ok(entries)
+}
+
+/// The contents of one directory, for the Open… dialog's browser.
+#[tauri::command(async)]
+pub async fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
+    validate_cwd(&path)?;
+    tokio::task::spawn_blocking(move || list_children(Path::new(&path)))
         .await
         .map_err(|e| format!("Task join error: {}", e))?
 }
@@ -472,6 +523,27 @@ mod tests {
             .map(|e| e.name.as_str())
             .collect();
         assert_eq!(files, vec!["Alpha.md", "beta.md", "inner.md"]);
+    }
+
+    #[test]
+    fn list_children_is_flat_and_marks_only_documents() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        touch(&root.join("notes.md"));
+        touch(&root.join("main.rs"));
+        touch(&root.join("sub/deep.md"));
+
+        let entries = list_children(root).unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        // Directories first, then by name — and nothing from inside `sub`, which
+        // the dialog reaches by walking into it.
+        assert_eq!(names, vec!["sub", "main.rs", "notes.md"]);
+
+        let by_name = |n: &str| entries.iter().find(|e| e.name == n).unwrap();
+        assert!(by_name("notes.md").is_text);
+        // Listed so the folder looks right, but the dialog greys it out.
+        assert!(!by_name("main.rs").is_text);
+        assert!(by_name("sub").is_dir && !by_name("sub").is_text);
     }
 
     #[test]

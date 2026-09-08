@@ -16,9 +16,11 @@
   import SegmentedControl, { type Segment } from "./lib/components/ui/SegmentedControl.svelte";
   import { onClaudeNotification, onPanelUpdate, onSessionUpdate } from "./lib/ipc";
   import { log } from "./lib/logger";
+  import { filesTouched } from "./lib/session-view";
   import { handleGlobalKeydown } from "./lib/shortcuts";
+  import { dirtyFiles } from "./lib/stores/files";
   import { liveSessionList, upsertLiveSession } from "./lib/stores/liveSessions";
-  import { panelData } from "./lib/stores/panel";
+  import { panelData, setSessionTouchedFiles } from "./lib/stores/panel";
   import { prsAttentionCount, startPrPolling } from "./lib/stores/prs";
   import { enableNotifications, loadSettings, settingsOpen } from "./lib/stores/settings";
   import { activeTabId, setTabNeedsInput } from "./lib/stores/terminal";
@@ -60,7 +62,7 @@
   // off entirely rather than shown as a "0" alert pill.
   let viewOptions = $derived<Segment[]>([
     { id: "overview", label: "Overview", count: $liveSessionList.length },
-    { id: "files", label: "Files" },
+    { id: "files", label: "Files", dot: $dirtyFiles.size > 0 },
     {
       id: "prs",
       label: "Pull requests",
@@ -95,6 +97,9 @@
       if (sessionId === get(activeTabId)) {
         panelData.set(data);
       }
+      // The Files rail asks which sessions have touched the document it is
+      // showing, so the per-file counts are kept for every session too.
+      setSessionTouchedFiles(sessionId, filesTouched(data));
       // Update diff badge for any session, not just the active one
       if (data.diff && (data.diff.files_changed > 0 || data.diff.lines_added > 0 || data.diff.lines_removed > 0)) {
         setSessionDiffStats(sessionId, {

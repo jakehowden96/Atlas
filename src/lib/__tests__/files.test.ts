@@ -3,14 +3,19 @@ import { describe, expect, it } from "vitest";
 import type { DocEntry, PlanEntry } from "../../types/files";
 import {
   absolutePath,
+  breadcrumbs,
   buildDocTree,
   fileKey,
   hasUnsavedUnder,
+  parentDir,
   parseFileKey,
   planWorkspace,
+  resolveWikilink,
   slugifyPath,
+  touchedBy,
   type TreeNode,
 } from "../files";
+import type { SessionTile } from "../overview";
 import type { Workspace } from "../stores/workspace";
 
 function doc(rel_path: string, is_dir = false): DocEntry {
@@ -179,5 +184,121 @@ describe("planWorkspace", () => {
       null,
     );
     expect(planWorkspace(plan("anything"), [])).toBe(null);
+  });
+});
+
+describe("resolveWikilink", () => {
+  const entries = [doc("docs/guide.md"), doc("notes/Daily Log.md"), doc("readme.txt")];
+
+  it("matches a full rel path, with or without the extension", () => {
+    expect(resolveWikilink("docs/guide.md", entries)).toBe("docs/guide.md");
+    expect(resolveWikilink("docs/guide", entries)).toBe("docs/guide.md");
+  });
+
+  it("matches a bare file name, ignoring case", () => {
+    expect(resolveWikilink("daily log", entries)).toBe("notes/Daily Log.md");
+    expect(resolveWikilink("readme.txt", entries)).toBe("readme.txt");
+  });
+
+  it("returns null for a target nothing matches", () => {
+    expect(resolveWikilink("missing", entries)).toBe(null);
+    expect(resolveWikilink("  ", entries)).toBe(null);
+  });
+});
+
+describe("breadcrumbs", () => {
+  const last = <T,>(items: T[]): T => items[items.length - 1];
+
+  it("walks a windows path from its drive root", () => {
+    expect(breadcrumbs("C:\\Users\\me\\Notes")).toEqual([
+      { label: "C:", path: "C:\\" },
+      { label: "Users", path: "C:\\Users" },
+      { label: "me", path: "C:\\Users\\me" },
+      { label: "Notes", path: "C:\\Users\\me\\Notes" },
+    ]);
+  });
+
+  it("walks a posix path from /", () => {
+    expect(breadcrumbs("/home/me/notes")).toEqual([
+      { label: "/", path: "/" },
+      { label: "home", path: "/home" },
+      { label: "me", path: "/home/me" },
+      { label: "notes", path: "/home/me/notes" },
+    ]);
+  });
+
+  it("ignores a trailing separator", () => {
+    expect(last(breadcrumbs("/home/me/"))).toEqual({ label: "me", path: "/home/me" });
+    expect(last(breadcrumbs("C:\\Users\\"))).toEqual({ label: "Users", path: "C:\\Users" });
+  });
+
+  it("reports a root as one crumb", () => {
+    expect(breadcrumbs("/")).toEqual([{ label: "/", path: "/" }]);
+    expect(breadcrumbs("C:\\")).toEqual([{ label: "C:", path: "C:\\" }]);
+  });
+});
+
+describe("parentDir", () => {
+  it("climbs one level", () => {
+    expect(parentDir("/home/me/notes")).toBe("/home/me");
+    expect(parentDir("C:\\Users\\me")).toBe("C:\\Users");
+    expect(parentDir("C:\\Users")).toBe("C:\\");
+  });
+
+  it("has nowhere to climb from a root", () => {
+    expect(parentDir("/")).toBe(null);
+    expect(parentDir("C:\\")).toBe(null);
+  });
+});
+
+describe("touchedBy", () => {
+  function tile(overrides: Partial<SessionTile>): SessionTile {
+    return {
+      sessionUuid: "uuid",
+      atlasSessionId: "atlas-1",
+      terminalTabId: "tab-1",
+      workspacePath: "/home/me/atlas",
+      workspaceName: "Atlas",
+      workspaceColour: "#2fa37a",
+      label: "Refactor",
+      branch: "main",
+      state: "running",
+      live: {} as SessionTile["live"],
+      diff: null,
+      ...overrides,
+    };
+  }
+
+  const touched = new Map([["tab-1", [{ path: "docs/guide.md", added: 12, removed: 3 }]]]);
+
+  it("finds the session whose diff carries the file", () => {
+    expect(touchedBy("/home/me/atlas/docs/guide.md", [tile({})], touched)).toEqual([
+      { sessionId: "atlas-1", label: "Refactor", state: "running", added: 12, removed: 3 },
+    ]);
+  });
+
+  it("matches across separators and drive-letter case", () => {
+    const windows = new Map([["tab-1", [{ path: "docs/guide.md", added: 1, removed: 0 }]]]);
+    const rows = touchedBy(
+      "c:\\Users\\me\\atlas\\docs\\guide.md",
+      [tile({ workspacePath: "C:\\Users\\me\\atlas" })],
+      windows,
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  it("does not match a same-named file in another workspace", () => {
+    const rows = touchedBy(
+      "/home/me/other/docs/guide.md",
+      [tile({}), tile({ workspacePath: "/home/me/other", terminalTabId: "tab-2" })],
+      touched,
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it("skips a session with no live tab and an empty path", () => {
+    expect(touchedBy("/home/me/atlas/docs/guide.md", [tile({ terminalTabId: null })], touched))
+      .toEqual([]);
+    expect(touchedBy("", [tile({})], touched)).toEqual([]);
   });
 });

@@ -12,6 +12,7 @@
     slugifyPath,
     type TreeNode,
   } from "../../files";
+  import { basename } from "../../format";
   import { onDocsChanged, startDocsWatch, stopDocsWatch } from "../../ipc";
   import { log } from "../../logger";
   import { chord } from "../../platform";
@@ -23,14 +24,18 @@
     fileWs,
     loadDocs,
     loadPlans,
+    loadSourceFiles,
     openFile,
     openFiles,
     plans,
+    removeSource,
     setDoc,
+    sourceFiles,
     sources,
     toggleCollapsed,
   } from "../../stores/files";
   import { liveSessions } from "../../stores/liveSessions";
+  import { openDialogOpen } from "../../stores/view";
   import { activeWorkspacePath, visibleWorkspaces } from "../../stores/workspace";
 
   /** The plan dot takes its colour from the session state, as the tiles do. */
@@ -81,6 +86,19 @@
     return name.slice(slug.length).replace(/^-+/, "") || name;
   }
 
+  // Disk files opened one at a time, listed under the registered folders so a
+  // file picked from Open… does not vanish from the tree the moment it is
+  // closed and reopened.
+  let looseDiskFiles = $derived.by(() => {
+    const listed = new Set(
+      [...$sourceFiles.values()].flatMap((entries) => entries.map((e) => e.path)),
+    );
+    return $openFiles
+      .map(parseFileKey)
+      .filter((file) => file.source === "disk" && !listed.has(file.path))
+      .map((file) => file.path);
+  });
+
   /** A new note is an unsaved buffer — nothing reaches disk until ⌘S. */
   function newNote() {
     const ws = $fileWs;
@@ -111,6 +129,12 @@
 
   $effect(() => {
     void loadPlans();
+  });
+
+  // Registered folders are restored from settings before this mounts, but
+  // nothing reads what is inside them until here.
+  $effect(() => {
+    void loadSourceFiles($sources);
   });
 
   // Switching workspaces reloads the tree and moves the watcher with it.
@@ -164,13 +188,13 @@
     >+</button>
   </div>
 
-  <!-- Both inert until phase 05 (⌘P) and phase 04 (Open…). They are rendered
-       disabled rather than omitted so the column does not shift later. -->
+  <!-- Search is still inert: ⌘K already searches documents from the top bar.
+       It is rendered disabled rather than omitted so the column does not shift. -->
   <div class="finders">
     <button type="button" class="finder" disabled>
       Search <span class="kbd">{chord("P")}</span>
     </button>
-    <button type="button" class="finder" disabled>
+    <button type="button" class="finder open" onclick={() => openDialogOpen.set(true)}>
       Open… <span class="kbd">{chord("O")}</span>
     </button>
   </div>
@@ -204,7 +228,27 @@
 
     <section>
       <h3 class="label">From disk</h3>
-      {#if $sources.length === 0}
+      {#each $sources as source (source)}
+        <div class="source">
+          <span class="source-name" title={source}>{basename(source)}</span>
+          <button
+            type="button"
+            class="forget"
+            title="Forget this folder"
+            aria-label="Forget {basename(source)}"
+            onclick={() => void removeSource(source)}>✕</button
+          >
+        </div>
+        {#each $sourceFiles.get(source) ?? [] as entry (entry.path)}
+          {@render diskRow(entry.path, entry.name, 1)}
+        {:else}
+          <p class="empty nested">No documents here</p>
+        {/each}
+      {/each}
+      {#each looseDiskFiles as path (path)}
+        {@render diskRow(path, basename(path), 0)}
+      {/each}
+      {#if $sources.length === 0 && looseDiskFiles.length === 0}
         <p class="empty">Nothing added yet</p>
       {/if}
     </section>
@@ -212,6 +256,22 @@
 
   <div class="footer">{myPlans.length} plans · {docCount} docs</div>
 </aside>
+
+{#snippet diskRow(path: string, name: string, depth: number)}
+  {@const key = fileKey("disk", path)}
+  <button
+    type="button"
+    class="row"
+    class:active={$activeFile === key}
+    style="padding-left: {8 + depth * 14}px"
+    title={path}
+    onclick={() => openFile("disk", path)}
+  >
+    <span class="circle"></span>
+    <span class="name">{name}</span>
+    {#if $dirtyFiles.has(key)}<span class="unsaved"></span>{/if}
+  </button>
+{/snippet}
 
 {#snippet row(node: TreeNode, depth: number)}
   {@const key = fileKey($fileWs, node.relPath)}
@@ -341,6 +401,15 @@
     opacity: 0.55;
   }
 
+  .finder.open {
+    cursor: pointer;
+  }
+
+  .finder.open:hover {
+    border-color: var(--border2);
+    color: var(--text);
+  }
+
   .kbd {
     color: var(--muted);
     font-family: var(--font-mono);
@@ -375,6 +444,47 @@
     margin: 0 0 0 8px;
     color: var(--muted);
     font-size: 11.5px;
+  }
+
+  .empty.nested {
+    margin-left: 22px;
+  }
+
+  .source {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 8px;
+  }
+
+  .source-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Forgetting a folder only drops the path — nothing on disk is touched. */
+  .forget {
+    flex-shrink: 0;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .source:hover .forget {
+    opacity: 1;
+  }
+
+  .forget:hover {
+    color: var(--text);
   }
 
   .row {
