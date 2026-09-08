@@ -4,7 +4,7 @@
   import { get } from "svelte/store";
   import type { SessionState } from "../../../types/session";
   import { buildTiles, compareByAttention, formatElapsed, type SessionTile } from "../../overview";
-  import { allowPendingTool, denyPendingTool } from "../../session-actions";
+  import { allowPendingTool, closeSession, denyPendingTool } from "../../session-actions";
   import { refreshPanel } from "../../ipc";
   import { filesTouched, formatTokens, tabIdForSession } from "../../session-view";
   import { liveSessionList } from "../../stores/liveSessions";
@@ -74,6 +74,12 @@
       });
   });
 
+  /* Ends the session and keeps its row resumable; `closeSession` sends us back
+     to Overview because the focused session is the one going away. */
+  function endSession() {
+    if (tile?.atlasSessionId) void closeSession(tile.atlasSessionId);
+  }
+
   let elapsed = $derived(tile ? formatElapsed(tile.live.startedAt, now) : "");
   let subtitle = $derived(
     tile ? [tile.workspaceName, tile.branch, elapsed].filter(Boolean).join(" · ") : "",
@@ -135,6 +141,14 @@
         aria-label="Toggle activity rail"
         onclick={() => railOpen.update((v) => !v)}
       >▥</button>
+
+      <button
+        type="button"
+        class="close-session"
+        title="Close session"
+        aria-label="Close session"
+        onclick={endSession}
+      >✕</button>
     </header>
 
     <div class="pane">
@@ -343,6 +357,26 @@
     font-family: var(--font-ui);
     font-size: 12px;
     cursor: pointer;
+  }
+
+  .close-session {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    border-radius: var(--r-md);
+    background: transparent;
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .close-session:hover {
+    background: var(--surface3);
+    color: var(--danger);
   }
 
   .rail-toggle:hover,

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { LineRole, SessionState } from "../../../types/session";
   import { formatElapsed, planSegments, type SessionTile } from "../../overview";
-  import { allowPendingTool, denyPendingTool } from "../../session-actions";
+  import { allowPendingTool, closeSession, denyPendingTool } from "../../session-actions";
   import { activeTabId } from "../../stores/terminal";
   import { focusedSessionId, showView } from "../../stores/view";
   import StatePill, { type PillState } from "../ui/StatePill.svelte";
@@ -67,6 +67,13 @@
     e.stopPropagation();
     if (tile.terminalTabId) denyPendingTool(tile.terminalTabId);
   }
+
+  /* Ends the session but keeps its row, so the conversation stays resumable
+     from the New Session modal. Deleting it outright is a Settings action. */
+  function close(e: MouseEvent) {
+    e.stopPropagation();
+    if (tile.atlasSessionId) void closeSession(tile.atlasSessionId);
+  }
 </script>
 
 <div
@@ -85,6 +92,15 @@
       {tile.workspaceName}{tile.branch ? ` · ${tile.branch}` : ""}
     </span>
     <span class="elapsed">{elapsed}</span>
+    <button
+      type="button"
+      class="close"
+      title="Close session"
+      aria-label="Close session {tile.label}"
+      onclick={close}
+    >
+      ✕
+    </button>
   </div>
 
   {#if tailing}
@@ -220,6 +236,36 @@
     color: var(--muted);
     font-family: var(--font-mono);
     font-size: 11px;
+  }
+
+  /* Stays out of the way until the card is hovered, but remains reachable by
+     keyboard — focus-visible brings it back regardless of pointer. */
+  .close {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+
+  .tile:hover .close,
+  .close:focus-visible {
+    opacity: 1;
+  }
+
+  .close:hover {
+    background: var(--surface3);
+    color: var(--danger);
   }
 
   /* ── Terminal preview ────────────────────────────────────────────────── */

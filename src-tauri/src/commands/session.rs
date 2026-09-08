@@ -8,7 +8,9 @@ use crate::session::live::LiveSession;
 use crate::session::manager::LiveSessionManager;
 use crate::session::transcript::await_transcript;
 
-/// How long to wait for Claude to create the transcript before giving up.
+/// How long `get_session_transcript_path` waits for a transcript to appear.
+/// `start_session_tail` uses it only as a fast path for a file that already
+/// exists (a resume); a fresh session falls through to the watcher instead.
 const TRANSCRIPT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Resolve the `~/.claude/projects/*/<uuid>.jsonl` transcript for a session
@@ -23,22 +25,32 @@ pub async fn get_session_transcript_path(session_uuid: String) -> Result<Option<
 
 /// Start tailing a session's transcript. Further changes arrive as
 /// `session-update` events until `stop_session_tail`.
+///
+/// The transcript usually does not exist yet: this is called right after the
+/// spawn, and Claude Code writes the file only after its cold start and first
+/// turn — comfortably longer than any timeout worth blocking a command on.
+/// So when the file is not there, the session is registered as pending and the
+/// watcher attaches the tail when it appears. Returning an error instead would
+/// abandon the session forever, which is what used to happen.
 #[tauri::command(async)]
 pub async fn start_session_tail(
     session_uuid: String,
     manager: State<'_, LiveSessionManager>,
 ) -> Result<(), String> {
-    let path = await_transcript(&session_uuid, TRANSCRIPT_TIMEOUT)
-        .await
-        .ok_or_else(|| format!("No transcript found for session {}", session_uuid))?;
-
-    // A resumed session's transcript can be megabytes, so the first read is
-    // pushed off the async runtime.
     let manager = manager.inner().clone();
-    tokio::task::spawn_blocking(move || manager.start(&session_uuid, path))
-        .await
-        .map_err(|e| e.to_string())??;
-    Ok(())
+
+    match await_transcript(&session_uuid, TRANSCRIPT_TIMEOUT).await {
+        Some(path) => {
+            // A resumed session's transcript can be megabytes, so the first read
+            // is pushed off the async runtime.
+            let uuid = session_uuid.clone();
+            tokio::task::spawn_blocking(move || manager.start(&uuid, path))
+                .await
+                .map_err(|e| e.to_string())??;
+            Ok(())
+        }
+        None => manager.expect(&session_uuid),
+    }
 }
 
 #[tauri::command]

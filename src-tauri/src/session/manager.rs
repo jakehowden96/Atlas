@@ -9,7 +9,7 @@
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -31,6 +31,15 @@ pub struct SessionUpdateEvent {
 #[derive(Clone, Default)]
 pub struct LiveSessionManager {
     tails: Arc<Mutex<HashMap<String, SessionTail>>>,
+    /// Sessions Atlas has spawned whose transcript does not exist yet.
+    ///
+    /// Claude Code writes the file well after the spawn — cold start plus the
+    /// first turn — so waiting for it inline means picking a timeout, and any
+    /// timeout is either too short (the tail never starts) or a stall. Instead
+    /// the uuid is registered here and the watcher, which already sees every
+    /// write under `~/.claude/projects`, attaches the tail the moment the file
+    /// turns up.
+    pending: Arc<Mutex<HashSet<String>>>,
 }
 
 impl LiveSessionManager {
@@ -49,10 +58,49 @@ impl LiveSessionManager {
         Ok(tail.session().clone())
     }
 
+    /// Register a session to be tailed as soon as its transcript appears.
+    pub fn expect(&self, session_uuid: &str) -> Result<(), String> {
+        let mut pending = self.pending.lock().map_err(|e| e.to_string())?;
+        pending.insert(session_uuid.to_string());
+        Ok(())
+    }
+
     pub fn stop(&self, session_uuid: &str) -> Result<(), String> {
         let mut tails = self.tails.lock().map_err(|e| e.to_string())?;
         tails.remove(session_uuid);
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.remove(session_uuid);
+        }
         Ok(())
+    }
+
+    /// True while `session_uuid` is awaited but not yet tailed.
+    #[cfg(test)]
+    pub fn is_pending(&self, session_uuid: &str) -> bool {
+        self.pending
+            .lock()
+            .map(|p| p.contains(session_uuid))
+            .unwrap_or(false)
+    }
+
+    /// If `path` is the transcript of a pending session, begin tailing it.
+    /// Returns the uuid when a tail was newly attached.
+    fn adopt_pending(&self, path: &Path) -> Option<String> {
+        if path.extension()? != "jsonl" {
+            return None;
+        }
+        let uuid = path.file_stem()?.to_str()?.to_string();
+        {
+            let pending = self.pending.lock().ok()?;
+            if !pending.contains(&uuid) {
+                return None;
+            }
+        }
+        self.start(&uuid, path.to_path_buf()).ok()?;
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.remove(&uuid);
+        }
+        Some(uuid)
     }
 
     pub fn get(&self, session_uuid: &str) -> Result<Option<LiveSession>, String> {
@@ -113,8 +161,13 @@ pub fn start_live_watcher(
                 continue;
             }
             for path in &event.paths {
-                let Some(uuid) = manager.uuid_for_path(path) else {
-                    continue;
+                // A pending session's file may be appearing for the first time.
+                let uuid = match manager.uuid_for_path(path) {
+                    Some(uuid) => uuid,
+                    None => match manager.adopt_pending(path) {
+                        Some(uuid) => uuid,
+                        None => continue,
+                    },
                 };
                 let slot = last_emit
                     .entry(uuid.clone())
@@ -166,6 +219,45 @@ mod tests {
 
         let fetched = manager.get(UUID).unwrap().expect("tracked");
         assert_eq!(fetched.lines.len(), 1);
+    }
+
+    /// The transcript does not exist when `start_session_tail` runs: Claude has
+    /// not finished starting. The session is registered instead, and the
+    /// watcher adopts it when the file lands.
+    #[test]
+    fn a_pending_session_is_adopted_when_its_transcript_appears() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = LiveSessionManager::new();
+
+        manager.expect(UUID).unwrap();
+        assert!(manager.is_pending(UUID));
+        assert!(manager.get(UUID).unwrap().is_none());
+
+        // Claude finally writes the transcript.
+        let path = transcript(dir.path(), USER_LINE);
+        let adopted = manager.adopt_pending(&path).expect("adopted");
+
+        assert_eq!(adopted, UUID);
+        assert!(!manager.is_pending(UUID), "no longer pending once tailed");
+        assert_eq!(manager.get(UUID).unwrap().expect("tracked").lines.len(), 1);
+    }
+
+    #[test]
+    fn adopt_ignores_transcripts_of_sessions_we_never_asked_for() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = transcript(dir.path(), USER_LINE);
+        let manager = LiveSessionManager::new();
+
+        assert!(manager.adopt_pending(&path).is_none());
+        assert!(manager.get(UUID).unwrap().is_none());
+    }
+
+    #[test]
+    fn stop_clears_a_session_that_was_still_pending() {
+        let manager = LiveSessionManager::new();
+        manager.expect(UUID).unwrap();
+        manager.stop(UUID).unwrap();
+        assert!(!manager.is_pending(UUID), "a closed session must not be adopted later");
     }
 
     #[test]

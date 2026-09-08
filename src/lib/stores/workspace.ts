@@ -244,6 +244,23 @@ export async function updateSessionStatus(
   await persist();
 }
 
+/**
+ * Mark a session closed: no terminal tab, back to idle. The row itself stays,
+ * so the conversation is still listed and `claude --resume`-able. This is the
+ * same shape `loadWorkspaces` puts sessions in at startup.
+ */
+export async function detachSession(sessionId: string) {
+  workspaces.update((ws) =>
+    ws.map((w) => ({
+      ...w,
+      sessions: w.sessions.map((s) =>
+        s.id === sessionId ? { ...s, status: "idle" as const, terminalTabId: null } : s,
+      ),
+    })),
+  );
+  await persist();
+}
+
 const labelTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export function updateSessionLabelByTabId(tabId: string, label: string) {

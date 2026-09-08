@@ -12,7 +12,7 @@ import { ptyKill, ptyWrite, startSessionTail, stopSessionTail } from "./ipc";
 import { log } from "./logger";
 import { removeLiveSession } from "./stores/liveSessions";
 import { tailTranscripts } from "./stores/settings";
-import { focusedSessionId } from "./stores/view";
+import { focusedSessionId, showView } from "./stores/view";
 import {
   activeTabId,
   addTab,
@@ -27,6 +27,7 @@ import {
   addSession,
   addWorkspace,
   basename,
+  detachSession,
   removeSession,
   removeWorkspace,
   resumeSession,
@@ -179,6 +180,26 @@ export function openSession(workspacePath: string, sessionId: string) {
       existingSessionId: session.id,
       resumeSessionId: session.claudeSessionId ?? undefined,
     }).finally(() => spawningSessionIds.delete(session.id));
+  }
+}
+
+/**
+ * End a running session: kill the PTY, stop the tail, and release the tab, but
+ * keep the workspace row so the conversation stays resumable. `deleteSession`
+ * is the destructive counterpart that also forgets the row.
+ */
+export async function closeSession(sessionId: string) {
+  const ws = get(workspaces).find((w) => w.sessions.some((s) => s.id === sessionId));
+  const session = ws?.sessions.find((s) => s.id === sessionId);
+  if (!session) return;
+
+  if (session.terminalTabId) await closeSessionTab(session.terminalTabId);
+  endSessionTail(session.claudeSessionId);
+  await detachSession(sessionId);
+
+  if (get(focusedSessionId) === sessionId) {
+    focusedSessionId.set("");
+    showView("overview");
   }
 }
 
