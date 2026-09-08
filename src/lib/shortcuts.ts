@@ -8,6 +8,7 @@ import {
   openNewSession,
   railOpen,
   showView,
+  TAB_VIEWS,
 } from "./stores/view";
 
 /** The platform's primary modifier: ⌘ on macOS, Ctrl on Windows/Linux. */
@@ -48,6 +49,13 @@ export function handleGlobalKeydown(e: KeyboardEvent): boolean {
   if (mod(e) && e.key === "\\") {
     e.preventDefault();
     railOpen.update((v) => !v);
+    return true;
+  }
+
+  // ⌘1–4 / Ctrl+1–4 — jump straight to a top-bar tab
+  if (mod(e) && !e.shiftKey && /^Digit[1-4]$/.test(e.code)) {
+    e.preventDefault();
+    showView(TAB_VIEWS[Number(e.code.slice(5)) - 1]);
     return true;
   }
 

@@ -5,6 +5,7 @@
   import { onDestroy, onMount } from "svelte";
   import { get } from "svelte/store";
   import Toast from "./lib/components/Toast.svelte";
+  import FilesView from "./lib/components/files/FilesView.svelte";
   import OverviewView from "./lib/components/overview/OverviewView.svelte";
   import PrsView from "./lib/components/prs/PrsView.svelte";
   import SettingsModal from "./lib/components/settings/SettingsModal.svelte";
@@ -59,7 +60,7 @@
   // off entirely rather than shown as a "0" alert pill.
   let viewOptions = $derived<Segment[]>([
     { id: "overview", label: "Overview", count: $liveSessionList.length },
-    { id: "session", label: "Session" },
+    { id: "files", label: "Files" },
     {
       id: "prs",
       label: "Pull requests",
@@ -156,9 +157,11 @@
   <header class="topbar">
     <div class="dots"><span></span><span></span><span></span></div>
     <span class="wordmark">Atlas</span>
+    <!-- Session is a detail view Overview opens in place, not a tab of its own,
+         so Overview stays lit while it is showing. -->
     <SegmentedControl
       options={viewOptions}
-      value={$activeView}
+      value={$activeView === "session" ? "overview" : $activeView}
       onChange={(id) => showView(id as View)}
     />
 
@@ -186,6 +189,8 @@
   <div class="view-host">
     {#if $activeView === "overview"}
       <div class="view"><OverviewView /></div>
+    {:else if $activeView === "files"}
+      <div class="view"><FilesView /></div>
     {:else if $activeView === "prs"}
       <div class="view"><PrsView /></div>
     {:else if $activeView === "stats"}

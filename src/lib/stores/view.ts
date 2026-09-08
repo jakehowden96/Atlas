@@ -1,7 +1,11 @@
 import { writable } from "svelte/store";
 
-/** Mission Control's four top-level screens. */
-export type View = "overview" | "session" | "prs" | "stats";
+/** Mission Control's top-level screens. */
+export type View = "overview" | "files" | "session" | "prs" | "stats";
+
+/** The tabs in the top bar, in ⌘1–4 order. "session" is not one of them — it
+    is a detail view Overview opens in place. */
+export const TAB_VIEWS = ["overview", "files", "prs", "stats"] as const;
 
 export const activeView = writable<View>("overview");
 
