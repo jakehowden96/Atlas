@@ -40,7 +40,7 @@ export function openNewSession(seed?: NewSessionSeed): void {
   newSessionOpen.set(true);
 }
 
-/** The ⌘K jump-to-session palette. */
+/** The ⌘K command palette. */
 export const jumpOpen = writable(false);
 
 /** Overview's workspace chip filter: "all" or a workspace path. */
