@@ -1,5 +1,4 @@
-import type { Terminal } from "@xterm/xterm";
-import { derived, get, writable } from "svelte/store";
+import { get, writable } from "svelte/store";
 import type { TabItem } from "../../types/terminal";
 import { panelData } from "./panel";
 import { activeWorkspacePath } from "./workspace";
@@ -7,25 +6,9 @@ import { activeWorkspacePath } from "./workspace";
 export const tabs = writable<TabItem[]>([]);
 export const activeTabId = writable<string>("");
 
-export const activeTab = derived([tabs, activeTabId], ([$tabs, $activeTabId]) =>
-  $tabs.find((t) => t.id === $activeTabId),
-);
-
-/** Extract the workspace path from a tab. */
-export function getTabWorkspacePath(tab: TabItem): string {
-  return tab.cwd ?? "";
-}
-
 export function addTab(tab: TabItem, opts?: { activate?: boolean }) {
   tabs.update((t) => [...t, tab]);
   if (opts?.activate !== false) activeTabId.set(tab.id);
-}
-
-/** Create a terminal tab pre-configured with a working directory. */
-export function createTerminalTabWithCwd(terminal: Terminal, cwd: string): string {
-  const id = crypto.randomUUID();
-  addTab({ type: "terminal", id, title: "", ptyId: -1, terminal, cwd });
-  return id;
 }
 
 const titleTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -39,21 +22,21 @@ export function removeTab(id: string) {
 
   const wasActive = get(activeTabId) === id;
   const removedTab = get(tabs).find((t) => t.id === id);
-  const removedWs = removedTab ? getTabWorkspacePath(removedTab) : "";
+  const removedWs = removedTab?.cwd ?? "";
 
   tabs.update((t) => t.filter((tab) => tab.id !== id));
 
   if (wasActive) {
     const remaining = get(tabs);
     // Prefer falling back to another tab in the same workspace
-    const sameWsTabs = remaining.filter((t) => getTabWorkspacePath(t) === removedWs);
+    const sameWsTabs = remaining.filter((t) => (t.cwd ?? "") === removedWs);
     if (sameWsTabs.length > 0) {
       activeTabId.set(sameWsTabs[sameWsTabs.length - 1].id);
     } else if (remaining.length > 0) {
       const fallback = remaining[remaining.length - 1];
       activeTabId.set(fallback.id);
       // Sync workspace to match the cross-workspace fallback tab
-      const fallbackWs = getTabWorkspacePath(fallback);
+      const fallbackWs = fallback.cwd ?? "";
       if (fallbackWs) {
         activeWorkspacePath.set(fallbackWs);
       }
@@ -62,6 +45,45 @@ export function removeTab(id: string) {
     }
     panelData.set(null);
   }
+}
+
+/**
+ * Resolve once the tab has a live PTY, or `null` if it is closed first or the
+ * wait runs out.
+ *
+ * The pty id arrives from the other side of the component tree —
+ * `TerminalSession` spawns the PTY and `TerminalContainer` writes the id back
+ * onto the tab — so the store update is the signal. Waiting on it directly
+ * beats polling for it: the caller resumes on the same tick the id lands, and
+ * a tab that never spawns is bounded by the timeout rather than an attempt
+ * count that has to be kept in step with the interval.
+ */
+export function awaitTabPty(
+  id: string,
+  timeoutMs = 10_000,
+): Promise<TabItem | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let unsubscribe: (() => void) | null = null;
+    const timer = setTimeout(() => settle(null), timeoutMs);
+
+    function settle(tab: TabItem | null) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      // `subscribe` runs its callback before it returns, so on an already-ready
+      // tab there is nothing to unsubscribe from yet — the caller below does it.
+      unsubscribe?.();
+      resolve(tab);
+    }
+
+    unsubscribe = tabs.subscribe((list) => {
+      const tab = list.find((t) => t.id === id);
+      if (!tab) return settle(null);
+      if (tab.ptyId >= 0) settle(tab);
+    });
+    if (settled) unsubscribe();
+  });
 }
 
 export function setTabTitle(id: string, title: string) {
@@ -88,17 +110,4 @@ export function setTabNeedsInput(id: string, needsInput: boolean) {
   tabs.update((arr) =>
     arr.map((x) => (x.id === id ? { ...x, needsInput } : x)),
   );
-}
-
-/** Return tabs grouped by workspace cwd. Tabs with no cwd go under "". */
-export function getTabsByWorkspace(): Map<string, TabItem[]> {
-  const t = get(tabs);
-  const groups = new Map<string, TabItem[]>();
-  for (const tab of t) {
-    const key = getTabWorkspacePath(tab);
-    const list = groups.get(key) ?? [];
-    list.push(tab);
-    groups.set(key, list);
-  }
-  return groups;
 }

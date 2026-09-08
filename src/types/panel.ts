@@ -33,14 +33,3 @@ export interface GitStatus {
   commits_behind: number;
   branch: string;
 }
-
-export interface RepoInfo {
-  name: string;
-  branch: string;
-  commits_behind: number;
-}
-
-export interface BranchInfo {
-  name: string;
-  is_current: boolean;
-}

@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@dagrejs/dagre':
-        specifier: ^3.0.0
-        version: 3.0.0
       '@fontsource-variable/geist':
         specifier: ^5.3.0
         version: 5.3.0
@@ -47,12 +44,6 @@ importers:
       '@xterm/xterm':
         specifier: ^6.0.0
         version: 6.0.0
-      highlight.js:
-        specifier: ^11.11.1
-        version: 11.11.1
-      markdown-it:
-        specifier: ^14.1.1
-        version: 14.1.1
       material-symbols:
         specifier: 0.44.3
         version: 0.44.3
@@ -63,9 +54,6 @@ importers:
       '@biomejs/biome':
         specifier: 2.4.16
         version: 2.4.16
-      '@types/markdown-it':
-        specifier: ^14.1.2
-        version: 14.1.2
       prettier:
         specifier: ^3.8.1
         version: 3.8.1

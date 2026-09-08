@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { DayStats, ModelStats, StatsSummary } from "../../types/stats";
 import {
   agoLabel,
-  basename,
   daySeries,
   delta,
   deltaLabel,
@@ -312,13 +311,7 @@ describe("weeks", () => {
   });
 });
 
-describe("small formatters", () => {
-  it("takes the last segment of a path on either separator", () => {
-    expect(basename("C:\\Users\\jakeh\\Documents\\GitHub\\Atlas")).toBe("Atlas");
-    expect(basename("/home/j/repos/atlas/")).toBe("atlas");
-    expect(basename("atlas")).toBe("atlas");
-  });
-
+describe("agoLabel", () => {
   it("counts back from the generated-at stamp", () => {
     const now = new Date("2026-09-08T00:01:00Z");
     expect(agoLabel("2026-09-08T00:00:48Z", now)).toBe("12s ago");

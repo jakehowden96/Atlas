@@ -1,6 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { BranchInfo, GitStatus, PanelData, RepoInfo } from "../types/panel";
+import type { GitStatus, PanelData } from "../types/panel";
 import type { GhViewer, RepoPrs } from "../types/prs";
 import type { LiveSession, SessionUpdateEvent } from "../types/session";
 import type { ResumableSession, StatsSummary } from "../types/stats";
@@ -82,60 +82,12 @@ export async function refreshPanel(
   }
 }
 
-export async function gitStageAll(cwd: string): Promise<void> {
-  log.info("ipc", `gitStageAll: ${cwd}`);
-  return invoke("git_stage_all", { cwd });
-}
-
-export async function gitStageFiles(cwd: string, files: string[]): Promise<void> {
-  log.info("ipc", `gitStageFiles: ${files.length} files in ${cwd}`);
-  return invoke("git_stage_files", { cwd, files });
-}
-
-export async function gitDiscardAll(cwd: string): Promise<void> {
-  log.info("ipc", `gitDiscardAll: ${cwd}`);
-  return invoke("git_discard_all", { cwd });
-}
-
 export async function getGitStatus(cwd: string): Promise<GitStatus> {
   return invoke("get_git_status", { cwd });
 }
 
-export async function getChildRepos(cwd: string): Promise<RepoInfo[]> {
-  return invoke("get_child_repos", { cwd });
-}
-
-export async function gitFetch(cwd: string): Promise<void> {
-  return invoke("git_fetch", { cwd });
-}
-
-export async function gitPull(cwd: string): Promise<void> {
-  return invoke("git_pull", { cwd });
-}
-
-export async function gitCommit(
-  cwd: string,
-  message: string,
-): Promise<void> {
-  log.info("ipc", `gitCommit: ${cwd}`);
-  return invoke("git_commit", { cwd, message });
-}
-
-export async function gitPush(cwd: string): Promise<string> {
-  log.info("ipc", `gitPush: ${cwd}`);
-  return invoke("git_push", { cwd });
-}
-
-export async function gitListBranches(cwd: string): Promise<BranchInfo[]> {
-  return invoke("git_list_branches", { cwd });
-}
-
 export async function gitCheckoutBranch(cwd: string, branch: string): Promise<void> {
   return invoke("git_checkout_branch", { cwd, branch });
-}
-
-export async function gitCreateBranch(cwd: string, branch: string): Promise<void> {
-  return invoke("git_create_branch", { cwd, branch });
 }
 
 /** `owner/repo` for a workspace's origin remote, or null if it has none. */
@@ -157,17 +109,6 @@ export async function ghViewer(): Promise<GhViewer | null> {
 
 export async function openUrl(url: string): Promise<void> {
   return invoke("open_url", { url });
-}
-
-/**
- * Path to the `<uuid>.jsonl` transcript under `~/.claude/projects/` for a
- * session started with `claude --session-id <uuid>`.
- * Null while the transcript does not yet exist.
- */
-export async function getSessionTranscriptPath(
-  sessionUuid: string,
-): Promise<string | null> {
-  return invoke("get_session_transcript_path", { sessionUuid });
 }
 
 /**
@@ -193,13 +134,6 @@ export interface ClaudeInfo {
 /** Never rejects for a missing `claude` — every field degrades instead. */
 export async function claudeInfo(): Promise<ClaudeInfo> {
   return invoke("claude_info");
-}
-
-/** Current live state, or null when the session is not being tailed. */
-export async function getLiveSession(
-  sessionUuid: string,
-): Promise<LiveSession | null> {
-  return invoke("get_live_session", { sessionUuid });
 }
 
 export async function onSessionUpdate(

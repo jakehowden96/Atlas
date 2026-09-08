@@ -3,10 +3,10 @@
   import { onDestroy, onMount } from "svelte";
   import type { StatsSummary } from "../../../types/stats";
   import { getClaudeStats, onStatsUpdate } from "../../ipc";
+  import { basename } from "../../format";
   import { log } from "../../logger";
   import {
     agoLabel,
-    basename,
     daySeries,
     delta,
     deltaLabel,
@@ -228,7 +228,7 @@
           </div>
           <div class="kpi-body">
             <span class="kpi-value">{kpi.value}</span>
-            <Sparkline values={kpi.values} width={64} height={20} />
+            <Sparkline values={kpi.values} />
           </div>
           <span class="kpi-sub">{kpi.sub}</span>
         </div>

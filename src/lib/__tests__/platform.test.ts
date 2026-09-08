@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chord, enterLabel, isMacPlatform, modLabel } from "../platform";
+import { chord, enterLabel, isMacPlatform } from "../platform";
 
 describe("isMacPlatform", () => {
   it("detects macOS from platform", () => {
@@ -27,11 +27,6 @@ describe("isMacPlatform", () => {
 });
 
 describe("labels", () => {
-  it("uses the Command glyph on macOS and Ctrl elsewhere", () => {
-    expect(modLabel(true)).toBe("⌘");
-    expect(modLabel(false)).toBe("Ctrl+");
-  });
-
   it("builds chords without a stray separator on macOS", () => {
     expect(chord("N", true)).toBe("⌘N");
     expect(chord("N", false)).toBe("Ctrl+N");

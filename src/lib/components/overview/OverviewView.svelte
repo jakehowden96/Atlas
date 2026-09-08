@@ -31,11 +31,19 @@
     return comparator ? filtered.sort(comparator) : filtered;
   });
 
+  let tilesPerWorkspace = $derived.by(() => {
+    const counts = new Map<string, number>();
+    for (const tile of allTiles) {
+      counts.set(tile.workspacePath, (counts.get(tile.workspacePath) ?? 0) + 1);
+    }
+    return counts;
+  });
+
   /* Chips are filters, so a workspace with nothing open filters to an empty
      grid — noise, not a control. Only workspaces with a session on screen get
      a chip; the rest stay reachable through the New Session modal. */
   let activeWorkspaces = $derived(
-    $workspaces.filter((ws) => allTiles.some((t) => t.workspacePath === ws.path)),
+    $workspaces.filter((ws) => tilesPerWorkspace.has(ws.path)),
   );
 
   /* A filter pinned to a workspace that no longer has sessions would strand the
@@ -68,7 +76,7 @@
     {#each activeWorkspaces as ws (ws.path)}
       <Chip
         label={ws.name}
-        count={allTiles.filter((t) => t.workspacePath === ws.path).length}
+        count={tilesPerWorkspace.get(ws.path) ?? 0}
         colour={ws.color ?? "var(--surface3)"}
         selected={$wsFilter === ws.path}
         onClick={() => wsFilter.set(ws.path)}

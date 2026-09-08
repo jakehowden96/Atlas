@@ -21,6 +21,7 @@
   import { showToast } from "../../stores/toast";
   import { showView } from "../../stores/view";
   import { workspaces } from "../../stores/workspace";
+  import { formatAgo } from "../../format";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
   import type { Pr } from "../../../types/prs";
 
@@ -79,24 +80,14 @@
 
   function relativeTime(iso: string, ref: number): string {
     const then = Date.parse(iso);
-    if (Number.isNaN(then)) return iso;
-    const diff = Math.max(0, ref - then);
-    const m = Math.floor(diff / 60_000);
-    if (m < 1) return "just now";
-    if (m < 60) return `${m}m ago`;
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h ago`;
-    const d = Math.floor(h / 24);
-    if (d < 30) return `${d}d ago`;
-    const mo = Math.floor(d / 30);
-    if (mo < 12) return `${mo}mo ago`;
-    return `${Math.floor(mo / 12)}y ago`;
+    return Number.isNaN(then) ? iso : formatAgo(then, ref);
   }
 
+  /* Distinct from a plain age: a refresh that just landed should read "just
+     now" for half a minute rather than flicking straight to "1m ago". */
   function lastUpdatedLabel(updated: number | null, ref: number): string {
     if (updated == null) return "never";
-    if (ref - updated < 30_000) return "just now";
-    return relativeTime(new Date(updated).toISOString(), ref);
+    return ref - updated < 30_000 ? "just now" : formatAgo(updated, ref);
   }
 
   type Pill = { label: string; tone: "accent" | "danger" | "warn" | "muted" };

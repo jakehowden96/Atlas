@@ -1,6 +1,7 @@
 import { writable, get } from "svelte/store";
 import { BaseDirectory, readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs";
 import { log } from "../logger";
+import { basename } from "../format";
 
 export interface WorkspaceSession {
   id: string;
@@ -139,14 +140,6 @@ export function nextAvailableColor(existing: Workspace[]): string {
   // Past six workspaces the palette repeats from the top. Deliberate: the
   // picker offers six swatches and no seventh colour exists to offer.
   return WORKSPACE_COLORS.find((c) => !used.has(c)) ?? WORKSPACE_COLORS[0];
-}
-
-/**
- * Last path segment, for either separator. `split("/")` alone returns the
- * whole string for a Windows path, which then becomes the workspace name.
- */
-export function basename(path: string): string {
-  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
 export async function addWorkspace(path: string): Promise<boolean> {
@@ -298,13 +291,4 @@ export async function removeSession(workspacePath: string, sessionId: string) {
     activeSessionId.set("");
   }
   await persist();
-}
-
-export function cycleWorkspace(direction: 1 | -1) {
-  const ws = get(workspaces);
-  if (ws.length < 2) return;
-  const currentPath = get(activeWorkspacePath);
-  const currentIndex = ws.findIndex((w) => w.path === currentPath);
-  const nextIndex = (currentIndex + direction + ws.length) % ws.length;
-  activeWorkspacePath.set(ws[nextIndex].path);
 }

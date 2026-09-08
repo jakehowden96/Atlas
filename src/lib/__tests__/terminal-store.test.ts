@@ -3,7 +3,6 @@ import { get } from "svelte/store";
 
 vi.mock("../stores/panel", () => ({
   panelData: { set: vi.fn(), subscribe: vi.fn(() => () => {}) },
-  panelVisible: { set: vi.fn(), subscribe: vi.fn(() => () => {}) },
 }));
 
 vi.mock("@tauri-apps/plugin-fs", () => ({
@@ -22,8 +21,7 @@ import {
   setTabTitle,
   setTabReady,
   setTabNeedsInput,
-  getTabsByWorkspace,
-  getTabWorkspacePath,
+  awaitTabPty,
 } from "../stores/terminal";
 import { activeWorkspacePath } from "../stores/workspace";
 import { panelData } from "../stores/panel";
@@ -172,6 +170,44 @@ describe("terminal store", () => {
     });
   });
 
+  describe("awaitTabPty", () => {
+    it("resolves as soon as the pty id lands on the tab", async () => {
+      addTab(makeTerminalTab({ id: "t1" }));
+      const pending = awaitTabPty("t1");
+      tabs.update((t) => t.map((x) => (x.id === "t1" ? { ...x, ptyId: 7 } : x)));
+      await expect(pending).resolves.toMatchObject({ id: "t1", ptyId: 7 });
+    });
+
+    it("resolves immediately when the tab already has a pty", async () => {
+      addTab(makeTerminalTab({ id: "t1", ptyId: 3 }));
+      await expect(awaitTabPty("t1")).resolves.toMatchObject({ ptyId: 3 });
+    });
+
+    it("resolves null when the tab is closed before its pty arrives", async () => {
+      addTab(makeTerminalTab({ id: "t1" }));
+      const pending = awaitTabPty("t1");
+      removeTab("t1");
+      await expect(pending).resolves.toBeNull();
+    });
+
+    it("resolves null for a tab that never spawns", async () => {
+      addTab(makeTerminalTab({ id: "t1" }));
+      const pending = awaitTabPty("t1", 10_000);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await expect(pending).resolves.toBeNull();
+    });
+
+    it("stops listening once settled, so later updates are ignored", async () => {
+      addTab(makeTerminalTab({ id: "t1" }));
+      const pending = awaitTabPty("t1");
+      tabs.update((t) => t.map((x) => (x.id === "t1" ? { ...x, ptyId: 7 } : x)));
+      await expect(pending).resolves.toMatchObject({ ptyId: 7 });
+      // A settled promise must not be re-resolved by a subsequent change.
+      removeTab("t1");
+      await expect(pending).resolves.toMatchObject({ ptyId: 7 });
+    });
+  });
+
   describe("setTabNeedsInput", () => {
     it("sets needsInput flag", () => {
       addTab(makeTerminalTab({ id: "t1" }));
@@ -187,33 +223,6 @@ describe("terminal store", () => {
       const callCount = spy.mock.calls.length;
       setTabNeedsInput("t1", true);
       expect(spy.mock.calls.length).toBe(callCount);
-    });
-  });
-
-  describe("getTabsByWorkspace", () => {
-    it("groups tabs by cwd", () => {
-      addTab(makeTerminalTab({ id: "t1", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t2", cwd: "/a" }));
-      addTab(makeTerminalTab({ id: "t3", cwd: "/b" }));
-      const groups = getTabsByWorkspace();
-      expect(groups.get("/a")).toHaveLength(2);
-      expect(groups.get("/b")).toHaveLength(1);
-    });
-
-    it("puts tabs without cwd under empty string key", () => {
-      addTab(makeTerminalTab({ id: "t1" }));
-      const groups = getTabsByWorkspace();
-      expect(groups.get("")).toHaveLength(1);
-    });
-  });
-
-  describe("getTabWorkspacePath", () => {
-    it("returns cwd for terminal tabs", () => {
-      expect(getTabWorkspacePath(makeTerminalTab({ cwd: "/a" }))).toBe("/a");
-    });
-
-    it("returns empty string for tabs without cwd", () => {
-      expect(getTabWorkspacePath(makeTerminalTab({}))).toBe("");
     });
   });
 });

@@ -23,19 +23,16 @@ export function isMacPlatform(nav?: NavigatorLike): boolean {
   return /mac/i.test(`${n.platform ?? ""} ${n.userAgent ?? ""}`);
 }
 
-export const IS_MAC: boolean = isMacPlatform();
+const IS_MAC: boolean = isMacPlatform();
 
 /**
- * The primary modifier's label. macOS renders the glyph tight against the key
- * ("⌘N"); Windows and Linux spell it out with a separator ("Ctrl+N").
+ * A full chord label, e.g. `chord("N")` -> "⌘N" or "Ctrl+N".
+ *
+ * macOS renders the glyph tight against the key; Windows and Linux spell the
+ * modifier out with a separator.
  */
-export function modLabel(isMac: boolean = IS_MAC): string {
-  return isMac ? "⌘" : "Ctrl+";
-}
-
-/** A full chord label, e.g. `chord("N")` → "⌘N" or "Ctrl+N". */
 export function chord(key: string, isMac: boolean = IS_MAC): string {
-  return `${modLabel(isMac)}${key}`;
+  return `${isMac ? "⌘" : "Ctrl+"}${key}`;
 }
 
 /** The Return key's label: a glyph on macOS, the word elsewhere. */

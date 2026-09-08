@@ -103,6 +103,9 @@ impl LiveSessionManager {
         Some(uuid)
     }
 
+    /// The live state of a tracked session. Test-only: the UI never polls it,
+    /// updates arrive as `session-update` events.
+    #[cfg(test)]
     pub fn get(&self, session_uuid: &str) -> Result<Option<LiveSession>, String> {
         let tails = self.tails.lock().map_err(|e| e.to_string())?;
         Ok(tails.get(session_uuid).map(|t| t.session().clone()))

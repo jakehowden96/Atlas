@@ -49,19 +49,6 @@ pub struct GitStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RepoInfo {
-    pub name: String,
-    pub branch: String,
-    pub commits_behind: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BranchInfo {
-    pub name: String,
-    pub is_current: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PanelUpdateEvent {
     pub session_id: String,
     pub data: PanelData,

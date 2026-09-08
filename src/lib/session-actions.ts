@@ -16,19 +16,19 @@ import { focusedSessionId, showView } from "./stores/view";
 import {
   activeTabId,
   addTab,
+  awaitTabPty,
   removeTab,
   setTabNeedsInput,
   setTabReady,
   tabs,
 } from "./stores/terminal";
+import { basename } from "./format";
 import {
   activeSessionId,
   activeWorkspacePath,
   addSession,
   addWorkspace,
-  basename,
   detachSession,
-  removeSession,
   removeWorkspace,
   resumeSession,
   stripBundleExtension,
@@ -97,56 +97,44 @@ export async function spawnClaudeSession(
 
   addTab({ type: "terminal", id: tabId, title: "", ptyId: -1, terminal, cwd: workspacePath, ready: false });
 
-  // Once the PTY is ready, send the claude command.
-  // We watch for the ptyId to become available via a short poll since
-  // handlePtyReady fires inside TerminalContainer.
-  let pollAttempts = 0;
-  const poll = setInterval(async () => {
-    pollAttempts++;
-    const currentTabs = get(tabs);
-    const tab = currentTabs.find((t) => t.id === tabId);
-    // Stop polling if the tab was removed or we've exceeded a reasonable timeout (10s)
-    if (!tab || pollAttempts > 100) {
-      clearInterval(poll);
-      return;
-    }
-    if (tab.ptyId >= 0) {
-      clearInterval(poll);
-      const sessionFlag = resumeSessionId
-        ? `--resume ${resumeSessionId}`
-        : `--session-id ${claudeSessionId}`;
-      /* Submit with CR, not LF: CR is what the Enter key sends and what
-         ConPTY/PSReadLine needs to run the line instead of just breaking
-         it. `submitReview.ts` already writes "\r" for the same reason. */
-      const cmd = `claude ${sessionFlag}\r`;
-      // Small delay to let the shell prompt render
-      setTimeout(() => {
-        // Re-check: the tab may have been closed during the delay,
-        // in which case its PTY is dead and the write must be skipped.
-        const current = get(tabs).find((t) => t.id === tabId);
-        if (!current || current.ptyId < 0) return;
-        ptyWrite(current.ptyId, cmd);
-        tabs.update((t) =>
-          t.map((x) => (x.id === tabId ? { ...x, commandWrittenAt: Date.now() } : x)),
+  // The PTY is spawned by the TerminalSession this tab mounts, so its id lands
+  // on the tab a moment later; wait for it rather than for a clock.
+  void awaitTabPty(tabId).then((tab) => {
+    if (!tab) return;
+    const sessionFlag = resumeSessionId
+      ? `--resume ${resumeSessionId}`
+      : `--session-id ${claudeSessionId}`;
+    /* Submit with CR, not LF: CR is what the Enter key sends and what
+       ConPTY/PSReadLine needs to run the line instead of just breaking
+       it. `submitReview.ts` already writes "\r" for the same reason. */
+    const cmd = `claude ${sessionFlag}\r`;
+    // Small delay to let the shell prompt render.
+    setTimeout(() => {
+      // Re-check: the tab may have been closed during the delay,
+      // in which case its PTY is dead and the write must be skipped.
+      const current = get(tabs).find((t) => t.id === tabId);
+      if (!current || current.ptyId < 0) return;
+      ptyWrite(current.ptyId, cmd);
+      tabs.update((t) =>
+        t.map((x) => (x.id === tabId ? { ...x, commandWrittenAt: Date.now() } : x)),
+      );
+      updateSessionStatus(session.id, "running");
+      // Tail the session's own transcript for structured live state, unless
+      // the user has turned transcript tailing off in Settings.
+      if (get(tailTranscripts)) {
+        startSessionTail(claudeSessionId).catch((e) =>
+          log.warn("session", `startSessionTail failed for ${claudeSessionId}: ${e}`),
         );
-        updateSessionStatus(session.id, "running");
-        // Tail the session's own transcript for structured live state, unless
-        // the user has turned transcript tailing off in Settings.
-        if (get(tailTranscripts)) {
-          startSessionTail(claudeSessionId).catch((e) =>
-            log.warn("session", `startSessionTail failed for ${claudeSessionId}: ${e}`),
-          );
-        }
-        // Readiness is triggered by TerminalSession detecting Claude Code's
-        // OSC title (after a 300ms gate to skip shell-emitted titles) or
-        // alternate screen buffer activation. Safety fallback after 5s.
-        setTimeout(() => {
-          const t = get(tabs).find((x) => x.id === tabId);
-          if (t && t.ready === false) setTabReady(tabId);
-        }, 5000);
-      }, 300);
-    }
-  }, 100);
+      }
+      // Readiness is triggered by TerminalSession detecting Claude Code's
+      // OSC title (after a 300ms gate to skip shell-emitted titles) or
+      // alternate screen buffer activation. Safety fallback after 5s.
+      setTimeout(() => {
+        const t = get(tabs).find((x) => x.id === tabId);
+        if (t && t.ready === false) setTabReady(tabId);
+      }, 5000);
+    }, 300);
+  });
 
   return session;
 }
@@ -185,8 +173,7 @@ export function openSession(workspacePath: string, sessionId: string) {
 
 /**
  * End a running session: kill the PTY, stop the tail, and release the tab, but
- * keep the workspace row so the conversation stays resumable. `deleteSession`
- * is the destructive counterpart that also forgets the row.
+ * keep the workspace row so the conversation stays resumable.
  */
 export async function closeSession(sessionId: string) {
   const ws = get(workspaces).find((w) => w.sessions.some((s) => s.id === sessionId));
@@ -201,17 +188,6 @@ export async function closeSession(sessionId: string) {
     focusedSessionId.set("");
     showView("overview");
   }
-}
-
-/** Close a session's tab, stop tailing it, and drop its workspace row. */
-export async function deleteSession(workspacePath: string, sessionId: string) {
-  const ws = get(workspaces).find((w) => w.path === workspacePath);
-  const session = ws?.sessions.find((s) => s.id === sessionId);
-  if (session?.terminalTabId) {
-    await closeSessionTab(session.terminalTabId);
-  }
-  endSessionTail(session?.claudeSessionId);
-  await removeSession(workspacePath, sessionId);
 }
 
 /** Remove a workspace, tearing down every session it owns first. */

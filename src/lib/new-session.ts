@@ -5,6 +5,7 @@
  * components so they can be unit-tested without a Svelte compiler
  * (README → Conventions).
  */
+import { formatAgo } from "./format";
 import type { SessionTile } from "./overview";
 import type { Workspace } from "./stores/workspace";
 
@@ -67,15 +68,9 @@ export function filterWorkspaces(list: Workspace[], query: string): Workspace[] 
 
 /** `4m ago` / `3h ago` / `2d ago`, for both the workspace and Resume rows. */
 export function ageLabel(iso: string | null, now: Date): string {
-  if (!iso) return "never";
-  const then = Date.parse(iso);
+  const then = iso ? Date.parse(iso) : Number.NaN;
   if (Number.isNaN(then)) return "never";
-  const mins = Math.max(0, Math.floor((now.getTime() - then) / 60_000));
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+  return formatAgo(then, now.getTime());
 }
 
 // ── Keyboard model ────────────────────────────────────────────────────────────

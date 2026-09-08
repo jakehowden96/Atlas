@@ -1,12 +1,13 @@
 <script lang="ts">
   interface Props {
     values: number[];
-    width?: number;
-    height?: number;
-    colour?: string;
   }
 
-  let { values, width = 64, height = 20, colour = "var(--accent)" }: Props = $props();
+  let { values }: Props = $props();
+
+  // One size, one colour: the KPI row is the only thing that draws these.
+  const width = 64;
+  const height = 20;
 
   // 1px of headroom top and bottom keeps the 1.5px stroke inside the box.
   let points = $derived.by(() => {
@@ -23,7 +24,7 @@
   <polyline
     {points}
     fill="none"
-    stroke={colour}
+    stroke="var(--accent)"
     stroke-width="1.5"
     stroke-linejoin="round"
     stroke-linecap="round"

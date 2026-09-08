@@ -4,24 +4,12 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::State;
 
-use crate::session::live::LiveSession;
 use crate::session::manager::LiveSessionManager;
 use crate::session::transcript::await_transcript;
 
-/// How long `get_session_transcript_path` waits for a transcript to appear.
-/// `start_session_tail` uses it only as a fast path for a file that already
-/// exists (a resume); a fresh session falls through to the watcher instead.
+/// How long `start_session_tail` waits for a transcript that already exists
+/// (the resume case) before handing the session to the watcher instead.
 const TRANSCRIPT_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// Resolve the `~/.claude/projects/*/<uuid>.jsonl` transcript for a session
-/// Atlas started with `claude --session-id <uuid>`. Returns `None` if the file
-/// has not appeared within `TRANSCRIPT_TIMEOUT`, or the uuid is malformed.
-#[tauri::command(async)]
-pub async fn get_session_transcript_path(session_uuid: String) -> Result<Option<String>, String> {
-    Ok(await_transcript(&session_uuid, TRANSCRIPT_TIMEOUT)
-        .await
-        .map(|p| p.to_string_lossy().into_owned()))
-}
 
 /// Start tailing a session's transcript. Further changes arrive as
 /// `session-update` events until `stop_session_tail`.
@@ -59,14 +47,6 @@ pub fn stop_session_tail(
     manager: State<'_, LiveSessionManager>,
 ) -> Result<(), String> {
     manager.stop(&session_uuid)
-}
-
-#[tauri::command]
-pub fn get_live_session(
-    session_uuid: String,
-    manager: State<'_, LiveSessionManager>,
-) -> Result<Option<LiveSession>, String> {
-    manager.get(&session_uuid)
 }
 
 /// What Settings › Claude Code reports. Every field degrades to `None`/`false`

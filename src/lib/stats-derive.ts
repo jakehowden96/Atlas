@@ -5,6 +5,7 @@
  * arithmetic and the day-series filling can be unit-tested — the test env has
  * no Svelte compiler and no DOM, so nothing inside a `.svelte` file is reachable.
  */
+import { formatAgo } from "./format";
 import type {
   DayStats,
   ModelStats,
@@ -62,22 +63,11 @@ export function fmtCount(n: number): string {
   return n >= 10_000 ? fmtTokens(n) : String(Math.round(n));
 }
 
-/** Last path segment of a workspace path, on either separator. */
-export function basename(path: string): string {
-  const trimmed = path.replace(/[\\/]+$/, "");
-  const cut = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
-  return cut === -1 ? trimmed : trimmed.slice(cut + 1);
-}
-
 /** "12s ago" / "4m ago" / "2h ago" for the live-refresh indicator. */
 export function agoLabel(iso: string, now: Date): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "just now";
-  const secs = Math.max(0, Math.round((now.getTime() - then) / 1000));
-  if (secs < 60) return `${secs}s ago`;
-  const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  return `${Math.floor(mins / 60)}h ago`;
+  return formatAgo(then, now.getTime(), "second");
 }
 
 // ── Deltas ────────────────────────────────────────────────────────────────────
