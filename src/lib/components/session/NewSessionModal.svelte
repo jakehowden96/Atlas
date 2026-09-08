@@ -48,6 +48,8 @@
   let resumable = $state<ResumableSession[]>([]);
   let loadingResume = $state(false);
   let inputEl = $state<HTMLInputElement | null>(null);
+  /** A file the caller wants the session to start on, shown under the input. */
+  let attached = $state("");
   /** Frozen at open — the ages in the list would otherwise re-render constantly. */
   let now = $state(new Date());
 
@@ -136,6 +138,7 @@
     resumable = [];
     pendingResumeId = "";
     now = new Date();
+    attached = seed?.attachPath ?? "";
 
     if (seed?.workspacePath) {
       const want = normalizePath(seed.workspacePath);
@@ -271,6 +274,12 @@
       <span class="kbd">esc</span>
     </div>
 
+    {#if attached}
+      <div class="attached">
+        With <span class="mono">{attached}</span> in mind
+      </div>
+    {/if}
+
     <div class="cols">
       <div class="ws-col">
         <div class="col-head">Workspaces · recent first</div>
@@ -400,6 +409,18 @@
     gap: 10px;
     padding: 12px 14px;
     border-bottom: 1px solid var(--border);
+  }
+
+  .attached {
+    flex-shrink: 0;
+    padding: 7px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--muted);
+    font-size: 11.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .glyph {

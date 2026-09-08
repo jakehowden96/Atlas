@@ -30,6 +30,9 @@ export interface NewSessionSeed {
   workspacePath?: string;
   /** Present means open in Resume mode with this conversation selected. */
   resumeSessionId?: string;
+  /** A file the session should start with in mind — the Files editor's "Ask
+   *  Claude". The modal shows it as context; nothing is attached for real. */
+  attachPath?: string;
 }
 
 export const newSessionSeed = writable<NewSessionSeed | null>(null);

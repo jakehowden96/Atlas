@@ -1,4 +1,5 @@
 import { get } from "svelte/store";
+import { saveActiveFile } from "./stores/files";
 import { settingsOpen } from "./stores/settings";
 import {
   activeView,
@@ -42,6 +43,14 @@ export function handleGlobalKeydown(e: KeyboardEvent): boolean {
   if (mod(e) && !e.shiftKey && e.key === ",") {
     e.preventDefault();
     settingsOpen.set(true);
+    return true;
+  }
+
+  // ⌘S / Ctrl+S — save the file the Files editor is showing. Scoped to that
+  // view so the chord is left alone on every other screen.
+  if (mod(e) && !e.shiftKey && e.key.toLowerCase() === "s" && get(activeView) === "files") {
+    e.preventDefault();
+    void saveActiveFile();
     return true;
   }
 
