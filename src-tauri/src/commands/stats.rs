@@ -1053,6 +1053,99 @@ pub async fn get_claude_stats() -> Result<StatsSummary, String> {
         .map_err(|e| e.to_string())?
 }
 
+// ── Resumable sessions ────────────────────────────────────────────────────────
+
+/// One prior conversation the New Session modal can hand to `claude --resume`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ResumableSession {
+    /// The transcript uuid — exactly what `--resume` takes.
+    pub session_id: String,
+    pub title: Option<String>,
+    pub git_branch: Option<String>,
+    pub last_timestamp: Option<String>,
+    pub user_messages: u32,
+}
+
+/// How many prior sessions one workspace offers.
+const RESUMABLE_LIMIT: usize = 25;
+
+/// Fold a filesystem path into a comparable key.
+///
+/// A transcript's `cwd` is written by the Claude Code process; a workspace path
+/// is written by the folder picker. For the same directory the two routinely
+/// differ in separator style, drive-letter case and trailing separator on
+/// Windows, so the Resume list must compare the folded form and never the raw
+/// strings. Case is folded only where the filesystem is case-insensitive — on
+/// Linux `/A` and `/a` really are different directories.
+fn normalize_path(path: &str) -> String {
+    let unified = path.replace('\\', "/");
+    let trimmed = unified.trim_end_matches('/');
+    if cfg!(windows) {
+        trimmed.to_lowercase()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// The pure half of `list_resumable_sessions`: the records for one workspace,
+/// newest first, capped.
+fn resumable_for_cwd(records: &[SessionRecord], cwd: &str) -> Vec<ResumableSession> {
+    let want = normalize_path(cwd);
+    let mut matched: Vec<&SessionRecord> = records
+        .iter()
+        .filter(|r| r.cwd.as_deref().is_some_and(|c| normalize_path(c) == want))
+        .collect();
+    matched.sort_by(|a, b| b.last_timestamp.cmp(&a.last_timestamp));
+    matched
+        .into_iter()
+        .take(RESUMABLE_LIMIT)
+        .map(|r| ResumableSession {
+            session_id: r.session_id.clone(),
+            title: r.title.clone(),
+            git_branch: r.git_branch.clone(),
+            last_timestamp: r.last_timestamp.clone(),
+            user_messages: r.user_messages,
+        })
+        .collect()
+}
+
+/// Parsed sessions straight off stats.json. Empty when the file is missing or
+/// was written by an older `STATS_FILE_VERSION`.
+fn cached_sessions() -> Vec<SessionRecord> {
+    let Ok(path) = stats_path() else {
+        return Vec::new();
+    };
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<StatsFile>(&s).ok())
+        .filter(|f| f.version == STATS_FILE_VERSION)
+        .map(|f| f.sessions)
+        .unwrap_or_default()
+}
+
+/// Prior conversations in `cwd`, for the New Session modal's Resume list.
+///
+/// Sourced from the transcript cache the stats watcher already maintains.
+/// `claude --resume` itself is never shelled out to: it opens an interactive
+/// picker and prints nothing machine-readable.
+#[tauri::command(async)]
+pub async fn list_resumable_sessions(cwd: String) -> Result<Vec<ResumableSession>, String> {
+    tokio::task::spawn_blocking(move || {
+        let mut records = cached_sessions();
+        // A first launch can reach the modal before the startup recompute has
+        // written stats.json; an empty list there would read as "no history"
+        // rather than "not indexed yet".
+        if records.is_empty() {
+            recompute()?;
+            records = cached_sessions();
+        }
+        Ok(resumable_for_cwd(&records, &cwd))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // ── Watcher ───────────────────────────────────────────────────────────────────
 
 fn is_session_jsonl(path: &Path) -> bool {
@@ -1571,5 +1664,86 @@ mod tests {
 
         assert!(summary.by_model_30d.contains_key("Sonnet"), "30d window has recent Sonnet");
         assert!(!summary.by_model_30d.contains_key("Opus"), "30d window drops 120-day-old Opus");
+    }
+
+    // ── Phase 10: resumable sessions ───────────────────────────────────────
+
+    fn rec_in(id: &str, ts: &str, cwd: &str) -> SessionRecord {
+        SessionRecord {
+            cwd: Some(cwd.to_string()),
+            ..rec(id, ts)
+        }
+    }
+
+    #[test]
+    fn normalize_path_folds_separators_and_trailing_slash() {
+        assert_eq!(
+            normalize_path(r"C:\Users\jakeh\Documents\GitHub\Atlas"),
+            normalize_path("C:/Users/jakeh/Documents/GitHub/Atlas/"),
+        );
+        assert_eq!(normalize_path("/repo/atlas/"), normalize_path("/repo/atlas"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn normalize_path_folds_case_on_windows() {
+        // The folder picker and the transcript disagree on drive-letter case
+        // for the same directory; both must land on the same key.
+        assert_eq!(
+            normalize_path(r"c:\users\jakeh\documents\github\atlas"),
+            normalize_path(r"C:\Users\jakeh\Documents\GitHub\Atlas"),
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn normalize_path_keeps_case_off_windows() {
+        assert_ne!(normalize_path("/repo/Atlas"), normalize_path("/repo/atlas"));
+    }
+
+    #[test]
+    fn resumable_matches_a_workspace_whose_separators_differ_from_the_transcript() {
+        let records = vec![rec_in("a", "2026-01-01T00:00:00Z", r"C:\repo\atlas")];
+        let found = resumable_for_cwd(&records, "C:/repo/atlas/");
+        assert_eq!(found.len(), 1, "backslash cwd matches a forward-slash workspace");
+        assert_eq!(found[0].session_id, "a");
+    }
+
+    #[test]
+    fn resumable_is_filtered_by_cwd_newest_first_and_capped() {
+        let mut records = Vec::new();
+        for i in 0..30 {
+            records.push(rec_in(
+                &format!("s{i:02}"),
+                &format!("2026-01-{:02}T00:00:00Z", i + 1),
+                "/repo/atlas",
+            ));
+        }
+        records.push(rec_in("other", "2026-12-31T00:00:00Z", "/repo/elsewhere"));
+
+        let found = resumable_for_cwd(&records, "/repo/atlas");
+        assert_eq!(found.len(), RESUMABLE_LIMIT, "capped at 25");
+        assert_eq!(found[0].session_id, "s29", "newest first");
+        assert!(
+            found.iter().all(|r| r.session_id != "other"),
+            "another workspace's sessions never leak in",
+        );
+        assert_eq!(found[0].user_messages, 2, "message count comes from the record");
+        assert_eq!(found[0].git_branch.as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn resumable_is_empty_for_a_workspace_with_no_history() {
+        let records = vec![rec_in("a", "2026-01-01T00:00:00Z", "/repo/atlas")];
+        assert!(resumable_for_cwd(&records, "/repo/brand-new").is_empty());
+    }
+
+    #[test]
+    fn resumable_ignores_records_with_no_cwd() {
+        let records = vec![SessionRecord {
+            cwd: None,
+            ..rec("a", "2026-01-01T00:00:00Z")
+        }];
+        assert!(resumable_for_cwd(&records, "/repo/atlas").is_empty());
     }
 }

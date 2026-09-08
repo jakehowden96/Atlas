@@ -224,6 +224,7 @@ pub fn run() {
             commands::prs::gh_viewer,
             commands::prs::open_url,
             commands::stats::get_claude_stats,
+            commands::stats::list_resumable_sessions,
             commands::session::get_session_transcript_path,
             commands::session::start_session_tail,
             commands::session::stop_session_tail,

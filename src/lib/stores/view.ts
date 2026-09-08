@@ -16,6 +16,26 @@ export const railOpen = writable(true);
 
 export const newSessionOpen = writable(false);
 
+/**
+ * What the New Session modal should be showing when it opens. Set by callers
+ * that already know the answer — the Stats screen's Recent-sessions rows open
+ * straight into Resume with that conversation picked. Null is a plain ⌘N.
+ */
+export interface NewSessionSeed {
+  /** Matched against workspace paths by folded form, not raw string. */
+  workspacePath?: string;
+  /** Present means open in Resume mode with this conversation selected. */
+  resumeSessionId?: string;
+}
+
+export const newSessionSeed = writable<NewSessionSeed | null>(null);
+
+/** Open the New Session modal, optionally pre-aimed at a workspace or session. */
+export function openNewSession(seed?: NewSessionSeed): void {
+  newSessionSeed.set(seed ?? null);
+  newSessionOpen.set(true);
+}
+
 /** The ⌘K jump-to-session palette. */
 export const jumpOpen = writable(false);
 

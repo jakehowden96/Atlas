@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { BranchInfo, GitStatus, PanelData, RepoInfo } from "../types/panel";
 import type { GhViewer, RepoPrs } from "../types/prs";
 import type { LiveSession, SessionUpdateEvent } from "../types/session";
-import type { StatsSummary } from "../types/stats";
+import type { ResumableSession, StatsSummary } from "../types/stats";
 import { log } from "./logger";
 
 export async function ptySpawn(
@@ -200,6 +200,15 @@ export async function onSessionUpdate(
 
 export async function getClaudeStats(): Promise<StatsSummary> {
   return invoke("get_claude_stats");
+}
+
+/**
+ * Prior conversations in `cwd`, newest first, for the New Session modal's
+ * Resume list. Read from the transcript cache — `claude --resume` is an
+ * interactive picker with no machine-readable output.
+ */
+export async function listResumableSessions(cwd: string): Promise<ResumableSession[]> {
+  return invoke("list_resumable_sessions", { cwd });
 }
 
 export async function onStatsUpdate(

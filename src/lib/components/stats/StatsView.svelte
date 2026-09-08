@@ -35,6 +35,7 @@
     WEEK_COUNT,
     type Range,
   } from "../../stats-derive";
+  import { openNewSession } from "../../stores/view";
   import { workspaces } from "../../stores/workspace";
   import Sparkline from "../ui/Sparkline.svelte";
   import SegmentedControl from "../ui/SegmentedControl.svelte";
@@ -417,10 +418,15 @@
         {:else}
           <div class="recent-list">
             {#each recent as session (session.sessionId)}
-              <!-- Clicking opens the New Session modal in Resume mode — phase 10. -->
+              <!-- Reopens this conversation: New Session, Resume mode, this row picked. -->
               <button
                 type="button"
                 class="recent-row"
+                onclick={() =>
+                  openNewSession({
+                    workspacePath: session.cwd ?? "",
+                    resumeSessionId: session.sessionId,
+                  })}
                 title="{sessionTitle(session.title, session.sessionId)} · {session.lastTimestamp
                   ? agoLabel(session.lastTimestamp, now)
                   : 'unknown'}{session.gitBranch ? ` · ${session.gitBranch}` : ''}"

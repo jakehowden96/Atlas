@@ -5,6 +5,7 @@ import {
   diffOpen,
   jumpOpen,
   newSessionOpen,
+  openNewSession,
   railOpen,
   showView,
 } from "./stores/view";
@@ -22,10 +23,10 @@ function mod(e: KeyboardEvent): boolean {
  * reach this handler while the terminal has focus.
  */
 export function handleGlobalKeydown(e: KeyboardEvent): boolean {
-  // ⌘N / Ctrl+N — new session
+  // ⌘N / Ctrl+N — new session, unseeded (a plain Fresh start)
   if (mod(e) && !e.shiftKey && e.key.toLowerCase() === "n") {
     e.preventDefault();
-    newSessionOpen.set(true);
+    openNewSession();
     return true;
   }
 

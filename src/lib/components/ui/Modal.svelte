@@ -95,6 +95,9 @@
     background: var(--surface);
     box-shadow: var(--shadow);
     animation: atlasRise 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    /* New Session animates 640↔860px when it switches Fresh↔Resume. Every
+       other modal has a constant width, so this is inert for them. */
+    transition: width 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
   .panel.closing {

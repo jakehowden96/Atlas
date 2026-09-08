@@ -1,12 +1,21 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { get } from "svelte/store";
 
-import { activeView, diffOpen, showView } from "../stores/view";
+import {
+  activeView,
+  diffOpen,
+  newSessionOpen,
+  newSessionSeed,
+  openNewSession,
+  showView,
+} from "../stores/view";
 
 describe("view store", () => {
   beforeEach(() => {
     activeView.set("overview");
     diffOpen.set(false);
+    newSessionOpen.set(false);
+    newSessionSeed.set(null);
   });
 
   it("defaults to overview", () => {
@@ -32,5 +41,26 @@ describe("view store", () => {
     diffOpen.set(true);
     showView("prs");
     expect(get(diffOpen)).toBe(false);
+  });
+
+  it("opens the New Session modal unseeded by default", () => {
+    openNewSession();
+    expect(get(newSessionOpen)).toBe(true);
+    expect(get(newSessionSeed)).toBeNull();
+  });
+
+  it("carries a Stats row's workspace and session into Resume mode", () => {
+    openNewSession({ workspacePath: "/repo/atlas", resumeSessionId: "uuid-1" });
+    expect(get(newSessionOpen)).toBe(true);
+    expect(get(newSessionSeed)).toEqual({
+      workspacePath: "/repo/atlas",
+      resumeSessionId: "uuid-1",
+    });
+  });
+
+  it("clears a previous seed on the next plain open", () => {
+    openNewSession({ workspacePath: "/repo/atlas", resumeSessionId: "uuid-1" });
+    openNewSession();
+    expect(get(newSessionSeed)).toBeNull();
   });
 });

@@ -68,6 +68,19 @@ export interface RecentSession {
   costEstimate: number;
 }
 
+/**
+ * A prior conversation the New Session modal can hand to `claude --resume`.
+ * Mirrors `ResumableSession` in `src-tauri/src/commands/stats.rs`.
+ */
+export interface ResumableSession {
+  /** The transcript uuid — exactly what `--resume` takes. */
+  sessionId: string;
+  title: string | null;
+  gitBranch: string | null;
+  lastTimestamp: string | null;
+  userMessages: number;
+}
+
 /** Headline numbers for one time window — one KPI strip's worth. */
 export interface RangeTotals {
   sessions: number;
