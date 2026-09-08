@@ -61,7 +61,7 @@
   /** `nav` with indices pulled back in range after the lists changed under it. */
   let view = $derived(clampState(nav, counts));
   /**
-   * "Add folder…" is an action, not a selection, so the highlight landing on it
+   * "Add workspace…" is an action, not a selection, so the highlight landing on it
    * leaves the workspace picked. Deliberately derived from `nav` and `filtered`
    * alone and never from `resumable` — the effect below writes `resumable`, and
    * reading it back here would make that effect feed itself.
@@ -303,7 +303,7 @@
           {#if addPath}
             <span class="add-label">Add <span class="add-path">{addPath}</span></span>
           {:else}
-            <span class="add-label">Add folder…</span>
+            <span class="add-label">Add workspace…</span>
           {/if}
           <span class="add-kbd">{chord("O")}</span>
         </button>

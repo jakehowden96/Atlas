@@ -133,7 +133,7 @@ describe("ageLabel", () => {
 
 describe("keyboard model", () => {
   it("moves down and up within the workspace column, wrapping past the add row", () => {
-    // 3 workspaces + the always-present "Add folder…" row = 4 stops.
+    // 3 workspaces + the always-present "Add workspace…" row = 4 stops.
     let s = state();
     for (const expected of [1, 2, 3, 0]) {
       s = moveWithin(s, counts(3, 0), 1);

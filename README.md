@@ -74,7 +74,7 @@ pnpm tauri dev
 `Esc` is passed through to Claude Code while the terminal has focus and nothing
 is open — the TUI owns it.
 
-## Changed in 5.0.0
+## Changed in 2.0.0
 
 The old shell is gone. File tabs (`Ctrl+O` / `Ctrl+S`), standalone terminal
 tabs, the workspace sidebar, and `Ctrl+Tab` / `Ctrl+1-9` tab switching were all

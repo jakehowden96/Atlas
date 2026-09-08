@@ -118,7 +118,7 @@
         </button>
       {/each}
       <div class="nav-spacer"></div>
-      <div class="version">Atlas 5.0.0 · ~/.atlas</div>
+      <div class="version">Atlas 2.0.0 · ~/.atlas</div>
     </nav>
 
     <div class="pane">
@@ -243,7 +243,7 @@
               {/each}
               <button type="button" class="add-row" onclick={() => void addWorkspaceFolder()}>
                 <span class="add-glyph"></span>
-                Add folder…
+                Add workspace…
                 <span class="add-hint">or drop a folder anywhere in Atlas</span>
               </button>
             </div>

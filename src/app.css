@@ -117,7 +117,7 @@
 }
 
 /* ── Reset ─────────────────────────────────────────────────────────────────
-   Tailwind was dropped in 5.0.0 — it was installed but never used (not one
+   Tailwind was dropped in 2.0.0 — it was installed but never used (not one
    utility class anywhere in src/). Its preflight *was* doing work, though:
    every component styles its own buttons and assumes no UA margin, padding or
    border underneath. This is that part of preflight and nothing else, so the

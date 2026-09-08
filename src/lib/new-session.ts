@@ -150,7 +150,7 @@ export function moveWithin(
   if (state.column === "resume") {
     return { ...state, resumeIndex: wrap(state.resumeIndex, counts.resumable, delta) };
   }
-  // +1 for the "Add folder…" row that always sits under the list.
+  // +1 for the "Add workspace…" row that always sits under the list.
   return { ...state, wsIndex: wrap(state.wsIndex, counts.workspaces + 1, delta) };
 }
 

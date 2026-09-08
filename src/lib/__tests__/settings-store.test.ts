@@ -203,7 +203,7 @@ describe("settings store", () => {
     });
   });
 
-  describe("the setters added in 5.0.0", () => {
+  describe("the setters added in 2.0.0", () => {
     it("persists the theme", async () => {
       allowWrites();
       await setTheme("dark");
