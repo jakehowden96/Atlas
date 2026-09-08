@@ -31,6 +31,21 @@
     return comparator ? filtered.sort(comparator) : filtered;
   });
 
+  /* Chips are filters, so a workspace with nothing open filters to an empty
+     grid — noise, not a control. Only workspaces with a session on screen get
+     a chip; the rest stay reachable through the New Session modal. */
+  let activeWorkspaces = $derived(
+    $workspaces.filter((ws) => allTiles.some((t) => t.workspacePath === ws.path)),
+  );
+
+  /* A filter pinned to a workspace that no longer has sessions would strand the
+     grid empty with no visible chip to clear it. */
+  $effect(() => {
+    if ($wsFilter !== "all" && !activeWorkspaces.some((ws) => ws.path === $wsFilter)) {
+      wsFilter.set("all");
+    }
+  });
+
   const ORDER_LABEL: Record<string, string> = {
     attention: "Sorted by attention · needs-you first",
     workspace: "Grouped by workspace",
@@ -50,7 +65,7 @@
       selected={$wsFilter === "all"}
       onClick={() => wsFilter.set("all")}
     />
-    {#each $workspaces as ws (ws.path)}
+    {#each activeWorkspaces as ws (ws.path)}
       <Chip
         label={ws.name}
         count={allTiles.filter((t) => t.workspacePath === ws.path).length}

@@ -52,32 +52,84 @@ export function buildTiles(
   diffStats: Map<string, DiffStats>,
   needsInputTabs: ReadonlySet<string>,
 ): SessionTile[] {
-  return sessions.map((live) => {
-    let workspace: Workspace | undefined;
-    let row: WorkspaceSession | undefined;
-    for (const w of workspaceList) {
-      const found = w.sessions.find((s) => s.claudeSessionId === live.sessionUuid);
-      if (found) {
-        workspace = w;
-        row = found;
-        break;
-      }
+  const liveByUuid = new Map(sessions.map((s) => [s.sessionUuid, s]));
+  const claimed = new Set<string>();
+  const tiles: SessionTile[] = [];
+
+  // Every open Atlas session gets a tile whether or not its transcript has
+  // appeared. The tail needs the file to exist before it can report anything,
+  // and transcript saving can be off entirely — neither should make a running
+  // session invisible on the Overview.
+  for (const workspace of workspaceList) {
+    for (const row of workspace.sessions) {
+      if (row.terminalTabId === null) continue; // persisted, not currently open
+      const live =
+        (row.claudeSessionId ? liveByUuid.get(row.claudeSessionId) : undefined) ??
+        pendingLive(row);
+      if (row.claudeSessionId) claimed.add(row.claudeSessionId);
+      tiles.push(toTile(live, workspace, row, diffStats, needsInputTabs));
     }
-    const tabId = row?.terminalTabId ?? null;
-    return {
-      sessionUuid: live.sessionUuid,
-      atlasSessionId: row?.id ?? "",
-      terminalTabId: tabId,
-      workspacePath: workspace?.path ?? "",
-      workspaceName: workspace?.name ?? "",
-      workspaceColour: workspace?.color ?? "var(--surface3)",
-      label: live.title ?? row?.label ?? "Session",
-      branch: live.gitBranch ?? "",
-      state: tabId !== null && needsInputTabs.has(tabId) ? "needsYou" : live.state,
-      live,
-      diff: tabId === null ? null : (diffStats.get(tabId) ?? null),
-    };
-  });
+  }
+
+  // A tailed session no workspace row owns still deserves a tile.
+  for (const live of sessions) {
+    if (claimed.has(live.sessionUuid)) continue;
+    tiles.push(toTile(live, undefined, undefined, diffStats, needsInputTabs));
+  }
+
+  return tiles;
+}
+
+/** Stand-in for a spawned session whose transcript has not arrived yet. */
+function pendingLive(row: WorkspaceSession): LiveSession {
+  const state: SessionState =
+    row.status === "error"
+      ? "error"
+      : row.status === "running" || row.status === "starting"
+        ? "running"
+        : "idle";
+  return {
+    sessionUuid: row.claudeSessionId ?? row.id,
+    state,
+    startedAt: row.createdAt,
+    lastActivity: null,
+    title: row.label,
+    model: null,
+    gitBranch: null,
+    lines: [],
+    plan: [],
+    subagents: [],
+    toolCalls: 0,
+    lastTool: null,
+    pendingTool: null,
+    outputTokens: 0,
+    costEstimate: 0,
+    peakContext: 0,
+    contextPct: 0,
+  };
+}
+
+function toTile(
+  live: LiveSession,
+  workspace: Workspace | undefined,
+  row: WorkspaceSession | undefined,
+  diffStats: Map<string, DiffStats>,
+  needsInputTabs: ReadonlySet<string>,
+): SessionTile {
+  const tabId = row?.terminalTabId ?? null;
+  return {
+    sessionUuid: live.sessionUuid,
+    atlasSessionId: row?.id ?? "",
+    terminalTabId: tabId,
+    workspacePath: workspace?.path ?? "",
+    workspaceName: workspace?.name ?? "",
+    workspaceColour: workspace?.color ?? "var(--surface3)",
+    label: live.title ?? row?.label ?? "Session",
+    branch: live.gitBranch ?? "",
+    state: tabId !== null && needsInputTabs.has(tabId) ? "needsYou" : live.state,
+    live,
+    diff: tabId === null ? null : (diffStats.get(tabId) ?? null),
+  };
 }
 
 /** Attention order. `Array.sort` is stable, so ties keep their arrival order. */

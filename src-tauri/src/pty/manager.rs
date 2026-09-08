@@ -61,6 +61,21 @@ fn find_on_path(exe: &str) -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
+/// Claude Code session markers that must not reach a session Atlas spawns.
+/// Deliberately an explicit list rather than a `CLAUDE*` prefix sweep: user
+/// configuration such as `CLAUDE_CONFIG_DIR` shares the prefix and must survive.
+const INHERITED_CLAUDE_MARKERS: &[&str] = &[
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_EFFORT",
+    "CLAUDE_PID",
+];
+
 pub struct PtyManager {
     sessions: Arc<RwLock<HashMap<u32, PtySession>>>,
     shutdown_flags: Arc<RwLock<HashMap<u32, Arc<AtomicBool>>>>,
@@ -118,6 +133,18 @@ impl PtyManager {
             if SAFE_PREFIXES.iter().any(|p| key.starts_with(p)) {
                 cmd.env(key, value);
             }
+        }
+
+        // A session Atlas spawns is a top-level Claude Code session. When Atlas
+        // itself was launched from inside one (running `pnpm tauri dev` from a
+        // Claude Code session, say), `CommandBuilder` seeds the child env from
+        // this process, so the parent's session markers leak in: Claude then
+        // sees CLAUDE_CODE_CHILD_SESSION, turns transcript saving off, and the
+        // whole live-session engine goes dark with only a warning in the pane.
+        // The messaging socket/token are worse — they are live handles to the
+        // parent session's IPC.
+        for key in INHERITED_CLAUDE_MARKERS {
+            cmd.env_remove(key);
         }
 
         // Set TERM_PROGRAM so zsh/bash emit OSC 7 (CWD reporting)
@@ -243,6 +270,35 @@ impl PtyManager {
 #[cfg(test)]
 mod tests {
     use super::default_shell;
+
+    #[test]
+    fn claude_markers_are_stripped_but_user_config_survives() {
+        use super::INHERITED_CLAUDE_MARKERS;
+        assert!(INHERITED_CLAUDE_MARKERS.contains(&"CLAUDE_CODE_CHILD_SESSION"));
+        assert!(INHERITED_CLAUDE_MARKERS.contains(&"CLAUDE_CODE_MESSAGING_TOKEN"));
+        // A prefix sweep would take this too and break the user's own config.
+        assert!(!INHERITED_CLAUDE_MARKERS.contains(&"CLAUDE_CONFIG_DIR"));
+    }
+
+    #[test]
+    fn markers_are_removed_from_a_built_command() {
+        use super::INHERITED_CLAUDE_MARKERS;
+        use portable_pty::CommandBuilder;
+
+        std::env::set_var("CLAUDE_CODE_CHILD_SESSION", "1");
+        std::env::set_var("CLAUDE_CONFIG_DIR", "/tmp/keepme");
+
+        let mut cmd = CommandBuilder::new("dummy");
+        for key in INHERITED_CLAUDE_MARKERS {
+            cmd.env_remove(key);
+        }
+
+        assert!(cmd.get_env("CLAUDE_CODE_CHILD_SESSION").is_none());
+        assert!(cmd.get_env("CLAUDE_CONFIG_DIR").is_some());
+
+        std::env::remove_var("CLAUDE_CODE_CHILD_SESSION");
+        std::env::remove_var("CLAUDE_CONFIG_DIR");
+    }
 
     #[test]
     fn default_shell_is_runnable_on_this_platform() {

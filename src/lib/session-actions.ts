@@ -114,7 +114,10 @@ export async function spawnClaudeSession(
       const sessionFlag = resumeSessionId
         ? `--resume ${resumeSessionId}`
         : `--session-id ${claudeSessionId}`;
-      const cmd = `claude ${sessionFlag}\n`;
+      /* Submit with CR, not LF: CR is what the Enter key sends and what
+         ConPTY/PSReadLine needs to run the line instead of just breaking
+         it. `submitReview.ts` already writes "\r" for the same reason. */
+      const cmd = `claude ${sessionFlag}\r`;
       // Small delay to let the shell prompt render
       setTimeout(() => {
         // Re-check: the tab may have been closed during the delay,

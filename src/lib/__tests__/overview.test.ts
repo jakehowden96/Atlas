@@ -159,7 +159,8 @@ describe("buildTiles", () => {
   });
 
   it("carries workspace identity across from the owning row", () => {
-    const [tile] = buildTiles([live("uuid-b")], workspaceList, new Map(), new Set());
+    const tiles = buildTiles([live("uuid-b")], workspaceList, new Map(), new Set());
+    const tile = tiles.find((t) => t.sessionUuid === "uuid-b");
     expect(tile).toMatchObject({
       atlasSessionId: "row-b",
       terminalTabId: "tab-b",
@@ -170,22 +171,55 @@ describe("buildTiles", () => {
   });
 
   it("still renders a session no workspace row owns", () => {
-    const [tile] = buildTiles([live("orphan")], workspaceList, new Map(), new Set());
-    expect(tile.atlasSessionId).toBe("");
-    expect(tile.terminalTabId).toBeNull();
-    expect(tile.diff).toBeNull();
-    expect(tile.label).toBe("Session");
+    const tiles = buildTiles([live("orphan")], workspaceList, new Map(), new Set());
+    const tile = tiles.find((t) => t.sessionUuid === "orphan");
+    expect(tile).toBeDefined();
+    expect(tile?.atlasSessionId).toBe("");
+    expect(tile?.terminalTabId).toBeNull();
+    expect(tile?.diff).toBeNull();
+    expect(tile?.label).toBe("Session");
+  });
+
+  /* A spawned session has a PTY long before its transcript exists, and with
+     transcript saving off it never gets one. Neither may hide it. */
+  it("renders an open session that has no transcript yet", () => {
+    const tiles = buildTiles([], workspaceList, new Map(), new Set());
+    expect(tiles).toHaveLength(2);
+    const tile = tiles.find((t) => t.sessionUuid === "uuid-a");
+    expect(tile).toMatchObject({
+      atlasSessionId: "row-a",
+      terminalTabId: "tab-a",
+      workspacePath: "/code/atlas",
+      state: "running",
+      label: "Session row-a",
+    });
+    expect(tile?.live.lines).toEqual([]);
+    expect(tile?.live.costEstimate).toBe(0);
+  });
+
+  it("does not tile a persisted session that is not open", () => {
+    const closed = [
+      workspace("/code/atlas", [
+        { id: "row-a", claudeSessionId: "uuid-a", terminalTabId: null },
+      ]),
+    ];
+    expect(buildTiles([], closed, new Map(), new Set())).toHaveLength(0);
+  });
+
+  it("does not double-count a row whose live session has arrived", () => {
+    const tiles = buildTiles([live("uuid-a")], workspaceList, new Map(), new Set());
+    expect(tiles.filter((t) => t.sessionUuid === "uuid-a")).toHaveLength(1);
   });
 
   it("prefers the transcript title, falling back to the workspace label", () => {
-    const [titled, untitled] = buildTiles(
+    const tiles = buildTiles(
       [live("uuid-a", { title: "Fix the race" }), live("uuid-b")],
       workspaceList,
       new Map(),
       new Set(),
     );
-    expect(titled.label).toBe("Fix the race");
-    expect(untitled.label).toBe("Session row-b");
+    expect(tiles.find((t) => t.sessionUuid === "uuid-a")?.label).toBe("Fix the race");
+    expect(tiles.find((t) => t.sessionUuid === "uuid-b")?.label).toBe("Session row-b");
   });
 
   it("promotes a session to needsYou when its tab was flagged by the hook", () => {

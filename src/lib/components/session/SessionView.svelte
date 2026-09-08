@@ -5,6 +5,7 @@
   import type { SessionState } from "../../../types/session";
   import { buildTiles, compareByAttention, formatElapsed, type SessionTile } from "../../overview";
   import { allowPendingTool, denyPendingTool } from "../../session-actions";
+  import { refreshPanel } from "../../ipc";
   import { filesTouched, formatTokens, tabIdForSession } from "../../session-view";
   import { liveSessionList } from "../../stores/liveSessions";
   import { panelData } from "../../stores/panel";
@@ -51,6 +52,26 @@
   // `activeTabId`, so it has to follow the focused session.
   $effect(() => {
     if (visibleTabId && get(activeTabId) !== visibleTabId) activeTabId.set(visibleTabId);
+  });
+
+  /* Prime the diff for the focused session. `sessionDiffStats` only fills from
+     `panel-update`, and nothing asks for one until the drawer opens — so the
+     header read "+0 −0" for a session with real changes until you clicked
+     Changes. Refresh once per session so the count is right on arrival. */
+  let primedFor = "";
+  $effect(() => {
+    const id = visibleTabId;
+    if (!id || id === primedFor) return;
+    primedFor = id;
+    const dir = get(tabs).find((t) => t.id === id)?.cwd ?? "";
+    if (!dir) return;
+    void refreshPanel(id, dir)
+      .then((fresh) => {
+        if (fresh && get(activeTabId) === id) panelData.set(fresh);
+      })
+      .catch(() => {
+        // `refreshPanel` logs its own failures; a background prime stays quiet.
+      });
   });
 
   let elapsed = $derived(tile ? formatElapsed(tile.live.startedAt, now) : "");
