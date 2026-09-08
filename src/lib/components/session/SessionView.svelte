@@ -10,6 +10,7 @@
   import { activeTabId, tabs } from "../../stores/terminal";
   import { activeView, diffOpen, focusedSessionId, railOpen, showView } from "../../stores/view";
   import { sessionDiffStats, workspaces } from "../../stores/workspace";
+  import ChangesDrawer from "../changes/ChangesDrawer.svelte";
   import TerminalContainer from "../terminal/TerminalContainer.svelte";
   import StatePill, { type PillState } from "../ui/StatePill.svelte";
   import ActivityRail from "./ActivityRail.svelte";
@@ -152,8 +153,10 @@
 
   <ActivityRail open={$railOpen} {tile} {now} {files} />
 
-  <!-- Phase 07 mounts the Changes drawer here, gated on `$diffOpen`. The header
-       button above and the rail's "Review →" link are its two entry points. -->
+  <!-- Slides over the whole view, so it is a sibling of `.main` and the rail.
+       The header button above and the rail's "Review →" link both toggle
+       `diffOpen`; Esc closes it first (see `shortcuts.ts`). -->
+  <ChangesDrawer open={$diffOpen} />
 </div>
 
 <style>
