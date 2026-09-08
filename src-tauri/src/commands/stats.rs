@@ -8,33 +8,10 @@ use std::sync::{mpsc, Mutex};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
 
-// ── Pricing ──────────────────────────────────────────────────────────────────
-
-struct Pricing {
-    input: f64,
-    output: f64,
-    cache_write: f64,
-    cache_read: f64,
-}
-
-/// Approximate API-equivalent pricing per million tokens.
-/// Prices are labelled as approximate in the UI; labelled per Anthropic pricing as of 2026-06.
-fn pricing_for(model: &str) -> Pricing {
-    let m = model.to_ascii_lowercase();
-    if m.contains("opus-4") || m.contains("opus-3") || m.contains("fable") {
-        // Opus 4.x + fable-5 (conservative estimate — fable pricing not yet published)
-        Pricing { input: 15.0, output: 75.0, cache_write: 18.75, cache_read: 1.5 }
-    } else if m.contains("sonnet-4") || m.contains("sonnet-3-5") || m.contains("sonnet-3") {
-        Pricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.3 }
-    } else if m.contains("haiku-4") || m.contains("haiku-3-5") {
-        Pricing { input: 0.8, output: 4.0, cache_write: 1.0, cache_read: 0.08 }
-    } else if m.contains("haiku-3") {
-        Pricing { input: 0.25, output: 1.25, cache_write: 0.3, cache_read: 0.03 }
-    } else {
-        // Unknown model — mid-range Sonnet-tier fallback
-        Pricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.3 }
-    }
-}
+use crate::transcript::{
+    assistant_model, line_type, model_family, request_key, requests_to_by_model, tool_results,
+    tool_uses, user_text, ModelSessionData, ReqData,
+};
 
 /// A "user" line can be genuinely typed by the human, or injected by a skill/hook/
 /// background-task notification. Only the former should count as "a message from you" —
@@ -53,15 +30,6 @@ fn is_human_authored(obj: &Value, content: &str) -> bool {
         return false;
     }
     !content.starts_with("<local-command-caveat>")
-}
-
-fn model_family(model: &str) -> String {
-    let m = model.to_ascii_lowercase();
-    if m.contains("opus") { "Opus".to_string() }
-    else if m.contains("fable") { "Fable".to_string() }
-    else if m.contains("sonnet") { "Sonnet".to_string() }
-    else if m.contains("haiku") { "Haiku".to_string() }
-    else { model.to_string() }
 }
 
 // ── Directory helpers ─────────────────────────────────────────────────────────
@@ -85,29 +53,6 @@ fn stats_path() -> Result<PathBuf, String> {
 const STATS_FILE_VERSION: u32 = 5;
 
 // ── Data model ────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct ModelSessionData {
-    pub assistant_msgs: u32,
-    pub output_tokens: u64,
-    pub cache_creation_tokens: u64,
-    pub cost_estimate: f64,
-    pub tool_calls: u32,
-    pub peak_context: u64,
-    /// Chars/count from the human's own messages that this model family answered
-    /// (attributed per-turn, not blindly summed across every family in the session).
-    #[serde(default)]
-    pub user_chars: u64,
-    #[serde(default)]
-    pub user_messages: u32,
-    /// Chars/count of prompts this model family sent when spawning a subagent
-    /// (the `Agent` tool's `prompt` input) — distinct from the human's own messages.
-    #[serde(default)]
-    pub subagent_prompt_chars: u64,
-    #[serde(default)]
-    pub subagent_prompt_count: u32,
-}
 
 /// One session's parsed stats. Stored in stats.json as the incremental cache.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -253,16 +198,6 @@ struct StatsFile {
 
 // ── Parsing ───────────────────────────────────────────────────────────────────
 
-/// One API request's accumulated data. Multiple assistant lines share a requestId.
-struct ReqData {
-    model: String,
-    input_tokens: u64,
-    cache_read: u64,
-    cache_create: u64,
-    output_tokens: u64,
-    tool_names: Vec<String>,
-}
-
 /// Parse assistant lines from any JSONL path into per-model usage data.
 /// Used for both the main session file and subagent files.
 fn parse_model_usage(path: &Path) -> HashMap<String, ModelSessionData> {
@@ -281,82 +216,25 @@ fn parse_model_usage(path: &Path) -> HashMap<String, ModelSessionData> {
             Ok(v) => v,
             Err(_) => continue,
         };
-        if obj.get("type").and_then(|v| v.as_str()) != Some("assistant") {
+        if line_type(&obj) != "assistant" {
             continue;
         }
         let msg = obj.get("message").unwrap_or(&Value::Null);
-        let model = msg.get("model").and_then(|v| v.as_str()).unwrap_or("");
-        if model.is_empty() || model == "<synthetic>" {
+        let Some(model) = assistant_model(&obj) else {
             continue;
-        }
-        let req_key = obj
-            .get("requestId")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .or_else(|| obj.get("uuid").and_then(|v| v.as_str()))
-            .unwrap_or("")
-            .to_string();
-        if req_key.is_empty() {
+        };
+        let Some(req_key) = request_key(&obj) else {
             continue;
-        }
-        let mut new_tools: Vec<String> = Vec::new();
-        if let Some(content) = msg.get("content").and_then(|v| v.as_array()) {
-            for item in content {
-                if item.get("type").and_then(|v| v.as_str()) == Some("tool_use") {
-                    let name = item
-                        .get("name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                        .to_string();
-                    new_tools.push(name);
-                }
-            }
-        }
-        let entry = requests.entry(req_key).or_insert_with(|| {
-            let usage = msg.get("usage").unwrap_or(&Value::Null);
-            ReqData {
-                model: model.to_string(),
-                input_tokens: usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
-                cache_read: usage
-                    .get("cache_read_input_tokens")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0),
-                cache_create: usage
-                    .get("cache_creation_input_tokens")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0),
-                output_tokens: usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
-                tool_names: Vec::new(),
-            }
-        });
+        };
+        let new_tools: Vec<String> =
+            tool_uses(msg).iter().map(|t| t.name.to_string()).collect();
+        let entry = requests
+            .entry(req_key)
+            .or_insert_with(|| ReqData::from_message(model, msg));
         entry.tool_names.extend(new_tools);
     }
 
     requests_to_by_model(requests)
-}
-
-fn requests_to_by_model(requests: HashMap<String, ReqData>) -> HashMap<String, ModelSessionData> {
-    let mut by_model: HashMap<String, ModelSessionData> = HashMap::new();
-    for data in requests.values() {
-        let ctx = data.input_tokens + data.cache_read + data.cache_create;
-        let p = pricing_for(&data.model);
-        let cost = (data.input_tokens as f64 * p.input
-            + data.cache_create as f64 * p.cache_write
-            + data.cache_read as f64 * p.cache_read
-            + data.output_tokens as f64 * p.output)
-            / 1_000_000.0;
-        let family = model_family(&data.model);
-        let entry = by_model.entry(family).or_default();
-        entry.assistant_msgs += 1;
-        entry.output_tokens += data.output_tokens;
-        entry.cache_creation_tokens += data.cache_create;
-        entry.cost_estimate += cost;
-        if ctx > entry.peak_context {
-            entry.peak_context = ctx;
-        }
-        entry.tool_calls += data.tool_names.len() as u32;
-    }
-    by_model
 }
 
 fn merge_model_data(
@@ -392,7 +270,7 @@ fn file_mtime_size(path: &Path) -> (u64, u64) {
         .unwrap_or((0, 0))
 }
 
-fn parse_session(path: &Path) -> Result<SessionRecord, String> {
+pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
     let (mtime, size) = file_mtime_size(path);
     let session_id = path
         .file_stem()
@@ -475,29 +353,20 @@ fn parse_session(path: &Path) -> Result<SessionRecord, String> {
             version = Some(v.to_string());
         }
 
-        let line_type = obj.get("type").and_then(|v| v.as_str()).unwrap_or("");
-
-        match line_type {
+        match line_type(&obj) {
             "user" => {
                 let is_meta = obj.get("isMeta").and_then(|v| v.as_bool()).unwrap_or(false);
-                let content = obj
-                    .get("message")
-                    .and_then(|m| m.get("content"))
-                    .unwrap_or(&Value::Null);
-                if !is_meta && content.is_string() {
-                    let s = content.as_str().unwrap_or("");
-                    if is_human_authored(&obj, s) {
+                if let Some(s) = user_text(&obj) {
+                    if !is_meta && is_human_authored(&obj, s) {
                         user_messages += 1;
                         let chars = s.chars().count() as u64;
                         user_chars += chars;
                         pending_user_chars += chars;
                         pending_user_messages += 1;
                     }
-                } else if let Some(arr) = content.as_array() {
-                    for item in arr {
-                        if item.get("type").and_then(|v| v.as_str()) == Some("tool_result")
-                            && item.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false)
-                        {
+                } else {
+                    for result in tool_results(&obj) {
+                        if result.is_error {
                             tool_errors += 1;
                         }
                     }
@@ -505,10 +374,9 @@ fn parse_session(path: &Path) -> Result<SessionRecord, String> {
             }
             "assistant" => {
                 let msg = obj.get("message").unwrap_or(&Value::Null);
-                let model = msg.get("model").and_then(|v| v.as_str()).unwrap_or("");
-                if model.is_empty() || model == "<synthetic>" {
+                let Some(model) = assistant_model(&obj) else {
                     continue;
-                }
+                };
                 let family = model_family(model);
 
                 // Attribute any buffered human message(s) to the model that answered them.
@@ -521,68 +389,28 @@ fn parse_session(path: &Path) -> Result<SessionRecord, String> {
                 }
 
                 // Use requestId as key; fall back to uuid if absent
-                let req_key = obj
-                    .get("requestId")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty())
-                    .or_else(|| obj.get("uuid").and_then(|v| v.as_str()))
-                    .unwrap_or("")
-                    .to_string();
-                if req_key.is_empty() {
+                let Some(req_key) = request_key(&obj) else {
                     continue;
-                }
+                };
 
                 // Collect tool_use names from this line's content (across all lines for same req)
                 let mut new_tools: Vec<String> = Vec::new();
-                if let Some(content) = msg.get("content").and_then(|v| v.as_array()) {
-                    for item in content {
-                        if item.get("type").and_then(|v| v.as_str()) == Some("tool_use") {
-                            let name = item
-                                .get("name")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("unknown")
-                                .to_string();
-                            if name == "Agent" {
-                                if let Some(prompt) = item
-                                    .get("input")
-                                    .and_then(|i| i.get("prompt"))
-                                    .and_then(|v| v.as_str())
-                                {
-                                    let entry = by_model_subagent_prompts
-                                        .entry(family.clone())
-                                        .or_insert((0, 0));
-                                    entry.0 += prompt.chars().count() as u64;
-                                    entry.1 += 1;
-                                }
-                            }
-                            new_tools.push(name);
+                for tool in tool_uses(msg) {
+                    if tool.name == "Agent" {
+                        if let Some(prompt) = tool.input.get("prompt").and_then(|v| v.as_str()) {
+                            let entry = by_model_subagent_prompts
+                                .entry(family.clone())
+                                .or_insert((0, 0));
+                            entry.0 += prompt.chars().count() as u64;
+                            entry.1 += 1;
                         }
                     }
+                    new_tools.push(tool.name.to_string());
                 }
 
-                let entry = requests.entry(req_key).or_insert_with(|| {
-                    let usage = msg.get("usage").unwrap_or(&Value::Null);
-                    ReqData {
-                        model: model.to_string(),
-                        input_tokens: usage
-                            .get("input_tokens")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0),
-                        cache_read: usage
-                            .get("cache_read_input_tokens")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0),
-                        cache_create: usage
-                            .get("cache_creation_input_tokens")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0),
-                        output_tokens: usage
-                            .get("output_tokens")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0),
-                        tool_names: Vec::new(),
-                    }
-                });
+                let entry = requests
+                    .entry(req_key)
+                    .or_insert_with(|| ReqData::from_message(model, msg));
                 entry.tool_names.extend(new_tools);
             }
             "ai-title" => {
@@ -602,18 +430,13 @@ fn parse_session(path: &Path) -> Result<SessionRecord, String> {
     let mut tool_calls: HashMap<String, u32> = HashMap::new();
 
     for data in requests.values() {
-        let ctx = data.input_tokens + data.cache_read + data.cache_create;
+        let ctx = data.context();
         if ctx > peak_context {
             peak_context = ctx;
         }
         output_tokens += data.output_tokens;
         cache_creation_tokens += data.cache_create;
-        let p = pricing_for(&data.model);
-        cost_estimate += (data.input_tokens as f64 * p.input
-            + data.cache_create as f64 * p.cache_write
-            + data.cache_read as f64 * p.cache_read
-            + data.output_tokens as f64 * p.output)
-            / 1_000_000.0;
+        cost_estimate += data.cost();
         for name in &data.tool_names {
             *tool_calls.entry(name.clone()).or_insert(0) += 1;
         }

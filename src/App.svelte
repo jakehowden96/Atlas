@@ -13,8 +13,9 @@ import { onDestroy, onMount } from "svelte";
   import SidePanel from "./lib/components/panel/SidePanel.svelte";
   import Toast from "./lib/components/Toast.svelte";
   import TerminalContainer from "./lib/components/terminal/TerminalContainer.svelte";
-  import { onClaudeNotification, onPanelUpdate, ptyKill, ptyWrite } from "./lib/ipc";
+  import { onClaudeNotification, onPanelUpdate, onSessionUpdate, ptyKill, ptyWrite, startSessionTail, stopSessionTail } from "./lib/ipc";
   import { log } from "./lib/logger";
+  import { removeLiveSession, upsertLiveSession } from "./lib/stores/liveSessions";
   import { panelData, panelVisible, togglePanel } from "./lib/stores/panel";
   import { enableNotifications, loadSettings, skipPermissions } from "./lib/stores/settings";
   import { activeTab, activeTabId, addTab, removeTab, setTabNeedsInput, setTabReady, sidebarTabOrder, tabs } from "./lib/stores/terminal";
@@ -51,6 +52,7 @@ import { onDestroy, onMount } from "svelte";
   let panelWidth = $derived(Math.round(mainStageWidth * panelFraction));
   let unlisten: UnlistenFn | null = null;
   let unlistenNotification: UnlistenFn | null = null;
+  let unlistenSession: UnlistenFn | null = null;
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   const spawningSessionIds = new Set<string>();
 
@@ -155,6 +157,9 @@ import { onDestroy, onMount } from "svelte";
         setSessionDiffStats(sessionId, null);
       }
     });
+    unlistenSession = await onSessionUpdate((_sessionUuid, session) => {
+      upsertLiveSession(session);
+    });
     unlistenNotification = await onClaudeNotification(async (event) => {
       const { session_id, notification } = event;
       // Only mark as needing input for notification types that require user action.
@@ -190,7 +195,17 @@ import { onDestroy, onMount } from "svelte";
   onDestroy(() => {
     unlisten?.();
     unlistenNotification?.();
+    unlistenSession?.();
   });
+
+  /** Drop a session's transcript tail and its live state once its PTY is gone. */
+  function endSessionTail(claudeSessionId: string | null | undefined) {
+    if (!claudeSessionId) return;
+    removeLiveSession(claudeSessionId);
+    stopSessionTail(claudeSessionId).catch((e) =>
+      log.warn("app", `stopSessionTail failed for ${claudeSessionId}: ${e}`),
+    );
+  }
 
   /**
    * Singleton PRs screen. Native Svelte view backed by `gh pr list` per
@@ -272,6 +287,10 @@ import { onDestroy, onMount } from "svelte";
             t.map((x) => (x.id === tabId && x.type === "terminal" ? { ...x, commandWrittenAt: Date.now() } : x)),
           );
           updateSessionStatus(session.id, "running");
+          // Tail the session's own transcript for structured live state.
+          startSessionTail(claudeSessionId).catch((e) =>
+            log.warn("app", `startSessionTail failed for ${claudeSessionId}: ${e}`),
+          );
           // Readiness is triggered by TerminalSession detecting Claude Code's
           // OSC title (after a 300ms gate to skip shell-emitted titles) or
           // alternate screen buffer activation. Safety fallback after 5s.
@@ -401,6 +420,7 @@ import { onDestroy, onMount } from "svelte";
         }
         if (tab) removeTab(tab.id);
       }
+      endSessionTail(session?.claudeSessionId);
       await removeSession(workspacePath, sessionId);
     }}
     on:selectWorkspace={(e) => {
@@ -421,6 +441,7 @@ import { onDestroy, onMount } from "svelte";
             }
             if (tab) removeTab(tab.id);
           }
+          endSessionTail(session.claudeSessionId);
         }
       }
       await removeWorkspace(workspacePath);

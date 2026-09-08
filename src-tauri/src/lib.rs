@@ -3,8 +3,10 @@ pub mod hook;
 mod panel;
 mod pty;
 mod session;
+mod transcript;
 
 use pty::manager::PtyManager;
+use session::manager::LiveSessionManager;
 use tauri::{Emitter, Manager};
 
 fn setup_logging() {
@@ -188,6 +190,7 @@ pub fn run() {
     extend_path_for_gui_launch();
 
     let pty_manager = PtyManager::new();
+    let live_sessions = LiveSessionManager::new();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -195,6 +198,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
         .manage(pty_manager)
+        .manage(live_sessions.clone())
         .invoke_handler(tauri::generate_handler![
             commands::terminal::pty_spawn,
             commands::terminal::pty_write,
@@ -219,6 +223,9 @@ pub fn run() {
             commands::prs::open_url,
             commands::stats::get_claude_stats,
             commands::session::get_session_transcript_path,
+            commands::session::start_session_tail,
+            commands::session::stop_session_tail,
+            commands::session::get_live_session,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -231,6 +238,14 @@ pub fn run() {
             match commands::stats::start_stats_watcher(stats_handle) {
                 Ok(watcher) => { app.manage(watcher); }
                 Err(e) => log::warn!("Failed to start stats watcher: {} — live stats updates will not work", e),
+            }
+
+            // Separate from the stats watcher above: that one debounces a full
+            // recompute at 1s, which the live session view must not wait on.
+            let live_handle = app.handle().clone();
+            match session::manager::start_live_watcher(live_handle, live_sessions) {
+                Ok(watcher) => { app.manage(watcher); }
+                Err(e) => log::warn!("Failed to start live session watcher: {} — session updates will not work", e),
             }
 
             // Back-fill stats from all historical transcripts on launch (off the UI thread).

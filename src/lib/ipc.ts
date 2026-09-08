@@ -2,6 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { BranchInfo, GitStatus, PanelData, RepoInfo } from "../types/panel";
 import type { RepoPrs } from "../types/prs";
+import type { LiveSession, SessionUpdateEvent } from "../types/session";
 import type { StatsSummary } from "../types/stats";
 import { log } from "./logger";
 
@@ -154,6 +155,34 @@ export async function getSessionTranscriptPath(
   sessionUuid: string,
 ): Promise<string | null> {
   return invoke("get_session_transcript_path", { sessionUuid });
+}
+
+/**
+ * Start tailing a session's transcript. Updates then arrive as
+ * `session-update` events until `stopSessionTail`.
+ */
+export async function startSessionTail(sessionUuid: string): Promise<void> {
+  log.info("ipc", `startSessionTail ${sessionUuid}`);
+  return invoke("start_session_tail", { sessionUuid });
+}
+
+export async function stopSessionTail(sessionUuid: string): Promise<void> {
+  return invoke("stop_session_tail", { sessionUuid });
+}
+
+/** Current live state, or null when the session is not being tailed. */
+export async function getLiveSession(
+  sessionUuid: string,
+): Promise<LiveSession | null> {
+  return invoke("get_live_session", { sessionUuid });
+}
+
+export async function onSessionUpdate(
+  callback: (sessionUuid: string, session: LiveSession) => void,
+): Promise<UnlistenFn> {
+  return listen<SessionUpdateEvent>("session-update", (event) => {
+    callback(event.payload.session_uuid, event.payload.session);
+  });
 }
 
 export async function getClaudeStats(): Promise<StatsSummary> {
