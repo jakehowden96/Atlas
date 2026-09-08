@@ -198,7 +198,6 @@
     if (!ws || !canStart) return;
     const resumeSessionId = pickedResume?.sessionId;
     close();
-    showToast(`Starting in ${ws.name}`, { type: "info" });
     try {
       // Reattach the workspace row that already owns this conversation rather
       // than minting a second row for the same transcript.

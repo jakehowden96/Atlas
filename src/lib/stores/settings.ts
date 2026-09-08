@@ -15,8 +15,10 @@ export const enableNotifications = writable(true);
 export const watchedRepos = writable<string[]>([]);
 /** How often the Pull requests screen re-polls `gh`, in minutes. */
 export const prRefreshMinutes = writable<PrRefreshMinutes>(3);
-/** xterm font size in px. The design specifies 12.5 for the terminal pane. */
-export const terminalFontSize = writable(12.5);
+/** xterm font size in px. The design handoff specifies 12.5, but xterm derives
+    cell metrics from this and a fractional size rounds unevenly across rows, so
+    the terminal pane uses whole pixels. */
+export const terminalFontSize = writable(13);
 /** A short ping when a permission prompt appears. */
 export const soundOnNeedsYou = writable(false);
 /** Overview tile order. "attention" is the design default. */
@@ -120,7 +122,8 @@ async function persistSettings() {
 }
 
 export function clampFontSize(size: number): number {
-  return Math.min(MAX_TERMINAL_FONT_SIZE, Math.max(MIN_TERMINAL_FONT_SIZE, size));
+  const whole = Math.round(size);
+  return Math.min(MAX_TERMINAL_FONT_SIZE, Math.max(MIN_TERMINAL_FONT_SIZE, whole));
 }
 
 export async function setEnableNotifications(value: boolean) {

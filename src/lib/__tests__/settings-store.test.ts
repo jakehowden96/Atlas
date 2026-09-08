@@ -59,7 +59,7 @@ describe("settings store", () => {
     watchedRepos.set([]);
     themeMode.set("system");
     soundOnNeedsYou.set(false);
-    terminalFontSize.set(12.5);
+    terminalFontSize.set(13);
     overviewOrdering.set("attention");
     prRefreshMinutes.set(3);
     autoAddReposFromWorkspaces.set(false);
@@ -111,7 +111,7 @@ describe("settings store", () => {
       // Absent keys keep their defaults rather than becoming undefined.
       expect(get(themeMode)).toBe("system");
       expect(get(soundOnNeedsYou)).toBe(false);
-      expect(get(terminalFontSize)).toBe(12.5);
+      expect(get(terminalFontSize)).toBe(13);
       expect(get(overviewOrdering)).toBe("attention");
       expect(get(prRefreshMinutes)).toBe(3);
       expect(get(autoAddReposFromWorkspaces)).toBe(false);
@@ -225,6 +225,16 @@ describe("settings store", () => {
 
       await setTerminalFontSize(1);
       expect(get(terminalFontSize)).toBe(8);
+    });
+
+    it("rounds fractional sizes to whole pixels", async () => {
+      allowWrites();
+      // xterm derives cell metrics from the font size; a fractional value
+      // rounds unevenly across rows and misaligns box-drawing glyphs.
+      await setTerminalFontSize(12.5);
+      expect(get(terminalFontSize)).toBe(13);
+      await setTerminalFontSize(13.4);
+      expect(get(terminalFontSize)).toBe(13);
     });
 
     it("persists the overview ordering", async () => {

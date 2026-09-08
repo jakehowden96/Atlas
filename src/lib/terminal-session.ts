@@ -66,7 +66,10 @@ export class TerminalSession {
     this.terminal = new Terminal({
       cursorBlink: true,
       fontSize: get(terminalFontSize),
-      lineHeight: 1.65,
+      /* Claude Code's TUI draws box- and half-block art that must tile
+         vertically; a loose line height leaves gaps between rows and breaks
+         the banner. 1.2 keeps the pane readable without splitting glyphs. */
+      lineHeight: 1.2,
       fontFamily: "'Geist Mono Variable', 'Geist Mono', monospace",
       theme: activeXtermTheme(get(themeMode)),
       allowProposedApi: true,

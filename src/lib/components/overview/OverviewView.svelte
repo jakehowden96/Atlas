@@ -89,7 +89,9 @@
           </button>
         </div>
         <div class="hints">
-          <span>{chord("N")} new</span><span>{chord("K")} jump</span><span>{chord(",")} settings</span>
+          <span><kbd>{chord("N")}</kbd> new</span>
+          <span><kbd>{chord("K")}</kbd> jump</span>
+          <span><kbd>{chord(",")}</kbd> settings</span>
         </div>
       </div>
     </div>
@@ -214,5 +216,22 @@
     color: var(--muted);
     font-family: var(--font-mono);
     font-size: 11px;
+  }
+
+  .hints span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  /* Without a chip the comma in "Ctrl+," runs into the label after it. */
+  .hints kbd {
+    padding: 1px 5px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-xs);
+    background: var(--surface);
+    font: inherit;
+    font-size: 10px;
+    color: var(--text);
   }
 </style>
