@@ -20,7 +20,7 @@
   import { prRefreshMinutes, settingsOpen } from "../../stores/settings";
   import { showToast } from "../../stores/toast";
   import { showView } from "../../stores/view";
-  import { workspaces } from "../../stores/workspace";
+  import { visibleWorkspaces } from "../../stores/workspace";
   import { formatAgo } from "../../format";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
   import type { Pr } from "../../../types/prs";
@@ -41,7 +41,7 @@
   // Resolve each workspace's origin remote so repo cards know where a session
   // would start. Cached in the store, so this only shells out for new paths.
   $effect(() => {
-    void loadWorkspaceSlugs($workspaces.map((w) => w.path));
+    void loadWorkspaceSlugs($visibleWorkspaces.map((w) => w.path));
   });
 
   const viewerLogin = $derived($prViewer?.login ?? null);
@@ -75,7 +75,7 @@
   function workspaceFor(repo: string) {
     const slugs = $repoSlugsByWorkspace;
     const slug = repo.toLowerCase();
-    return $workspaces.find((w) => slugs[w.path]?.toLowerCase() === slug) ?? null;
+    return $visibleWorkspaces.find((w) => slugs[w.path]?.toLowerCase() === slug) ?? null;
   }
 
   function relativeTime(iso: string, ref: number): string {

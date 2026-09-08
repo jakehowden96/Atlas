@@ -1,4 +1,4 @@
-import { writable, get } from "svelte/store";
+import { writable, derived, get } from "svelte/store";
 import { BaseDirectory, readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs";
 import { log } from "../logger";
 import { basename } from "../format";
@@ -39,6 +39,21 @@ const STORAGE_DIR = ".atlas";
 const STORAGE_FILE = ".atlas/workspaces.json";
 
 export const workspaces = writable<Workspace[]>([]);
+
+/**
+ * Paths of workspaces removed from view. Removal is a hide, not a delete: the
+ * rows stay in `workspaces` so their sessions keep running and Undo has
+ * something to come back to, and the folder on disk is never touched.
+ */
+export const removedWorkspaces = writable<string[]>([]);
+
+/** What the UI lists. Every consumer reads this; `workspaces` is the raw
+ *  store the persistence and undo paths work against. */
+export const visibleWorkspaces = derived(
+  [workspaces, removedWorkspaces],
+  ([$workspaces, $removed]) => $workspaces.filter((w) => !$removed.includes(w.path)),
+);
+
 export const activeWorkspacePath = writable("");
 export const activeSessionId = writable("");
 
@@ -80,7 +95,10 @@ export async function loadWorkspaces() {
     const fileExists = await exists(STORAGE_FILE, { baseDir: BaseDirectory.Home });
     if (!fileExists) return;
     const raw = await readTextFile(STORAGE_FILE, { baseDir: BaseDirectory.Home });
-    const data = JSON.parse(raw) as Workspace[];
+    // Files written before workspaces could be hidden are a bare array.
+    const parsed = JSON.parse(raw) as Workspace[] | StoredWorkspaces;
+    const data = Array.isArray(parsed) ? parsed : (parsed.workspaces ?? []);
+    removedWorkspaces.set(Array.isArray(parsed) ? [] : (parsed.removedWorkspaces ?? []));
     log.info("workspace", `parsed ${data.length} workspaces`);
     const seen: Workspace[] = [];
     for (const ws of data) {
@@ -109,10 +127,20 @@ export async function loadWorkspaces() {
   }
 }
 
+/** The on-disk shape. A hide has to outlive a restart, so it is written
+ *  alongside the workspaces rather than kept in memory. */
+interface StoredWorkspaces {
+  workspaces?: Workspace[];
+  removedWorkspaces?: string[];
+}
+
 async function persist() {
   try {
     await ensureDir();
-    const data = get(workspaces);
+    const data: StoredWorkspaces = {
+      workspaces: get(workspaces),
+      removedWorkspaces: get(removedWorkspaces),
+    };
     await writeTextFile(STORAGE_FILE, JSON.stringify(data, null, 2), {
       baseDir: BaseDirectory.Home,
     });
@@ -161,6 +189,36 @@ export async function addWorkspace(path: string): Promise<boolean> {
 export async function removeWorkspace(path: string) {
   log.info("workspace", `removeWorkspace: ${path}`);
   workspaces.update((ws) => ws.filter((w) => w.path !== path));
+  await persist();
+}
+
+/**
+ * Take a workspace out of the UI without deleting anything. Its sessions stay
+ * in the store and keep running; only the listings stop showing it.
+ */
+export async function hideWorkspace(path: string) {
+  let changed = false;
+  removedWorkspaces.update((removed) => {
+    if (removed.includes(path)) return removed;
+    changed = true;
+    return [...removed, path];
+  });
+  if (!changed) return;
+  log.info("workspace", `hideWorkspace: ${path}`);
+  await persist();
+}
+
+/** Undo a hide. The workspace returns in its original position, because it
+ *  never left `workspaces` — only the hidden list is edited. */
+export async function unhideWorkspace(path: string) {
+  let changed = false;
+  removedWorkspaces.update((removed) => {
+    if (!removed.includes(path)) return removed;
+    changed = true;
+    return removed.filter((p) => p !== path);
+  });
+  if (!changed) return;
+  log.info("workspace", `unhideWorkspace: ${path}`);
   await persist();
 }
 

@@ -10,7 +10,7 @@
   import { liveSessionList } from "../../stores/liveSessions";
   import { tabs } from "../../stores/terminal";
   import { focusedSessionId, jumpOpen, showView } from "../../stores/view";
-  import { sessionDiffStats, workspaces } from "../../stores/workspace";
+  import { sessionDiffStats, visibleWorkspaces } from "../../stores/workspace";
   import Modal from "../ui/Modal.svelte";
 
   let query = $state("");
@@ -21,7 +21,7 @@
     new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)),
   );
   let tiles = $derived(
-    [...buildTiles($liveSessionList, $workspaces, $sessionDiffStats, needsInputTabs)].sort(
+    [...buildTiles($liveSessionList, $visibleWorkspaces, $sessionDiffStats, needsInputTabs)].sort(
       compareByAttention,
     ),
   );

@@ -11,6 +11,7 @@ import { get } from "svelte/store";
 import { ptyKill, ptyWrite, startSessionTail, stopSessionTail } from "./ipc";
 import { log } from "./logger";
 import { removeLiveSession } from "./stores/liveSessions";
+import { showToast } from "./stores/toast";
 import { tailTranscripts } from "./stores/settings";
 import { focusedSessionId, showView } from "./stores/view";
 import {
@@ -29,9 +30,10 @@ import {
   addSession,
   addWorkspace,
   detachSession,
-  removeWorkspace,
+  hideWorkspace,
   resumeSession,
   stripBundleExtension,
+  unhideWorkspace,
   updateSessionStatus,
   workspaces,
 } from "./stores/workspace";
@@ -190,22 +192,23 @@ export async function closeSession(sessionId: string) {
   }
 }
 
-/** Remove a workspace, tearing down every session it owns first. */
-export async function deleteWorkspaceCascade(workspacePath: string) {
-  const ws = get(workspaces).find((w) => w.path === workspacePath);
-  if (ws) {
-    for (const session of ws.sessions) {
-      if (session.terminalTabId) {
-        await closeSessionTab(session.terminalTabId);
-      }
-      endSessionTail(session.claudeSessionId);
-    }
-  }
-  await removeWorkspace(workspacePath);
-  if (get(activeWorkspacePath) === workspacePath) {
-    activeWorkspacePath.set("");
-    activeSessionId.set("");
-  }
+/**
+ * Take a workspace out of the UI, with a 6s Undo.
+ *
+ * Nothing is destroyed: the folder on disk is untouched, and the workspace's
+ * sessions keep running with their terminal tabs and transcript tails intact.
+ * That is deliberate — it is what Undo comes back to.
+ */
+export async function removeWorkspaceWithUndo(workspacePath: string) {
+  const name =
+    get(workspaces).find((w) => w.path === workspacePath)?.name ??
+    stripBundleExtension(basename(workspacePath));
+  await hideWorkspace(workspacePath);
+  showToast(`${name} removed`, {
+    type: "info",
+    body: "Its sessions are hidden. The folder is untouched.",
+    action: { label: "Undo", run: () => void unhideWorkspace(workspacePath) },
+  });
 }
 
 /* ── Permission prompts ─────────────────────────────────────────────────────
