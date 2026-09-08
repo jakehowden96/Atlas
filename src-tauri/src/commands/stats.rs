@@ -50,7 +50,7 @@ fn stats_path() -> Result<PathBuf, String> {
 
 // ── Version ───────────────────────────────────────────────────────────────────
 
-const STATS_FILE_VERSION: u32 = 5;
+const STATS_FILE_VERSION: u32 = 6;
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
@@ -78,6 +78,12 @@ pub struct SessionRecord {
     pub subagents: u32,
     pub tool_calls: HashMap<String, u32>,
     pub tool_errors: u32,
+    /// Errored `tool_result`s resolved back to the tool that produced them, so
+    /// the dashboard can show a per-tool error rate rather than one session-wide
+    /// scalar. Sums to `tool_errors` minus any result whose `tool_use_id` had no
+    /// matching `tool_use` block in this file (a subagent's, say).
+    #[serde(default)]
+    pub tool_errors_by_name: HashMap<String, u32>,
     pub by_model: HashMap<String, ModelSessionData>,
     #[serde(default)]
     pub by_model_subagents: HashMap<String, ModelSessionData>,
@@ -128,6 +134,10 @@ pub struct ProjectStats {
     pub sessions: u32,
     pub output_tokens: u64,
     pub user_messages: u32,
+    #[serde(default)]
+    pub cost: f64,
+    #[serde(default)]
+    pub subagents: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -136,6 +146,13 @@ pub struct DayStats {
     pub sessions: u32,
     pub output_tokens: u64,
     pub user_messages: u32,
+    #[serde(default)]
+    pub cost: f64,
+    /// Largest single-session peak that day, not a sum.
+    #[serde(default)]
+    pub peak_context: u64,
+    #[serde(default)]
+    pub subagents: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -147,6 +164,105 @@ pub struct WeekStats {
     /// model family -> number of subagent invocations that week using that family
     #[serde(default)]
     pub by_model_subagents: HashMap<String, u32>,
+}
+
+/// A session as the Recent-sessions table needs it. Deliberately a projection
+/// of `SessionRecord` and not the record itself: `SessionRecord.path` is an
+/// absolute transcript path and must not cross IPC.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentSession {
+    pub session_id: String,
+    pub title: Option<String>,
+    pub cwd: Option<String>,
+    pub git_branch: Option<String>,
+    /// Dominant model family for the session — the one with the most output tokens.
+    pub model: Option<String>,
+    pub last_timestamp: Option<String>,
+    pub duration_secs: u64,
+    pub output_tokens: u64,
+    pub cost_estimate: f64,
+}
+
+impl RecentSession {
+    fn from_record(rec: &SessionRecord) -> Self {
+        // Dominant family = most output tokens; ties broken by name so the
+        // choice is stable across runs.
+        let model = rec
+            .by_model
+            .iter()
+            .max_by(|(a_name, a), (b_name, b)| {
+                a.output_tokens
+                    .cmp(&b.output_tokens)
+                    .then_with(|| b_name.cmp(a_name))
+            })
+            .map(|(family, _)| family.clone());
+        RecentSession {
+            session_id: rec.session_id.clone(),
+            title: rec.title.clone(),
+            cwd: rec.cwd.clone(),
+            git_branch: rec.git_branch.clone(),
+            model,
+            last_timestamp: rec.last_timestamp.clone(),
+            duration_secs: rec.duration_secs,
+            output_tokens: rec.output_tokens,
+            cost_estimate: rec.cost_estimate,
+        }
+    }
+}
+
+/// How many sessions the Recent-sessions table is given.
+const RECENT_SESSION_LIMIT: usize = 50;
+
+/// Headline numbers for one time window. The KPI strip renders one of these
+/// against the equally-sized window immediately before it.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RangeTotals {
+    pub sessions: u32,
+    pub user_messages: u64,
+    pub output_tokens: u64,
+    pub cost: f64,
+    /// Largest single-session peak in the window, not a sum.
+    pub peak_context: u64,
+    pub subagents: u32,
+}
+
+/// Everything the dashboard shows for one window, accumulated in a single pass.
+/// `finish` moves the pieces onto `StatsSummary` under the right names.
+#[derive(Default)]
+struct WindowAcc {
+    totals: RangeTotals,
+    tool_usage: HashMap<String, u32>,
+    tool_errors: HashMap<String, u32>,
+    by_project: HashMap<String, ProjectStats>,
+}
+
+impl WindowAcc {
+    fn add(&mut self, rec: &SessionRecord) {
+        self.totals.sessions += 1;
+        self.totals.user_messages += rec.user_messages as u64;
+        self.totals.output_tokens += rec.output_tokens;
+        self.totals.cost += rec.cost_estimate;
+        self.totals.subagents += rec.subagents;
+        if rec.peak_context > self.totals.peak_context {
+            self.totals.peak_context = rec.peak_context;
+        }
+        for (tool, count) in &rec.tool_calls {
+            *self.tool_usage.entry(tool.clone()).or_insert(0) += count;
+        }
+        for (tool, count) in &rec.tool_errors_by_name {
+            *self.tool_errors.entry(tool.clone()).or_insert(0) += count;
+        }
+        if let Some(cwd) = &rec.cwd {
+            let ps = self.by_project.entry(cwd.clone()).or_default();
+            ps.sessions += 1;
+            ps.output_tokens += rec.output_tokens;
+            ps.user_messages += rec.user_messages;
+            ps.cost += rec.cost_estimate;
+            ps.subagents += rec.subagents;
+        }
+    }
 }
 
 /// The presentable summary returned to the frontend.
@@ -179,9 +295,40 @@ pub struct StatsSummary {
     #[serde(default)]
     pub by_model_subagents_7d: HashMap<String, ModelStats>,
     pub tool_usage: HashMap<String, u32>,
+    /// Same keys as `tool_usage`, counting errored results per tool name.
+    #[serde(default)]
+    pub tool_errors: HashMap<String, u32>,
+    #[serde(default)]
+    pub tool_usage_30d: HashMap<String, u32>,
+    #[serde(default)]
+    pub tool_errors_30d: HashMap<String, u32>,
+    #[serde(default)]
+    pub tool_usage_7d: HashMap<String, u32>,
+    #[serde(default)]
+    pub tool_errors_7d: HashMap<String, u32>,
     pub by_project: HashMap<String, ProjectStats>,
+    #[serde(default)]
+    pub by_project_30d: HashMap<String, ProjectStats>,
+    #[serde(default)]
+    pub by_project_7d: HashMap<String, ProjectStats>,
     pub by_day: HashMap<String, DayStats>,
     pub by_week: HashMap<String, WeekStats>,
+    /// The 50 newest sessions, newest first. A trimmed projection — see `RecentSession`.
+    #[serde(default)]
+    pub recent_sessions: Vec<RecentSession>,
+    /// KPI-strip windows. `totals_prev_*` is the equally-sized window immediately
+    /// before, which is what the delta badges compare against. All-time has no
+    /// previous window and therefore no delta.
+    #[serde(default)]
+    pub totals_all: RangeTotals,
+    #[serde(default)]
+    pub totals_30d: RangeTotals,
+    #[serde(default)]
+    pub totals_prev_30d: RangeTotals,
+    #[serde(default)]
+    pub totals_7d: RangeTotals,
+    #[serde(default)]
+    pub totals_prev_7d: RangeTotals,
     pub versions: Vec<String>,
     pub generated_at: String,
 }
@@ -309,6 +456,11 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
     let mut user_messages: u32 = 0;
     let mut user_chars: u64 = 0;
     let mut tool_errors: u32 = 0;
+    let mut tool_errors_by_name: HashMap<String, u32> = HashMap::new();
+    // `tool_use.id` -> tool name, so an errored `tool_result` can be charged to
+    // the tool that produced it. A transcript is append-only and chronological,
+    // so the `tool_use` is always already seen by the time its result arrives.
+    let mut tool_name_by_id: HashMap<String, String> = HashMap::new();
 
     // Buffered until the next assistant turn, so chars are attributed to whichever
     // model family actually answered — not summed into every family in the session.
@@ -368,6 +520,12 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
                     for result in tool_results(&obj) {
                         if result.is_error {
                             tool_errors += 1;
+                            // An id with no matching `tool_use` in this file (a
+                            // subagent's, say) still counts session-wide but has
+                            // no tool to charge.
+                            if let Some(name) = tool_name_by_id.get(result.tool_use_id) {
+                                *tool_errors_by_name.entry(name.clone()).or_insert(0) += 1;
+                            }
                         }
                     }
                 }
@@ -404,6 +562,9 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
                             entry.0 += prompt.chars().count() as u64;
                             entry.1 += 1;
                         }
+                    }
+                    if !tool.id.is_empty() {
+                        tool_name_by_id.insert(tool.id.to_string(), tool.name.to_string());
                     }
                     new_tools.push(tool.name.to_string());
                 }
@@ -527,6 +688,7 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
         subagents,
         tool_calls,
         tool_errors,
+        tool_errors_by_name,
         by_model,
         by_model_subagents,
         subagent_invocations,
@@ -639,6 +801,9 @@ fn aggregate(records: &[SessionRecord]) -> StatsSummary {
     summary.generated_at = now.to_rfc3339();
     let cutoff_30d = now - chrono::Duration::days(30);
     let cutoff_7d = now - chrono::Duration::days(7);
+    // The equally-sized window immediately before each of the above.
+    let cutoff_prev_30d = now - chrono::Duration::days(60);
+    let cutoff_prev_7d = now - chrono::Duration::days(14);
 
     let mut peak_sum: u64 = 0;
     let mut versions_set: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -650,6 +815,16 @@ fn aggregate(records: &[SessionRecord]) -> StatsSummary {
     let mut subagent_acc: HashMap<String, ModelStats> = HashMap::new();
     let mut subagent_acc_30d: HashMap<String, ModelStats> = HashMap::new();
     let mut subagent_acc_7d: HashMap<String, ModelStats> = HashMap::new();
+
+    // Window accumulators: all-time, the two live windows, and the two windows
+    // immediately before them that the KPI deltas compare against.
+    let mut win_all = WindowAcc::default();
+    let mut win_30d = WindowAcc::default();
+    let mut win_prev_30d = WindowAcc::default();
+    let mut win_7d = WindowAcc::default();
+    let mut win_prev_7d = WindowAcc::default();
+
+    let mut recent: Vec<&SessionRecord> = Vec::with_capacity(records.len());
 
     for rec in records {
         summary.total_sessions += 1;
@@ -665,17 +840,8 @@ fn aggregate(records: &[SessionRecord]) -> StatsSummary {
         summary.total_tool_errors += rec.tool_errors;
         summary.total_subagents += rec.subagents;
 
-        for (tool, count) in &rec.tool_calls {
-            *summary.tool_usage.entry(tool.clone()).or_insert(0) += count;
-        }
-
-        // Per project
-        if let Some(cwd) = &rec.cwd {
-            let ps = summary.by_project.entry(cwd.clone()).or_default();
-            ps.sessions += 1;
-            ps.output_tokens += rec.output_tokens;
-            ps.user_messages += rec.user_messages;
-        }
+        win_all.add(rec);
+        recent.push(rec);
 
         // Per day
         if let Some(ts) = &rec.first_timestamp {
@@ -685,6 +851,11 @@ fn aggregate(records: &[SessionRecord]) -> StatsSummary {
                 ds.sessions += 1;
                 ds.output_tokens += rec.output_tokens;
                 ds.user_messages += rec.user_messages;
+                ds.cost += rec.cost_estimate;
+                ds.subagents += rec.subagents;
+                if rec.peak_context > ds.peak_context {
+                    ds.peak_context = rec.peak_context;
+                }
             }
         }
 
@@ -704,10 +875,16 @@ fn aggregate(records: &[SessionRecord]) -> StatsSummary {
             if dt >= cutoff_30d {
                 accumulate_model(&mut model_acc_30d, rec);
                 accumulate_subagent_model(&mut subagent_acc_30d, rec);
+                win_30d.add(rec);
+            } else if dt >= cutoff_prev_30d {
+                win_prev_30d.add(rec);
             }
             if dt >= cutoff_7d {
                 accumulate_model(&mut model_acc_7d, rec);
                 accumulate_subagent_model(&mut subagent_acc_7d, rec);
+                win_7d.add(rec);
+            } else if dt >= cutoff_prev_7d {
+                win_prev_7d.add(rec);
             }
         }
 
@@ -728,6 +905,29 @@ fn aggregate(records: &[SessionRecord]) -> StatsSummary {
             }
         }
     }
+
+    summary.totals_all = win_all.totals;
+    summary.tool_usage = win_all.tool_usage;
+    summary.tool_errors = win_all.tool_errors;
+    summary.by_project = win_all.by_project;
+    summary.totals_30d = win_30d.totals;
+    summary.tool_usage_30d = win_30d.tool_usage;
+    summary.tool_errors_30d = win_30d.tool_errors;
+    summary.by_project_30d = win_30d.by_project;
+    summary.totals_7d = win_7d.totals;
+    summary.tool_usage_7d = win_7d.tool_usage;
+    summary.tool_errors_7d = win_7d.tool_errors;
+    summary.by_project_7d = win_7d.by_project;
+    summary.totals_prev_30d = win_prev_30d.totals;
+    summary.totals_prev_7d = win_prev_7d.totals;
+
+    // Newest first; the table only ever shows a page of them.
+    recent.sort_by(|a, b| b.last_timestamp.cmp(&a.last_timestamp));
+    summary.recent_sessions = recent
+        .into_iter()
+        .take(RECENT_SESSION_LIMIT)
+        .map(RecentSession::from_record)
+        .collect();
 
     // Derived averages
     if summary.total_sessions > 0 {
@@ -762,6 +962,20 @@ fn aggregate(records: &[SessionRecord]) -> StatsSummary {
 
 static RECOMPUTE_LOCK: Mutex<()> = Mutex::new(());
 
+/// The reusable half of an on-disk stats.json, keyed by transcript path.
+///
+/// Only a file written by *this* `STATS_FILE_VERSION` is reused. An older file
+/// would deserialize with `Default`s for every field added since, so the numbers
+/// would be silently wrong rather than merely missing — an unrecognised version
+/// must force a full re-parse instead.
+fn cache_from_json(json: &str) -> HashMap<String, SessionRecord> {
+    serde_json::from_str::<StatsFile>(json)
+        .ok()
+        .filter(|f| f.version == STATS_FILE_VERSION)
+        .map(|f| f.sessions.into_iter().map(|s| (s.path.clone(), s)).collect())
+        .unwrap_or_default()
+}
+
 /// Walk all session files, re-parse changed ones, aggregate, write stats.json.
 pub fn recompute() -> Result<StatsSummary, String> {
     let _guard = RECOMPUTE_LOCK.lock().map_err(|e| e.to_string())?;
@@ -773,13 +987,8 @@ pub fn recompute() -> Result<StatsSummary, String> {
 
     let stats_path = stats_path()?;
 
-    // Load existing cache — only reuse when the file version matches; a version bump
-    // forces a full re-parse so new fields (e.g. user_chars) are back-filled.
-    let cache: HashMap<String, SessionRecord> = std::fs::read_to_string(&stats_path)
-        .ok()
-        .and_then(|s| serde_json::from_str::<StatsFile>(&s).ok())
-        .filter(|f| f.version == STATS_FILE_VERSION)
-        .map(|f| f.sessions.into_iter().map(|s| (s.path.clone(), s)).collect())
+    let cache = std::fs::read_to_string(&stats_path)
+        .map(|s| cache_from_json(&s))
         .unwrap_or_default();
 
     let session_files = collect_session_files(&projects_dir);
@@ -853,7 +1062,12 @@ fn is_session_jsonl(path: &Path) -> bool {
             .any(|c| c.as_os_str() == "subagents")
 }
 
-pub fn start_stats_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String> {
+/// Holds the stats watcher alive for the life of the app. `Manager::manage` is
+/// keyed by type, so a bare `RecommendedWatcher` here would collide with the
+/// panel watcher's and be dropped on registration — taking `stats-update` with it.
+pub struct StatsWatcher(#[allow(dead_code)] RecommendedWatcher);
+
+pub fn start_stats_watcher(app_handle: AppHandle) -> Result<StatsWatcher, String> {
     let projects_dir = claude_projects_dir()?;
     std::fs::create_dir_all(&projects_dir).map_err(|e| e.to_string())?;
 
@@ -899,7 +1113,7 @@ pub fn start_stats_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, 
         }
     });
 
-    Ok(watcher)
+    Ok(StatsWatcher(watcher))
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -1065,6 +1279,199 @@ mod tests {
         assert_eq!(rec.user_chars, 11, "\"hello there\" is 11 chars");
     }
 
+    // ── Phase 09: per-tool errors, workspace cost, ranges, recent sessions ──
+
+    /// A record with every field filled in; callers tweak the ones they care about.
+    fn rec(id: &str, ts: &str) -> SessionRecord {
+        SessionRecord {
+            session_id: id.to_string(),
+            path: format!("/fake/{id}.jsonl"),
+            mtime: 0,
+            size: 0,
+            title: Some(format!("title {id}")),
+            cwd: Some("/repo/atlas".to_string()),
+            git_branch: Some("main".to_string()),
+            version: None,
+            first_timestamp: Some(ts.to_string()),
+            last_timestamp: Some(ts.to_string()),
+            duration_secs: 60,
+            user_messages: 2,
+            user_chars: 10,
+            assistant_messages: 1,
+            peak_context: 1000,
+            output_tokens: 100,
+            cache_creation_tokens: 0,
+            cost_estimate: 1.0,
+            subagents: 1,
+            tool_calls: HashMap::from([("Bash".to_string(), 4)]),
+            tool_errors: 1,
+            tool_errors_by_name: HashMap::from([("Bash".to_string(), 1)]),
+            by_model: HashMap::from([("Sonnet".to_string(), ModelSessionData::default())]),
+            by_model_subagents: HashMap::new(),
+            subagent_invocations: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn tool_errors_are_attributed_to_the_tool_that_produced_them() {
+        // Bash errors, Read succeeds, and a result whose tool_use_id was never
+        // seen counts session-wide but is charged to no tool.
+        let f = write_lines(&[
+            r#"{"type":"assistant","requestId":"r1","message":{"model":"claude-sonnet-4-6","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}},{"type":"tool_use","id":"t2","name":"Read","input":{}}],"usage":{"input_tokens":10,"output_tokens":10}},"timestamp":"2026-01-01T00:00:00Z","cwd":"/tmp"}"#,
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","is_error":true}]},"timestamp":"2026-01-01T00:00:01Z","cwd":"/tmp"}"#,
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t2","is_error":false}]},"timestamp":"2026-01-01T00:00:02Z","cwd":"/tmp"}"#,
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"orphan","is_error":true}]},"timestamp":"2026-01-01T00:00:03Z","cwd":"/tmp"}"#,
+        ]);
+        let rec = parse_session(f.path()).unwrap();
+        assert_eq!(rec.tool_errors, 2, "both errored results still count session-wide");
+        assert_eq!(rec.tool_errors_by_name.get("Bash").copied(), Some(1));
+        assert_eq!(rec.tool_errors_by_name.get("Read").copied(), None);
+        assert_eq!(rec.tool_errors_by_name.len(), 1, "the orphan id is charged to no tool");
+    }
+
+    #[test]
+    fn tool_errors_match_the_real_transcript_fixture() {
+        // tests/fixtures/session.jsonl: 14 Bash calls of which exactly one errored.
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("session.jsonl");
+        let rec = parse_session(&path).unwrap();
+        assert_eq!(rec.tool_calls.get("Bash").copied(), Some(14));
+        assert_eq!(rec.tool_errors_by_name.get("Bash").copied(), Some(1));
+        assert_eq!(rec.tool_errors, 1);
+        assert!(
+            !rec.tool_errors_by_name.contains_key("Read"),
+            "Read never errored in the fixture"
+        );
+    }
+
+    #[test]
+    fn by_project_carries_cost_and_subagents() {
+        let mut a = rec("a", "2026-01-01T00:00:00Z");
+        a.cwd = Some("/repo/one".to_string());
+        a.cost_estimate = 2.5;
+        a.subagents = 3;
+        let mut b = rec("b", "2026-01-02T00:00:00Z");
+        b.cwd = Some("/repo/one".to_string());
+        b.cost_estimate = 1.5;
+        b.subagents = 1;
+        let summary = aggregate(&[a, b]);
+        let ps = summary.by_project.get("/repo/one").expect("project key");
+        assert_eq!(ps.sessions, 2);
+        assert_eq!(ps.subagents, 4);
+        assert!((ps.cost - 4.0).abs() < 1e-9, "cost is summed across sessions");
+        assert_eq!(ps.output_tokens, 200);
+    }
+
+    #[test]
+    fn range_totals_split_current_and_previous_windows() {
+        let now = chrono::Utc::now();
+        let at = |days: i64| (now - chrono::Duration::days(days)).to_rfc3339();
+        // 2 sessions in the last 7d, 1 in the 7-14d window, 1 in the 30-60d window,
+        // and 1 older than every window.
+        let records = vec![
+            rec("now1", &at(1)),
+            rec("now2", &at(3)),
+            rec("prev7", &at(10)),
+            rec("prev30", &at(45)),
+            rec("ancient", &at(400)),
+        ];
+        let s = aggregate(&records);
+
+        assert_eq!(s.totals_all.sessions, 5);
+        assert_eq!(s.totals_7d.sessions, 2);
+        assert_eq!(s.totals_prev_7d.sessions, 1, "7-14 days ago");
+        assert_eq!(s.totals_30d.sessions, 3, "everything inside 30 days");
+        assert_eq!(s.totals_prev_30d.sessions, 1, "30-60 days ago");
+
+        // Each record carries cost 1.0, 100 output tokens, 2 user messages, 1 subagent.
+        assert!((s.totals_7d.cost - 2.0).abs() < 1e-9);
+        assert_eq!(s.totals_7d.output_tokens, 200);
+        assert_eq!(s.totals_7d.user_messages, 4);
+        assert_eq!(s.totals_7d.subagents, 2);
+        assert_eq!(s.totals_7d.peak_context, 1000, "peak is a max, not a sum");
+    }
+
+    #[test]
+    fn tool_usage_and_by_project_are_windowed_like_the_model_tables() {
+        let now = chrono::Utc::now();
+        let at = |days: i64| (now - chrono::Duration::days(days)).to_rfc3339();
+        let mut old = rec("old", &at(200));
+        old.cwd = Some("/repo/archived".to_string());
+        let records = vec![rec("fresh", &at(2)), old];
+        let s = aggregate(&records);
+
+        assert_eq!(s.tool_usage.get("Bash").copied(), Some(8), "all-time sums both");
+        assert_eq!(s.tool_usage_7d.get("Bash").copied(), Some(4));
+        assert_eq!(s.tool_errors.get("Bash").copied(), Some(2));
+        assert_eq!(s.tool_errors_7d.get("Bash").copied(), Some(1));
+        assert!(s.by_project.contains_key("/repo/archived"));
+        assert!(!s.by_project_7d.contains_key("/repo/archived"));
+        assert!(s.by_project_7d.contains_key("/repo/atlas"));
+    }
+
+    #[test]
+    fn recent_sessions_are_newest_first_capped_and_carry_no_transcript_path() {
+        let mut records: Vec<SessionRecord> = (0..60)
+            .map(|i| {
+                let mut r = rec(&format!("s{i:02}"), "2026-01-01T00:00:00Z");
+                r.last_timestamp = Some(format!("2026-02-{:02}T00:00:00Z", (i % 28) + 1));
+                r
+            })
+            .collect();
+        records[0].last_timestamp = Some("2026-03-01T00:00:00Z".to_string());
+        records[0].by_model = HashMap::from([
+            ("Sonnet".to_string(), ModelSessionData { output_tokens: 5, ..Default::default() }),
+            ("Opus".to_string(), ModelSessionData { output_tokens: 500, ..Default::default() }),
+        ]);
+
+        let s = aggregate(&records);
+        assert_eq!(s.recent_sessions.len(), RECENT_SESSION_LIMIT, "capped at 50");
+        assert_eq!(s.recent_sessions[0].session_id, "s00", "newest first");
+        assert_eq!(
+            s.recent_sessions[0].model.as_deref(),
+            Some("Opus"),
+            "dominant family is the one with the most output tokens"
+        );
+
+        // The projection must not leak the absolute transcript path.
+        let json = serde_json::to_string(&s.recent_sessions).unwrap();
+        assert!(!json.contains(".jsonl"), "no transcript path crosses IPC");
+        assert!(!json.contains("/fake/"), "no transcript path crosses IPC");
+    }
+
+    #[test]
+    fn a_stale_cache_version_forces_a_full_reparse() {
+        let current = StatsFile {
+            version: STATS_FILE_VERSION,
+            generated_at: "2026-01-01T00:00:00Z".to_string(),
+            summary: StatsSummary::default(),
+            sessions: vec![rec("cached", "2026-01-01T00:00:00Z")],
+        };
+        let json = serde_json::to_string(&current).unwrap();
+        assert_eq!(
+            cache_from_json(&json).len(),
+            1,
+            "a file at the current version is reused"
+        );
+
+        // A v3 file - the shape shipped before this phase - must be discarded
+        // whole rather than deserializing its missing fields to defaults.
+        let stale = json.replacen(
+            &format!("\"version\":{STATS_FILE_VERSION}"),
+            "\"version\":3",
+            1,
+        );
+        assert!(stale.contains("\"version\":3"), "the fixture was actually downgraded");
+        assert!(
+            cache_from_json(&stale).is_empty(),
+            "a v3 stats.json is dropped, forcing every session to be re-parsed"
+        );
+
+        assert!(cache_from_json("not json at all").is_empty());
+    }
+
     #[test]
     fn aggregate_populates_by_week() {
         // Two sessions in the same ISO week, one using Opus, one using Sonnet
@@ -1092,6 +1499,7 @@ mod tests {
             subagents: 0,
             tool_calls: HashMap::new(),
             tool_errors: 0,
+            tool_errors_by_name: HashMap::new(),
             by_model: {
                 let mut m = HashMap::new();
                 m.insert(family.to_string(), ModelSessionData::default());
@@ -1140,6 +1548,7 @@ mod tests {
             subagents: 0,
             tool_calls: HashMap::new(),
             tool_errors: 0,
+            tool_errors_by_name: HashMap::new(),
             by_model: {
                 let mut m = HashMap::new();
                 m.insert(family.to_string(), ModelSessionData::default());

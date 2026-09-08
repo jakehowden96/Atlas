@@ -31,18 +31,52 @@ export interface ProjectStats {
   sessions: number;
   outputTokens: number;
   userMessages: number;
+  cost: number;
+  subagents: number;
 }
 
 export interface DayStats {
   sessions: number;
   outputTokens: number;
   userMessages: number;
+  cost: number;
+  /** Largest single-session peak that day, not a sum. */
+  peakContext: number;
+  subagents: number;
 }
 
 export interface WeekStats {
   sessions: number;
   byModel: Record<string, number>;
   byModelSubagents: Record<string, number>;
+}
+
+/**
+ * A session as the Recent-sessions table needs it. A deliberately trimmed
+ * projection of the backend's `SessionRecord` — the absolute transcript path
+ * never crosses IPC.
+ */
+export interface RecentSession {
+  sessionId: string;
+  title: string | null;
+  cwd: string | null;
+  gitBranch: string | null;
+  model: string | null;
+  lastTimestamp: string | null;
+  durationSecs: number;
+  outputTokens: number;
+  costEstimate: number;
+}
+
+/** Headline numbers for one time window — one KPI strip's worth. */
+export interface RangeTotals {
+  sessions: number;
+  userMessages: number;
+  outputTokens: number;
+  cost: number;
+  /** Largest single-session peak in the window, not a sum. */
+  peakContext: number;
+  subagents: number;
 }
 
 export interface StatsSummary {
@@ -64,9 +98,23 @@ export interface StatsSummary {
   byModelSubagents30d: Record<string, ModelStats>;
   byModelSubagents7d: Record<string, ModelStats>;
   toolUsage: Record<string, number>;
+  toolErrors: Record<string, number>;
+  toolUsage30d: Record<string, number>;
+  toolErrors30d: Record<string, number>;
+  toolUsage7d: Record<string, number>;
+  toolErrors7d: Record<string, number>;
   byProject: Record<string, ProjectStats>;
+  byProject30d: Record<string, ProjectStats>;
+  byProject7d: Record<string, ProjectStats>;
   byDay: Record<string, DayStats>;
   byWeek: Record<string, WeekStats>;
+  /** The 50 newest sessions, newest first. */
+  recentSessions: RecentSession[];
+  totalsAll: RangeTotals;
+  totals30d: RangeTotals;
+  totalsPrev30d: RangeTotals;
+  totals7d: RangeTotals;
+  totalsPrev7d: RangeTotals;
   versions: string[];
   generatedAt: string;
 }
