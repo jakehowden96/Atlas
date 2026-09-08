@@ -12,6 +12,7 @@ import { ptyKill, ptyWrite, startSessionTail, stopSessionTail } from "./ipc";
 import { log } from "./logger";
 import { removeLiveSession } from "./stores/liveSessions";
 import { skipPermissions } from "./stores/settings";
+import { focusedSessionId } from "./stores/view";
 import {
   activeTabId,
   addTab,
@@ -86,6 +87,11 @@ export async function spawnClaudeSession(
       stripBundleExtension(workspacePath.split("/").filter(Boolean).pop() ?? "New session");
     session = await addSession(workspacePath, wsName, tabId, claudeSessionId);
   }
+
+  // Session view renders whichever session is focused, so a spawn has to move
+  // the focus with it — otherwise the new PTY starts life hidden behind the
+  // session that happened to be focused before.
+  focusedSessionId.set(session.id);
 
   addTab({ type: "terminal", id: tabId, title: "", ptyId: -1, terminal, cwd: workspacePath, ready: false });
 

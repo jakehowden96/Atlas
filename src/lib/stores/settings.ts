@@ -9,6 +9,8 @@ export const enableNotifications = writable(true);
 export const watchedRepos = writable<string[]>([]);
 /** How often the Pull requests screen re-polls `gh`, in minutes. */
 export const prRefreshMinutes = writable(3);
+/** xterm font size in px. The design specifies 12.5; phase 11 adds the stepper. */
+export const terminalFontSize = writable(12.5);
 
 const SETTINGS_DIR = ".atlas";
 const SETTINGS_FILE = ".atlas/settings.json";
@@ -18,6 +20,7 @@ interface PersistedSettings {
   enableNotifications?: boolean;
   watchedRepos?: string[];
   prRefreshMinutes?: number;
+  terminalFontSize?: number;
   theme?: ThemeMode;
 }
 
@@ -45,6 +48,9 @@ export async function loadSettings() {
     if (PR_REFRESH_CHOICES.includes(data.prRefreshMinutes as number)) {
       prRefreshMinutes.set(data.prRefreshMinutes as number);
     }
+    if (typeof data.terminalFontSize === "number" && data.terminalFontSize > 0) {
+      terminalFontSize.set(data.terminalFontSize);
+    }
     if (data.theme === "system" || data.theme === "light" || data.theme === "dark") {
       themeMode.set(data.theme);
     }
@@ -63,6 +69,7 @@ async function persistSettings() {
       enableNotifications: get(enableNotifications),
       watchedRepos: get(watchedRepos),
       prRefreshMinutes: get(prRefreshMinutes),
+      terminalFontSize: get(terminalFontSize),
       theme: get(themeMode),
     };
     await writeTextFile(SETTINGS_FILE, JSON.stringify(data, null, 2), {

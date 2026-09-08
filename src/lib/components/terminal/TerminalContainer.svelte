@@ -1,8 +1,19 @@
 <script lang="ts">
   import { getSessionDir } from "../../ipc";
-  import { activeTabId, tabs } from "../../stores/terminal";
+  import { tabs } from "../../stores/terminal";
   import { showToast } from "../../stores/toast";
   import TerminalTab from "./TerminalTab.svelte";
+
+  interface Props {
+    /**
+     * The session terminal to show. Every other tab stays mounted with its
+     * visibility toggled by CSS — remounting an xterm loses its scrollback and
+     * detaches its PTY, so switching sessions must never unmount one.
+     */
+    visibleTabId: string;
+  }
+
+  let { visibleTabId }: Props = $props();
 
   async function handlePtyReady(tabId: string, ptyId: number) {
     tabs.update((t) => t.map((tab) => (tab.id === tabId ? { ...tab, ptyId } : tab)));
@@ -14,41 +25,31 @@
   }
 </script>
 
-<div class="terminal-area">
-  <div class="terminal-panes">
-    {#each $tabs as tab (tab.id)}
-      <TerminalTab
-        tabId={tab.id}
-        visible={tab.id === $activeTabId}
-        ready={tab.ready !== false}
-        cwd={tab.cwd}
-        onData={tab.onData}
-        onPtyReady={(ptyId) => handlePtyReady(tab.id, ptyId)}
-      />
-    {/each}
-    {#if !$activeTabId}
-      <div class="empty-state">
-        <span class="material-symbols-outlined empty-icon">terminal</span>
-        <p class="empty-text">No session open — start one with ⌘N</p>
-      </div>
-    {/if}
-  </div>
+<div class="terminal-panes">
+  {#each $tabs as tab (tab.id)}
+    <TerminalTab
+      tabId={tab.id}
+      visible={tab.id === visibleTabId}
+      ready={tab.ready !== false}
+      cwd={tab.cwd}
+      onData={tab.onData}
+      onPtyReady={(ptyId) => handlePtyReady(tab.id, ptyId)}
+    />
+  {/each}
+  {#if !$tabs.some((t) => t.id === visibleTabId)}
+    <div class="empty-state">
+      <span class="material-symbols-outlined empty-icon">terminal</span>
+      <p class="empty-text">No session open — start one with ⌘N</p>
+    </div>
+  {/if}
 </div>
 
 <style>
-  .terminal-area {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    min-width: 0;
-    background: var(--surface);
-  }
-
   .terminal-panes {
-    flex: 1;
-    position: relative;
+    position: absolute;
+    inset: 0;
     overflow: hidden;
-    background: var(--surface);
+    background: var(--term-bg);
   }
 
   .empty-state {
