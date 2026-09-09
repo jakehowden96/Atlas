@@ -2,7 +2,7 @@
  * Terminal-session lifecycle, lifted out of `App.svelte`'s inline handlers.
  *
  * Everything here is a plain function over the stores, so the Mission Control
- * views (Overview tiles, Session header, New Session modal, jump palette) can
+ * views (Sessions tiles, Session header, New Session modal, jump palette) can
  * all drive the same code paths without a component in the middle.
  */
 import { open } from "@tauri-apps/plugin-dialog";
@@ -188,7 +188,7 @@ export async function closeSession(sessionId: string) {
 
   if (get(focusedSessionId) === sessionId) {
     focusedSessionId.set("");
-    showView("overview");
+    showView("sessions");
   }
 }
 
@@ -213,7 +213,7 @@ export async function removeWorkspaceWithUndo(workspacePath: string) {
 
 /* ── Permission prompts ─────────────────────────────────────────────────────
  * Answering a blocked tool call means typing into the real TUI — there is no
- * IPC channel for it. The Overview tile and phase 06's floating permission
+ * IPC channel for it. The Sessions tile and phase 06's floating permission
  * card both call these, so the keystroke mapping lives in exactly one place.
  *
  * ⚠ ASSUMPTION — NOT verified against a live TUI. This build environment has

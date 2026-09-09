@@ -66,7 +66,7 @@
   }
 </script>
 
-<div class="overview">
+<div class="sessions">
   <div class="chips">
     <Chip
       label="All"
@@ -122,7 +122,7 @@
 </div>
 
 <style>
-  .overview {
+  .sessions {
     display: flex;
     flex-direction: column;
     flex: 1;

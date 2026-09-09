@@ -83,7 +83,7 @@ export function handleGlobalKeydown(e: KeyboardEvent): boolean {
     return true;
   }
 
-  // Esc — topmost modal, then the Changes drawer, then back to Overview
+  // Esc — topmost modal, then the Changes drawer, then back to Sessions
   if (e.key === "Escape") {
     if (get(jumpOpen)) {
       e.preventDefault();
@@ -112,7 +112,7 @@ export function handleGlobalKeydown(e: KeyboardEvent): boolean {
     }
     if (get(activeView) === "session") {
       e.preventDefault();
-      showView("overview");
+      showView("sessions");
       return true;
     }
     return false;

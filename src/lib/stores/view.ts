@@ -1,13 +1,13 @@
 import { writable } from "svelte/store";
 
 /** Mission Control's top-level screens. */
-export type View = "overview" | "files" | "session" | "prs" | "stats";
+export type View = "sessions" | "files" | "session" | "prs" | "stats";
 
-/** The tabs in the top bar, in ⌘1–4 order. "session" is not one of them — it
-    is a detail view Overview opens in place. */
-export const TAB_VIEWS = ["overview", "files", "prs", "stats"] as const;
+/** The tabs in the top bar, in ⌘1–4 order. The singular "session" — the detail
+    view the "sessions" list opens in place — is not a tab of its own. */
+export const TAB_VIEWS = ["sessions", "files", "prs", "stats"] as const;
 
-export const activeView = writable<View>("overview");
+export const activeView = writable<View>("sessions");
 
 /** Atlas session id shown in Session view. */
 export const focusedSessionId = writable<string>("");
@@ -52,7 +52,7 @@ export function openNewSession(seed?: NewSessionSeed): void {
 /** The ⌘K command palette. */
 export const jumpOpen = writable(false);
 
-/** Overview's workspace chip filter: "all" or a workspace path. */
+/** Sessions' workspace chip filter: "all" or a workspace path. */
 export const wsFilter = writable<string>("all");
 
 /**

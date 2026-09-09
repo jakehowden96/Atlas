@@ -15,7 +15,7 @@
         the header is stale, so the tile shows only what other sources feed:
         state, workspace and the diff badge. */
     tailing: boolean;
-    /** Pinned tiles sort to the top of the Overview grid. */
+    /** Pinned tiles sort to the top of the Sessions grid. */
     pinned: boolean;
   }
 

@@ -75,7 +75,7 @@
   });
 
   /* Ends the session and keeps its row resumable; `closeSession` sends us back
-     to Overview because the focused session is the one going away. */
+     to Sessions because the focused session is the one going away. */
   function endSession() {
     if (tile?.atlasSessionId) void closeSession(tile.atlasSessionId);
   }
@@ -97,8 +97,8 @@
 <div class="session">
   <div class="main">
     <header class="head">
-      <button type="button" class="back" onclick={() => showView("overview")}>
-        ← Overview <span class="hint">esc</span>
+      <button type="button" class="back" onclick={() => showView("sessions")}>
+        ← Sessions <span class="hint">esc</span>
       </button>
 
       {#if tile}

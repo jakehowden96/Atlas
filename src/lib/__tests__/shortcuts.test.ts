@@ -48,7 +48,7 @@ function makeKeyEvent(overrides: Partial<KeyboardEvent> = {}): KeyboardEvent {
 describe("handleGlobalKeydown", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    activeView.set("overview");
+    activeView.set("sessions");
     diffOpen.set(false);
     railOpen.set(true);
     newSessionOpen.set(false);
@@ -70,7 +70,7 @@ describe("handleGlobalKeydown", () => {
     await vi.waitFor(() => expect(writeTextFileAt).toHaveBeenCalledWith("/ws/notes.md", "edited"));
   });
 
-  it("⌘S is left unhandled on Overview", () => {
+  it("⌘S is left unhandled on Sessions", () => {
     const key = fileKey("/ws", "notes.md");
     activeFile.set(key);
     setDoc(key, "edited");
@@ -88,7 +88,7 @@ describe("handleGlobalKeydown", () => {
     expect(e.preventDefault).toHaveBeenCalled();
   });
 
-  it("⌘O is left unhandled on Overview", () => {
+  it("⌘O is left unhandled on Sessions", () => {
     const e = makeKeyEvent({ metaKey: true, key: "o" });
     expect(handleGlobalKeydown(e)).toBe(false);
     expect(get(openDialogOpen)).toBe(false);
@@ -155,7 +155,7 @@ describe("handleGlobalKeydown", () => {
   });
 
   it.each([
-    ["Digit1", "overview"],
+    ["Digit1", "sessions"],
     ["Digit2", "files"],
     ["Digit3", "prs"],
     ["Digit4", "stats"],
@@ -167,11 +167,11 @@ describe("handleGlobalKeydown", () => {
     expect(e.preventDefault).toHaveBeenCalled();
   });
 
-  it("⌘1 escapes Session view back to Overview", () => {
+  it("⌘1 escapes Session view back to Sessions", () => {
     activeView.set("session");
     const e = makeKeyEvent({ metaKey: true, key: "1", code: "Digit1" });
     expect(handleGlobalKeydown(e)).toBe(true);
-    expect(get(activeView)).toBe("overview");
+    expect(get(activeView)).toBe("sessions");
   });
 
   it("⌘5 is left unhandled — there is no fifth tab", () => {
@@ -235,10 +235,10 @@ describe("handleGlobalKeydown", () => {
     expect(get(activeView)).toBe("session");
   });
 
-  it("Esc returns Session view to Overview once nothing else is open", () => {
+  it("Esc returns Session view to Sessions once nothing else is open", () => {
     activeView.set("session");
     expect(handleGlobalKeydown(makeKeyEvent({ key: "Escape" }))).toBe(true);
-    expect(get(activeView)).toBe("overview");
+    expect(get(activeView)).toBe("sessions");
   });
 
   it("Esc is left unhandled when nothing is open", () => {

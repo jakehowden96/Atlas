@@ -12,18 +12,18 @@ import {
 
 describe("view store", () => {
   beforeEach(() => {
-    activeView.set("overview");
+    activeView.set("sessions");
     diffOpen.set(false);
     newSessionOpen.set(false);
     newSessionSeed.set(null);
   });
 
-  it("defaults to overview", () => {
-    expect(get(activeView)).toBe("overview");
+  it("defaults to sessions", () => {
+    expect(get(activeView)).toBe("sessions");
   });
 
   it("switches between the four views", () => {
-    for (const v of ["session", "prs", "stats", "overview"] as const) {
+    for (const v of ["session", "prs", "stats", "sessions"] as const) {
       showView(v);
       expect(get(activeView)).toBe(v);
     }
