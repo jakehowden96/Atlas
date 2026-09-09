@@ -20,9 +20,15 @@
     pinned: boolean;
     /** The grid's roving tab stop: only the focused tile is Tab-reachable. */
     focused: boolean;
+    /** Draw the focus ring. Separate from `focused` because the CSS pseudo-
+        class of the same name cannot be trusted here: Chromium refuses to
+        match `:focus-visible` on a scripted `.focus()` once the last real
+        input was a click, and a click is how most sessions get opened. The
+        grid says when focus is genuinely on this tile instead. */
+    focusVisible: boolean;
   }
 
-  let { tile, now, tailing, pinned, focused }: Props = $props();
+  let { tile, now, tailing, pinned, focused, focusVisible }: Props = $props();
 
   const PILL: Record<SessionState, PillState> = {
     running: "running",
@@ -103,6 +109,7 @@
 
 <div
   class="tile"
+  class:focus-ring={focusVisible}
   class:needs={needsYou}
   role="button"
   tabindex={focused ? 0 : -1}
@@ -229,7 +236,8 @@
   /* Its own ring rather than the hover lift: with the arrow keys moving focus
      around the grid, where focus is has to read differently from what the
      pointer happens to be over. */
-  .tile:focus-visible {
+  .tile:focus-visible,
+  .tile.focus-ring {
     box-shadow:
       0 0 0 2px var(--accent),
       0 8px 24px rgba(0, 0, 0, 0.08);

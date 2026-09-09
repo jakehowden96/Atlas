@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, tick, untrack } from "svelte";
   import {
     buildTiles,
     filterByWorkspace,
@@ -10,8 +10,14 @@
   import { addWorkspaceFolder } from "../../session-actions";
   import { liveSessionList } from "../../stores/liveSessions";
   import { tabs } from "../../stores/terminal";
-  import { chords, overviewOrdering, pinnedSessions, tailTranscripts } from "../../stores/settings";
-  import { newSessionOpen, wsFilter } from "../../stores/view";
+  import {
+    chords,
+    overviewOrdering,
+    pinnedSessions,
+    settingsOpen,
+    tailTranscripts,
+  } from "../../stores/settings";
+  import { jumpOpen, newSessionOpen, shortcutsOpen, wsFilter } from "../../stores/view";
   import { sessionDiffStats, visibleWorkspaces } from "../../stores/workspace";
   import Chip from "../ui/Chip.svelte";
   import SessionTile from "./SessionTile.svelte";
@@ -66,10 +72,16 @@
   let chipsEl: HTMLDivElement | undefined = $state();
   let gridEl: HTMLDivElement | undefined = $state();
   let focusIndex = $state(0);
+  /** Whether focus is really inside the grid — see `focusVisible` below. */
+  let gridFocused = $state(false);
 
   $effect(() => {
     if (focusIndex > tiles.length - 1) focusIndex = Math.max(0, tiles.length - 1);
   });
+
+  /* Every one of these is an overlay: Sessions stays mounted underneath them,
+     so the grid must neither answer keys nor take focus while one is up. */
+  let modalOpen = $derived($newSessionOpen || $jumpOpen || $shortcutsOpen || $settingsOpen);
 
   /* `auto-fit` picks the track count from the window width, so read it back off
      the laid-out grid. Tracks `auto-fit` collapsed to 0px are not columns. */
@@ -90,6 +102,57 @@
     el.scrollIntoView({ block: "nearest" });
   }
 
+  /* Focus is somebody else's: a field being typed in, or a tile that already
+     has it — re-taking that would only reset the roving index. */
+  function focusIsSpokenFor(): boolean {
+    const el = document.activeElement;
+    if (!(el instanceof HTMLElement)) return false;
+    return (
+      (gridEl?.contains(el) ?? false) ||
+      el.isContentEditable ||
+      el instanceof HTMLInputElement ||
+      el instanceof HTMLTextAreaElement ||
+      el instanceof HTMLSelectElement
+    );
+  }
+
+  /**
+   * Put focus on the roving tile.
+   *
+   * This is the fix for the arrow keys: `onkeydown` sits on the grid, so it
+   * never fires until focus is already inside it, and this view mounts with
+   * focus still on `<body>` — on a cold start and on every switch back to
+   * Sessions. Nothing but a click or a Tab used to get it in.
+   *
+   * `takeover` is the modal-close path. `Modal` hands focus back to whatever
+   * opened it, which is usually a top-bar button: a legitimate owner, but not
+   * one the arrows work from. Every other call only claims loose focus.
+   */
+  function claimFocus(takeover = false) {
+    if (!gridEl || tiles.length === 0 || modalOpen || focusIsSpokenFor()) return;
+    const el = document.activeElement;
+    const loose = el === null || el === document.body || el === document.documentElement;
+    if (!takeover && !loose) return;
+    focusTile(Math.min(focusIndex, tiles.length - 1));
+  }
+
+  /* Runs on mount once there is a tile to focus, and again after every grid
+     re-render. The second is not redundant: a re-order moves a keyed tile with
+     `insertBefore`, which blurs it, and body focus means dead arrow keys. */
+  $effect(() => {
+    void tiles;
+    untrack(() => claimFocus());
+  });
+
+  /* A modal took focus away and has now given it back — to the wrong place. */
+  let modalWasOpen = false;
+  $effect(() => {
+    const closed = modalWasOpen && !modalOpen;
+    modalWasOpen = modalOpen;
+    // After `tick` so this lands on top of `Modal`'s own restore, not under it.
+    if (closed) void tick().then(() => claimFocus(true));
+  });
+
   function chipButtons(): HTMLButtonElement[] {
     return [...(chipsEl?.querySelectorAll("button") ?? [])];
   }
@@ -102,9 +165,16 @@
   }
 
   function onGridFocusIn(e: FocusEvent) {
+    gridFocused = true;
     const children = [...(gridEl?.children ?? [])];
     const at = children.findIndex((tile) => tile.contains(e.target as Node));
     if (at >= 0) focusIndex = at;
+  }
+
+  /* Moving between two tiles fires this too, so the destination decides. */
+  function onGridFocusOut(e: FocusEvent) {
+    const to = e.relatedTarget;
+    gridFocused = to instanceof Node && (gridEl?.contains(to) ?? false);
   }
 
   function onGridKeydown(e: KeyboardEvent) {
@@ -171,7 +241,13 @@
 
   {#if tiles.length > 0}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="grid" bind:this={gridEl} onkeydown={onGridKeydown} onfocusin={onGridFocusIn}>
+    <div
+      class="grid"
+      bind:this={gridEl}
+      onkeydown={onGridKeydown}
+      onfocusin={onGridFocusIn}
+      onfocusout={onGridFocusOut}
+    >
       {#each tiles as tile, i (tile.sessionUuid)}
         <SessionTile
           {tile}
@@ -179,6 +255,7 @@
           tailing={$tailTranscripts}
           pinned={pinned.has(pinKey(tile))}
           focused={i === focusIndex}
+          focusVisible={gridFocused && i === focusIndex}
         />
       {/each}
     </div>

@@ -16,7 +16,7 @@
   import SegmentedControl, { type Segment } from "./lib/components/ui/SegmentedControl.svelte";
   import { onClaudeNotification, onPanelUpdate, onSessionUpdate } from "./lib/ipc";
   import { log } from "./lib/logger";
-  import { buildTiles } from "./lib/overview";
+  import { buildTiles, shouldClearNeedsInput } from "./lib/overview";
   import { filesTouched } from "./lib/session-view";
   import { handleGlobalKeydown } from "./lib/shortcuts";
   import { dirtyFiles } from "./lib/stores/files";
@@ -87,9 +87,13 @@
     { id: "stats", label: "Stats" },
   ]);
 
-  // Clear needsInput when switching to a tab
+  // Clear needsInput once the user is actually looking at the session — see
+  // `shouldClearNeedsInput`. Gating on `$activeTabId` alone cleared the flag
+  // off sessions nobody had opened, because `activeTabId` moves on a spawn, on
+  // a neighbouring tab closing and on SessionView reconciling itself while it
+  // is hidden behind another view.
   $effect(() => {
-    if ($activeTabId) {
+    if (shouldClearNeedsInput($activeView, $activeTabId)) {
       setTabNeedsInput($activeTabId, false);
     }
   });
@@ -189,7 +193,7 @@
 
     <span class="status">
       <span class="status-dot"></span>
-      <span class="status-needs">{needsYou} needs you</span> · {running} running · {idle} idle · ${todayCost.toFixed(2)} today
+      {running} running · <span class="status-needs">{needsYou} needs you</span> · {idle} idle · ${todayCost.toFixed(2)} today
     </span>
 
     <button type="button" class="jump" onclick={() => jumpOpen.set(true)}>

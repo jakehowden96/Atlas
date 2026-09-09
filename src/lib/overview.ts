@@ -6,6 +6,7 @@
  */
 import type { LiveSession, PlanItem, SessionState } from "../types/session";
 import type { OverviewOrdering } from "./stores/settings";
+import type { View } from "./stores/view";
 import type { DiffStats, Workspace, WorkspaceSession } from "./stores/workspace";
 
 /** Design default ordering: needs-you first, then running/error, then idle. */
@@ -45,6 +46,13 @@ export interface SessionTile {
  * `needsInputTabs` are the terminal tabs the Notification hook has flagged
  * (`TabItem.needsInput`). The backend never sets `SessionState::NeedsYou`
  * itself — `live.rs` says so explicitly — so that flag is the real signal.
+ *
+ * Folding it in needs a terminal tab id, which only the workspace row carries,
+ * so the second loop's rowless tiles can never read needs-you. That costs
+ * nothing: the flag is set from `ATLAS_SESSION_ID`, which only a PTY Atlas
+ * spawned carries, and every such PTY has a row (`spawnClaudeSession` writes
+ * one before it calls `addTab`). A session with no row is one Atlas never
+ * started, so no notification for it can exist.
  */
 export function buildTiles(
   sessions: LiveSession[],
@@ -130,6 +138,27 @@ function toTile(
     live,
     diff: tabId === null ? null : (diffStats.get(tabId) ?? null),
   };
+}
+
+/**
+ * Whether an `activeTabId` change means the user has actually attended to that
+ * session, so the Notification hook's needs-input flag can be dropped.
+ *
+ * The old rule was "it is the active tab", and being the active tab is not the
+ * same as having been seen. `activeTabId` is written by `addTab` on every
+ * spawn, by `removeTab`'s fallback when a *neighbouring* tab is closed, by
+ * `openSession` and by `SessionView`'s own reconciliation effect — which keeps
+ * running because `App` keeps `SessionView` mounted behind every other screen
+ * so its xterm instances survive a view switch. Any of those fires while the
+ * user is on Sessions, Files, PRs or Stats and clears the flag off a session
+ * nobody has looked at, which drops its tile back to `running` while it is
+ * still blocked at its prompt.
+ *
+ * The terminal is only on screen on the Session view, so that is the only
+ * moment the prompt can be said to have been seen.
+ */
+export function shouldClearNeedsInput(view: View, activeTabId: string): boolean {
+  return view === "session" && activeTabId !== "";
 }
 
 /** Attention order. `Array.sort` is stable, so ties keep their arrival order. */
