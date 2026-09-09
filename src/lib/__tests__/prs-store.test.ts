@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 
 vi.mock("../ipc", () => ({
   ghViewer: vi.fn(),
-  gitRemoteSlug: vi.fn(),
+  listWorkspaceRepos: vi.fn(),
   listRepoPrs: vi.fn(),
 }));
 vi.mock("../logger", () => ({
@@ -20,6 +20,7 @@ import { ghViewer, listRepoPrs } from "../ipc";
 import {
   isMine,
   matchesFilter,
+  matchRepo,
   needsAttention,
   needsMyReview,
   startPrPolling,
@@ -183,5 +184,46 @@ describe("pr polling", () => {
     vi.mocked(listRepoPrs).mockClear();
     vi.advanceTimersByTime(30 * 60_000);
     expect(listRepoPrs).not.toHaveBeenCalled();
+  });
+});
+
+describe("matchRepo", () => {
+  // A workspace that is itself a checkout, and one that holds two.
+  const byWorkspace = {
+    "/home/me/atlas": [{ path: "/home/me/atlas", slug: "jake/atlas" }],
+    "/home/me/work": [
+      { path: "/home/me/work/api", slug: "acme/api" },
+      { path: "/home/me/work/web", slug: "acme/web" },
+    ],
+  };
+
+  it("returns the workspace itself when the workspace is the repo", () => {
+    expect(matchRepo(byWorkspace, "jake/atlas")).toEqual({
+      repoPath: "/home/me/atlas",
+      workspacePath: "/home/me/atlas",
+    });
+  });
+
+  it("finds a repo one directory inside a workspace", () => {
+    // The bug: only the workspace root was asked for a remote, so a PR on a
+    // repo discovered inside one had nowhere to start a session.
+    expect(matchRepo(byWorkspace, "acme/web")).toEqual({
+      repoPath: "/home/me/work/web",
+      workspacePath: "/home/me/work",
+    });
+  });
+
+  it("matches a slug regardless of case", () => {
+    expect(matchRepo(byWorkspace, "ACME/Api")?.repoPath).toBe("/home/me/work/api");
+  });
+
+  it("is null for a repo no workspace holds", () => {
+    expect(matchRepo(byWorkspace, "someone/else")).toBe(null);
+    expect(matchRepo({}, "jake/atlas")).toBe(null);
+  });
+
+  it("ignores a repo with no remote", () => {
+    const noRemote = { "/home/me/scratch": [{ path: "/home/me/scratch", slug: null }] };
+    expect(matchRepo(noRemote, "jake/atlas")).toBe(null);
   });
 });

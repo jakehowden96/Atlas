@@ -108,16 +108,64 @@ pub(crate) fn parse_remote_slug(url: &str) -> Option<String> {
     Some(slug)
 }
 
-/// The `owner/repo` slug of a workspace's `origin` remote, or `None` when it
-/// has no origin or the URL isn't a recognisable host path. Maps watched repos
-/// onto workspaces so the PRs screen knows where to start a session.
+/// One git repo Atlas can act in: a workspace, or a repo one level inside it.
+#[derive(serde::Serialize)]
+pub struct WorkspaceRepo {
+    /// Absolute path of the repo's working tree.
+    pub path: String,
+    /// `owner/repo` from its `origin`, or None when it has no usable remote.
+    pub slug: Option<String>,
+}
+
+/// True when `dir` is the root of a git working tree.
+fn is_git_root(dir: &str) -> bool {
+    git_cmd(dir, &["rev-parse", "--show-toplevel"]).is_ok()
+}
+
+fn repo_at(path: &std::path::Path) -> WorkspaceRepo {
+    let path = path.to_string_lossy().to_string();
+    let slug = git_cmd(&path, &["remote", "get-url", "origin"])
+        .ok()
+        .and_then(|url| parse_remote_slug(&url));
+    WorkspaceRepo { path, slug }
+}
+
+/// Every repo under a workspace: the workspace itself when it is one, and
+/// otherwise the git repos sitting one directory inside it.
+///
+/// A workspace is often a folder that *holds* checkouts rather than being one —
+/// the same shape `build_panel_multi` diffs across. Asking only the workspace
+/// root for a remote leaves those repos with no slug at all, so the PRs screen
+/// could not match a PR to anywhere to start a session.
+///
+/// One level deep, like the panel's scan: deeper nesting is a monorepo's
+/// business, not a checkout layout.
 #[tauri::command(async)]
-pub async fn git_remote_slug(cwd: String) -> Result<Option<String>, String> {
-    validate_cwd(&cwd)?;
+pub async fn list_workspace_repos(workspace_path: String) -> Result<Vec<WorkspaceRepo>, String> {
+    validate_cwd(&workspace_path)?;
     tokio::task::spawn_blocking(move || {
-        Ok(git_cmd(&cwd, &["remote", "get-url", "origin"])
-            .ok()
-            .and_then(|url| parse_remote_slug(&url)))
+        if is_git_root(&workspace_path) {
+            return Ok(vec![repo_at(std::path::Path::new(&workspace_path))]);
+        }
+        let Ok(read_dir) = std::fs::read_dir(&workspace_path) else {
+            return Ok(Vec::new());
+        };
+        let mut repos: Vec<WorkspaceRepo> = Vec::new();
+        for entry in read_dir.flatten() {
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if should_skip_dir(name) || !is_git_root(&path.to_string_lossy()) {
+                continue;
+            }
+            repos.push(repo_at(&path));
+        }
+        repos.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(repos)
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?

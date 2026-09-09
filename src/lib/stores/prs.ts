@@ -4,12 +4,13 @@
  * called once from `App.svelte`; the view is a pure renderer of these stores.
  */
 import { derived, get, writable } from "svelte/store";
-import { ghViewer, gitRemoteSlug, listRepoPrs } from "../ipc";
+import { ghViewer, listRepoPrs, listWorkspaceRepos } from "../ipc";
 import { log } from "../logger";
 import { autoAddReposFromWorkspaces, prRefreshMinutes, watchedRepos } from "./settings";
 import { showToast } from "./toast";
 import { visibleWorkspaces } from "./workspace";
-import type { GhViewer, Pr, RepoPrs } from "../../types/prs";
+import type { GhViewer, Pr, RepoPrs, WorkspaceRepo } from "../../types/prs";
+
 
 export type PrFilter = "all" | "mine" | "review";
 
@@ -73,27 +74,67 @@ export const prFilterCounts = derived([allPrs, prViewer], ([$prs, $viewer]) => {
 });
 
 /**
- * Workspace path → its origin `owner/repo`, or null when it has no usable
- * remote. Cached: the remote does not change under us, and this maps repo
- * cards onto the workspace "Work on it" starts a session in.
+ * Workspace path → the repos under it, each with its origin `owner/repo`.
+ *
+ * A workspace is often a folder that *holds* checkouts rather than being one,
+ * so the repo a PR belongs to can be a directory inside it. Asking only the
+ * workspace root for a remote left those PRs with nowhere to start a session —
+ * "Work on it" answered "No workspace linked" for every one of them.
+ *
+ * Cached: remotes do not change under us.
  */
-export const repoSlugsByWorkspace = writable<Record<string, string | null>>({});
+export const reposByWorkspace = writable<Record<string, WorkspaceRepo[]>>({});
 
-export async function loadWorkspaceSlugs(paths: string[]): Promise<void> {
-  const known = get(repoSlugsByWorkspace);
+/** Workspace path → its own origin slug, for Settings' workspace list. */
+export const repoSlugsByWorkspace = derived(reposByWorkspace, (byWorkspace) => {
+  const out: Record<string, string | null> = {};
+  for (const [path, repos] of Object.entries(byWorkspace)) {
+    out[path] = repos.find((r) => r.path === path)?.slug ?? null;
+  }
+  return out;
+});
+
+/** Where a PR's `owner/repo` lives on disk. */
+export interface RepoMatch {
+  /** The repo's own working tree — where a branch is checked out. */
+  repoPath: string;
+  /** The workspace holding it, which is `repoPath` when it is itself one. */
+  workspacePath: string;
+}
+
+/**
+ * Find a PR's `owner/repo` across every workspace, or null when none of them
+ * holds it. The two paths differ whenever a workspace is a folder of checkouts
+ * rather than a checkout: the card names the workspace, the session runs in
+ * the repo.
+ */
+export function matchRepo(
+  byWorkspace: Record<string, WorkspaceRepo[]>,
+  slug: string,
+): RepoMatch | null {
+  const wanted = slug.toLowerCase();
+  for (const [workspacePath, repos] of Object.entries(byWorkspace)) {
+    const hit = repos.find((r) => r.slug?.toLowerCase() === wanted);
+    if (hit) return { repoPath: hit.path, workspacePath };
+  }
+  return null;
+}
+
+export async function loadWorkspaceRepos(paths: string[]): Promise<void> {
+  const known = get(reposByWorkspace);
   const missing = paths.filter((path) => !(path in known));
   if (missing.length === 0) return;
   const resolved = await Promise.all(
     missing.map(async (path) => {
       try {
-        return [path, await gitRemoteSlug(path)] as const;
+        return [path, await listWorkspaceRepos(path)] as const;
       } catch (e) {
-        log.warn("prs", `git_remote_slug failed for ${path}: ${e}`);
-        return [path, null] as const;
+        log.warn("prs", `list_workspace_repos failed for ${path}: ${e}`);
+        return [path, [] as WorkspaceRepo[]] as const;
       }
     }),
   );
-  repoSlugsByWorkspace.update((current) => ({ ...current, ...Object.fromEntries(resolved) }));
+  reposByWorkspace.update((current) => ({ ...current, ...Object.fromEntries(resolved) }));
 }
 
 /**
@@ -103,12 +144,14 @@ export async function loadWorkspaceSlugs(paths: string[]): Promise<void> {
  * manual list intact instead of deleting the auto-added entries with it.
  */
 export const effectiveWatchedRepos = derived(
-  [watchedRepos, autoAddReposFromWorkspaces, repoSlugsByWorkspace],
-  ([$manual, $auto, $slugs]) => {
+  [watchedRepos, autoAddReposFromWorkspaces, reposByWorkspace],
+  ([$manual, $auto, $byWorkspace]) => {
     if (!$auto) return $manual;
     const union = new Set($manual);
-    for (const slug of Object.values($slugs)) {
-      if (slug) union.add(slug);
+    for (const repos of Object.values($byWorkspace)) {
+      for (const repo of repos) {
+        if (repo.slug) union.add(repo.slug);
+      }
     }
     return [...union];
   },
@@ -148,7 +191,7 @@ export function startPrPolling(): () => void {
   // Resolve remotes from the shell, not just from PrsView: the auto-add union
   // has to be right before the Pull requests screen is ever opened.
   const stopSlugs = visibleWorkspaces.subscribe((ws) => {
-    void loadWorkspaceSlugs(ws.map((w) => w.path));
+    void loadWorkspaceRepos(ws.map((w) => w.path));
   });
   // Fires immediately on subscribe, which is the initial fetch.
   const stopRepos = effectiveWatchedRepos.subscribe(() => void refreshPrs());

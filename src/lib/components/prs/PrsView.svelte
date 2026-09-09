@@ -5,7 +5,7 @@
   import { spawnClaudeSession } from "../../session-actions";
   import {
     effectiveWatchedRepos,
-    loadWorkspaceSlugs,
+    loadWorkspaceRepos,
     matchesFilter,
     prFilter,
     prFilterCounts,
@@ -14,14 +14,15 @@
     prsLoading,
     prViewer,
     refreshPrs,
-    repoSlugsByWorkspace,
+    reposByWorkspace,
+    matchRepo,
     type PrFilter,
   } from "../../stores/prs";
   import { prRefreshMinutes, settingsOpen } from "../../stores/settings";
   import { showToast } from "../../stores/toast";
   import { showView } from "../../stores/view";
   import { visibleWorkspaces } from "../../stores/workspace";
-  import { formatAgo } from "../../format";
+  import { basename, formatAgo } from "../../format";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
   import type { Pr } from "../../../types/prs";
 
@@ -41,7 +42,7 @@
   // Resolve each workspace's origin remote so repo cards know where a session
   // would start. Cached in the store, so this only shells out for new paths.
   $effect(() => {
-    void loadWorkspaceSlugs($visibleWorkspaces.map((w) => w.path));
+    void loadWorkspaceRepos($visibleWorkspaces.map((w) => w.path));
   });
 
   const viewerLogin = $derived($prViewer?.login ?? null);
@@ -72,10 +73,15 @@
       .filter((card) => card.prs.length > 0 || card.error),
   );
 
+  /**
+   * The workspace a repo card belongs to, for its colour dot and name. The
+   * session itself starts in the repo's own directory, not here — see
+   * `workOnIt`.
+   */
   function workspaceFor(repo: string) {
-    const slugs = $repoSlugsByWorkspace;
-    const slug = repo.toLowerCase();
-    return $visibleWorkspaces.find((w) => slugs[w.path]?.toLowerCase() === slug) ?? null;
+    const match = matchRepo($reposByWorkspace, repo);
+    if (!match) return null;
+    return $visibleWorkspaces.find((w) => w.path === match.workspacePath) ?? null;
   }
 
   function relativeTime(iso: string, ref: number): string {
@@ -130,31 +136,34 @@
    * The checkout is guarded: a dirty tree warns rather than losing work.
    */
   async function workOnIt(repo: string, pr: Pr) {
-    const ws = workspaceFor(repo);
-    if (!ws) {
+    // The repo's own working tree, which is a directory inside the workspace
+    // whenever the workspace is a folder of checkouts. Checking a PR branch out
+    // at the workspace root would fail there — it is not a git repo at all.
+    const path = matchRepo($reposByWorkspace, repo)?.repoPath ?? null;
+    if (!path) {
       showToast("No workspace linked", {
-        body: `Add ${repo}'s folder in Settings › Workspaces to work on its PRs.`,
+        body: `Add ${repo}'s folder — or the folder holding it — in Settings › Workspaces to work on its PRs.`,
         type: "warning",
       });
       settingsOpen.set(true);
       return;
     }
     try {
-      const status = await getGitStatus(ws.path);
+      const status = await getGitStatus(path);
       if (status.has_unstaged || status.has_staged) {
-        showToast(`${ws.name} has uncommitted changes`, {
+        showToast(`${basename(path)} has uncommitted changes`, {
           body: `Commit or stash them before switching to ${pr.headRefName}.`,
           type: "warning",
         });
         return;
       }
-      await gitCheckoutBranch(ws.path, pr.headRefName);
+      await gitCheckoutBranch(path, pr.headRefName);
     } catch (e) {
-      log.error("prs", `checkout ${pr.headRefName} in ${ws.path} failed`, e);
+      log.error("prs", `checkout ${pr.headRefName} in ${path} failed`, e);
       showToast(`Could not check out ${pr.headRefName}`, { body: String(e) });
       return;
     }
-    await spawnClaudeSession(ws.path);
+    await spawnClaudeSession(path);
     showView("session");
   }
 </script>

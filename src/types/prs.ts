@@ -29,3 +29,13 @@ export interface RepoPrs {
   prs: Pr[];
   error: string | null;
 }
+
+/**
+ * A git repo Atlas can act in: a workspace that is itself a checkout, or a
+ * repo one directory inside one. `slug` is what a PR card is matched against
+ * to find where "Work on it" should start its session.
+ */
+export interface WorkspaceRepo {
+  path: string;
+  slug: string | null;
+}

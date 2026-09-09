@@ -2,7 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { DirEntry, DocEntry, DocsChangedEvent, PlanEntry } from "../types/files";
 import type { GitStatus, PanelData } from "../types/panel";
-import type { GhViewer, RepoPrs } from "../types/prs";
+import type { GhViewer, RepoPrs, WorkspaceRepo } from "../types/prs";
 import type { LiveSession, SessionUpdateEvent } from "../types/session";
 import type { ResumableSession, StatsSummary } from "../types/stats";
 import { log } from "./logger";
@@ -91,9 +91,12 @@ export async function gitCheckoutBranch(cwd: string, branch: string): Promise<vo
   return invoke("git_checkout_branch", { cwd, branch });
 }
 
-/** `owner/repo` for a workspace's origin remote, or null if it has none. */
-export async function gitRemoteSlug(cwd: string): Promise<string | null> {
-  return invoke("git_remote_slug", { cwd });
+/**
+ * The repos under a workspace: the workspace itself when it is a checkout, and
+ * otherwise the git repos one directory inside it.
+ */
+export async function listWorkspaceRepos(workspacePath: string): Promise<WorkspaceRepo[]> {
+  return invoke("list_workspace_repos", { workspacePath });
 }
 
 export async function listRepoPrs(repos: string[]): Promise<RepoPrs[]> {
@@ -218,12 +221,12 @@ export async function listDir(path: string): Promise<DirEntry[]> {
   return invoke("list_dir", { path });
 }
 
-/** Documents only: rejects anything that is not `.md`/`.markdown`/`.txt`. */
+/** Rejects anything whose extension the Files screen cannot open. */
 export async function readTextFileAt(path: string): Promise<string> {
   return invoke("read_text_file_at", { path });
 }
 
-/** Creates parent directories for a new note. Documents only, as above. */
+/** Creates parent directories for a new file. Same extension gate as above. */
 export async function writeTextFileAt(
   path: string,
   contents: string,

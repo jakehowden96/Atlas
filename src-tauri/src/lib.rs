@@ -210,7 +210,7 @@ pub fn run() {
             commands::panel::refresh_panel,
             commands::git::get_git_status,
             commands::git::git_checkout_branch,
-            commands::git::git_remote_slug,
+            commands::git::list_workspace_repos,
             commands::prs::list_repo_prs,
             commands::prs::gh_viewer,
             commands::prs::open_url,
