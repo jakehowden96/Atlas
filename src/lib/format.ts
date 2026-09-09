@@ -15,6 +15,13 @@ export function basename(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
+/** A token count as a session tile shows it: `340`, `1.2k`, `68k`. */
+export function formatTokens(tokens: number): string {
+  if (tokens < 1000) return `${tokens}`;
+  const k = tokens / 1000;
+  return k < 10 ? `${k.toFixed(1)}k` : `${Math.round(k)}k`;
+}
+
 /** A byte count as the Files rail shows it: `812 B`, `4.2 KB`, `1.3 MB`. */
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

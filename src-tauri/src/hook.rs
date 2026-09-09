@@ -150,6 +150,32 @@ mod tests {
         assert_eq!(n.timestamp, "2025-01-01T00:00:00Z");
     }
 
+    /// The payload Claude Code really sends, rather than the minimal shape the
+    /// tests above invent. The shipped CLI builds its Notification hook input
+    /// as the common hook fields plus `message`, `title` and
+    /// `notification_type` — so `notification_type` is a real field, and both
+    /// this parser and the frontend's allowlist can match on it directly. The
+    /// common fields are surplus here and must be ignored, not choke the parse.
+    #[test]
+    fn reads_the_real_notification_hook_payload() {
+        let n = build_notification(
+            r#"{
+                "session_id": "9f8e7d6c-1234-4321-abcd-0123456789ab",
+                "transcript_path": "/home/j/.claude/projects/atlas/9f8e.jsonl",
+                "cwd": "/home/j/code/atlas",
+                "permission_mode": "default",
+                "hook_event_name": "Notification",
+                "message": "Claude needs your permission to use Bash",
+                "notification_type": "permission_prompt"
+            }"#,
+            "2025-01-01T00:00:00Z".to_string(),
+        );
+        assert_eq!(n.notification_type, "permission_prompt");
+        assert_eq!(n.message, "Claude needs your permission to use Bash");
+        // That payload carries no `title`, so the type-specific default stands.
+        assert_eq!(n.title, "Claude needs permission");
+    }
+
     #[test]
     fn explicit_title_wins_over_default() {
         let n = build_notification(
