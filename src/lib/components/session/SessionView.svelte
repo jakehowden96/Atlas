@@ -99,7 +99,7 @@
   <div class="main">
     <header class="head">
       <button type="button" class="back" onclick={() => showView("sessions")}>
-        ← Sessions <span class="hint">esc</span>
+        ← Sessions <span class="hint">{$chords.backToSessions}</span>
       </button>
 
       {#if tile}
