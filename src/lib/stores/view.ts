@@ -52,6 +52,9 @@ export function openNewSession(seed?: NewSessionSeed): void {
 /** The ⌘K command palette. */
 export const jumpOpen = writable(false);
 
+/** The keyboard-shortcut sheet. */
+export const shortcutsOpen = writable(false);
+
 /** Sessions' workspace chip filter: "all" or a workspace path. */
 export const wsFilter = writable<string>("all");
 

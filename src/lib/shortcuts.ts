@@ -10,6 +10,7 @@ import {
   openDialogOpen,
   openNewSession,
   railOpen,
+  shortcutsOpen,
   showView,
   TAB_VIEWS,
   type View,
@@ -28,6 +29,7 @@ const RUN: Record<Action, () => void> = {
   tab3: () => showView(TAB_VIEWS[2]),
   tab4: () => showView(TAB_VIEWS[3]),
   backToSessions: () => showView("sessions"),
+  shortcuts: () => shortcutsOpen.update((v) => !v),
 };
 
 /**
@@ -62,6 +64,12 @@ export function handleGlobalKeydown(e: KeyboardEvent): boolean {
   // Esc — topmost modal, then the Changes drawer, then back to Sessions. This
   // is ordered modal dismissal rather than a binding, so it is not rebindable.
   if (e.key === "Escape") {
+    // The sheet can be opened over any of the others, so it dismisses first.
+    if (get(shortcutsOpen)) {
+      e.preventDefault();
+      shortcutsOpen.set(false);
+      return true;
+    }
     if (get(jumpOpen)) {
       e.preventDefault();
       jumpOpen.set(false);

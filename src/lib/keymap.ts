@@ -20,7 +20,8 @@ export type Action =
   | "tab2"
   | "tab3"
   | "tab4"
-  | "backToSessions";
+  | "backToSessions"
+  | "shortcuts";
 
 export interface Binding {
   /** The platform modifier. ⌘ and Ctrl are accepted interchangeably, so one
@@ -50,6 +51,7 @@ export const ACTIONS: Action[] = [
   "tab3",
   "tab4",
   "backToSessions",
+  "shortcuts",
 ];
 
 /** Row labels for Settings › Keyboard. */
@@ -65,6 +67,7 @@ export const ACTION_LABELS: Record<Action, string> = {
   tab3: "Pull requests tab",
   tab4: "Stats tab",
   backToSessions: "Back to Sessions",
+  shortcuts: "Keyboard shortcuts",
 };
 
 export const DEFAULT_KEYMAP: Keymap = {
@@ -81,6 +84,12 @@ export const DEFAULT_KEYMAP: Keymap = {
   /* Bare Escape belongs to the Claude Code TUI, so returning to Sessions from a
      focused terminal is a chord of its own. */
   backToSessions: { mod: true, shift: false, key: "Escape" },
+  /* The shortcut sheet. A bare `?` is the usual chord for it, but every binding
+     here is dispatched off `svelte:window` with no is-typing guard, so a
+     modifierless key would swallow the character everywhere text is entered —
+     the same mistake the `phase 06 follow-up` reverted. Shift is left absent so
+     the chord still fires on a layout that shifts to reach `/`. */
+  shortcuts: { mod: true, key: "/" },
 };
 
 const DIGIT_CODE = /^Digit[0-9]$/;

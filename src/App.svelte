@@ -8,6 +8,7 @@
   import SessionsView from "./lib/components/sessions/SessionsView.svelte";
   import PrsView from "./lib/components/prs/PrsView.svelte";
   import SettingsModal from "./lib/components/settings/SettingsModal.svelte";
+  import ShortcutSheet from "./lib/components/settings/ShortcutSheet.svelte";
   import JumpPalette from "./lib/components/session/JumpPalette.svelte";
   import NewSessionModal from "./lib/components/session/NewSessionModal.svelte";
   import StatsView from "./lib/components/stats/StatsView.svelte";
@@ -228,6 +229,7 @@
 <JumpPalette />
 
 <SettingsModal />
+<ShortcutSheet />
 <Toast />
 
 <style>

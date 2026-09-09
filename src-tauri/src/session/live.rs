@@ -25,6 +25,15 @@ const EXCERPT: usize = 140;
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
+/// The serde mirror of the `SessionState` union in `src/types/session.ts`.
+///
+/// Only `Running` and `Idle` are ever constructed in Rust — `finalize` picks
+/// between them from the transcript, and nothing else assigns the field.
+/// `NeedsYou` and `Error` are produced entirely on the frontend: `buildTiles`
+/// in `overview.ts` folds needs-you in from the Notification hook's per-tab
+/// flag, and `pendingLive` maps a workspace row whose `status` is `"error"`.
+/// They stay declared because this enum is the serde boundary and the TS union
+/// names all four — `ATTENTION_RANK` and `PILL` map every one of them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SessionState {
@@ -474,9 +483,8 @@ impl SessionTail {
                     input_summary: summary.clone(),
                 });
 
-        // `NeedsYou` and `Error` are set from outside — the Notification hook and
-        // the PTY exit code respectively. The transcript only separates the two
-        // states it can see.
+        // Only the two states a transcript can tell apart. `NeedsYou` and
+        // `Error` never come from here at all — see `SessionState`.
         self.session.state = if self.session.pending_tool.is_none()
             && self.last_stop_reason.as_deref() == Some("end_turn")
         {

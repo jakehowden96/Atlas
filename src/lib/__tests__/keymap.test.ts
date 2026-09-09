@@ -62,6 +62,15 @@ describe("matchBinding", () => {
     expect(matchBinding(rail, DEFAULT_KEYMAP.toggleRail)).toBe(true);
   });
 
+  it("the shortcut sheet is a chord, not a bare `?`", () => {
+    const b = DEFAULT_KEYMAP.shortcuts;
+    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "/" }), b)).toBe(true);
+    expect(matchBinding(makeKeyEvent({ ctrlKey: true, key: "/" }), b)).toBe(true);
+    // A modifierless binding would swallow the character in every text box.
+    expect(matchBinding(makeKeyEvent({ key: "?" }), b)).toBe(false);
+    expect(matchesAnyBinding(makeKeyEvent({ key: "/" }), DEFAULT_KEYMAP)).toBe(false);
+  });
+
   it("mod+Escape is a binding but bare Escape is not", () => {
     const b = DEFAULT_KEYMAP.backToSessions;
     expect(matchBinding(makeKeyEvent({ metaKey: true, key: "Escape" }), b)).toBe(true);

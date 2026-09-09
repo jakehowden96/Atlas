@@ -34,10 +34,17 @@
   --ink-text: #ffffff;
   --term-bg: #fafafb;
   --term-text: #2b2e35;
+  /* Transcript line roles. Their surface is --term-bg — SessionTile's preview
+     pane and the session terminal — not --surface3, so 4.5:1 is measured
+     against that. --t-tool keeps the value --muted was raised off: on
+     --term-bg it clears anyway (4.77 light, 5.78 dark), so the two tokens
+     diverge deliberately. --t-step (4.38) and --t-warn (3.57) did not clear it
+     in light and were scaled the same way --muted was — proportional RGB, hue
+     unchanged. Both dark values already cleared and are left alone. */
   --t-user: #17181b;
-  --t-step: #23855f;
+  --t-step: #207956;
   --t-tool: #6b7079;
-  --t-warn: #b07a1a;
+  --t-warn: #906415;
   --overlay: rgba(23, 24, 27, 0.35);
   --shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
 

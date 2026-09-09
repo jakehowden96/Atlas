@@ -132,6 +132,17 @@
     if (/^https?:/i.test(href)) void openUrl(href);
   }
 
+  /* Wikilinks only. A `[[link]]` carries no href — the target is resolved here
+     — so ⏎ on one raises no click of its own the way an ordinary link does. */
+  function onPreviewKeydown(e: KeyboardEvent) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const anchor = (e.target as HTMLElement | null)?.closest?.("a[data-wikilink]");
+    if (!anchor) return;
+    e.preventDefault();
+    const rel = resolveWikilink(anchor.getAttribute("data-wikilink") ?? "", files);
+    if (rel) openFile($fileWs, rel);
+  }
+
   function askClaude() {
     if (!key) return;
     const workspacePath = file.source === "plans" || file.source === "disk" ? $fileWs : file.source;
@@ -233,13 +244,13 @@
         ></textarea>
       {/if}
       {#if mode !== "source"}
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           bind:this={previewEl}
           class="preview"
           class:split={mode === "split"}
           onclick={onPreviewClick}
+          onkeydown={onPreviewKeydown}
         >
           <div class="page">{@html html}</div>
         </div>
@@ -449,6 +460,13 @@
     line-height: 1.7;
     resize: none;
     tab-size: 2;
+  }
+
+  /* Replaces the outline above. The pane is borderless and edge to edge, so an
+     outset ring would sit half off screen; the inset one traces the pane. */
+  .source:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
 
   .preview {

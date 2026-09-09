@@ -3,6 +3,7 @@
   import { parseDiff, type DiffFile } from "../../diff-parser";
   import { cssEscape, dedupeKeys, toFlat, type FlatFile } from "../../diff-view";
   import { refreshPanel } from "../../ipc";
+  import { enterLabel } from "../../platform";
   import { submitReview } from "../../review/submitReview";
   import { panelData } from "../../stores/panel";
   import {
@@ -328,7 +329,7 @@
         {#if commentCount > 0}
           {commentCount} review comment{commentCount === 1 ? "" : "s"} · sent as one prompt
         {:else}
-          No review comments · click a diff line to leave one
+          No review comments · pick a diff line and press {enterLabel()} to leave one
         {/if}
       </span>
       <div class="spacer"></div>

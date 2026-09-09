@@ -299,7 +299,9 @@ function wikilink(label: string, ctx: Ctx): string {
   if (ctx.resolve && !ctx.resolve(target)) {
     return `<span class="wikilink broken">${label}</span>`;
   }
-  return `<a class="wikilink" data-wikilink="${label}">${label}</a>`;
+  // `tabindex` because the anchor has no href — the editor resolves the target
+  // itself — and an anchor without one is not in the tab order.
+  return `<a class="wikilink" data-wikilink="${label}" tabindex="0">${label}</a>`;
 }
 
 function anchor(label: string, href: string): string {

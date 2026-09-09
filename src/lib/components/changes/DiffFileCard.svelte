@@ -55,6 +55,56 @@
     userCollapsed || (totalLines(item.file) > MAX_VISIBLE_LINES && !expanded),
   );
 
+  let splitRows = $derived(toSplitRows(item.file));
+
+  /* One tab stop per card, and ↑/↓ move it — the same roving shape the Sessions
+     grid uses. A tab stop per diff line would put hundreds of them between the
+     drawer's header and its Send button; none at all is what left "click a diff
+     line to leave one" the only way to open a review composer. Ids are minted
+     per render mode, so `tabRow` falls back rather than trusting a stale one. */
+  let rowsEl: HTMLDivElement | undefined = $state();
+  let cursor = $state("");
+
+  let rowIds = $derived.by(() => {
+    if (diffMode === "split") {
+      return splitRows.flatMap((row, i) => (row.kind === "hunk" ? [] : [`s${i}`]));
+    }
+    return item.file.hunks.flatMap((hunk, hi) =>
+      hunk.lines.flatMap((line, li) => (line.type === "hunk-header" ? [] : [`u${hi}-${li}`])),
+    );
+  });
+
+  let tabRow = $derived(rowIds.includes(cursor) ? cursor : (rowIds[0] ?? ""));
+
+  function commentRows(): HTMLElement[] {
+    return [...(rowsEl?.querySelectorAll<HTMLElement>(".row.commentable") ?? [])];
+  }
+
+  function onRowsKeydown(e: KeyboardEvent) {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const rows = commentRows();
+    // -1 when the composer's own textarea has focus; its arrows stay its own.
+    const at = rows.findIndex((el) => el.contains(e.target as Node));
+    const next = rows[at + (e.key === "ArrowDown" ? 1 : -1)];
+    if (at < 0 || !next) return;
+    e.preventDefault();
+    cursor = next.dataset.rowId ?? "";
+    next.focus({ preventScroll: true });
+    next.scrollIntoView({ block: "nearest" });
+  }
+
+  /** Keeps the cursor honest however focus arrived — click, ⇥ or an arrow. */
+  function onRowsFocusIn(e: FocusEvent) {
+    const el = (e.target as HTMLElement | null)?.closest?.(".row.commentable");
+    if (el instanceof HTMLElement && el.dataset.rowId) cursor = el.dataset.rowId;
+  }
+
+  function rowActivate(e: KeyboardEvent, anchor: ReviewAnchor) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    onOpenComposer(anchor);
+  }
+
   function buildAnchor(
     fileKey: string,
     hunk: DiffHunk,
@@ -131,15 +181,28 @@
     <!-- `.lines` is the only horizontal scroller in the drawer; `.rows` widens
          to the longest code line so row tints span the full scroll width. -->
     <div class="lines">
-      <div class="rows" class:split={diffMode === "split"}>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        bind:this={rowsEl}
+        class="rows"
+        class:split={diffMode === "split"}
+        onkeydown={onRowsKeydown}
+        onfocusin={onRowsFocusIn}
+      >
         {#if diffMode === "split"}
-          {#each toSplitRows(item.file) as row, ri (ri)}
+          {#each splitRows as row, ri (ri)}
             {#if row.kind === "hunk"}
               <div class="row hunk"><span class="hunk-text">{row.header}</span></div>
             {:else if row.kind === "context"}
               {@const ctxAnchor = buildAnchor(item.key, row.hunk, " ", row.left.num, row.right.num, row.right.content)}
-              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-              <div class="row commentable" onclick={() => onOpenComposer(ctxAnchor)}>
+              <div
+                class="row commentable"
+                role="button"
+                tabindex={`s${ri}` === tabRow ? 0 : -1}
+                data-row-id={`s${ri}`}
+                onclick={() => onOpenComposer(ctxAnchor)}
+                onkeydown={(e: KeyboardEvent) => rowActivate(e, ctxAnchor)}
+              >
                 <span class="num">{row.left.num ?? ""}</span>
                 <span class="code">{row.left.content}</span>
                 <span class="num">{row.right.num ?? ""}</span>
@@ -152,8 +215,14 @@
               {@const newNum = row.right?.num ?? null}
               {@const content = row.right?.content ?? row.left?.content ?? ""}
               {@const chgAnchor = buildAnchor(item.key, row.hunk, side, oldNum, newNum, content)}
-              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-              <div class="row commentable" onclick={() => onOpenComposer(chgAnchor)}>
+              <div
+                class="row commentable"
+                role="button"
+                tabindex={`s${ri}` === tabRow ? 0 : -1}
+                data-row-id={`s${ri}`}
+                onclick={() => onOpenComposer(chgAnchor)}
+                onkeydown={(e: KeyboardEvent) => rowActivate(e, chgAnchor)}
+              >
                 {#if row.left}
                   <span class="num del">{row.left.num ?? ""}</span>
                   <span class="code del">−{row.left.content}</span>
@@ -179,8 +248,14 @@
                 <div class="row hunk"><span class="hunk-text">{hunk.header}</span></div>
               {:else if line.type === "add"}
                 {@const anchor = buildAnchor(item.key, hunk, "+", line.oldNum, line.newNum, line.content)}
-                <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-                <div class="row ins commentable" onclick={() => onOpenComposer(anchor)}>
+                <div
+                  class="row ins commentable"
+                  role="button"
+                  tabindex={`u${hi}-${li}` === tabRow ? 0 : -1}
+                  data-row-id={`u${hi}-${li}`}
+                  onclick={() => onOpenComposer(anchor)}
+                  onkeydown={(e: KeyboardEvent) => rowActivate(e, anchor)}
+                >
                   <span class="num"></span>
                   <span class="num">{line.newNum ?? ""}</span>
                   <span class="code">+{line.content}</span>
@@ -188,8 +263,14 @@
                 {@render commentThread(anchor)}
               {:else if line.type === "remove"}
                 {@const anchor = buildAnchor(item.key, hunk, "-", line.oldNum, line.newNum, line.content)}
-                <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-                <div class="row del commentable" onclick={() => onOpenComposer(anchor)}>
+                <div
+                  class="row del commentable"
+                  role="button"
+                  tabindex={`u${hi}-${li}` === tabRow ? 0 : -1}
+                  data-row-id={`u${hi}-${li}`}
+                  onclick={() => onOpenComposer(anchor)}
+                  onkeydown={(e: KeyboardEvent) => rowActivate(e, anchor)}
+                >
                   <span class="num">{line.oldNum ?? ""}</span>
                   <span class="num"></span>
                   <span class="code">−{line.content}</span>
@@ -197,8 +278,14 @@
                 {@render commentThread(anchor)}
               {:else}
                 {@const anchor = buildAnchor(item.key, hunk, " ", line.oldNum, line.newNum, line.content)}
-                <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-                <div class="row commentable" onclick={() => onOpenComposer(anchor)}>
+                <div
+                  class="row commentable"
+                  role="button"
+                  tabindex={`u${hi}-${li}` === tabRow ? 0 : -1}
+                  data-row-id={`u${hi}-${li}`}
+                  onclick={() => onOpenComposer(anchor)}
+                  onkeydown={(e: KeyboardEvent) => rowActivate(e, anchor)}
+                >
                   <span class="num">{line.oldNum ?? ""}</span>
                   <span class="num">{line.newNum ?? ""}</span>
                   <span class="code">{line.content}</span>
@@ -431,6 +518,12 @@
 
   .row.commentable:hover .num {
     color: var(--text);
+  }
+
+  /* The cursor row. Inset because the row runs the full scroll width. */
+  .row.commentable:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
 
   /* ── Collapsed ─────────────────────────────────────────────────────────── */

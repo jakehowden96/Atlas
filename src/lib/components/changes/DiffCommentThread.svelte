@@ -158,7 +158,9 @@
     outline: none;
   }
 
-  .input:focus {
+  /* Replaces the outline above. A text box is always "focus-visible", pointer
+     or keyboard, so this reads identically to the `:focus` it was written as. */
+  .input:focus-visible {
     border-color: var(--accent);
   }
 

@@ -896,6 +896,13 @@
     outline: none;
   }
 
+  /* Replaces the outline above: the dashed "add one" border goes solid accent
+     while the box is being typed in. */
+  .chip-input:focus-visible {
+    border-style: solid;
+    border-color: var(--accent);
+  }
+
   /* ── Claude Code ───────────────────────────────────────────────────────── */
   .hook-row {
     padding: 9px 12px;

@@ -90,7 +90,7 @@ describe("renderMarkdown", () => {
 
   it("renders a wikilink as an anchor carrying its target", () => {
     expect(renderMarkdown("see [[Design Notes]] first")).toContain(
-      '<a class="wikilink" data-wikilink="Design Notes">Design Notes</a>',
+      '<a class="wikilink" data-wikilink="Design Notes" tabindex="0">Design Notes</a>',
     );
   });
 

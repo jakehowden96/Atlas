@@ -279,6 +279,12 @@
     font-size: 13.5px;
   }
 
+  /* Replaces the outline above. The field is borderless because the bar is its
+     frame, so focus tints the bar's rule rather than ringing the box. */
+  .bar:has(.input:focus-visible) {
+    border-bottom-color: var(--accent);
+  }
+
   .input::placeholder {
     color: var(--muted);
   }

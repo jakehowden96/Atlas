@@ -34,18 +34,73 @@
   let visible = $state(false);
   let closing = $state(false);
 
+  let panelEl = $state<HTMLDivElement | null>(null);
+  /** Whatever had focus when the modal opened, so closing can hand it back. */
+  let restoreTo: HTMLElement | null = null;
+
   $effect(() => {
     if (open) {
+      if (!visible) restoreTo = document.activeElement as HTMLElement | null;
       visible = true;
       closing = false;
     } else if (visible && !closing) {
       closing = true;
+      // Focus goes back before the exit run rather than after it: the node the
+      // ring lands on has to be on screen while the panel is still sinking.
+      const back = restoreTo;
+      restoreTo = null;
+      if (back?.isConnected) back.focus();
       closeWith(() => {
         visible = false;
         closing = false;
       }, EXIT_MS);
     }
   });
+
+  /* Anything the browser would tab to. `:not([tabindex="-1"])` keeps the panel
+     itself out — it only carries a tabindex so it can be the fallback below. */
+  const FOCUSABLE =
+    'a[href], a[tabindex="0"], button:not([disabled]), input:not([disabled]),' +
+    ' select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+  function tabbables(): HTMLElement[] {
+    return [...(panelEl?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])].filter(
+      (el) => el.offsetWidth > 0 || el.offsetHeight > 0,
+    );
+  }
+
+  /* Pull focus in one turn after mounting, and only if nothing inside has it
+     already — both palettes focus their own filter box from an effect of their
+     own, and this must not fight them for it. */
+  $effect(() => {
+    if (!visible || closing || !panelEl) return;
+    const timer = setTimeout(() => {
+      if (!panelEl || panelEl.contains(document.activeElement)) return;
+      (tabbables()[0] ?? panelEl).focus();
+    });
+    return () => clearTimeout(timer);
+  });
+
+  /**
+   * Trap ⇥ inside the panel. Without this the tab order walks straight out of
+   * an open modal into the screen behind it, which is unreachable by pointer
+   * and so reads as focus simply vanishing.
+   */
+  function onKeydown(e: KeyboardEvent) {
+    if (e.key !== "Tab") return;
+    const items = tabbables();
+    if (items.length === 0) {
+      e.preventDefault();
+      panelEl?.focus();
+      return;
+    }
+    const edge = e.shiftKey ? items[0] : items[items.length - 1];
+    const wrapTo = e.shiftKey ? items[items.length - 1] : items[0];
+    const active = document.activeElement;
+    if (active !== edge && panelEl?.contains(active)) return;
+    e.preventDefault();
+    wrapTo.focus();
+  }
 </script>
 
 {#if visible}
@@ -55,10 +110,15 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
+      bind:this={panelEl}
       class="panel"
       class:closing
       style="width: {width}"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
       onclick={(e) => e.stopPropagation()}
+      onkeydown={onKeydown}
     >
       {@render children()}
     </div>

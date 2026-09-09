@@ -115,8 +115,10 @@
     outline: none;
   }
 
-  .filter:focus {
-    border-color: var(--border2);
+  /* Replaces the outline above. --border2 was too close to --border to read as
+     focus at all, so the focused box takes the accent. */
+  .filter:focus-visible {
+    border-color: var(--accent);
   }
 
   .filter::placeholder {
