@@ -23,7 +23,7 @@ import { writable } from "svelte/store";
 export const lightXtermTheme = {
   background: "#fafafb", // --term-bg
   foreground: "#2b2e35", // --term-text
-  cursor: "#2fa37a", // --accent
+  cursor: "#217457", // --accent
   cursorAccent: "#fafafb",
   selectionBackground: "#cfe8dd",
   selectionForeground: "#17181b",

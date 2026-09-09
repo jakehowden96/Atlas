@@ -23,6 +23,12 @@ export default defineConfig({
     },
   },
   test: {
+    /* `app.css` is imported with `?raw` by `theme.test.ts`, which asserts the
+       real token blocks rather than a copy of them. Vitest stubs CSS imports to
+       an empty string by default, query and all. Nothing else in the suite
+       imports a stylesheet — every test here is pure logic — so turning this on
+       costs one small file. */
+    css: true,
     exclude: [
       "**/node_modules/**",
       "**/dist/**",
