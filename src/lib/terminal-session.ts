@@ -136,28 +136,21 @@ export class TerminalSession {
     });
   }
 
-  private checkOscReadiness() {
-    const tab = get(tabs).find(t => t.id === this.tabId);
-    if (tab?.commandWrittenAt && !tab.ready) {
-      // 300ms gate: shell preexec hooks fire within ~50ms of command entry;
-      // Claude Code's title arrives 500ms+ later. This cleanly separates them.
-      if (Date.now() - tab.commandWrittenAt > 300) {
-        setTabReady(this.tabId);
-      }
-    }
-  }
-
   private registerOscHandlers() {
-    // OSC 0 & 2: tab title — also triggers readiness after the command gate
+    // OSC 0 & 2: tab title. Titles do *not* mark the tab ready — only entering
+    // the alternate screen buffer does. A title used to count once it arrived
+    // more than 300ms after the command was written, on the theory that the
+    // shell's own titles land sooner than Claude Code's; a prompt that paints
+    // later than that — a slow PSReadLine, oh-my-posh — cleared the overlay
+    // while the shell still had `claude --session-id …` on screen, which is
+    // the raw command people saw flash before the TUI.
     this.terminal.parser.registerOscHandler(0, (data) => {
       setTabTitle(this.tabId, data);
-      this.checkOscReadiness();
       updateSessionLabelByTabId(this.tabId, data);
       return true;
     });
     this.terminal.parser.registerOscHandler(2, (data) => {
       setTabTitle(this.tabId, data);
-      this.checkOscReadiness();
       updateSessionLabelByTabId(this.tabId, data);
       return true;
     });

@@ -9,8 +9,10 @@ export interface TerminalTab {
   cwd?: string;
   onData?: (data: string) => void;
   needsInput?: boolean;
+  /** False until Claude Code's TUI enters the alternate screen buffer. The
+   *  terminal stays hidden behind the "Starting Claude Code…" overlay until
+   *  then, so the shell prompt and the launch command are never shown. */
   ready?: boolean;
-  commandWrittenAt?: number;
 }
 
 /**

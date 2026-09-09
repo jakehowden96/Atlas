@@ -117,9 +117,6 @@ export async function spawnClaudeSession(
       const current = get(tabs).find((t) => t.id === tabId);
       if (!current || current.ptyId < 0) return;
       ptyWrite(current.ptyId, cmd);
-      tabs.update((t) =>
-        t.map((x) => (x.id === tabId ? { ...x, commandWrittenAt: Date.now() } : x)),
-      );
       updateSessionStatus(session.id, "running");
       // Tail the session's own transcript for structured live state, unless
       // the user has turned transcript tailing off in Settings.
@@ -128,9 +125,9 @@ export async function spawnClaudeSession(
           log.warn("session", `startSessionTail failed for ${claudeSessionId}: ${e}`),
         );
       }
-      // Readiness is triggered by TerminalSession detecting Claude Code's
-      // OSC title (after a 300ms gate to skip shell-emitted titles) or
-      // alternate screen buffer activation. Safety fallback after 5s.
+      // Readiness is TerminalSession seeing the alternate screen buffer turn
+      // on — the one signal that means the TUI itself has started, and not
+      // something a shell also emits. Safety fallback after 5s.
       setTimeout(() => {
         const t = get(tabs).find((x) => x.id === tabId);
         if (t && t.ready === false) setTabReady(tabId);
