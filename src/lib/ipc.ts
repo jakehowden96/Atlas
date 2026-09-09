@@ -195,8 +195,9 @@ export async function onClaudeNotification(
 }
 
 /**
- * Markdown and text files under a workspace, directories included, already
- * sorted directories-first then by name. Capped at depth 8 and 2000 entries.
+ * Every file the editor can open under a workspace — prose, source and config
+ * — directories included, already sorted directories-first then by name.
+ * Capped at depth 8 and 2000 entries.
  */
 export async function listWorkspaceDocs(
   workspacePath: string,

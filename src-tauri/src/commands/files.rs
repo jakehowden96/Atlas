@@ -14,9 +14,24 @@ use std::sync::{mpsc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, State};
 
-/// The only extensions the Files screen shows and edits. Source files never
-/// appear here — code review stays in the Changes drawer.
-const DOC_EXTENSIONS: [&str; 3] = ["md", "txt", "markdown"];
+/// The extensions the Files screen shows and edits.
+///
+/// An allowlist rather than "anything that is not binary": the editor reads a
+/// whole file into a textarea, so a `.png` or a `.pdf` reaching it renders as
+/// mojibake. Add to this list to teach the screen a new file type — nothing
+/// else needs to change, since a file with no Markdown preview simply opens in
+/// the source pane.
+const DOC_EXTENSIONS: &[&str] = &[
+    // Prose.
+    "md", "markdown", "txt", "rst", "adoc",
+    // Web and app source.
+    "ts", "tsx", "js", "jsx", "mjs", "cjs", "svelte", "vue", "css", "scss", "less", "html", "htm",
+    // Everything else people keep in a repo.
+    "rs", "go", "py", "rb", "java", "kt", "kts", "swift", "c", "h", "cc", "cpp", "hpp", "cs", "php",
+    "lua", "sql", "sh", "bash", "zsh", "ps1", "r",
+    // Config and data.
+    "json", "jsonc", "yaml", "yml", "toml", "ini", "cfg", "xml",
+];
 
 /// Caps on the walk, so a stray home-directory workspace cannot hang the UI.
 const MAX_DEPTH: usize = 8;
@@ -163,7 +178,7 @@ fn walk_docs(root: &Path) -> Vec<DocEntry> {
     entries
 }
 
-/// Markdown and text files under a workspace, directories included.
+/// Every file the editor can open under a workspace, directories included.
 #[tauri::command(async)]
 pub async fn list_workspace_docs(workspace_path: String) -> Result<Vec<DocEntry>, String> {
     validate_cwd(&workspace_path)?;
@@ -274,7 +289,7 @@ fn validate_doc_path(path: &str) -> Result<PathBuf, String> {
     }
     if !is_doc_file(&path) {
         return Err(format!(
-            "Only .md, .markdown and .txt files can be opened here: {}",
+            "Not a file type the Files screen can open: {}",
             path.display()
         ));
     }
@@ -477,8 +492,14 @@ mod tests {
         assert!(is_doc_file(Path::new("/w/NOTES.MD")));
         assert!(is_doc_file(Path::new("/w/notes.txt")));
         assert!(is_doc_file(Path::new("/w/notes.markdown")));
-        assert!(!is_doc_file(Path::new("/w/main.rs")));
-        assert!(!is_doc_file(Path::new("/w/ipc.ts")));
+        // Source files are documents too — the screen edits a repo, not a
+        // notebook. Preview is still Markdown-only; these open as source.
+        assert!(is_doc_file(Path::new("/w/main.rs")));
+        assert!(is_doc_file(Path::new("/w/ipc.TS")));
+        assert!(is_doc_file(Path::new("/w/App.svelte")));
+        // Still an allowlist: a file the editor would render as mojibake, and
+        // one with no extension to match on, stay out.
+        assert!(!is_doc_file(Path::new("/w/icon.png")));
         assert!(!is_doc_file(Path::new("/w/README")));
     }
 
@@ -489,6 +510,7 @@ mod tests {
         touch(&root.join("README.md"));
         touch(&root.join("docs/guide.markdown"));
         touch(&root.join("src/main.rs"));
+        touch(&root.join("src/icon.png"));
         touch(&root.join(".git/COMMIT_EDITMSG.md"));
         touch(&root.join("node_modules/pkg/readme.md"));
         touch(&root.join("target/debug/notes.txt"));
@@ -498,10 +520,11 @@ mod tests {
 
         assert!(paths.contains(&"README.md"));
         assert!(paths.contains(&"docs/guide.markdown"));
+        assert!(paths.contains(&"src/main.rs"), "source files are listed now");
         assert!(!paths.iter().any(|p| p.contains(".git")));
         assert!(!paths.iter().any(|p| p.contains("node_modules")));
         assert!(!paths.iter().any(|p| p.contains("target")));
-        assert!(!paths.iter().any(|p| p.ends_with(".rs")));
+        assert!(!paths.iter().any(|p| p.ends_with(".png")));
         // Directories come back even when they hold no documents.
         assert!(entries.iter().any(|e| e.rel_path == "src" && e.is_dir));
     }
@@ -546,32 +569,46 @@ mod tests {
         let root = tmp.path();
         touch(&root.join("notes.md"));
         touch(&root.join("main.rs"));
+        touch(&root.join("icon.png"));
         touch(&root.join("sub/deep.md"));
 
         let entries = list_children(root).unwrap();
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         // Directories first, then by name — and nothing from inside `sub`, which
         // the dialog reaches by walking into it.
-        assert_eq!(names, vec!["sub", "main.rs", "notes.md"]);
+        assert_eq!(names, vec!["sub", "icon.png", "main.rs", "notes.md"]);
 
         let by_name = |n: &str| entries.iter().find(|e| e.name == n).unwrap();
         assert!(by_name("notes.md").is_text);
+        assert!(by_name("main.rs").is_text);
         // Listed so the folder looks right, but the dialog greys it out.
-        assert!(!by_name("main.rs").is_text);
+        assert!(!by_name("icon.png").is_text);
         assert!(by_name("sub").is_dir && !by_name("sub").is_text);
     }
 
     #[test]
-    fn write_text_file_at_refuses_a_source_path() {
+    fn write_text_file_at_refuses_a_path_the_editor_cannot_open() {
         let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join("main.rs");
+        let path = tmp.path().join("icon.png");
         let err = write_text_file_at(
             path.to_string_lossy().to_string(),
-            "fn main() {}".to_string(),
+            "not an image".to_string(),
         )
         .unwrap_err();
-        assert!(err.contains(".md"), "unexpected error: {}", err);
+        assert!(err.contains("icon.png"), "unexpected error: {}", err);
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn write_text_file_at_accepts_a_source_path() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("src/main.rs");
+        write_text_file_at(path.to_string_lossy().to_string(), "fn main() {}".to_string())
+            .unwrap();
+        assert_eq!(
+            read_text_file_at(path.to_string_lossy().to_string()).unwrap(),
+            "fn main() {}"
+        );
     }
 
     #[test]
@@ -612,7 +649,11 @@ mod tests {
             watched_rel_path(&roots, Path::new("/w/docs/guide.md")),
             Some("docs/guide.md".to_string())
         );
-        assert_eq!(watched_rel_path(&roots, Path::new("/w/src/main.rs")), None);
+        assert_eq!(
+            watched_rel_path(&roots, Path::new("/w/src/main.rs")),
+            Some("src/main.rs".to_string())
+        );
+        assert_eq!(watched_rel_path(&roots, Path::new("/w/src/icon.png")), None);
         assert_eq!(
             watched_rel_path(&roots, Path::new("/w/node_modules/pkg/readme.md")),
             None

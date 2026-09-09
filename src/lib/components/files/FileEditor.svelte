@@ -3,8 +3,10 @@
    * The Files screen's middle column: tabs, toolbar, the document itself and a
    * status footer.
    *
-   * A documents editor, not a code editor — the source pane is a textarea, and
-   * the preview is `markdown.ts` rather than a full CommonMark renderer.
+   * Source files open here too, but this is not yet a code editor: the source
+   * pane is a plain textarea with no highlighting, and the preview is
+   * `markdown.ts` rather than a full CommonMark renderer. A file with no
+   * Markdown preview simply shows its source.
    */
   import { untrack } from "svelte";
   import { absolutePath, parseFileKey, resolveWikilink } from "../../files";
@@ -59,7 +61,11 @@
    *  that identifies the file. */
   let crumbs = $derived(file.path.split(/[\\/]/).filter(Boolean).slice(-3));
 
-  let kind = $derived(markdown ? "Markdown" : /\.txt$/i.test(file.path) ? "Text" : "Document");
+  /** `src/lib/ipc.ts` → `TS`. Anything with no extension keeps the generic name. */
+  let ext = $derived(/\.([a-z0-9]+)$/i.exec(file.path)?.[1].toLowerCase() ?? "");
+  let kind = $derived(
+    markdown ? "Markdown" : ext === "txt" ? "Text" : ext ? ext.toUpperCase() : "Document",
+  );
   let lines = $derived(text ? text.split("\n").length : 0);
   let words = $derived(text.trim() ? text.trim().split(/\s+/).length : 0);
   let modified = $derived.by(() => {
