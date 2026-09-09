@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
@@ -258,6 +258,10 @@ pub struct SessionTail {
     subagent_index: HashMap<String, usize>,
     /// Subagent file stem -> its incremental tool counter.
     subagent_files: HashMap<String, SubagentCounter>,
+    /// Indices into `session.subagents` of the ones launched in the background.
+    background_subagents: HashSet<usize>,
+    /// Whether a `pendingBackgroundAgentCount` has ever been seen — see `fold_system`.
+    seen_background_count: bool,
     /// `stop_reason` of the newest assistant line.
     last_stop_reason: Option<String>,
     /// Line currently displayed as `Working`, and the role it really has.
@@ -279,6 +283,8 @@ impl SessionTail {
             outstanding: Vec::new(),
             subagent_index: HashMap::new(),
             subagent_files: HashMap::new(),
+            background_subagents: HashSet::new(),
+            seen_background_count: false,
             last_stop_reason: None,
             working: None,
         }
@@ -330,6 +336,8 @@ impl SessionTail {
         self.outstanding.clear();
         self.subagent_index.clear();
         self.subagent_files.clear();
+        self.background_subagents.clear();
+        self.seen_background_count = false;
         self.last_stop_reason = None;
         self.working = None;
     }
@@ -356,6 +364,7 @@ impl SessionTail {
         match line_type(&obj) {
             "user" => self.fold_user(&obj, timestamp),
             "assistant" => self.fold_assistant(&obj, timestamp),
+            "system" => self.fold_system(&obj),
             "ai-title" => {
                 if let Some(title) = obj.get("aiTitle").and_then(|v| v.as_str()) {
                     self.session.title = Some(title.to_string());
@@ -369,15 +378,37 @@ impl SessionTail {
         // `isMeta` marks content injected by a hook or skill, not typed by the human.
         let is_meta = obj.get("isMeta").and_then(|v| v.as_bool()).unwrap_or(false);
         if let Some(text) = user_text(obj) {
+            // How a background subagent reports that it stopped. Read before the
+            // early return, because a notification arrives as plain user text
+            // rather than as the `tool_result` of the call that spawned it.
+            // The status tells `completed` from `failed`; Atlas shows a finished
+            // subagent the same either way, so only the id is acted on.
+            if let Some((tool_use_id, _status)) = task_notification(text) {
+                if let Some(&idx) = self.subagent_index.get(tool_use_id) {
+                    self.session.subagents[idx].done = true;
+                }
+            }
             if !is_meta {
                 self.push_line(LineRole::User, format!("> {}", excerpt(text)), timestamp);
             }
             return;
         }
+        // `toolUseResult` describes the line's single `tool_result` block. An
+        // async launch reports `isAsync: true` — see `is_async_launch`.
+        let async_launch = is_async_launch(obj);
         for result in tool_results(obj) {
             self.outstanding.retain(|(id, _, _)| id != result.tool_use_id);
             if let Some(&idx) = self.subagent_index.get(result.tool_use_id) {
-                self.session.subagents[idx].done = true;
+                // A background spawn's result is a launch receipt, not a
+                // completion: it lands seconds in while the agent runs for
+                // minutes. Only its task-notification ends it. A synchronous
+                // subagent — and a background one that failed to launch, which
+                // reports an ordinary error result — is done here as before.
+                if async_launch {
+                    self.background_subagents.insert(idx);
+                } else {
+                    self.session.subagents[idx].done = true;
+                }
             }
             let role = if result.is_error { LineRole::Alert } else { LineRole::Tool };
             let text = format!("  {}", excerpt(&result_text(result.content)));
@@ -448,6 +479,38 @@ impl SessionTail {
         }
     }
 
+    /// `turn_duration` lines carry `pendingBackgroundAgentCount`, the CLI's own
+    /// count of live background agents. Notifications alone already track it
+    /// exactly, so this is only a backstop: it settles subagents whose
+    /// notification can never arrive, such as ones still open when Claude Code
+    /// was killed and later resumed.
+    fn fold_system(&mut self, obj: &Value) {
+        if obj.get("subtype").and_then(|v| v.as_str()) != Some("turn_duration") {
+            return;
+        }
+        // The field is omitted rather than written as `0` when nothing is
+        // pending, so an absent value only means zero once we have seen the
+        // field at all — a Claude Code that never writes it must not settle
+        // every subagent on every turn.
+        match obj.get("pendingBackgroundAgentCount").and_then(|v| v.as_u64()) {
+            Some(count) => {
+                self.seen_background_count = true;
+                if count == 0 {
+                    self.settle_background();
+                }
+            }
+            None if self.seen_background_count => self.settle_background(),
+            None => {}
+        }
+    }
+
+    /// No background agent is live, so none of ours can still be running.
+    fn settle_background(&mut self) {
+        for &idx in &self.background_subagents {
+            self.session.subagents[idx].done = true;
+        }
+    }
+
     fn push_line(&mut self, role: LineRole, text: String, timestamp: Option<String>) {
         self.session.lines.push(TranscriptLine { role, text, timestamp });
         if self.session.lines.len() > MAX_LINES {
@@ -483,9 +546,15 @@ impl SessionTail {
                     input_summary: summary.clone(),
                 });
 
+        // A background subagent keeps the session running with nothing
+        // outstanding and the turn ended, because the work is happening in
+        // another process that this transcript only hears from on completion.
+        let subagent_running = self.session.subagents.iter().any(|s| !s.done);
+
         // Only the two states a transcript can tell apart. `NeedsYou` and
         // `Error` never come from here at all — see `SessionState`.
         self.session.state = if self.session.pending_tool.is_none()
+            && !subagent_running
             && self.last_stop_reason.as_deref() == Some("end_turn")
         {
             SessionState::Idle
@@ -623,6 +692,42 @@ fn plan_from_todos(input: &Value) -> Vec<PlanItem> {
         .unwrap_or_default()
 }
 
+/// True when this `user` line's `tool_result` is a background agent's launch
+/// receipt rather than its outcome.
+///
+/// `toolUseResult` is structured sidecar data on the line itself, so this is
+/// decided where the result is folded — not from the sidecar `meta.json`'s
+/// `requestShape`, which is written by another process and need not exist yet
+/// when the receipt lands, nor by matching the receipt's prose. Claude Code
+/// writes at most one `tool_result` per user line, so the object is unambiguous.
+fn is_async_launch(obj: &Value) -> bool {
+    obj.get("toolUseResult")
+        .and_then(|r| r.get("isAsync"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+/// The `<tool-use-id>` and `<status>` of a `<task-notification>`, which is how a
+/// background subagent reports that it stopped — minutes after the launch
+/// receipt. None for ordinary user text.
+///
+/// Every notification means the agent stopped, so any status ends it; the two
+/// seen in practice are `completed` and `failed`, which Atlas does not yet show
+/// apart. The same task-id may notify more than once if the user resumes it,
+/// and `done` is only ever set, never cleared.
+fn task_notification(text: &str) -> Option<(&str, &str)> {
+    if !text.contains("<task-notification>") {
+        return None;
+    }
+    Some((tagged(text, "tool-use-id")?, tagged(text, "status")?))
+}
+
+/// The contents of the first `<tag>…</tag>` in `text`.
+fn tagged<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
+    let rest = &text[text.find(&format!("<{}>", tag))? + tag.len() + 2..];
+    Some(rest[..rest.find(&format!("</{}>", tag))?].trim())
+}
+
 fn subagent_task(input: &Value) -> String {
     for key in ["description", "subagent_type", "prompt"] {
         if let Some(value) = input.get(key).and_then(|v| v.as_str()) {
@@ -665,6 +770,30 @@ mod tests {
         }
         drop(file);
         (dir, SessionTail::new(UUID.to_string(), path))
+    }
+
+    /// A `task-notification` for each of the three background `Agent` calls the
+    /// fixture opens and never closes. Only these end them: their `tool_result`
+    /// is an async launch receipt.
+    fn fixture_agents_notifying() -> Vec<String> {
+        [
+            "toolu_0118gcjuEJRTUbeqtJT9woYv",
+            "toolu_01CPyBJGgy5geBUQg4ut8sq2",
+            "toolu_01RW4z7xMj3W9N6nq9JqidXa",
+        ]
+        .iter()
+        .map(|id| {
+            let text = format!(
+                "<task-notification>\\n<tool-use-id>{}</tool-use-id>\\n\
+                 <status>completed</status>\\n</task-notification>",
+                id
+            );
+            format!(
+                r#"{{"type":"user","message":{{"role":"user","content":"{}"}},"timestamp":"2026-09-07T21:50:59.000Z"}}"#,
+                text
+            )
+        })
+        .collect()
     }
 
     fn append(path: &Path, lines: &[String]) {
@@ -767,7 +896,7 @@ mod tests {
     }
 
     #[test]
-    fn agent_calls_become_subagents_and_their_results_mark_them_done() {
+    fn agent_calls_become_subagents_and_a_synchronous_result_marks_one_done() {
         let (_dir, mut tail) = tail_with(&fixture_lines());
         tail.poll();
         let subagents = &tail.session().subagents;
@@ -930,8 +1059,11 @@ mod tests {
         assert_eq!(last.role, LineRole::Working);
 
         // Answer the pending call and end the turn — the marker is withdrawn and
-        // the line it borrowed gets its real role back.
+        // the line it borrowed gets its real role back. The fixture also opens
+        // three background agents, and they keep the session running until each
+        // one's task-notification arrives.
         let path = dir.path().join(format!("{}.jsonl", UUID));
+        append(&path, &fixture_agents_notifying());
         append(
             &path,
             &[
@@ -966,5 +1098,197 @@ mod tests {
             format!("> msg {}", 50),
             "the oldest lines are dropped first"
         );
+    }
+
+    // ── Background subagents ─────────────────────────────────────────────────
+
+    /// Six real lines from a transcript that spawned 11 background agents, in
+    /// file order, paths scrubbed: the `Agent` call, its async launch receipt,
+    /// the `end_turn` that follows it, a `turn_duration` claiming one agent is
+    /// pending, that agent's `task-notification`, and a later `turn_duration`
+    /// that omits the count because none are left.
+    const BG_FIXTURE: &str =
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/background-subagent.jsonl");
+
+    /// The `Agent` call's id and description in `BG_FIXTURE`.
+    const BG_ID: &str = "toolu_01V7H7Jwyq2aDAk2BcmVQGra";
+    const BG_TASK: &str = "Phase 01 — sessions rename";
+
+    fn bg_lines() -> Vec<String> {
+        std::fs::read_to_string(BG_FIXTURE)
+            .expect("fixture is checked in")
+            .lines()
+            .map(|l| l.to_string())
+            .collect()
+    }
+
+    /// Indices into `bg_lines()`, named so the tests read as a timeline.
+    const SPAWN: usize = 0;
+    const RECEIPT: usize = 1;
+    const END_TURN: usize = 2;
+    const COUNT_ONE: usize = 3;
+    const NOTIFICATION: usize = 4;
+    const COUNT_NONE: usize = 5;
+
+    fn live_subagents(tail: &SessionTail) -> usize {
+        tail.session().subagents.iter().filter(|a| !a.done).count()
+    }
+
+    #[test]
+    fn the_background_fixture_is_the_timeline_the_tests_name() {
+        let lines = bg_lines();
+        assert_eq!(lines.len(), 6);
+        assert!(lines[SPAWN].contains(BG_ID) && lines[SPAWN].contains(r#""name":"Agent""#));
+        assert!(lines[RECEIPT].contains(r#""isAsync":true"#));
+        assert!(lines[END_TURN].contains(r#""stop_reason":"end_turn""#));
+        assert!(lines[COUNT_ONE].contains(r#""pendingBackgroundAgentCount":1"#));
+        assert!(lines[NOTIFICATION].contains("<task-notification>"));
+        assert!(!lines[COUNT_NONE].contains("pendingBackgroundAgentCount"));
+        for needle in ["C:", "E:", "/Users/", "GitHub"] {
+            assert!(
+                !lines.iter().any(|l| l.contains(needle)),
+                "the fixture leaks a real path ({needle})"
+            );
+        }
+    }
+
+    /// The regression. The receipt lands 2.8s after the call while the agent
+    /// runs for minutes, so treating it as a completion reported `Idle` with
+    /// eleven agents still working.
+    #[test]
+    fn a_launch_receipt_does_not_finish_a_background_subagent() {
+        let lines = bg_lines();
+        let (_dir, mut tail) = tail_with(&lines[SPAWN..=END_TURN]);
+        assert!(tail.poll());
+
+        let agent = &tail.session().subagents[0];
+        assert_eq!(agent.task, BG_TASK);
+        assert!(!agent.done, "the receipt only says the agent launched");
+
+        // Every condition that used to mean Idle holds — nothing outstanding
+        // and the turn ended — and the session is still Running.
+        assert!(tail.session().pending_tool.is_none());
+        assert_eq!(tail.last_stop_reason.as_deref(), Some("end_turn"));
+        assert_eq!(tail.session().state, SessionState::Running);
+    }
+
+    #[test]
+    fn a_task_notification_finishes_a_background_subagent() {
+        let lines = bg_lines();
+        let (dir, mut tail) = tail_with(&lines[SPAWN..=COUNT_ONE]);
+        tail.poll();
+        assert_eq!(live_subagents(&tail), 1);
+        assert_eq!(tail.session().state, SessionState::Running);
+
+        let path = dir.path().join(format!("{}.jsonl", UUID));
+        append(&path, &lines[NOTIFICATION..=NOTIFICATION]);
+        assert!(tail.poll());
+        assert!(tail.session().subagents[0].done, "the notification ends it");
+        assert_eq!(tail.session().state, SessionState::Idle);
+    }
+
+    /// `pendingBackgroundAgentCount` is Claude Code's own count of live
+    /// background agents, so agreeing with it is the check that the fold is
+    /// right. It matches on all 24 of the source transcript's count lines.
+    #[test]
+    fn the_live_subagent_count_matches_the_count_the_cli_reports() {
+        let lines = bg_lines();
+        let (dir, mut tail) = tail_with(&lines[SPAWN..=COUNT_ONE]);
+        tail.poll();
+        assert_eq!(live_subagents(&tail), 1, "the CLI reports 1 pending here");
+
+        // The field is omitted rather than zeroed once none are left.
+        let path = dir.path().join(format!("{}.jsonl", UUID));
+        append(&path, &lines[NOTIFICATION..=COUNT_NONE]);
+        tail.poll();
+        assert_eq!(live_subagents(&tail), 0);
+    }
+
+    /// A notification can never arrive for an agent that was still open when
+    /// Claude Code was killed, so the CLI's own count is the way out.
+    #[test]
+    fn a_subagent_whose_notification_never_arrives_is_settled_by_the_cli_count() {
+        let lines = bg_lines();
+        let (dir, mut tail) = tail_with(&lines[SPAWN..=COUNT_ONE]);
+        tail.poll();
+        assert_eq!(live_subagents(&tail), 1);
+
+        // Straight to "none pending" with no notification in between.
+        let path = dir.path().join(format!("{}.jsonl", UUID));
+        append(&path, &lines[COUNT_NONE..=COUNT_NONE]);
+        assert!(tail.poll());
+        assert_eq!(live_subagents(&tail), 0);
+        assert_eq!(tail.session().state, SessionState::Idle);
+    }
+
+    /// A Claude Code that never writes the count must not have every subagent
+    /// settled by the absent field on every turn.
+    #[test]
+    fn an_absent_count_is_ignored_until_the_field_has_been_seen_once() {
+        let lines = bg_lines();
+        let mut timeline = lines[SPAWN..=END_TURN].to_vec();
+        timeline.push(lines[COUNT_NONE].clone());
+        let (_dir, mut tail) = tail_with(&timeline);
+        tail.poll();
+        assert_eq!(
+            live_subagents(&tail),
+            1,
+            "an absent count means nothing before one has ever been written"
+        );
+        assert_eq!(tail.session().state, SessionState::Running);
+    }
+
+    #[test]
+    fn tool_count_advances_for_a_subagent_that_is_still_running() {
+        let lines = bg_lines();
+        let (dir, mut tail) = tail_with(&lines[SPAWN..=COUNT_ONE]);
+
+        let subagents = dir.path().join(UUID).join("subagents");
+        std::fs::create_dir_all(&subagents).unwrap();
+        std::fs::write(
+            subagents.join("agent-a64f02cb.meta.json"),
+            format!(
+                r#"{{"agentType":"general-purpose","description":"{}","toolUseId":"{}","requestShape":"background"}}"#,
+                BG_TASK, BG_ID
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            subagents.join("agent-a64f02cb.jsonl"),
+            concat!(
+                r#"{"type":"assistant","requestId":"r1","message":{"model":"claude-opus-5","content":[{"type":"tool_use","id":"s1","name":"Read","input":{}}]}}"#,
+                "\n",
+                r#"{"type":"assistant","requestId":"r2","message":{"model":"claude-opus-5","content":[{"type":"tool_use","id":"s2","name":"Edit","input":{}}]}}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+
+        tail.poll();
+        let agent = &tail.session().subagents[0];
+        assert_eq!(agent.tool_count, 2);
+        assert!(!agent.done, "it is still working while the count grows");
+    }
+
+    #[test]
+    fn task_notification_reads_the_id_and_status_and_ignores_ordinary_text() {
+        let notification = concat!(
+            "<task-notification>\n<task-id>a1</task-id>\n",
+            "<tool-use-id>toolu_9</tool-use-id>\n<status>completed</status>\n",
+            "<summary>Agent finished</summary>\n</task-notification>",
+        );
+        assert_eq!(task_notification(notification), Some(("toolu_9", "completed")));
+        assert_eq!(task_notification("compare <status>x</status> in the docs"), None);
+        assert_eq!(task_notification("<task-notification>\n<status>ok</status>"), None);
+    }
+
+    #[test]
+    fn an_async_launch_is_read_off_the_lines_own_tool_use_result() {
+        let receipt: Value = serde_json::from_str(&bg_lines()[RECEIPT]).unwrap();
+        assert!(is_async_launch(&receipt));
+        // Every ordinary tool result — and a background spawn that failed to
+        // launch, which reports one — omits the flag.
+        assert!(!is_async_launch(&serde_json::json!({"toolUseResult": {"stdout": ""}})));
+        assert!(!is_async_launch(&serde_json::json!({"type": "user"})));
     }
 }
