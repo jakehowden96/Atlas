@@ -294,6 +294,23 @@ describe("buildTiles", () => {
     );
     expect(b.state).toBe("idle");
   });
+
+  /* The top-bar counts used to be filtered off `liveSessionList` directly,
+     which cannot work: the transcript cannot see a permission prompt, so the
+     backend only ever reports Running or Idle and `needsYou` was always 0
+     while the blocked session was counted as running. Counting off the tiles
+     is the fix — these are the numbers the top bar shows. */
+  it("counts needs-you off the tiles, where the raw live states cannot", () => {
+    const sessions = [live("uuid-a"), live("uuid-b", { state: "idle" })];
+    expect(sessions.filter((s) => s.state === "needsYou")).toHaveLength(0);
+
+    const tiles = buildTiles(sessions, workspaceList, new Map(), new Set(["tab-a"]));
+    const count = (state: SessionState) =>
+      tiles.filter((t) => t.state === state).length;
+    expect(count("needsYou")).toBe(1);
+    expect(count("running")).toBe(0);
+    expect(count("idle")).toBe(1);
+  });
 });
 
 describe("planSegments", () => {

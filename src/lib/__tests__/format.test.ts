@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { basename, formatAgo, formatBytes } from "../format";
+import { basename, formatAgo, formatBytes, formatTokens } from "../format";
 
 describe("basename", () => {
   it("takes the last segment of a path on either separator", () => {
@@ -29,6 +29,22 @@ describe("formatAgo", () => {
 
   it("never counts forwards", () => {
     expect(ago("2026-09-08T12:05:00Z", "second")).toBe("0s ago");
+  });
+});
+
+describe("formatTokens", () => {
+  it("counts plainly below a thousand", () => {
+    expect(formatTokens(0)).toBe("0");
+    expect(formatTokens(340)).toBe("340");
+    expect(formatTokens(999)).toBe("999");
+  });
+
+  it("keeps a decimal under ten thousand, drops it above", () => {
+    expect(formatTokens(1000)).toBe("1.0k");
+    expect(formatTokens(1200)).toBe("1.2k");
+    expect(formatTokens(9400)).toBe("9.4k");
+    expect(formatTokens(12_500)).toBe("13k");
+    expect(formatTokens(68_000)).toBe("68k");
   });
 });
 

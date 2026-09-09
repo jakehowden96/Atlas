@@ -16,6 +16,7 @@
   import SegmentedControl, { type Segment } from "./lib/components/ui/SegmentedControl.svelte";
   import { onClaudeNotification, onPanelUpdate, onSessionUpdate } from "./lib/ipc";
   import { log } from "./lib/logger";
+  import { buildTiles } from "./lib/overview";
   import { filesTouched } from "./lib/session-view";
   import { handleGlobalKeydown } from "./lib/shortcuts";
   import { dirtyFiles } from "./lib/stores/files";
@@ -23,11 +24,12 @@
   import { panelData, setSessionTouchedFiles } from "./lib/stores/panel";
   import { prsAttentionCount, startPrPolling } from "./lib/stores/prs";
   import { enableNotifications, loadSettings, settingsOpen } from "./lib/stores/settings";
-  import { activeTabId, setTabNeedsInput } from "./lib/stores/terminal";
+  import { activeTabId, setTabNeedsInput, tabs } from "./lib/stores/terminal";
   import { activeView, jumpOpen, openNewSession, showView, type View } from "./lib/stores/view";
   import {
     activeWorkspacePath,
     loadWorkspaces,
+    sessionDiffStats,
     setSessionDiffStats,
     visibleWorkspaces,
   } from "./lib/stores/workspace";
@@ -37,9 +39,22 @@
   let unlistenSession: UnlistenFn | null = null;
   let stopPrPolling: (() => void) | null = null;
 
-  // ── Top-bar status, straight off the live transcript tails ────────────────
-  let running = $derived($liveSessionList.filter((s) => s.state === "running").length);
-  let needsYou = $derived($liveSessionList.filter((s) => s.state === "needsYou").length);
+  // ── Top-bar status, off the same tiles the Sessions grid builds ───────────
+  // Not off `$liveSessionList`: the backend never reports `needsYou` — the
+  // transcript cannot see a permission prompt, so `live.rs` `finalize` only
+  // ever assigns Idle or Running, and a blocked session arrived here as
+  // "running" while its tile correctly said needs-you. The Notification hook's
+  // flag is the only needs-you signal and `buildTiles` is where it is folded
+  // in, so counting anywhere else is counting the wrong thing.
+  let needsInputTabs = $derived(
+    new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)),
+  );
+  let statusTiles = $derived(
+    buildTiles($liveSessionList, $visibleWorkspaces, $sessionDiffStats, needsInputTabs),
+  );
+  let needsYou = $derived(statusTiles.filter((t) => t.state === "needsYou").length);
+  let running = $derived(statusTiles.filter((t) => t.state === "running").length);
+  let idle = $derived(statusTiles.filter((t) => t.state === "idle").length);
   let todayCost = $derived(
     $liveSessionList
       .filter((s) => isToday(s.lastActivity ?? s.startedAt))
@@ -174,7 +189,7 @@
 
     <span class="status">
       <span class="status-dot"></span>
-      {running} running · <span class="status-needs">{needsYou} needs you</span> · ${todayCost.toFixed(2)} today
+      <span class="status-needs">{needsYou} needs you</span> · {running} running · {idle} idle · ${todayCost.toFixed(2)} today
     </span>
 
     <button type="button" class="jump" onclick={() => jumpOpen.set(true)}>
@@ -290,14 +305,31 @@
     flex: 1;
   }
 
+  /* The counts are the top bar's primary readout, so they sit at --text
+     rather than --muted. --warn (#e0a53a) is ~2.2:1 on white — fine as a
+     fill, unreadable as text — so needs-you carries its own darkened token.
+     On a dark surface --warn already clears 4.5:1 and the darkened amber
+     would not, so the token flips back there. It lives here rather than in
+     app.css because app.css belongs to another change this wave. */
   .status {
+    --warn-ink: #8f6200;
     display: flex;
     align-items: center;
     gap: 6px;
-    color: var(--muted);
+    color: var(--text);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 12px;
     white-space: nowrap;
+  }
+
+  :global(:root[data-theme="dark"]) .status {
+    --warn-ink: var(--warn);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme="light"])) .status {
+      --warn-ink: var(--warn);
+    }
   }
 
   .status-dot {
@@ -309,7 +341,7 @@
   }
 
   .status-needs {
-    color: var(--warn);
+    color: var(--warn-ink);
   }
 
   .jump {

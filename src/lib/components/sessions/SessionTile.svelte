@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { LineRole, SessionState } from "../../../types/session";
+  import { formatTokens } from "../../format";
   import { formatElapsed, pinKey, planSegments, type SessionTile } from "../../overview";
   import { allowPendingTool, closeSession, denyPendingTool } from "../../session-actions";
   import { togglePinnedSession } from "../../stores/settings";
@@ -42,7 +43,10 @@
   /** Blank lines render as a non-breaking space so row height stays stable. */
   let preview = $derived(live.lines.slice(-6));
   let segments = $derived(planSegments(live.plan));
+  /* The bar reads as a proportion, the label as a size — `68k` answers "how
+     much room is left" in the unit the model actually meters. */
   let contextPct = $derived(Math.min(100, Math.round(live.contextPct * 100)));
+  let contextTokens = $derived(formatTokens(live.peakContext));
   let activeAgents = $derived(live.subagents.some((s) => !s.done));
   let elapsed = $derived(formatElapsed(live.startedAt, now));
 
@@ -168,7 +172,7 @@
         <span class="ctx-track">
           <span class="ctx-fill" class:hot={contextPct > 75} style="width: {contextPct}%"></span>
         </span>
-        {contextPct}%
+        {contextTokens}
       </span>
 
       <span class="cost">${live.costEstimate.toFixed(2)}</span>
