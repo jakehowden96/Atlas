@@ -213,8 +213,9 @@ export async function removeWorkspaceWithUndo(workspacePath: string) {
 
 /* ── Permission prompts ─────────────────────────────────────────────────────
  * Answering a blocked tool call means typing into the real TUI — there is no
- * IPC channel for it. The Sessions tile and phase 06's floating permission
- * card both call these, so the keystroke mapping lives in exactly one place.
+ * IPC channel for it. Only the Sessions tile calls these now: the Session view
+ * shows the terminal itself, and the floating card that used to answer for you
+ * sat on top of the very prompt it was describing.
  *
  * ⚠ ASSUMPTION — NOT verified against a live TUI. This build environment has
  * no GUI, so `pnpm tauri dev` could not be run to watch what the prompt does.

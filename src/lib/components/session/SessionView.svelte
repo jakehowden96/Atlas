@@ -5,7 +5,7 @@
   import type { SessionState } from "../../../types/session";
   import { formatTokens } from "../../format";
   import { buildTiles, compareByAttention, formatElapsed, type SessionTile } from "../../overview";
-  import { allowPendingTool, closeSession, denyPendingTool } from "../../session-actions";
+  import { closeSession } from "../../session-actions";
   import { refreshPanel } from "../../ipc";
   import { filesTouched, tabIdForSession } from "../../session-view";
   import { liveSessionList } from "../../stores/liveSessions";
@@ -156,31 +156,12 @@
       >✕</button>
     </header>
 
+    <!-- No permission card over the terminal: Claude Code draws its own prompt
+         at the bottom of the TUI, which is exactly where a floating card sits.
+         Answering here means reading the real prompt. The Sessions grid keeps
+         its permission bar — there the TUI is not on screen to read. -->
     <div class="pane">
       <TerminalContainer {visibleTabId} />
-
-      {#if tile && tile.state === "needsYou"}
-        <div class="permission">
-          <span class="warn-dot"></span>
-          <div class="permission-text">
-            <div class="wants">
-              Claude wants to run
-              <span class="tool">{tile.live.pendingTool?.name ?? tile.live.lastTool ?? "a tool"}</span>
-            </div>
-            <div class="caption">Permission prompt · your answer is typed into the TUI for you</div>
-          </div>
-          <button
-            type="button"
-            class="deny"
-            onclick={() => tile?.terminalTabId && denyPendingTool(tile.terminalTabId)}
-          >Deny</button>
-          <button
-            type="button"
-            class="allow"
-            onclick={() => tile?.terminalTabId && allowPendingTool(tile.terminalTabId)}
-          >Allow</button>
-        </div>
-      {/if}
     </div>
 
     <footer class="foot">
@@ -419,77 +400,6 @@
     flex: 1;
     min-height: 0;
     background: var(--term-bg);
-  }
-
-  /* ── Floating permission card ──────────────────────────────────────────── */
-  .permission {
-    position: absolute;
-    right: 18px;
-    bottom: 16px;
-    left: 18px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 14px;
-    border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent);
-    border-radius: 8px;
-    background: var(--surface);
-    box-shadow: var(--shadow);
-  }
-
-  .warn-dot {
-    flex-shrink: 0;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--warn);
-  }
-
-  .permission-text {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .wants {
-    font-size: 12.5px;
-    font-weight: 500;
-  }
-
-  .tool {
-    color: var(--t-warn);
-    font-family: var(--font-mono);
-  }
-
-  .caption {
-    color: var(--muted);
-    font-size: 11px;
-  }
-
-  .deny,
-  .allow {
-    flex-shrink: 0;
-    height: 26px;
-    border-radius: var(--r-md);
-    font-family: var(--font-ui);
-    cursor: pointer;
-  }
-
-  .deny {
-    padding: 0 10px;
-    border: 1px solid var(--border2);
-    background: transparent;
-    color: var(--text);
-    font-size: 12px;
-    font-weight: 500;
-  }
-
-  .allow {
-    padding: 0 12px;
-    border: none;
-    background: var(--accent);
-    color: var(--accent-ink);
-    font-size: 12px;
-    font-weight: 600;
   }
 
   /* ── Footer status bar ─────────────────────────────────────────────────── */
