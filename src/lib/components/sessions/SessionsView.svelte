@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { chord } from "../../platform";
   import { onDestroy } from "svelte";
   import {
     buildTiles,
@@ -11,7 +10,7 @@
   import { addWorkspaceFolder } from "../../session-actions";
   import { liveSessionList } from "../../stores/liveSessions";
   import { tabs } from "../../stores/terminal";
-  import { overviewOrdering, pinnedSessions, tailTranscripts } from "../../stores/settings";
+  import { chords, overviewOrdering, pinnedSessions, tailTranscripts } from "../../stores/settings";
   import { newSessionOpen, wsFilter } from "../../stores/view";
   import { sessionDiffStats, visibleWorkspaces } from "../../stores/workspace";
   import Chip from "../ui/Chip.svelte";
@@ -202,9 +201,9 @@
           </button>
         </div>
         <div class="hints">
-          <span><kbd>{chord("N")}</kbd> new</span>
-          <span><kbd>{chord("K")}</kbd> jump</span>
-          <span><kbd>{chord(",")}</kbd> settings</span>
+          <span><kbd>{$chords.newSession}</kbd> new</span>
+          <span><kbd>{$chords.jump}</kbd> jump</span>
+          <span><kbd>{$chords.settings}</kbd> settings</span>
         </div>
       </div>
     </div>
