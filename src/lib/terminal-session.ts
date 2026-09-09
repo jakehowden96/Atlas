@@ -23,6 +23,11 @@ export interface TerminalSessionOptions {
   onData?: (data: string) => void;
 }
 
+/** How long a terminal waits for its container to be laid out before spawning
+ *  the PTY anyway. Long enough to cover a view switch, short enough that a tab
+ *  nobody opens still gets a shell. */
+const SPAWN_SIZE_TIMEOUT_MS = 1000;
+
 export class TerminalSession {
   private terminal: Terminal;
   private fitAddon: FitAddon;
@@ -38,6 +43,10 @@ export class TerminalSession {
   private unsubscribeTheme: (() => void) | null = null;
   private unsubscribeFontSize: (() => void) | null = null;
   private prefersDark: MediaQueryList | null = null;
+  private container: HTMLDivElement;
+  /** Held while the container has no size yet; see `spawnWhenSized`. */
+  private pendingSpawn: ((ptyId: number) => void) | null = null;
+  private spawnFallback: ReturnType<typeof setTimeout> | null = null;
 
   /** Re-read the palette for the current mode; also fires on OS-preference
       changes so a terminal on "system" follows the OS without a respawn. */
@@ -52,14 +61,35 @@ export class TerminalSession {
   private applyFontSize = (size: number) => {
     if (this.terminal.options.fontSize === size) return;
     this.terminal.options.fontSize = size;
+    this.refit();
+  };
+
+  /**
+   * True once the browser has given the container a box.
+   *
+   * A view Atlas is not showing is `display: none` (`App.svelte` `.view.hidden`),
+   * so everything inside it measures 0x0 — and a tab is constructed the moment
+   * it enters `$tabs`, which is usually while the Sessions grid is still up.
+   * `fit()` against a 0x0 element does not fail; it hands xterm a fallback
+   * geometry, and a PTY spawned at that size lays the TUI out for a viewport
+   * that is not the one on screen.
+   */
+  private hasSize(): boolean {
+    return this.container.clientWidth > 0 && this.container.clientHeight > 0;
+  }
+
+  /** Fit to the container and tell the PTY, but never against a 0x0 box. */
+  private refit() {
+    if (!this.hasSize()) return;
     this.fitAddon.fit();
     if (this.ptyId !== null) {
       ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
     }
-  };
+  }
 
   constructor(opts: TerminalSessionOptions) {
     this.tabId = opts.tabId;
+    this.container = opts.container;
     this._visible = opts.visible;
     this.initialCwd = opts.cwd;
     this.externalOnData = opts.onData;
@@ -83,6 +113,12 @@ export class TerminalSession {
          This is xterm's own lever over those paths, and the WebGL renderer
          loaded below honours it. */
       minimumContrastRatio: 4.5,
+      /* xterm keeps 1000 lines by default, and a Claude Code session passes
+         that inside an hour — the earlier transcript was genuinely gone, not
+         just unpainted. 10k lines is roughly a full day of one session and
+         costs a few MB; every tab stays mounted for the life of the app, so
+         this is per-tab memory and not a number to raise casually. */
+      scrollback: 10000,
       theme: activeXtermTheme(get(themeMode)),
       allowProposedApi: true,
     });
@@ -103,14 +139,13 @@ export class TerminalSession {
       // WebGL not available, canvas renderer is fine
     }
 
-    this.fitAddon.fit();
     // After the fit addon exists — the first emission has to be able to refit.
     this.unsubscribeFontSize = terminalFontSize.subscribe(this.applyFontSize);
     this.registerKeyHandler();
     this.registerOscHandlers();
     this.registerReadinessHandler();
     this.setupResizeObserver(opts.container);
-    this.spawnPty(opts.onPtyReady);
+    this.spawnWhenSized(opts.onPtyReady);
     this.setupEnterRefresh();
     if (this._visible) this.startPolling();
   }
@@ -200,23 +235,60 @@ export class TerminalSession {
     // we measure the container and fit xterm to it.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        this.fitAddon.fit();
+        if (!this.hasSize()) return;
+        this.refit();
         this.terminal.focus();
-        if (this.ptyId !== null) {
-          ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
-        }
       });
     });
   }
 
+  /**
+   * Spawn the PTY at the size the pane really is.
+   *
+   * When the container already has a box — the tab was created while its view
+   * was on screen — this is the old immediate path. Otherwise the spawn waits
+   * for the first non-zero measurement, which arrives from the resize observer
+   * the moment the view stops being `display: none`.
+   *
+   * The timeout is the floor, not the plan: if the container somehow never
+   * gains a size, spawning late at a fallback geometry is what this code did
+   * before, and is better than a tab that never gets a PTY at all.
+   */
+  private spawnWhenSized(onPtyReady: (ptyId: number) => void) {
+    if (this.hasSize()) {
+      this.fitAddon.fit();
+      void this.spawnPty(onPtyReady);
+      return;
+    }
+    this.pendingSpawn = onPtyReady;
+    this.spawnFallback = setTimeout(() => {
+      log.warn("terminal", `tab=${this.tabId} never got a size; spawning anyway`);
+      this.flushPendingSpawn();
+    }, SPAWN_SIZE_TIMEOUT_MS);
+  }
+
+  /** Start the deferred PTY, at whatever geometry the terminal now has. */
+  private flushPendingSpawn() {
+    const onPtyReady = this.pendingSpawn;
+    if (!onPtyReady) return;
+    this.pendingSpawn = null;
+    if (this.spawnFallback) {
+      clearTimeout(this.spawnFallback);
+      this.spawnFallback = null;
+    }
+    if (this.hasSize()) this.fitAddon.fit();
+    void this.spawnPty(onPtyReady);
+  }
+
   private setupResizeObserver(container: HTMLDivElement) {
     this.resizeObserver = new ResizeObserver(() => {
-      if (this._visible) {
-        this.fitAddon.fit();
-        if (this.ptyId !== null) {
-          ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
-        }
+      if (!this.hasSize()) return;
+      // The first real measurement is what the deferred spawn was waiting for.
+      if (this.pendingSpawn) {
+        this.flushPendingSpawn();
+        return;
       }
+      if (this._visible) this.refit();
     });
     this.resizeObserver.observe(container);
   }
@@ -342,11 +414,8 @@ export class TerminalSession {
     // First rAF: fit terminal and focus (lightweight, runs in the next paint)
     requestAnimationFrame(() => {
       if (!this._visible) return;
-      this.fitAddon.fit();
+      this.refit();
       this.terminal.focus();
-      if (this.ptyId !== null) {
-        ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
-      }
 
       // Second rAF: guarantees a paint between tab highlight and the heavier panel data work
       requestAnimationFrame(() => {
@@ -371,6 +440,7 @@ export class TerminalSession {
   destroy() {
     log.info("terminal", `destroy tab=${this.tabId} ptyId=${this.ptyId}`);
     this.resizeObserver?.disconnect();
+    if (this.spawnFallback) clearTimeout(this.spawnFallback);
     this.unsubscribeTheme?.();
     this.unsubscribeFontSize?.();
     this.prefersDark?.removeEventListener("change", this.applyXtermTheme);
