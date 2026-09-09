@@ -57,6 +57,13 @@
   let contextTokens = $derived(formatTokens(live.peakContext));
   let activeAgents = $derived(live.subagents.some((s) => !s.done));
   let elapsed = $derived(formatElapsed(live.startedAt, now));
+  /* Claude Code appends to the transcript only as a message completes, so a
+     long tool call leaves `preview` frozen for minutes and the tile reads as
+     idle when it is anything but. This is the tile's own clock: how long since
+     the transcript last grew. Shown only while the session is running, where
+     the gap means "still working" rather than "finished". */
+  let working = $derived(tile.state === "running");
+  let sinceLine = $derived(formatElapsed(live.lastActivity, now));
 
   function open() {
     focusedSessionId.set(tile.atlasSessionId);
@@ -107,8 +114,14 @@
   }
 </script>
 
+<!-- The workspace colour rides on the card as a band, not only as an 8px dot:
+     with several workspaces open the dot was the only thing telling tiles apart
+     and it sat inside 11px grey text. The band is reinforcement — the name
+     below carries the same information in text, so nothing here depends on
+     colour vision. -->
 <div
   class="tile"
+  style="--ws-colour: {tile.workspaceColour}"
   class:focus-ring={focusVisible}
   class:needs={needsYou}
   role="button"
@@ -119,9 +132,10 @@
   <div class="head">
     <StatePill state={PILL[tile.state]} />
     <span class="label">{tile.label}</span>
-    <span class="ws">
+    <span class="ws" title={tile.workspacePath}>
       <span class="ws-dot" style="background: {tile.workspaceColour}"></span>
-      {tile.workspaceName}{tile.branch ? ` · ${tile.branch}` : ""}
+      <span class="ws-name">{tile.workspaceName}</span>
+      {#if tile.branch}<span class="branch">· {tile.branch}</span>{/if}
     </span>
     <span class="elapsed">{elapsed}</span>
     <button
@@ -154,6 +168,13 @@
     </div>
   {:else}
     <div class="preview paused">Transcript tailing is off.</div>
+  {/if}
+
+  {#if tailing && working}
+    <div class="working" title="The transcript only grows as each message completes">
+      <span class="working-dot"></span>
+      working{sinceLine ? ` · ${sinceLine} since the last line` : ""}
+    </div>
   {/if}
 
   {#if needsYou}
@@ -213,6 +234,9 @@
     min-height: 0;
     overflow: hidden;
     border-radius: var(--r-card-lg);
+    /* The workspace band. `border-left` rather than a pseudo-element so it
+       survives the card's `overflow: hidden` and the focus ring's box-shadow. */
+    border-left: 3px solid var(--ws-colour, var(--surface3));
     background: var(--surface);
     box-shadow:
       0 0 0 1px var(--border),
@@ -265,15 +289,27 @@
 
   .ws {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     gap: 6px;
     max-width: 45%;
     overflow: hidden;
-    color: var(--muted);
     font-family: var(--font-mono);
     font-size: 11px;
-    text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* Out of the muted tier: this is the answer to "which project am I looking
+     at", and it was competing with the branch name at the same weight. */
+  .ws-name {
+    flex-shrink: 0;
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .branch {
+    overflow: hidden;
+    color: var(--muted);
+    text-overflow: ellipsis;
   }
 
   .ws-dot {
@@ -357,6 +393,29 @@
     display: grid;
     place-items: center;
     color: var(--muted);
+  }
+
+  /* Sits between the preview and the footer so a frozen preview is never the
+     last word on whether anything is happening. */
+  .working {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 6px;
+    padding: 4px 14px;
+    background: var(--term-bg);
+    color: var(--t-step);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+  }
+
+  .working-dot {
+    flex-shrink: 0;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--t-step);
+    animation: atlasPulse 1.6s ease-in-out infinite;
   }
 
   .line {
