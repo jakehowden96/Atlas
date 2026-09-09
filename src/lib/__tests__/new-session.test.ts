@@ -7,6 +7,7 @@ import {
   findWorkspace,
   handleKey,
   INITIAL_STATE,
+  KEY_HINTS,
   looksLikeAbsolutePath,
   moveWithin,
   normalizePath,
@@ -373,5 +374,39 @@ describe("rankJumpRows", () => {
     expect(rankJumpRows(rows, "auth").map((r) => r.id)).toEqual(
       rankJumpRows(rows, "au").map((r) => r.id),
     );
+  });
+});
+
+describe("the keys the modal advertises", () => {
+  /* The footer offered "⌘⌫ remove" long after that binding was reverted, so a
+     keyboard-only user pressed it and nothing happened. The hints are data now,
+     and every one of them has to be a press the model actually claims. */
+  it("are all claimed by handleKey", () => {
+    const counts = { workspaces: 2, resumable: 2 };
+    // Resume mode with the Resume column focused: the state in which every
+    // hint, the column key included, is meaningful.
+    const state = { ...INITIAL_STATE, mode: "resume" as const, column: "resume" as const };
+    for (const hint of KEY_HINTS) {
+      const result = handleKey(hint.probe, state, counts);
+      expect(result.handled, `${hint.keys} ${hint.label} is advertised but unhandled`).toBe(
+        true,
+      );
+    }
+  });
+
+  it("covers every effect the modal can be driven to", () => {
+    const labels = KEY_HINTS.map((h) => h.label);
+    expect(labels).toContain("start");
+    expect(labels).toContain("add workspace");
+    expect(labels).toContain("New / Resume");
+  });
+
+  it("hides the column key until there is a Resume column to move into", () => {
+    const column = KEY_HINTS.find((h) => h.label === "column");
+    expect(column?.resumeOnly).toBe(true);
+    // Everything else is unconditional — those keys always work.
+    for (const hint of KEY_HINTS.filter((h) => h.label !== "column")) {
+      expect(hint.resumeOnly).toBeUndefined();
+    }
   });
 });

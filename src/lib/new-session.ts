@@ -6,6 +6,7 @@
  * (README → Conventions).
  */
 import { formatAgo } from "./format";
+import { chord, enterLabel } from "./platform";
 import type { Workspace } from "./stores/workspace";
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
@@ -234,6 +235,36 @@ export function handleKey(
       return { state: s, effect: null, handled: false };
   }
 }
+
+/**
+ * One key the modal advertises in its footer, and the press it promises.
+ *
+ * The `probe` is not decoration: a test walks this list and asserts `handleKey`
+ * claims every one. The footer used to offer "⌘⌫ remove" long after that
+ * binding was reverted, so a keyboard-only user pressed it and nothing at all
+ * happened — a hint for a key nobody handles is worse than no hint.
+ */
+export interface KeyHint {
+  /** Rendered inside the `<kbd>`, already platform-shaped. */
+  keys: string;
+  label: string;
+  /** Hidden until the Resume column has rows to move into. */
+  resumeOnly?: boolean;
+  probe: { key: string; metaKey?: boolean; shiftKey?: boolean };
+}
+
+export const KEY_HINTS: KeyHint[] = [
+  { keys: "↑↓", label: "select", probe: { key: "ArrowDown" } },
+  {
+    keys: "⇧←→",
+    label: "column",
+    resumeOnly: true,
+    probe: { key: "ArrowRight", shiftKey: true },
+  },
+  { keys: "tab", label: "New / Resume", probe: { key: "Tab" } },
+  { keys: enterLabel(), label: "start", probe: { key: "Enter" } },
+  { keys: chord("O"), label: "add workspace", probe: { key: "o", metaKey: true } },
+];
 
 // ── ⌘K command palette ───────────────────────────────────────────────────────
 

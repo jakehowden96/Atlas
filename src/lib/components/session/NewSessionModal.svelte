@@ -19,6 +19,7 @@
     findWorkspace,
     handleKey,
     INITIAL_STATE,
+    KEY_HINTS,
     looksLikeAbsolutePath,
     normalizePath,
     recencyOf,
@@ -321,7 +322,7 @@
               type="button"
               class="ws-remove"
               aria-label="Remove {ws.name}"
-              title="Remove workspace ({chord('⌫')})"
+              title="Remove workspace"
               onclick={() => void removeWorkspaceWithUndo(ws.path)}
             >✕</button>
           </div>
@@ -406,13 +407,14 @@
 
         <div class="grow"></div>
 
+        <!-- Rendered from `KEY_HINTS` rather than written out here, so the
+             footer cannot drift from what `handleKey` actually claims. -->
         <div class="hints">
-          <span><kbd>↑↓</kbd> select</span>
-          {#if view.mode === "resume" && resumable.length > 0}
-            <span><kbd>⇧←→</kbd> column</span>
-          {/if}
-          <span><kbd>{chord("O")}</kbd> add</span>
-          <span><kbd>{chord("⌫")}</kbd> remove</span>
+          {#each KEY_HINTS as hint (hint.label)}
+            {#if !hint.resumeOnly || (view.mode === "resume" && resumable.length > 0)}
+              <span><kbd>{hint.keys}</kbd> {hint.label}</span>
+            {/if}
+          {/each}
         </div>
 
         <button type="button" class="start" disabled={!canStart} onclick={start}>
