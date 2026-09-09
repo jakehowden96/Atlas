@@ -19,11 +19,13 @@
   import { buildTiles, shouldClearNeedsInput } from "./lib/overview";
   import { filesTouched } from "./lib/session-view";
   import { handleGlobalKeydown } from "./lib/shortcuts";
+  import { todayCost } from "./lib/stats-derive";
   import { dirtyFiles } from "./lib/stores/files";
   import { liveSessionList, upsertLiveSession } from "./lib/stores/liveSessions";
   import { panelData, setSessionTouchedFiles } from "./lib/stores/panel";
   import { prsAttentionCount, startPrPolling } from "./lib/stores/prs";
   import { chords, enableNotifications, loadSettings, settingsOpen } from "./lib/stores/settings";
+  import { startStatsFeed, statsSummary } from "./lib/stores/stats";
   import { activeTabId, setTabNeedsInput, tabs } from "./lib/stores/terminal";
   import { activeView, jumpOpen, openNewSession, showView, type View } from "./lib/stores/view";
   import {
@@ -38,6 +40,7 @@
   let unlistenNotification: UnlistenFn | null = null;
   let unlistenSession: UnlistenFn | null = null;
   let stopPrPolling: (() => void) | null = null;
+  let stopStatsFeed: (() => void) | null = null;
 
   // ── Top-bar status, off the same tiles the Sessions grid builds ───────────
   // Not off `$liveSessionList`: the backend never reports `needsYou` — the
@@ -55,23 +58,17 @@
   let needsYou = $derived(statusTiles.filter((t) => t.state === "needsYou").length);
   let running = $derived(statusTiles.filter((t) => t.state === "running").length);
   let idle = $derived(statusTiles.filter((t) => t.state === "idle").length);
-  let todayCost = $derived(
-    $liveSessionList
-      .filter((s) => isToday(s.lastActivity ?? s.startedAt))
-      .reduce((sum, s) => sum + s.costEstimate, 0),
-  );
-
-  function isToday(iso: string | null): boolean {
-    if (!iso) return false;
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return false;
-    const now = new Date();
-    return (
-      d.getFullYear() === now.getFullYear() &&
-      d.getMonth() === now.getMonth() &&
-      d.getDate() === now.getDate()
-    );
-  }
+  /* Today's spend comes off the persisted stats, not off `liveSessionList`:
+     that list holds only the sessions Atlas is tailing, so a day's work done
+     in Claude Code outside Atlas — or before this launch — read as $0. The
+     backend recomputes within a second of a transcript write, so this stays
+     current without a clock of its own beyond the midnight rollover. */
+  let costClock = $state(Date.now());
+  const costTicker = setInterval(() => {
+    costClock = Date.now();
+  }, 60_000);
+  onDestroy(() => clearInterval(costTicker));
+  let spendToday = $derived(todayCost($statsSummary, new Date(costClock)));
 
   // The Pull requests badge counts PRs asking for action; at zero it is left
   // off entirely rather than shown as a "0" alert pill.
@@ -112,6 +109,9 @@
     // Poll from the shell, not from PrsView: the top-bar badge has to stay
     // current while the Pull requests screen is unmounted.
     stopPrPolling = startPrPolling();
+    // Owned here rather than by the Stats screen: the top bar's spend figure
+    // has to stay current while that screen is unmounted.
+    stopStatsFeed = await startStatsFeed();
     unlisten = await onPanelUpdate((sessionId, data) => {
       if (sessionId === get(activeTabId)) {
         panelData.set(data);
@@ -170,6 +170,7 @@
     unlistenNotification?.();
     unlistenSession?.();
     stopPrPolling?.();
+    stopStatsFeed?.();
   });
 </script>
 
@@ -193,7 +194,7 @@
 
     <span class="status">
       <span class="status-dot"></span>
-      {running} running · <span class="status-needs">{needsYou} needs you</span> · {idle} idle · ${todayCost.toFixed(2)} today
+      {running} running · <span class="status-needs">{needsYou} needs you</span> · {idle} idle · ${spendToday.toFixed(2)} today
     </span>
 
     <button type="button" class="jump" onclick={() => jumpOpen.set(true)}>

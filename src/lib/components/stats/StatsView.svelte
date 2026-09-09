@@ -1,10 +1,6 @@
 <script lang="ts">
-  import type { UnlistenFn } from "@tauri-apps/api/event";
   import { onDestroy, onMount } from "svelte";
-  import type { StatsSummary } from "../../../types/stats";
-  import { getClaudeStats, onStatsUpdate } from "../../ipc";
   import { basename } from "../../format";
-  import { log } from "../../logger";
   import {
     agoLabel,
     daySeries,
@@ -35,19 +31,22 @@
     WEEK_COUNT,
     type Range,
   } from "../../stats-derive";
+  import { statsLoading, statsSummary } from "../../stores/stats";
   import { openNewSession } from "../../stores/view";
   import { visibleWorkspaces } from "../../stores/workspace";
   import Sparkline from "../ui/Sparkline.svelte";
   import SegmentedControl from "../ui/SegmentedControl.svelte";
 
-  let summary = $state<StatsSummary | null>(null);
-  let loading = $state(true);
+  /* Both the summary and its loading flag live in `stores/stats`: the top bar
+     needs the same figures while this screen is unmounted, and two independent
+     loads would have meant two subscriptions to the same recompute. */
+  let summary = $derived($statsSummary);
+  let loading = $derived($statsLoading);
   let range = $state<Range>("30d");
   /** The Tools card lists only its top rows until this flips. */
   let toolsExpanded = $state(false);
   /** Ticks so the "Ns ago" indicator stays honest between recomputes. */
   let now = $state(new Date());
-  let unlisten: UnlistenFn | null = null;
   let ticker: ReturnType<typeof setInterval> | null = null;
 
   const rangeOptions = [
@@ -59,29 +58,11 @@
   /** Tool rows shown collapsed; the rest arrive on "Show all". */
   const TOOLS_COLLAPSED = 8;
 
-  async function load() {
-    loading = true;
-    try {
-      summary = await getClaudeStats();
-    } catch (e) {
-      log.error("stats", "getClaudeStats failed", e);
-    } finally {
-      loading = false;
-    }
-  }
-
-  onMount(async () => {
-    await load();
-    // Live-patches the whole page: every panel below reads off `summary`.
-    unlisten = await onStatsUpdate((s) => {
-      summary = s;
-      now = new Date();
-    });
+  onMount(() => {
     ticker = setInterval(() => (now = new Date()), 5000);
   });
 
   onDestroy(() => {
-    unlisten?.();
     if (ticker) clearInterval(ticker);
   });
 

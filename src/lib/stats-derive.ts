@@ -320,3 +320,40 @@ export function weekFamilies(weeks: [string, WeekStats][]): string[] {
   for (const [, ws] of weeks) for (const f of Object.keys(ws.byModel)) seen.add(f);
   return [...seen].sort((a, b) => modelRank(a) - modelRank(b) || a.localeCompare(b));
 }
+
+// ── Today's spend ─────────────────────────────────────────────────────────────
+
+/** Whether `iso` falls on the same local calendar day as `now`. */
+function isSameLocalDay(iso: string | null, now: Date): boolean {
+  if (!iso) return false;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
+
+/**
+ * What today has cost, across every session on disk rather than only the ones
+ * Atlas happens to be tailing.
+ *
+ * The top bar summed `liveSessionList`, so a day spent in Claude Code outside
+ * Atlas — or any work from before this launch — read as $0. `recentSessions`
+ * is the persisted per-session history, refreshed by the stats watcher within
+ * a second of any transcript write, and is keyed on last activity, which is
+ * what "today" means for a spend figure.
+ */
+export function todayCost(summary: StatsSummary | null, now: Date): number {
+  if (!summary) return 0;
+  const recent = summary.recentSessions ?? [];
+  const today = recent.filter((s) => isSameLocalDay(s.lastTimestamp, now));
+  const sum = today.reduce((acc, s) => acc + s.costEstimate, 0);
+  /* The window is the newest 50. Once all of it is today it is a floor rather
+     than a total, so the persisted day bucket takes over when it is larger.
+     That bucket is keyed on each session's *first* timestamp in UTC, which is
+     why it is only ever used as the larger of the two. */
+  if (today.length < recent.length) return sum;
+  return Math.max(sum, summary.byDay?.[utcDayKey(now)]?.cost ?? 0);
+}
