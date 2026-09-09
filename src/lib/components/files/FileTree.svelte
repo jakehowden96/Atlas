@@ -17,9 +17,9 @@
   import { chords } from "../../stores/settings";
   import {
     activeFile,
-    collapsed,
     dirtyFiles,
     docEntries,
+    expanded,
     fileWs,
     loadDocs,
     loadPlans,
@@ -31,7 +31,7 @@
     setDoc,
     sourceFiles,
     sources,
-    toggleCollapsed,
+    toggleExpanded,
   } from "../../stores/files";
   import { openDialogOpen } from "../../stores/view";
   import { activeWorkspacePath, visibleWorkspaces } from "../../stores/workspace";
@@ -247,12 +247,12 @@
 {#snippet row(node: TreeNode, depth: number)}
   {@const key = fileKey($fileWs, node.relPath)}
   {#if node.isDir}
-    {@const shut = $collapsed.has(key)}
+    {@const shut = !$expanded.has(key)}
     <button
       type="button"
       class="row"
       style="padding-left: {8 + depth * 14}px"
-      onclick={() => toggleCollapsed(key)}
+      onclick={() => toggleExpanded(key)}
     >
       <span class="chev" class:open={!shut}>›</span>
       <span class="name">{node.name}</span>

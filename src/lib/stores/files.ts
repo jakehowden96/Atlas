@@ -2,6 +2,7 @@ import { derived, get, writable } from "svelte/store";
 import type { DirEntry, DocEntry, PlanEntry } from "../../types/files";
 import {
   absolutePath,
+  ancestorPaths,
   fileKey,
   matchLineEndings,
   parseFileKey,
@@ -32,8 +33,14 @@ export const docs = writable<Map<string, string>>(new Map());
  *  has an unsaved edit and this otherwise, so a save has something to fall back
  *  to the instant the edit is dropped. Filled by `loadFileText`. */
 export const diskDocs = writable<Map<string, string>>(new Map());
-/** Collapsed folders, keyed like a file so the state is per workspace. */
-export const collapsed = writable<Set<string>>(new Set());
+/** Expanded folders, keyed like a file so the state is per workspace.
+ *
+ *  Tracking what is *open* rather than what is shut makes "collapsed" the
+ *  empty-set case: a tree opens fully shut with nothing to seed, and a
+ *  directory the docs watcher only discovers on a later re-list starts shut
+ *  too rather than popping open. Nothing here is persisted, so an old settings
+ *  file is unaffected. */
+export const expanded = writable<Set<string>>(new Set());
 /** Folders registered from disk. Phase 04 lists them; persisted like `openFiles`. */
 export const sources = writable<string[]>([]);
 /** The text files directly inside each registered source, by folder path.
@@ -119,6 +126,7 @@ export function openFile(source: FileSource, path: string): void {
   const current = get(openFiles);
   if (!current.includes(key)) void setOpenFiles([...current, key]);
   activeFile.set(key);
+  revealFile(source, path);
 }
 
 export function closeFile(key: string): void {
@@ -201,11 +209,42 @@ export async function saveActiveFile(): Promise<void> {
   }
 }
 
-export function toggleCollapsed(key: string): void {
-  collapsed.update((current) => {
+export function toggleExpanded(key: string): void {
+  expanded.update((current) => {
     const next = new Set(current);
     if (next.has(key)) next.delete(key);
     else next.add(key);
     return next;
   });
 }
+
+/**
+ * Open the folders on the way to a file so its row is on screen.
+ *
+ * Every folder starts shut, so a file reached from ⌘K, the Open… dialog or a
+ * cross-link would otherwise be selected while hidden several levels down.
+ * Only the workspace tree has folder rows — plans and disk files list flat —
+ * so the synthetic sources have nothing to reveal.
+ */
+function revealFile(source: FileSource, path: string): void {
+  if (source === "plans" || source === "disk") return;
+  const ancestors = ancestorPaths(path);
+  if (ancestors.length === 0) return;
+  expanded.update((current) => {
+    const next = new Set(current);
+    for (const dir of ancestors) next.add(fileKey(source, dir));
+    return next;
+  });
+}
+
+// Showing another workspace's tree starts it fully collapsed. This is a
+// subscription rather than something the tree column does on show because the
+// picker is not the only writer — the session rail's cross-link and the jump
+// palette both set `fileWs` directly — and because it lands before the setter's
+// next line, so an `openFile` that follows a workspace switch still reveals.
+let shownWs = get(fileWs);
+fileWs.subscribe((ws) => {
+  if (ws === shownWs) return;
+  shownWs = ws;
+  expanded.set(new Set());
+});

@@ -1,8 +1,30 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { get } from "svelte/store";
+
+vi.mock("@tauri-apps/plugin-fs", () => ({
+  exists: vi.fn(async () => true),
+  readTextFile: vi.fn(async () => "{}"),
+  writeTextFile: vi.fn(async () => {}),
+  mkdir: vi.fn(async () => {}),
+  readDir: vi.fn(async () => []),
+  remove: vi.fn(async () => {}),
+  BaseDirectory: { Home: 0 },
+}));
+
+vi.mock("../ipc", () => ({
+  listClaudePlans: vi.fn(async () => []),
+  listDir: vi.fn(async () => []),
+  listWorkspaceDocs: vi.fn(async () => []),
+  readTextFileAt: vi.fn(async () => ""),
+  writeTextFileAt: vi.fn(async () => {}),
+  startSessionTail: vi.fn(),
+  stopSessionTail: vi.fn(),
+}));
 
 import type { DocEntry, PlanEntry } from "../../types/files";
 import {
   absolutePath,
+  ancestorPaths,
   breadcrumbs,
   buildDocTree,
   fileKey,
@@ -16,7 +38,18 @@ import {
   touchedBy,
   type TreeNode,
 } from "../files";
+import { listWorkspaceDocs } from "../ipc";
 import type { SessionTile } from "../overview";
+import {
+  activeFile,
+  docEntries,
+  expanded,
+  fileWs,
+  loadDocs,
+  openFile,
+  openFiles,
+  toggleExpanded,
+} from "../stores/files";
 import type { Workspace } from "../stores/workspace";
 
 function doc(rel_path: string, is_dir = false): DocEntry {
@@ -173,6 +206,115 @@ describe("hasUnsavedUnder", () => {
     const guide = child(docsFolder, "guide.md");
     expect(hasUnsavedUnder(guide, new Set(["docs/guide.md"]))).toBe(true);
     expect(hasUnsavedUnder(guide, new Set(["docs/notes.md"]))).toBe(false);
+  });
+});
+
+describe("ancestorPaths", () => {
+  it("lists the folders on the way to a nested file, outermost first", () => {
+    expect(ancestorPaths("docs/guide/intro.md")).toEqual(["docs", "docs/guide"]);
+  });
+
+  it("has none for a file at the root of the tree", () => {
+    expect(ancestorPaths("README.md")).toEqual([]);
+    expect(ancestorPaths("")).toEqual([]);
+  });
+
+  it("skips empty segments", () => {
+    expect(ancestorPaths("docs//guide/intro.md")).toEqual(["docs", "docs/guide"]);
+  });
+});
+
+describe("tree expansion", () => {
+  const ws = "/home/me/atlas";
+  const other = "/home/me/other";
+
+  beforeEach(() => {
+    fileWs.set("");
+    expanded.set(new Set());
+    openFiles.set([]);
+    activeFile.set("");
+    docEntries.set([]);
+    vi.mocked(listWorkspaceDocs).mockResolvedValue([]);
+  });
+
+  it("lists a workspace with every folder shut", async () => {
+    vi.mocked(listWorkspaceDocs).mockResolvedValue(
+      listed([doc("docs", true), doc("docs/guide.md"), doc("src", true), doc("README.md")]),
+    );
+    fileWs.set(ws);
+    await loadDocs(ws);
+
+    // Both folders are listed, and neither is in `expanded` — which is what the
+    // tree's `shut` reads, so both rows render closed.
+    expect(
+      buildDocTree(get(docEntries))
+        .filter((n) => n.isDir)
+        .map((n) => n.name),
+    ).toEqual(["docs", "src"]);
+    expect([...get(expanded)]).toEqual([]);
+  });
+
+  it("opens and shuts one folder", () => {
+    fileWs.set(ws);
+    toggleExpanded(fileKey(ws, "docs"));
+    expect(get(expanded).has(fileKey(ws, "docs"))).toBe(true);
+    toggleExpanded(fileKey(ws, "docs"));
+    expect(get(expanded).has(fileKey(ws, "docs"))).toBe(false);
+  });
+
+  it("leaves open folders open when the watcher re-lists the tree", async () => {
+    fileWs.set(ws);
+    toggleExpanded(fileKey(ws, "docs"));
+    toggleExpanded(fileKey(ws, "src"));
+
+    // What `onDocsChanged` runs on every external edit, with a folder that was
+    // not there the first time round.
+    vi.mocked(listWorkspaceDocs).mockResolvedValue(
+      listed([doc("docs", true), doc("docs/guide.md"), doc("src", true), doc("notes", true)]),
+    );
+    await loadDocs(ws);
+
+    expect(get(expanded)).toEqual(new Set([fileKey(ws, "docs"), fileKey(ws, "src")]));
+    // A directory discovered by the re-list starts shut rather than popping open.
+    expect(get(expanded).has(fileKey(ws, "notes"))).toBe(false);
+  });
+
+  it("collapses everything again when the workspace changes", () => {
+    fileWs.set(ws);
+    toggleExpanded(fileKey(ws, "docs"));
+    fileWs.set(other);
+    expect([...get(expanded)]).toEqual([]);
+  });
+
+  it("reveals a nested file opened from the palette or a cross-link", () => {
+    fileWs.set(ws);
+    openFile(ws, "docs/guide/intro.md");
+    expect(get(activeFile)).toBe(fileKey(ws, "docs/guide/intro.md"));
+    expect(get(expanded)).toEqual(new Set([fileKey(ws, "docs"), fileKey(ws, "docs/guide")]));
+  });
+
+  it("reveals a file opened by a cross-link that switched workspace first", () => {
+    fileWs.set(ws);
+    toggleExpanded(fileKey(ws, "docs"));
+    // The session rail sets `fileWs` and then opens — the reset must not undo
+    // the reveal that follows it.
+    fileWs.set(other);
+    openFile(other, "notes/today.md");
+    expect(get(expanded)).toEqual(new Set([fileKey(other, "notes")]));
+  });
+
+  it("has no folders to reveal for the flat plan and disk lists", () => {
+    fileWs.set(ws);
+    openFile("plans", "/home/me/.claude/plans/a.md");
+    openFile("disk", "/tmp/scratch.md");
+    expect([...get(expanded)]).toEqual([]);
+  });
+
+  it("still marks a shut folder that holds an unsaved file", () => {
+    fileWs.set(ws);
+    const roots = buildDocTree(listed([doc("docs", true), doc("docs/guide.md")]));
+    expect(get(expanded).has(fileKey(ws, "docs"))).toBe(false);
+    expect(hasUnsavedUnder(roots[0], new Set(["docs/guide.md"]))).toBe(true);
   });
 });
 

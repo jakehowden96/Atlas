@@ -135,6 +135,22 @@ export function hasUnsavedUnder(node: TreeNode, dirty: ReadonlySet<string>): boo
   return node.children.some((child) => hasUnsavedUnder(child, dirty));
 }
 
+/**
+ * The folders on the way to a rel path, outermost first — the rows that have to
+ * be open for it to be on screen. A path at the root of the tree has none.
+ */
+export function ancestorPaths(relPath: string): string[] {
+  const parts = relPath.split("/").filter(Boolean);
+  parts.pop();
+  const out: string[] = [];
+  let acc = "";
+  for (const part of parts) {
+    acc = acc ? `${acc}/${part}` : part;
+    out.push(acc);
+  }
+  return out;
+}
+
 // ---------- Claude plans ----------
 
 /** A path in the form Claude Code names its plan files after: lowercased, every
