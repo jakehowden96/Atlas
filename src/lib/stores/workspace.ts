@@ -102,8 +102,8 @@ export async function loadWorkspaces() {
     log.info("workspace", `parsed ${data.length} workspaces`);
     const seen: Workspace[] = [];
     for (const ws of data) {
-      // Retagging anything outside the six-colour palette is what migrates
-      // workspaces off the retired Everforest hexes.
+      // Retagging anything outside the palette is what migrates workspaces
+      // off the retired Everforest hexes.
       if (
         !ws.color ||
         !WORKSPACE_COLORS.includes(ws.color) ||
@@ -151,9 +151,20 @@ async function persist() {
 }
 
 // The Mission Control workspace tag palette. Settings → Workspaces offers
-// exactly these six as a swatch picker; `loadWorkspaces` reassigns anything
+// exactly these twelve as a swatch picker; `loadWorkspaces` reassigns anything
 // outside the set, so workspaces tagged with the old Everforest hexes migrate
 // on the next load.
+//
+// The hues are spread around the OKLCH wheel at roughly constant lightness and
+// chroma, so the closest pair in the set is no closer than the closest pair the
+// original six already contained — an 8px `.ws-dot` stays readable as its own
+// tag on both themes (every entry clears 2.7:1 on `#ffffff` and 4.1:1 on
+// `#16171a`).
+//
+// The first six are load-bearing and must stay first, in this order: a
+// workspace whose colour falls outside the palette is silently re-tagged on the
+// next load, so reordering or replacing them would re-colour every existing
+// user's workspaces. New hues are appended.
 export const WORKSPACE_COLORS = [
   "#2fa37a",
   "#5b8def",
@@ -161,12 +172,18 @@ export const WORKSPACE_COLORS = [
   "#e0873a",
   "#d9455f",
   "#8a8f98",
+  "#79a70c",
+  "#c65e01",
+  "#03a6c6",
+  "#d773d0",
+  "#948000",
+  "#a959c1",
 ];
 
 export function nextAvailableColor(existing: Workspace[]): string {
   const used = new Set(existing.map((w) => w.color).filter(Boolean));
-  // Past six workspaces the palette repeats from the top. Deliberate: the
-  // picker offers six swatches and no seventh colour exists to offer.
+  // Past twelve workspaces the palette repeats from the top. Deliberate: the
+  // picker offers twelve swatches and no thirteenth colour exists to offer.
   return WORKSPACE_COLORS.find((c) => !used.has(c)) ?? WORKSPACE_COLORS[0];
 }
 

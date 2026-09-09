@@ -29,6 +29,7 @@ import {
   resumeSession,
   nextAvailableColor,
   WORKSPACE_COLORS,
+  type Workspace,
 } from "../stores/workspace";
 import { exists, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 
@@ -80,9 +81,28 @@ describe("workspace store", () => {
       expect(get(workspaces)[0].name).toBe("my-app");
     });
 
-    it("assigns colours from the six-colour palette", async () => {
-      for (let i = 0; i < 6; i++) await addWorkspace(`/ws-${i}`);
+    it("assigns colours from the palette", async () => {
+      for (let i = 0; i < WORKSPACE_COLORS.length; i++) await addWorkspace(`/ws-${i}`);
       expect(get(workspaces).map((w) => w.color)).toEqual(WORKSPACE_COLORS);
+    });
+  });
+
+  describe("WORKSPACE_COLORS", () => {
+    it("has no duplicates", () => {
+      expect(new Set(WORKSPACE_COLORS).size).toBe(WORKSPACE_COLORS.length);
+    });
+
+    // loadWorkspaces re-tags any workspace whose colour is outside the palette,
+    // so changing these six would silently re-colour every existing install.
+    it("keeps the original six first, in order", () => {
+      expect(WORKSPACE_COLORS.slice(0, 6)).toEqual([
+        "#2fa37a",
+        "#5b8def",
+        "#7c6cf2",
+        "#e0873a",
+        "#d9455f",
+        "#8a8f98",
+      ]);
     });
   });
 
@@ -97,13 +117,14 @@ describe("workspace store", () => {
       expect(nextAvailableColor(taken)).toBe(WORKSPACE_COLORS[2]);
     });
 
-    it("repeats from the top once all six are taken", () => {
-      const taken = WORKSPACE_COLORS.map((color) => ({
-        path: color,
-        name: color,
-        color,
-        sessions: [],
-      }));
+    it("hands out twelve distinct colours before repeating", () => {
+      const taken: Workspace[] = [];
+      for (let i = 0; i < 12; i++) {
+        const color = nextAvailableColor(taken);
+        taken.push({ path: `/ws-${i}`, name: `ws-${i}`, color, sessions: [] });
+      }
+      const colours = taken.map((w) => w.color);
+      expect(new Set(colours).size).toBe(12);
       expect(nextAvailableColor(taken)).toBe(WORKSPACE_COLORS[0]);
     });
   });
