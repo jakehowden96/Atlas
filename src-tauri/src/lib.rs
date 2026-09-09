@@ -1,5 +1,6 @@
 mod commands;
 pub mod hook;
+mod lsp;
 mod panel;
 mod pty;
 mod session;
@@ -190,6 +191,7 @@ pub fn run() {
     extend_path_for_gui_launch();
 
     let pty_manager = PtyManager::new();
+    let lsp_manager = lsp::LspManager::new();
     let live_sessions = LiveSessionManager::new();
 
     tauri::Builder::default()
@@ -198,9 +200,13 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
         .manage(pty_manager)
+        .manage(lsp_manager)
         .manage(live_sessions.clone())
         .manage(commands::files::DocsWatchers::default())
         .invoke_handler(tauri::generate_handler![
+            lsp::lsp_start,
+            lsp::lsp_send,
+            lsp::lsp_stop,
             commands::terminal::pty_spawn,
             commands::terminal::pty_write,
             commands::terminal::pty_resize,

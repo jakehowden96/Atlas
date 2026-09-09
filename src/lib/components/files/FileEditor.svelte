@@ -3,13 +3,13 @@
    * The Files screen's middle column: tabs, toolbar, the document itself and a
    * status footer.
    *
-   * Source files open here too, but this is not yet a code editor: the source
-   * pane is a plain textarea with no highlighting, and the preview is
-   * `markdown.ts` rather than a full CommonMark renderer. A file with no
-   * Markdown preview simply shows its source.
+   * The source pane is CodeMirror 6 (`CodeEditor.svelte`): highlighting, line
+   * numbers, search, and diagnostics wherever a language server is installed.
+   * The preview is `markdown.ts` rather than a full CommonMark renderer, and a
+   * file with no Markdown preview simply shows its source.
    */
   import { untrack } from "svelte";
-  import { absolutePath, parseFileKey, resolveWikilink } from "../../files";
+  import { absolutePath, editorTarget, parseFileKey, resolveWikilink } from "../../files";
   import { basename, formatAgo } from "../../format";
   import { openUrl } from "../../ipc";
   import { renderMarkdown } from "../../markdown";
@@ -33,6 +33,7 @@
   } from "../../stores/files";
   import { fileRailOpen, openNewSession } from "../../stores/view";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
+  import CodeEditor from "./CodeEditor.svelte";
 
   let key = $derived($activeFile);
   let file = $derived(parseFileKey(key));
@@ -54,7 +55,8 @@
     mode === "source" ? "" : renderMarkdown(text, (t) => resolveWikilink(t, files) !== null),
   );
 
-  let sourceEl = $state<HTMLTextAreaElement | null>(null);
+  let target = $derived(editorTarget(file.source, file.path));
+  let editor = $state<CodeEditor | null>(null);
   let previewEl = $state<HTMLDivElement | null>(null);
 
   /** Long paths would push the toolbar's controls off; the tail is the part
@@ -107,20 +109,14 @@
   });
 
   function scrollToHeading(jump: { id: string; line: number }) {
-    // The preview has real anchors; a textarea has none, so the source pane is
-    // scrolled by putting the caret on the heading's line instead.
+    // The preview has real anchors; the source pane has none, so it is scrolled
+    // by putting the caret on the heading's line instead.
     const anchor = previewEl?.querySelector(`#${CSS.escape(jump.id)}`);
     if (anchor) {
       anchor.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
-    if (!sourceEl) return;
-    const offset = text
-      .split("\n")
-      .slice(0, jump.line)
-      .reduce((n, line) => n + line.length + 1, 0);
-    sourceEl.focus();
-    sourceEl.setSelectionRange(offset, offset);
+    editor?.goToLine(jump.line);
   }
 
   function onPreviewClick(e: MouseEvent) {
@@ -238,16 +234,14 @@
 
     <div class="body">
       {#if mode !== "preview"}
-        <!-- A plain textarea stands in for CodeMirror 6, which the spec calls
-             the eventual home of this pane. Not a dependency worth adding for
-             a documents editor that has no syntax highlighting to show. -->
-        <textarea
-          bind:this={sourceEl}
-          class="source"
-          spellcheck="false"
-          value={text}
-          oninput={(e) => setDoc(key, e.currentTarget.value)}
-        ></textarea>
+        <CodeEditor
+          bind:this={editor}
+          docKey={key}
+          path={target.relative}
+          root={target.root}
+          {text}
+          onChange={(next) => setDoc(key, next)}
+        />
       {/if}
       {#if mode !== "source"}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -451,28 +445,6 @@
     display: flex;
     flex: 1;
     min-height: 0;
-  }
-
-  .source {
-    flex: 1;
-    min-width: 0;
-    padding: 24px 28px;
-    border: none;
-    outline: none;
-    background: var(--term-bg);
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-size: var(--fs-sm);
-    line-height: 1.7;
-    resize: none;
-    tab-size: 2;
-  }
-
-  /* Replaces the outline above. The pane is borderless and edge to edge, so an
-     outset ring would sit half off screen; the inset one traces the pane. */
-  .source:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
   }
 
   .preview {

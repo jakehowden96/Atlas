@@ -27,6 +27,7 @@ import {
   ancestorPaths,
   breadcrumbs,
   buildDocTree,
+  editorTarget,
   fileKey,
   hasUnsavedUnder,
   matchLineEndings,
@@ -492,5 +493,37 @@ describe("touchedBy", () => {
     expect(touchedBy("/home/me/atlas/docs/guide.md", [tile({ terminalTabId: null })], touched))
       .toEqual([]);
     expect(touchedBy("", [tile({})], touched)).toEqual([]);
+  });
+});
+
+describe("editorTarget", () => {
+  /* A language server is rooted at a project, and the uri it is told about has
+     to be relative to that root or it reports diagnostics against a file it
+     cannot find. A workspace file already has both halves; a plans or ad-hoc
+     disk file has only an absolute path, so its own directory stands in as the
+     root. */
+  it("uses the workspace as the root for a file inside one", () => {
+    expect(editorTarget("/repo/web", "src/app.ts")).toEqual({
+      root: "/repo/web",
+      relative: "src/app.ts",
+    });
+  });
+
+  it("roots a loose disk file at its own directory", () => {
+    expect(editorTarget("disk", "/tmp/notes/todo.ts")).toEqual({
+      root: "/tmp/notes",
+      relative: "todo.ts",
+    });
+  });
+
+  it("roots a plans file at the plans directory", () => {
+    expect(editorTarget("plans", "/home/j/.claude/plans/a.md")).toEqual({
+      root: "/home/j/.claude/plans",
+      relative: "a.md",
+    });
+  });
+
+  it("drops a trailing separator on the workspace so the uri has no double slash", () => {
+    expect(editorTarget("/repo/web/", "src/app.ts").root).toBe("/repo/web");
   });
 });

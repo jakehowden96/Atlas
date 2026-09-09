@@ -309,3 +309,26 @@ export function touchedBy(
   }
   return out;
 }
+
+/**
+ * Where the code editor and its language server should think a file lives.
+ *
+ * A server is rooted at a project and is told a uri relative to that root; get
+ * either half wrong and it reports diagnostics against a file it cannot find.
+ * A workspace file already carries both halves. A `plans` or ad-hoc `disk`
+ * file has only an absolute path, so its own directory stands in as the root —
+ * enough for highlighting and for a single-file server, and honest about the
+ * fact that there is no project around it.
+ */
+export function editorTarget(
+  source: FileSource,
+  path: string,
+): { root: string; relative: string } {
+  if (source === "plans" || source === "disk") {
+    const at = path.lastIndexOf("/");
+    return at <= 0
+      ? { root: "/", relative: path.replace(/^\//, "") }
+      : { root: path.slice(0, at), relative: path.slice(at + 1) };
+  }
+  return { root: source.replace(/[\\/]+$/, ""), relative: path };
+}

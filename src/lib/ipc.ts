@@ -254,3 +254,31 @@ export async function onDocsChanged(
     callback(event.payload.workspacePath, event.payload.relPath);
   });
 }
+
+// ── Language servers ────────────────────────────────────────────────────────
+
+/**
+ * Start a language server for `languageId` rooted at `root`, returning the
+ * session id to send on. Rejects when no server for that language is installed,
+ * which the caller treats as "no diagnostics here" rather than a failure.
+ */
+export async function lspStart(languageId: string, root: string): Promise<string> {
+  return invoke<string>("lsp_start", { languageId, root });
+}
+
+/** Relay one JSON-RPC message. Framing happens on the Rust side. */
+export async function lspSend(id: string, message: string): Promise<void> {
+  return invoke("lsp_send", { id, message });
+}
+
+export async function lspStop(id: string): Promise<void> {
+  return invoke("lsp_stop", { id });
+}
+
+export async function onLspMessage(
+  callback: (id: string, message: string) => void,
+): Promise<UnlistenFn> {
+  return listen<{ id: string; message: string }>("lsp-message", (event) => {
+    callback(event.payload.id, event.payload.message);
+  });
+}
