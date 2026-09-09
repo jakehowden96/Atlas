@@ -197,9 +197,9 @@ describe("a second chord per action", () => {
 
 describe("isReachable", () => {
   it("marks ⌘Escape unreachable on macOS only", () => {
-    const escape = DEFAULT_KEYMAP.backToSessions[0];
-    expect(isReachable(escape, true)).toBe(false);
-    expect(isReachable(escape, false)).toBe(true);
+    const cmdEscape = DEFAULT_KEYMAP.backToSessions[0];
+    expect(isReachable(cmdEscape, true)).toBe(false);
+    expect(isReachable(cmdEscape, false)).toBe(true);
   });
 
   it("leaves every other chord alone", () => {
