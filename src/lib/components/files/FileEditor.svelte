@@ -11,7 +11,7 @@
   import { basename, formatAgo } from "../../format";
   import { openUrl } from "../../ipc";
   import { renderMarkdown } from "../../markdown";
-  import { chord } from "../../platform";
+  import { chords } from "../../stores/settings";
   import {
     activeFile,
     closeFile,
@@ -193,7 +193,7 @@
         disabled={!dirty}
         onclick={() => void saveActiveFile()}
       >
-        Save <span class="kbd">{chord("S")}</span>
+        Save <span class="kbd">{$chords.saveFile}</span>
       </button>
       <button
         type="button"

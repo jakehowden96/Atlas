@@ -1,6 +1,7 @@
 import { get } from "svelte/store";
+import { ACTIONS, matchBinding, type Action } from "./keymap";
 import { saveActiveFile } from "./stores/files";
-import { settingsOpen } from "./stores/settings";
+import { keymap, settingsOpen } from "./stores/settings";
 import {
   activeView,
   diffOpen,
@@ -11,18 +12,32 @@ import {
   railOpen,
   showView,
   TAB_VIEWS,
+  type View,
 } from "./stores/view";
 
+/** What each action does once its chord matches. */
+const RUN: Record<Action, () => void> = {
+  newSession: () => openNewSession(),
+  jump: () => jumpOpen.set(true),
+  settings: () => settingsOpen.set(true),
+  saveFile: () => void saveActiveFile(),
+  openFile: () => openDialogOpen.set(true),
+  toggleRail: () => railOpen.update((v) => !v),
+  tab1: () => showView(TAB_VIEWS[0]),
+  tab2: () => showView(TAB_VIEWS[1]),
+  tab3: () => showView(TAB_VIEWS[2]),
+  tab4: () => showView(TAB_VIEWS[3]),
+  backToSessions: () => showView("sessions"),
+};
+
 /**
- * The platform's primary modifier: ⌘ on macOS, Ctrl on Windows/Linux.
- *
- * Alt disqualifies the chord, because AltGr on a non-US Windows or Linux
- * layout reports itself as Ctrl+Alt — so `AltGr+2` and `AltGr+ß` are how those
- * keyboards type `@` and `\`, not a request to switch tabs.
+ * Actions that only fire on one screen. Save and Open… have nothing to act on
+ * anywhere but Files, so the chord is left alone on every other view.
  */
-function mod(e: KeyboardEvent): boolean {
-  return (e.metaKey || e.ctrlKey) && !e.altKey;
-}
+const SCOPED: Partial<Record<Action, View>> = {
+  saveFile: "files",
+  openFile: "files",
+};
 
 /**
  * Mission Control's global chords. Returns true when the event was consumed.
@@ -32,58 +47,20 @@ function mod(e: KeyboardEvent): boolean {
  * reach this handler while the terminal has focus.
  */
 export function handleGlobalKeydown(e: KeyboardEvent): boolean {
-  // ⌘N / Ctrl+N — new session, unseeded (a plain Fresh start)
-  if (mod(e) && !e.shiftKey && e.key.toLowerCase() === "n") {
+  // The keymap first, so mod+Escape reaches `backToSessions` rather than
+  // falling through into the bare-Escape ladder below.
+  const bindings = get(keymap);
+  for (const action of ACTIONS) {
+    if (!matchBinding(e, bindings[action])) continue;
+    const scope = SCOPED[action];
+    if (scope && get(activeView) !== scope) continue;
     e.preventDefault();
-    openNewSession();
+    RUN[action]();
     return true;
   }
 
-  // ⌘K / Ctrl+K — jump to session
-  if (mod(e) && !e.shiftKey && e.key.toLowerCase() === "k") {
-    e.preventDefault();
-    jumpOpen.set(true);
-    return true;
-  }
-
-  // ⌘, / Ctrl+, — settings
-  if (mod(e) && !e.shiftKey && e.key === ",") {
-    e.preventDefault();
-    settingsOpen.set(true);
-    return true;
-  }
-
-  // ⌘S / Ctrl+S — save the file the Files editor is showing. Scoped to that
-  // view so the chord is left alone on every other screen.
-  if (mod(e) && !e.shiftKey && e.key.toLowerCase() === "s" && get(activeView) === "files") {
-    e.preventDefault();
-    void saveActiveFile();
-    return true;
-  }
-
-  // ⌘O / Ctrl+O — the Open… dialog. Scoped to the Files view for the same
-  // reason ⌘S is: nothing on the other screens has a file to open.
-  if (mod(e) && !e.shiftKey && e.key.toLowerCase() === "o" && get(activeView) === "files") {
-    e.preventDefault();
-    openDialogOpen.set(true);
-    return true;
-  }
-
-  // ⌘\ / Ctrl+Shift+\ — toggle the activity rail
-  if (mod(e) && e.key === "\\") {
-    e.preventDefault();
-    railOpen.update((v) => !v);
-    return true;
-  }
-
-  // ⌘1–4 / Ctrl+1–4 — jump straight to a top-bar tab
-  if (mod(e) && !e.shiftKey && /^Digit[1-4]$/.test(e.code)) {
-    e.preventDefault();
-    showView(TAB_VIEWS[Number(e.code.slice(5)) - 1]);
-    return true;
-  }
-
-  // Esc — topmost modal, then the Changes drawer, then back to Sessions
+  // Esc — topmost modal, then the Changes drawer, then back to Sessions. This
+  // is ordered modal dismissal rather than a binding, so it is not rebindable.
   if (e.key === "Escape") {
     if (get(jumpOpen)) {
       e.preventDefault();

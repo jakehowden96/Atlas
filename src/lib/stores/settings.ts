@@ -1,6 +1,15 @@
-import { writable, get } from "svelte/store";
+import { derived, writable, get } from "svelte/store";
 import { BaseDirectory, readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs";
 import { startSessionTail, stopSessionTail } from "../ipc";
+import {
+  ACTIONS,
+  DEFAULT_KEYMAP,
+  formatBinding,
+  mergeKeymap,
+  type Action,
+  type Binding,
+  type Keymap,
+} from "../keymap";
 import { log } from "../logger";
 import { themeMode, type ThemeMode } from "../theme";
 import { openFiles, sources } from "./files";
@@ -31,6 +40,16 @@ export const tailTranscripts = writable(true);
 /** Overview tiles the user pinned, by `pinKey`. Pinned tiles sort above every
     other tile whatever the ordering is. */
 export const pinnedSessions = writable<string[]>([]);
+/** The global chords. `shortcuts.ts` dispatches through this, and
+    `terminal-session.ts` passes exactly these through to the window handler. */
+export const keymap = writable<Keymap>({ ...DEFAULT_KEYMAP });
+
+/** Chord labels for the UI, so every hint renders the current binding. */
+export const chords = derived(keymap, (km) => {
+  const labels = {} as Record<Action, string>;
+  for (const action of ACTIONS) labels[action] = formatBinding(km[action]);
+  return labels;
+});
 
 const SETTINGS_DIR = ".atlas";
 const SETTINGS_FILE = ".atlas/settings.json";
@@ -51,6 +70,7 @@ interface PersistedSettings {
    *  file is already read on boot. */
   openFiles?: string[];
   fileSources?: string[];
+  keymap?: Partial<Record<Action, Binding>>;
 }
 
 /** The three intervals the Pull requests screen offers. */
@@ -110,6 +130,9 @@ export async function loadSettings() {
     if (Array.isArray(data.fileSources)) {
       sources.set(data.fileSources.filter((path) => typeof path === "string"));
     }
+    // Malformed entries are dropped inside `mergeKeymap`, so a hand-edited file
+    // costs the user one binding rather than the whole settings load.
+    keymap.set(mergeKeymap(data.keymap));
     log.info("settings", "settings loaded");
   } catch (e) {
     log.error("settings", "failed to load settings", e);
@@ -133,6 +156,7 @@ async function persistSettings() {
       pinnedSessions: get(pinnedSessions),
       openFiles: get(openFiles),
       fileSources: get(sources),
+      keymap: get(keymap),
     };
     await writeTextFile(SETTINGS_FILE, JSON.stringify(data, null, 2), {
       baseDir: BaseDirectory.Home,
@@ -201,6 +225,17 @@ export async function setOpenFiles(keys: string[]) {
 
 export async function setFileSources(paths: string[]) {
   sources.set(paths);
+  await persistSettings();
+}
+
+/** Replace the whole keymap — Settings edits it as one draft. */
+export async function setKeymap(next: Keymap) {
+  keymap.set(next);
+  await persistSettings();
+}
+
+export async function resetKeymap() {
+  keymap.set({ ...DEFAULT_KEYMAP });
   await persistSettings();
 }
 

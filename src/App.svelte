@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { chord } from "./lib/platform";
   import type { UnlistenFn } from "@tauri-apps/api/event";
   import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
   import { onDestroy, onMount } from "svelte";
@@ -23,7 +22,7 @@
   import { liveSessionList, upsertLiveSession } from "./lib/stores/liveSessions";
   import { panelData, setSessionTouchedFiles } from "./lib/stores/panel";
   import { prsAttentionCount, startPrPolling } from "./lib/stores/prs";
-  import { enableNotifications, loadSettings, settingsOpen } from "./lib/stores/settings";
+  import { chords, enableNotifications, loadSettings, settingsOpen } from "./lib/stores/settings";
   import { activeTabId, setTabNeedsInput, tabs } from "./lib/stores/terminal";
   import { activeView, jumpOpen, openNewSession, showView, type View } from "./lib/stores/view";
   import {
@@ -194,14 +193,14 @@
 
     <button type="button" class="jump" onclick={() => jumpOpen.set(true)}>
       Jump to…
-      <span class="kbd">{chord("K")}</span>
+      <span class="kbd">{$chords.jump}</span>
     </button>
 
     <button type="button" class="new-session" onclick={() => openNewSession()}>
-      + Session <span class="kbd-inline">{chord("N")}</span>
+      + Session <span class="kbd-inline">{$chords.newSession}</span>
     </button>
 
-    <button type="button" class="gear" title={`Settings (${chord(",")})`} onclick={() => settingsOpen.set(true)}>
+    <button type="button" class="gear" title={`Settings (${$chords.settings})`} onclick={() => settingsOpen.set(true)}>
       <span class="material-symbols-outlined">settings</span>
     </button>
   </header>
