@@ -277,9 +277,10 @@ function samePath(a: string, b: string): boolean {
  * The sessions whose working tree has this file changed, with that session's
  * own line counts for it.
  *
- * `TouchedFile.path` is relative to the session's workspace — the git diff's
- * own form — so the workspace path is what turns it back into the absolute
- * path the Files screen holds.
+ * `TouchedFile.path` is relative to the repo the git diff came from, so the
+ * absolute path is the workspace plus that repo plus the path. `repo` is ""
+ * for a workspace that is itself one repo, which is the common case and leaves
+ * the join unchanged.
  */
 export function touchedBy(
   absPath: string,
@@ -291,7 +292,12 @@ export function touchedBy(
   for (const tile of tiles) {
     if (!tile.workspacePath || !tile.terminalTabId) continue;
     const files = touched.get(tile.terminalTabId);
-    const hit = files?.find((f) => samePath(`${tile.workspacePath}/${f.path}`, absPath));
+    const hit = files?.find((f) =>
+      samePath(
+        [tile.workspacePath, f.repo, f.path].filter(Boolean).join("/"),
+        absPath,
+      ),
+    );
     if (!hit) continue;
     out.push({
       sessionId: tile.atlasSessionId,

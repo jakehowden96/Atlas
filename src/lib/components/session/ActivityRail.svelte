@@ -186,9 +186,13 @@
         <button type="button" class="review" onclick={() => diffOpen.set(true)}>Review →</button>
       </div>
       <div class="files">
-        {#each files as file (file.path)}
+        <!-- Keyed by repo *and* path: two repos under one workspace routinely
+             both have a `src/main.rs`. -->
+        {#each files as file (`${file.repo}/${file.path}`)}
           <div class="file">
-            <span class="file-path">{file.path}</span>
+            <span class="file-path"
+              >{#if file.repo}<span class="file-repo">{file.repo}/</span>{/if}{file.path}</span
+            >
             <span class="file-delta">
               <span class="added">+{file.added}</span>
               <span class="removed">−{file.removed}</span>
@@ -445,6 +449,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* Which repo the file is in, when the workspace holds more than one. Muted,
+     so the path still reads as the subject and the repo as its address. */
+  .file-repo {
+    color: var(--muted);
   }
 
   .file-delta {

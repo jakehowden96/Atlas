@@ -13,9 +13,15 @@ import type { Workspace } from "./stores/workspace";
 
 /** One row of the rail's "Files touched" list. */
 export interface TouchedFile {
+  /** Relative to the repo the file is in, which is `repo` when there is one. */
   path: string;
   added: number;
   removed: number;
+  /**
+   * The repo directory the file belongs to, relative to the session's cwd, or
+   * "" when the cwd is itself the repo and the path is already unambiguous.
+   */
+  repo: string;
 }
 
 /**
@@ -23,18 +29,29 @@ export interface TouchedFile {
  *
  * The git diff is authoritative here — the transcript only knows which files
  * Claude *opened*, and its own "+3 −1" summaries lag behind the working tree.
+ *
+ * A session whose cwd holds several repos gets a per-repo breakdown in
+ * `projects`, and `diff.raw` is those diffs concatenated. Reading `raw` there
+ * loses which repo each file came from and lets two repos collide on the same
+ * relative path, so the per-project diffs are read whenever they are present.
  */
 export function filesTouched(panel: PanelData | null): TouchedFile[] {
-  const raw = panel?.diff?.raw;
-  if (!raw) return [];
-  return parseDiff(raw).map((file) => {
-    const counts = toFlat(file, file.newName);
-    return {
-      path: file.changeType === "deleted" ? file.oldName : file.newName,
-      added: counts.addedCount,
-      removed: counts.removedCount,
-    };
-  });
+  const diff = panel?.diff;
+  if (!diff?.raw) return [];
+  const sources = diff.projects?.length
+    ? diff.projects.map((p) => ({ repo: p.name, raw: p.raw }))
+    : [{ repo: "", raw: diff.raw }];
+  return sources.flatMap(({ repo, raw }) =>
+    parseDiff(raw).map((file) => {
+      const counts = toFlat(file, file.newName);
+      return {
+        path: file.changeType === "deleted" ? file.oldName : file.newName,
+        added: counts.addedCount,
+        removed: counts.removedCount,
+        repo,
+      };
+    }),
+  );
 }
 
 /**

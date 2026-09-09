@@ -89,8 +89,25 @@ describe("filesTouched", () => {
 
   it("counts added and removed lines per file from the git diff", () => {
     expect(filesTouched(panel(TWO_FILE_DIFF))).toEqual([
-      { path: "src/a.ts", added: 2, removed: 1 },
-      { path: "src/gone.ts", added: 0, removed: 2 },
+      { path: "src/a.ts", added: 2, removed: 1, repo: "" },
+      { path: "src/gone.ts", added: 0, removed: 2, repo: "" },
+    ]);
+  });
+
+  it("names the repo each file is in when the workspace holds several", () => {
+    // `raw` is every project's diff concatenated, so reading it alone loses
+    // which repo a file came from — and both repos here have a `src/a.ts`.
+    const multi = panel(TWO_FILE_DIFF + TWO_FILE_DIFF);
+    // biome-ignore lint/style/noNonNullAssertion: the helper always sets diff
+    multi.diff!.projects = [
+      { name: "api", raw: TWO_FILE_DIFF, files_changed: 2, lines_added: 2, lines_removed: 3 },
+      { name: "web", raw: TWO_FILE_DIFF, files_changed: 2, lines_added: 2, lines_removed: 3 },
+    ];
+    expect(filesTouched(multi)).toEqual([
+      { path: "src/a.ts", added: 2, removed: 1, repo: "api" },
+      { path: "src/gone.ts", added: 0, removed: 2, repo: "api" },
+      { path: "src/a.ts", added: 2, removed: 1, repo: "web" },
+      { path: "src/gone.ts", added: 0, removed: 2, repo: "web" },
     ]);
   });
 

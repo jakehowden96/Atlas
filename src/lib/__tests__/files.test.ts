@@ -444,7 +444,9 @@ describe("touchedBy", () => {
     };
   }
 
-  const touched = new Map([["tab-1", [{ path: "docs/guide.md", added: 12, removed: 3 }]]]);
+  const touched = new Map([
+    ["tab-1", [{ path: "docs/guide.md", added: 12, removed: 3, repo: "" }]],
+  ]);
 
   it("finds the session whose diff carries the file", () => {
     expect(touchedBy("/home/me/atlas/docs/guide.md", [tile({})], touched)).toEqual([
@@ -453,7 +455,9 @@ describe("touchedBy", () => {
   });
 
   it("matches across separators and drive-letter case", () => {
-    const windows = new Map([["tab-1", [{ path: "docs/guide.md", added: 1, removed: 0 }]]]);
+    const windows = new Map([
+      ["tab-1", [{ path: "docs/guide.md", added: 1, removed: 0, repo: "" }]],
+    ]);
     const rows = touchedBy(
       "c:\\Users\\me\\atlas\\docs\\guide.md",
       [tile({ workspacePath: "C:\\Users\\me\\atlas" })],
@@ -469,6 +473,19 @@ describe("touchedBy", () => {
       touched,
     );
     expect(rows).toEqual([]);
+  });
+
+  it("puts the repo between the workspace and the path when there is one", () => {
+    // A workspace holding several repos diffs each one separately, so the path
+    // is relative to the repo rather than to the workspace.
+    const multi = new Map([
+      ["tab-1", [{ path: "docs/guide.md", added: 4, removed: 1, repo: "api" }]],
+    ]);
+    expect(touchedBy("/home/me/atlas/api/docs/guide.md", [tile({})], multi)).toEqual([
+      { sessionId: "atlas-1", label: "Refactor", state: "running", added: 4, removed: 1 },
+    ]);
+    // ...and the workspace-relative path is no longer a match on its own.
+    expect(touchedBy("/home/me/atlas/docs/guide.md", [tile({})], multi)).toEqual([]);
   });
 
   it("skips a session with no live tab and an empty path", () => {
