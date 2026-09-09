@@ -284,7 +284,7 @@ describe("handleGlobalKeydown", () => {
   });
 
   it("a rebound chord fires and the old one no longer does", () => {
-    keymap.set({ ...DEFAULT_KEYMAP, jump: { mod: true, shift: false, key: "p" } });
+    keymap.set({ ...DEFAULT_KEYMAP, jump: [{ mod: true, shift: false, key: "p" }] });
 
     const rebound = makeKeyEvent({ metaKey: true, key: "p" });
     expect(handleGlobalKeydown(rebound)).toBe(true);
@@ -298,7 +298,7 @@ describe("handleGlobalKeydown", () => {
   });
 
   it("a rebound tab chord matches the new digit's code", () => {
-    keymap.set({ ...DEFAULT_KEYMAP, tab2: { mod: true, shift: false, key: "Digit8" } });
+    keymap.set({ ...DEFAULT_KEYMAP, tab2: [{ mod: true, shift: false, key: "Digit8" }] });
     const e = makeKeyEvent({ metaKey: true, key: "8", code: "Digit8" });
     expect(handleGlobalKeydown(e)).toBe(true);
     expect(get(activeView)).toBe("files");

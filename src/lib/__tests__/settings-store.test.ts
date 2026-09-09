@@ -182,7 +182,9 @@ describe("settings store", () => {
       );
       await loadSettings();
 
-      expect(get(keymap).jump).toEqual({ mod: true, shift: false, key: "p" });
+      // A file written before alternates existed holds one binding per action;
+      // it loads as that action's only chord.
+      expect(get(keymap).jump).toEqual([{ mod: true, shift: false, key: "p" }]);
       expect(get(keymap).newSession).toEqual(DEFAULT_KEYMAP.newSession);
     });
 
@@ -194,7 +196,7 @@ describe("settings store", () => {
       await loadSettings();
 
       expect(get(keymap).jump).toEqual(DEFAULT_KEYMAP.jump);
-      expect(get(keymap).settings).toEqual({ mod: true, shift: false, key: "e" });
+      expect(get(keymap).settings).toEqual([{ mod: true, shift: false, key: "e" }]);
     });
 
     it("a settings file from an earlier Atlas keeps every default chord", async () => {
@@ -208,10 +210,10 @@ describe("settings store", () => {
   describe("the keymap setters", () => {
     it("setKeymap persists the whole map and resetKeymap puts it back", async () => {
       allowWrites();
-      const next = { ...DEFAULT_KEYMAP, jump: { mod: true, shift: false, key: "p" } };
+      const next = { ...DEFAULT_KEYMAP, jump: [{ mod: true, shift: false, key: "p" }] };
       await setKeymap(next);
-      expect(get(keymap).jump).toEqual({ mod: true, shift: false, key: "p" });
-      expect(lastWritten().keymap.jump).toEqual({ mod: true, shift: false, key: "p" });
+      expect(get(keymap).jump).toEqual([{ mod: true, shift: false, key: "p" }]);
+      expect(lastWritten().keymap.jump).toEqual([{ mod: true, shift: false, key: "p" }]);
 
       await resetKeymap();
       expect(get(keymap)).toEqual(DEFAULT_KEYMAP);

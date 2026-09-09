@@ -4,7 +4,7 @@ import { startSessionTail, stopSessionTail } from "../ipc";
 import {
   ACTIONS,
   DEFAULT_KEYMAP,
-  formatBinding,
+  formatChord,
   mergeKeymap,
   type Action,
   type Binding,
@@ -47,7 +47,7 @@ export const keymap = writable<Keymap>({ ...DEFAULT_KEYMAP });
 /** Chord labels for the UI, so every hint renders the current binding. */
 export const chords = derived(keymap, (km) => {
   const labels = {} as Record<Action, string>;
-  for (const action of ACTIONS) labels[action] = formatBinding(km[action]);
+  for (const action of ACTIONS) labels[action] = formatChord(km[action]);
   return labels;
 });
 
@@ -70,7 +70,9 @@ interface PersistedSettings {
    *  file is already read on boot. */
   openFiles?: string[];
   fileSources?: string[];
-  keymap?: Partial<Record<Action, Binding>>;
+  /** One binding per action in files written before alternates existed;
+   *  a list since. `mergeKeymap` reads both. */
+  keymap?: Partial<Record<Action, Binding | Binding[]>>;
 }
 
 /** The three intervals the Pull requests screen offers. */

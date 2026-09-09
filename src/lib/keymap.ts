@@ -36,7 +36,16 @@ export interface Binding {
   key: string;
 }
 
-export type Keymap = Record<Action, Binding>;
+/**
+ * The chords that fire each action, primary first.
+ *
+ * More than one because a chord the OS eats cannot be fixed by better
+ * dispatch: macOS reserves ⌘Escape (Force Quit, and Voice Control on current
+ * versions), so `backToSessions` also ships ⌘. — the long-standing macOS
+ * cancel chord, which does reach a web view. Windows and Linux keep ⌘/Ctrl+Esc
+ * as the primary and are unchanged.
+ */
+export type Keymap = Record<Action, Binding[]>;
 
 /** Dispatch order, and the order Settings lists the rows in. */
 export const ACTIONS: Action[] = [
@@ -71,25 +80,29 @@ export const ACTION_LABELS: Record<Action, string> = {
 };
 
 export const DEFAULT_KEYMAP: Keymap = {
-  newSession: { mod: true, shift: false, key: "n" },
-  jump: { mod: true, shift: false, key: "k" },
-  settings: { mod: true, shift: false, key: "," },
-  saveFile: { mod: true, shift: false, key: "s" },
-  openFile: { mod: true, shift: false, key: "o" },
-  toggleRail: { mod: true, key: "\\" },
-  tab1: { mod: true, shift: false, key: "Digit1" },
-  tab2: { mod: true, shift: false, key: "Digit2" },
-  tab3: { mod: true, shift: false, key: "Digit3" },
-  tab4: { mod: true, shift: false, key: "Digit4" },
+  newSession: [{ mod: true, shift: false, key: "n" }],
+  jump: [{ mod: true, shift: false, key: "k" }],
+  settings: [{ mod: true, shift: false, key: "," }],
+  saveFile: [{ mod: true, shift: false, key: "s" }],
+  openFile: [{ mod: true, shift: false, key: "o" }],
+  toggleRail: [{ mod: true, key: "\\" }],
+  tab1: [{ mod: true, shift: false, key: "Digit1" }],
+  tab2: [{ mod: true, shift: false, key: "Digit2" }],
+  tab3: [{ mod: true, shift: false, key: "Digit3" }],
+  tab4: [{ mod: true, shift: false, key: "Digit4" }],
   /* Bare Escape belongs to the Claude Code TUI, so returning to Sessions from a
-     focused terminal is a chord of its own. */
-  backToSessions: { mod: true, shift: false, key: "Escape" },
+     focused terminal is a chord of its own — and on macOS it takes two, because
+     the OS never delivers ⌘Escape to the web view. See `Keymap`. */
+  backToSessions: [
+    { mod: true, shift: false, key: "Escape" },
+    { mod: true, shift: false, key: "." },
+  ],
   /* The shortcut sheet. A bare `?` is the usual chord for it, but every binding
      here is dispatched off `svelte:window` with no is-typing guard, so a
      modifierless key would swallow the character everywhere text is entered —
      the same mistake the `phase 06 follow-up` reverted. Shift is left absent so
      the chord still fires on a layout that shifts to reach `/`. */
-  shortcuts: { mod: true, key: "/" },
+  shortcuts: [{ mod: true, key: "/" }],
 };
 
 const DIGIT_CODE = /^Digit[0-9]$/;
@@ -109,23 +122,42 @@ export function matchBinding(e: KeyboardEvent, binding: Binding): boolean {
   return typeof e.key === "string" && e.key.toLowerCase() === binding.key.toLowerCase();
 }
 
-/** True when the event is any of the keymap's chords. */
+/** True when the event is any of an action's chords. */
+export function matchesAction(e: KeyboardEvent, bindings: Binding[]): boolean {
+  return bindings.some((binding) => matchBinding(e, binding));
+}
+
+/** True when the event is any chord of any action. */
 export function matchesAnyBinding(e: KeyboardEvent, keymap: Keymap): boolean {
-  return ACTIONS.some((action) => matchBinding(e, keymap[action]));
+  return ACTIONS.some((action) => matchesAction(e, keymap[action]));
 }
 
 function signature(b: Binding): string {
   return `${b.mod ? "mod+" : ""}${b.shift ? "shift+" : ""}${b.key.toLowerCase()}`;
 }
 
-/** The actions that share a binding with another action. */
+/**
+ * The actions that share a chord with another action.
+ *
+ * Every binding counts, alternates included — two actions colliding through
+ * their second chord is exactly as broken as colliding through their first,
+ * and only one of them would ever fire.
+ */
 export function findConflicts(keymap: Keymap): Action[] {
-  const counts = new Map<string, number>();
+  const owners = new Map<string, Set<Action>>();
   for (const action of ACTIONS) {
-    const sig = signature(keymap[action]);
-    counts.set(sig, (counts.get(sig) ?? 0) + 1);
+    for (const binding of keymap[action]) {
+      const sig = signature(binding);
+      const set = owners.get(sig) ?? new Set<Action>();
+      set.add(action);
+      owners.set(sig, set);
+    }
   }
-  return ACTIONS.filter((action) => (counts.get(signature(keymap[action])) ?? 0) > 1);
+  const clashing = new Set<Action>();
+  for (const set of owners.values()) {
+    if (set.size > 1) for (const action of set) clashing.add(action);
+  }
+  return ACTIONS.filter((action) => clashing.has(action));
 }
 
 const IS_MAC: boolean = isMacPlatform();
@@ -142,6 +174,28 @@ export function formatBinding(binding: Binding, isMac: boolean = IS_MAC): string
   const mod = binding.mod ? modLabel(isMac) : "";
   const shift = binding.shift ? shiftLabel(isMac) : "";
   return `${mod}${shift}${keyLabel(binding.key)}`;
+}
+
+/**
+ * False for a chord the OS takes before the app can see it.
+ *
+ * macOS reserves ⌘Escape system-wide, so naming it in a hint tells the user to
+ * press something that will never arrive. Dispatch still tries it — if a macOS
+ * version ever does deliver it, it works — but no label promises it.
+ */
+export function isReachable(binding: Binding, isMac: boolean = IS_MAC): boolean {
+  return !(isMac && binding.mod && binding.key === "Escape");
+}
+
+/**
+ * What to show the user for an action: its chords, joined, with the ones this
+ * OS swallows left out. If that would leave nothing, every chord is shown —
+ * a wrong hint still beats a blank one.
+ */
+export function formatChord(bindings: Binding[], isMac: boolean = IS_MAC): string {
+  const usable = bindings.filter((b) => isReachable(b, isMac));
+  const shown = usable.length > 0 ? usable : bindings;
+  return shown.map((b) => formatBinding(b, isMac)).join(" or ");
 }
 
 /**
@@ -178,8 +232,14 @@ export function mergeKeymap(partial: unknown): Keymap {
   if (!partial || typeof partial !== "object") return merged;
   const entries = partial as Partial<Record<Action, unknown>>;
   for (const action of ACTIONS) {
-    const b = entries[action];
-    if (isBinding(b)) merged[action] = { mod: b.mod, shift: b.shift, key: b.key };
+    const value = entries[action];
+    // A settings file written before alternates existed holds one binding per
+    // action rather than a list, and still loads as that action's only chord.
+    const list = Array.isArray(value) ? value : [value];
+    const bindings = list
+      .filter(isBinding)
+      .map((b) => ({ mod: b.mod, shift: b.shift, key: b.key }));
+    if (bindings.length > 0) merged[action] = bindings;
   }
   return merged;
 }

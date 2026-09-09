@@ -1,5 +1,5 @@
 import { get } from "svelte/store";
-import { ACTIONS, matchBinding, type Action } from "./keymap";
+import { ACTIONS, matchesAction, type Action } from "./keymap";
 import { saveActiveFile } from "./stores/files";
 import { keymap, settingsOpen } from "./stores/settings";
 import {
@@ -53,7 +53,7 @@ export function handleGlobalKeydown(e: KeyboardEvent): boolean {
   // falling through into the bare-Escape ladder below.
   const bindings = get(keymap);
   for (const action of ACTIONS) {
-    if (!matchBinding(e, bindings[action])) continue;
+    if (!matchesAction(e, bindings[action])) continue;
     const scope = SCOPED[action];
     if (scope && get(activeView) !== scope) continue;
     e.preventDefault();
