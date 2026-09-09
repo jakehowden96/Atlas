@@ -45,6 +45,9 @@
   let query = $state("");
   let index = $state(0);
   let inputEl = $state<HTMLInputElement | null>(null);
+  let listEl = $state<HTMLDivElement | null>(null);
+  /** The rendered rows, indexed like `rows`, so the selection can be scrolled to. */
+  let rowEls: HTMLButtonElement[] = [];
 
   let needsInputTabs = $derived(
     new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)),
@@ -133,6 +136,26 @@
     if ($jumpOpen) inputEl?.focus();
   });
 
+  // The arrow keys move `selected` but nothing else moves the list, so past the
+  // visible window the highlight — and the row ⏎ acts on — would be off screen.
+  // `rows` is read as well as `selected`: it re-ranks on every keystroke in the
+  // filter, and the new selection has to be brought into view rather than
+  // leaving the list parked where the old one had scrolled it.
+  $effect(() => {
+    if (!$jumpOpen || !rows[selected]) return;
+    // Row 0 scrolls the container itself so the list's top padding comes back;
+    // "nearest" would stop at the row's own edge. This is also the reset the
+    // palette needs when it reopens, since opening puts `index` back to 0.
+    if (selected === 0) {
+      if (listEl) listEl.scrollTop = 0;
+      return;
+    }
+    // "nearest" only moves the list when the row is off screen, so stepping
+    // through rows already visible does not jitter it, and wrapping round to
+    // the last row pulls the bottom of the list into view.
+    rowEls[selected]?.scrollIntoView({ block: "nearest" });
+  });
+
   function openTile(tile: SessionTile) {
     focusedSessionId.set(tile.atlasSessionId);
     // `openSession` switches to an existing tab, or respawns one that has gone.
@@ -191,7 +214,7 @@
       <span class="kbd">esc</span>
     </div>
 
-    <div class="list">
+    <div class="list" bind:this={listEl}>
       {#if rows.length === 0}
         <p class="empty">
           {all.length === 0
@@ -201,6 +224,7 @@
       {:else}
         {#each rows as row, i (row.id)}
           <button
+            bind:this={rowEls[i]}
             type="button"
             class="row"
             class:selected={i === selected}
