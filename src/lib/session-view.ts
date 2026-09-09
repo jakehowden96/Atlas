@@ -54,13 +54,6 @@ export function tabIdForSession(workspaceList: Workspace[], sessionId: string): 
   return "";
 }
 
-/** `124k` once past a thousand, `1.2M` past a million, otherwise the count. */
-export function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1000) return `${Math.round(n / 1000)}k`;
-  return String(n);
-}
-
 export function planCounts(plan: PlanItem[]): { done: number; total: number } {
   return {
     done: plan.filter((p) => p.status === "completed").length,

@@ -3,10 +3,11 @@
   import { onDestroy } from "svelte";
   import { get } from "svelte/store";
   import type { SessionState } from "../../../types/session";
+  import { formatTokens } from "../../format";
   import { buildTiles, compareByAttention, formatElapsed, type SessionTile } from "../../overview";
   import { allowPendingTool, closeSession, denyPendingTool } from "../../session-actions";
   import { refreshPanel } from "../../ipc";
-  import { filesTouched, formatTokens, tabIdForSession } from "../../session-view";
+  import { filesTouched, tabIdForSession } from "../../session-view";
   import { liveSessionList } from "../../stores/liveSessions";
   import { panelData } from "../../stores/panel";
   import { activeTabId, tabs } from "../../stores/terminal";
@@ -81,9 +82,9 @@
   }
 
   let elapsed = $derived(tile ? formatElapsed(tile.live.startedAt, now) : "");
-  let subtitle = $derived(
-    tile ? [tile.workspaceName, tile.branch, elapsed].filter(Boolean).join(" · ") : "",
-  );
+  /* The workspace has its own chip in the header now, so the subtitle keeps
+     only what changes underneath it. */
+  let subtitle = $derived(tile ? [tile.branch, elapsed].filter(Boolean).join(" · ") : "");
   let files = $derived(filesTouched($panelData));
 
   function focus(target: SessionTile) {
@@ -104,6 +105,10 @@
       {#if tile}
         <StatePill state={PILL[tile.state]} />
         <span class="label">{tile.label}</span>
+        <span class="ws" title={tile.workspacePath}>
+          <span class="ws-dot" style="background: {tile.workspaceColour}"></span>
+          {tile.workspaceName}
+        </span>
         <span class="subtitle">{subtitle}</span>
       {:else}
         <span class="label empty-label">No session selected</span>
@@ -259,6 +264,30 @@
   .empty-label {
     color: var(--muted);
     font-weight: 400;
+  }
+
+  /* Which project this terminal belongs to. Same colour-plus-name pairing as
+     the Sessions grid, so the two screens read alike; the name carries it on
+     its own and the colour only reinforces. */
+  .ws {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 6px;
+    max-width: 180px;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ws-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
   }
 
   .subtitle {

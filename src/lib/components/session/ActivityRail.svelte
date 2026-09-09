@@ -1,10 +1,10 @@
 <script lang="ts">
   import type { PlanEntry } from "../../../types/files";
   import { planWorkspace } from "../../files";
+  import { formatTokens } from "../../format";
   import type { SessionTile } from "../../overview";
   import { formatElapsed } from "../../overview";
   import {
-    formatTokens,
     planCounts,
     planRowState,
     subagentMeta,
@@ -82,7 +82,10 @@
   let live = $derived(tile?.live ?? null);
   let plan = $derived(planCounts(live?.plan ?? []));
   let subagents = $derived(live?.subagents ?? []);
+  /* Same pairing as the Sessions tile: the bar reads as a proportion, the
+     label as a size — `68k` is the unit the model actually meters. */
   let contextPct = $derived(Math.min(100, Math.round((live?.contextPct ?? 0) * 100)));
+  let contextTokens = $derived(formatTokens(live?.peakContext ?? 0));
 </script>
 
 {#if visible && live}
@@ -132,15 +135,15 @@
       <div class="stats">
         <div class="stat">
           <div class="stat-label">Context</div>
-          <div class="stat-value">{contextPct}%</div>
+          <div class="stat-value">{contextTokens}</div>
           <div class="ctx-track">
             <span class="ctx-fill" class:hot={contextPct > 75} style="width: {contextPct}%"></span>
           </div>
+          <div class="stat-sub">{contextPct}% of window</div>
         </div>
         <div class="stat">
           <div class="stat-label">Cost</div>
           <div class="stat-value">${live.costEstimate.toFixed(2)}</div>
-          <div class="stat-sub">{formatTokens(live.peakContext)} tokens</div>
         </div>
         <div class="stat">
           <div class="stat-label">Elapsed</div>

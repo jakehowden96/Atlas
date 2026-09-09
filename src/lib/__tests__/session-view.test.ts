@@ -4,7 +4,6 @@ import type { PanelData } from "../../types/panel";
 import type { PlanItem, Subagent } from "../../types/session";
 import {
   filesTouched,
-  formatTokens,
   planCounts,
   planRowState,
   subagentMeta,
@@ -115,22 +114,6 @@ describe("tabIdForSession", () => {
 
   it("never matches on an empty session id", () => {
     expect(tabIdForSession(list, "")).toBe("");
-  });
-});
-
-describe("formatTokens", () => {
-  it("passes small counts through", () => {
-    expect(formatTokens(0)).toBe("0");
-    expect(formatTokens(999)).toBe("999");
-  });
-
-  it("rounds to thousands", () => {
-    expect(formatTokens(1000)).toBe("1k");
-    expect(formatTokens(124_400)).toBe("124k");
-  });
-
-  it("uses one decimal for millions", () => {
-    expect(formatTokens(1_250_000)).toBe("1.3M");
   });
 });
 
