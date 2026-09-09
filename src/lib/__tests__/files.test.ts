@@ -7,6 +7,7 @@ import {
   buildDocTree,
   fileKey,
   hasUnsavedUnder,
+  matchLineEndings,
   parentDir,
   parseFileKey,
   planWorkspace,
@@ -86,6 +87,30 @@ describe("file keys", () => {
       "/home/me/.claude/plans/a.md",
     );
     expect(absolutePath("disk", "/tmp/scratch.md")).toBe("/tmp/scratch.md");
+  });
+});
+
+describe("matchLineEndings", () => {
+  it("restores the CRLF a Windows-authored file was read with", () => {
+    expect(matchLineEndings("a\nb\nc", "a\r\nb\r\nc")).toBe("a\r\nb\r\nc");
+  });
+
+  it("leaves an LF file alone", () => {
+    expect(matchLineEndings("a\nb", "a\nb")).toBe("a\nb");
+  });
+
+  it("writes LF for a file with no endings to copy", () => {
+    expect(matchLineEndings("a\nb", undefined)).toBe("a\nb");
+    expect(matchLineEndings("a\nb", "")).toBe("a\nb");
+    expect(matchLineEndings("a\nb", "one line")).toBe("a\nb");
+  });
+
+  it("goes by the first ending, so a stray CRLF does not convert the file", () => {
+    expect(matchLineEndings("a\nb\nc", "a\nb\r\nc")).toBe("a\nb\nc");
+  });
+
+  it("does not double up endings that are already CRLF", () => {
+    expect(matchLineEndings("a\r\nb", "a\r\nb")).toBe("a\r\nb");
   });
 });
 
@@ -177,6 +202,14 @@ describe("planWorkspace", () => {
     expect(planWorkspace(plan("home-me-atlas-brisk-owl"), [outer, inner])).toBe(
       "/home/me/atlas",
     );
+  });
+
+  it("matches a posix plan whose stem kept the leading separator", () => {
+    // A cwd of `/home/me/atlas` slugifies without the leading dash, but the
+    // plan file can carry one — the way `~/.claude/projects` names macOS
+    // projects `-Users-me-atlas`.
+    const ws = workspace("/home/me/atlas");
+    expect(planWorkspace(plan("-home-me-atlas-curried-thacker"), [ws])).toBe("/home/me/atlas");
   });
 
   it("returns null when no workspace owns the plan", () => {

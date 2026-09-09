@@ -111,7 +111,9 @@ export class TerminalSession {
       // bubbles up to App.svelte's <svelte:window onkeydown>.  We must NOT
       // call handleGlobalKeydown here because the window handler already does,
       // which would fire every action twice.
-      const mod = e.metaKey || e.ctrlKey;
+      // Alt disqualifies the chord for the reason `shortcuts.ts` gives: AltGr
+      // is Ctrl+Alt, and the terminal must still receive what it types.
+      const mod = (e.metaKey || e.ctrlKey) && !e.altKey;
       // ⌘N / ⌘K / ⌘, — new session, jump palette, settings
       if (mod && !e.shiftKey && ["n", "k", ","].includes(e.key.toLowerCase())) return false;
       // ⌘\ (macOS) and Ctrl+Shift+\ (Windows/Linux) — activity rail

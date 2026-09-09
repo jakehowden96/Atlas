@@ -13,9 +13,15 @@ import {
   TAB_VIEWS,
 } from "./stores/view";
 
-/** The platform's primary modifier: ⌘ on macOS, Ctrl on Windows/Linux. */
+/**
+ * The platform's primary modifier: ⌘ on macOS, Ctrl on Windows/Linux.
+ *
+ * Alt disqualifies the chord, because AltGr on a non-US Windows or Linux
+ * layout reports itself as Ctrl+Alt — so `AltGr+2` and `AltGr+ß` are how those
+ * keyboards type `@` and `\`, not a request to switch tabs.
+ */
 function mod(e: KeyboardEvent): boolean {
-  return e.metaKey || e.ctrlKey;
+  return (e.metaKey || e.ctrlKey) && !e.altKey;
 }
 
 /**

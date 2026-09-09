@@ -1,6 +1,12 @@
 import { derived, get, writable } from "svelte/store";
 import type { DirEntry, DocEntry, PlanEntry } from "../../types/files";
-import { absolutePath, fileKey, parseFileKey, type FileSource } from "../files";
+import {
+  absolutePath,
+  fileKey,
+  matchLineEndings,
+  parseFileKey,
+  type FileSource,
+} from "../files";
 import {
   listClaudePlans,
   listDir,
@@ -179,11 +185,15 @@ export async function saveActiveFile(): Promise<void> {
   const text = get(docs).get(key);
   if (!key || text === undefined) return;
   const { source, path } = parseFileKey(key);
+  // The editor hands back LF whatever the file used, so the file's own endings
+  // are restored from the text it was read with.
+  const out = matchLineEndings(text, get(diskDocs).get(key));
   try {
-    await writeTextFileAt(absolutePath(source, path), text);
+    await writeTextFileAt(absolutePath(source, path), out);
     // What was just written is now what is on disk, so the editor keeps showing
-    // it the moment the unsaved edit is dropped.
-    setDiskDoc(key, text);
+    // it the moment the unsaved edit is dropped — and the next save can still
+    // see which endings the file has.
+    setDiskDoc(key, out);
     dropDoc(key);
   } catch (e) {
     log.error("files", `save failed for ${key}`, e);

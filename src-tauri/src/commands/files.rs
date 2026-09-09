@@ -328,13 +328,20 @@ struct DocsChangedEvent {
     rel_path: String,
 }
 
-/// The forward-slash path of a changed file relative to `root`, or `None` when
-/// it is not a document the Files screen shows.
-fn watched_rel_path(root: &Path, path: &Path) -> Option<String> {
+/// The forward-slash path of a changed file relative to the workspace, or
+/// `None` when it is not a document the Files screen shows.
+///
+/// `roots` is every spelling of the workspace an event path may arrive under,
+/// because the two backends disagree: `notify`'s macOS watcher canonicalizes
+/// the root and FSEvents reports its own resolved path, so a workspace reached
+/// through a symlink (`/tmp` -> `/private/tmp`) never matches the path the UI
+/// passed in — while on Windows the events are joined onto that path verbatim
+/// and it is the *canonical* form (`\\?\C:\...`) that fails to strip.
+fn watched_rel_path(roots: &[PathBuf], path: &Path) -> Option<String> {
     if !is_doc_file(path) {
         return None;
     }
-    let rel = path.strip_prefix(root).ok()?;
+    let rel = roots.iter().find_map(|root| path.strip_prefix(root).ok())?;
     let names: Vec<&str> = rel
         .components()
         .map(|c| c.as_os_str().to_str())
@@ -351,6 +358,14 @@ fn spawn_docs_watcher(
     workspace_path: String,
 ) -> Result<RecommendedWatcher, String> {
     let root = PathBuf::from(&workspace_path);
+    // Both spellings of the root — see `watched_rel_path`. The raw one is kept
+    // first because it is what the Windows backend reports.
+    let mut roots = vec![root.clone()];
+    match std::fs::canonicalize(&root) {
+        Ok(canonical) if canonical != root => roots.push(canonical),
+        Ok(_) => {}
+        Err(e) => log::warn!("Could not canonicalize {}: {}", root.display(), e),
+    }
     let (tx, rx) = mpsc::channel();
 
     let mut watcher = RecommendedWatcher::new(
@@ -381,7 +396,7 @@ fn spawn_docs_watcher(
                         EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
                     ) {
                         for path in &event.paths {
-                            if let Some(rel) = watched_rel_path(&root, path) {
+                            if let Some(rel) = watched_rel_path(&roots, path) {
                                 pending.insert(rel, Instant::now());
                             }
                         }
@@ -592,16 +607,53 @@ mod tests {
 
     #[test]
     fn watched_paths_are_documents_outside_pruned_dirs() {
-        let root = Path::new("/w");
+        let roots = [PathBuf::from("/w")];
         assert_eq!(
-            watched_rel_path(root, Path::new("/w/docs/guide.md")),
+            watched_rel_path(&roots, Path::new("/w/docs/guide.md")),
             Some("docs/guide.md".to_string())
         );
-        assert_eq!(watched_rel_path(root, Path::new("/w/src/main.rs")), None);
+        assert_eq!(watched_rel_path(&roots, Path::new("/w/src/main.rs")), None);
         assert_eq!(
-            watched_rel_path(root, Path::new("/w/node_modules/pkg/readme.md")),
+            watched_rel_path(&roots, Path::new("/w/node_modules/pkg/readme.md")),
             None
         );
-        assert_eq!(watched_rel_path(root, Path::new("/elsewhere/a.md")), None);
+        assert_eq!(watched_rel_path(&roots, Path::new("/elsewhere/a.md")), None);
+    }
+
+    #[test]
+    fn watched_paths_match_any_spelling_of_the_root() {
+        // The shape of a macOS event: the workspace was registered as `/tmp/w`
+        // and FSEvents reports the resolved `/private/tmp/w`. Neither root can
+        // strip both, which is why the watcher carries both.
+        let roots = [PathBuf::from("/tmp/w"), PathBuf::from("/private/tmp/w")];
+        assert_eq!(
+            watched_rel_path(&roots, Path::new("/private/tmp/w/notes.md")),
+            Some("notes.md".to_string())
+        );
+        assert_eq!(
+            watched_rel_path(&roots, Path::new("/tmp/w/notes.md")),
+            Some("notes.md".to_string())
+        );
+        assert_eq!(watched_rel_path(&roots, Path::new("/other/notes.md")), None);
+    }
+
+    #[test]
+    fn canonicalizing_a_real_root_keeps_it_strippable() {
+        // Guards the Windows half: `canonicalize` hands back a `\\?\C:\...`
+        // verbatim path there, and the events never carry that prefix — so the
+        // raw root has to stay in the list.
+        let tmp = TempDir::new().unwrap();
+        let raw = tmp.path().to_path_buf();
+        let canonical = std::fs::canonicalize(&raw).unwrap();
+        let roots = [raw.clone(), canonical.clone()];
+
+        assert_eq!(
+            watched_rel_path(&roots, &raw.join("notes.md")),
+            Some("notes.md".to_string())
+        );
+        assert_eq!(
+            watched_rel_path(&roots, &canonical.join("notes.md")),
+            Some("notes.md".to_string())
+        );
     }
 }

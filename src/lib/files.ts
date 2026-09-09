@@ -47,6 +47,19 @@ export function absolutePath(source: FileSource, path: string): string {
   return `${source.replace(/[\\/]+$/, "")}/${path}`;
 }
 
+/**
+ * `text` with the line endings the file on disk was using.
+ *
+ * A textarea's value is newline-normalized to LF by both webviews, so an edit
+ * to a CRLF file would otherwise rewrite every line ending in it the first
+ * time it is saved — invisible on macOS, and a whole-file diff on Windows. The
+ * first ending in `onDisk` decides; a file with none, or one that has never
+ * been on disk, gets LF.
+ */
+export function matchLineEndings(text: string, onDisk: string | undefined): string {
+  return onDisk?.match(/\r\n|\n/)?.[0] === "\r\n" ? text.replace(/\r?\n/g, "\r\n") : text;
+}
+
 // ---------- Doc tree ----------
 
 /**
@@ -140,9 +153,14 @@ export function slugifyPath(path: string): string {
  * (`c-users-me-github-atlas-atl-curried-thacker`), so the match is a prefix
  * test on the slug. The longest matching slug wins, so a workspace nested
  * inside another does not lose its plans to the parent.
+ *
+ * The stem's leading `-` is dropped first: a posix path starts with a
+ * separator, and Claude Code keeps that as a dash in the sibling `projects/`
+ * naming (`-Users-me-atlas`), while `slugifyPath` trims it. Without this every
+ * macOS workspace matches nothing.
  */
 export function planWorkspace(plan: PlanEntry, workspaces: Workspace[]): string | null {
-  const stem = plan.name.toLowerCase();
+  const stem = plan.name.toLowerCase().replace(/^-+/, "");
   let best: string | null = null;
   let bestLength = -1;
   for (const ws of workspaces) {

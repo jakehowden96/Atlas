@@ -13,7 +13,7 @@
   import { breadcrumbs, parentDir } from "../../files";
   import { listDir } from "../../ipc";
   import { log } from "../../logger";
-  import { addSource, openFile } from "../../stores/files";
+  import { addSource, fileWs, openFile } from "../../stores/files";
   import { openDialogOpen } from "../../stores/view";
   import Modal from "../ui/Modal.svelte";
 
@@ -34,10 +34,18 @@
     if (isOpen) void navigate(null);
   });
 
-  /** Walk to `target`, or to the home directory when there is nowhere yet. */
+  /**
+   * Walk to `target`, or open where the shown workspace is when there is
+   * nowhere yet.
+   *
+   * The workspace comes first because home is not a useful root on Windows: a
+   * drive is the top of its own tree, so a dialog that starts under
+   * `C:\Users\…` can never walk to a workspace on `E:\`. Home is the fallback
+   * for a Files screen with no workspace on it.
+   */
   async function navigate(target: string | null) {
     const path = target ?? dir ?? "";
-    dir = path || (await homeDir());
+    dir = path || $fileWs || (await homeDir());
     try {
       entries = await listDir(dir);
       error = "";

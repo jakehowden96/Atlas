@@ -79,11 +79,13 @@
   });
 
   // Show the plan's random suffix rather than the slugified cwd it starts with;
-  // the whole section is already scoped to one workspace.
+  // the whole section is already scoped to one workspace. The leading `-` a
+  // posix cwd slugifies to is dropped first, as `planWorkspace` does.
   function planLabel(name: string): string {
     const slug = slugifyPath($fileWs);
-    if (!slug || !name.toLowerCase().startsWith(slug)) return name;
-    return name.slice(slug.length).replace(/^-+/, "") || name;
+    const stem = name.replace(/^-+/, "");
+    if (!slug || !stem.toLowerCase().startsWith(slug)) return name;
+    return stem.slice(slug.length).replace(/^-+/, "") || name;
   }
 
   // Disk files opened one at a time, listed under the registered folders so a
@@ -189,11 +191,11 @@
   </div>
 
   <!-- Search is still inert: ⌘K already searches documents from the top bar.
-       It is rendered disabled rather than omitted so the column does not shift. -->
+       It is rendered disabled rather than omitted so the column does not shift.
+       No chord hint, because nothing handles one: the label read "Ctrl+P" on
+       Windows, where that is WebView2's own print dialog. -->
   <div class="finders">
-    <button type="button" class="finder" disabled>
-      Search <span class="kbd">{chord("P")}</span>
-    </button>
+    <button type="button" class="finder" disabled>Search</button>
     <button type="button" class="finder open" onclick={() => openDialogOpen.set(true)}>
       Open… <span class="kbd">{chord("O")}</span>
     </button>

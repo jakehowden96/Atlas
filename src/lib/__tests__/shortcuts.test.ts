@@ -182,6 +182,20 @@ describe("handleGlobalKeydown", () => {
     expect(e.preventDefault).not.toHaveBeenCalled();
   });
 
+  it("AltGr is left unhandled — it is Ctrl+Alt on a non-US layout", () => {
+    activeView.set("stats");
+    // `AltGr+2` types `@` on a German keyboard; it must not switch tabs.
+    const digit = makeKeyEvent({ ctrlKey: true, altKey: true, key: "@", code: "Digit2" });
+    expect(handleGlobalKeydown(digit)).toBe(false);
+    expect(get(activeView)).toBe("stats");
+    expect(digit.preventDefault).not.toHaveBeenCalled();
+
+    // And `AltGr+ß` types `\`, which must not toggle the rail.
+    const backslash = makeKeyEvent({ ctrlKey: true, altKey: true, key: "\\" });
+    expect(handleGlobalKeydown(backslash)).toBe(false);
+    expect(get(railOpen)).toBe(true);
+  });
+
   it("Shift+⌘1 is left unhandled", () => {
     activeView.set("stats");
     const e = makeKeyEvent({ metaKey: true, shiftKey: true, key: "1", code: "Digit1" });
