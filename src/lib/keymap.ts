@@ -234,12 +234,22 @@ export function mergeKeymap(partial: unknown): Keymap {
   for (const action of ACTIONS) {
     const value = entries[action];
     // A settings file written before alternates existed holds one binding per
-    // action rather than a list, and still loads as that action's only chord.
+    // action rather than a list.
     const list = Array.isArray(value) ? value : [value];
     const bindings = list
       .filter(isBinding)
       .map((b) => ({ mod: b.mod, shift: b.shift, key: b.key }));
-    if (bindings.length > 0) merged[action] = bindings;
+    if (bindings.length === 0) continue;
+    /* A stored list that is only a subset of the default one is a file written
+       before this action gained its alternates, not a rebinding — the user
+       never chose to drop the others. Taking it literally is what left macOS
+       with ⌘Escape as the only way back to Sessions, a chord the OS never
+       delivers, so "cmd + esc does nothing" outlived the fix that added ⌘. as
+       the second chord. Anything the defaults do not contain is a real
+       rebinding and is honoured exactly as stored. */
+    const defaults = DEFAULT_KEYMAP[action];
+    const allFromDefaults = bindings.every((b) => defaults.some((d) => signature(d) === signature(b)));
+    merged[action] = allFromDefaults && bindings.length < defaults.length ? defaults : bindings;
   }
   return merged;
 }

@@ -195,6 +195,26 @@ describe("a second chord per action", () => {
   });
 });
 
+describe("mergeKeymap and the alternates a stored file predates", () => {
+  /* The live settings file on the reporter's machine holds
+     `backToSessions: { mod: true, key: "Escape" }` — one object, written
+     before alternates existed. Loading that as the action's only chord left
+     macOS with nothing at all, because the OS eats ⌘Escape before the web
+     view sees it. That is why "I cannot use cmd + esc on mac, it does
+     nothing" survived the fix that added ⌘. as the second chord. */
+  it("restores the default alternates for a chord the user never rebound", () => {
+    const stored = { backToSessions: { mod: true, shift: false, key: "Escape" } };
+    expect(mergeKeymap(stored).backToSessions).toEqual(DEFAULT_KEYMAP.backToSessions);
+  });
+
+  it("leaves a genuinely rebound action exactly as stored", () => {
+    const stored = { backToSessions: [{ mod: true, shift: true, key: "b" }] };
+    expect(mergeKeymap(stored).backToSessions).toEqual([
+      { mod: true, shift: true, key: "b" },
+    ]);
+  });
+});
+
 describe("isReachable", () => {
   it("marks ⌘Escape unreachable on macOS only", () => {
     const cmdEscape = DEFAULT_KEYMAP.backToSessions[0];
