@@ -21,9 +21,10 @@ vi.mock("../ipc", () => ({
 
 import { fileKey } from "../files";
 import { writeTextFileAt } from "../ipc";
+import { DEFAULT_KEYMAP } from "../keymap";
 import { handleGlobalKeydown } from "../shortcuts";
 import { activeFile, docs, setDoc } from "../stores/files";
-import { settingsOpen } from "../stores/settings";
+import { keymap, settingsOpen } from "../stores/settings";
 import {
   activeView,
   diffOpen,
@@ -57,6 +58,7 @@ describe("handleGlobalKeydown", () => {
     settingsOpen.set(false);
     activeFile.set("");
     docs.set(new Map());
+    keymap.set({ ...DEFAULT_KEYMAP });
   });
 
   it("⌘S saves the active file on the Files view", async () => {
@@ -257,5 +259,48 @@ describe("handleGlobalKeydown", () => {
     const e = makeKeyEvent({ key: "n" });
     expect(handleGlobalKeydown(e)).toBe(false);
     expect(get(newSessionOpen)).toBe(false);
+  });
+
+  it("⌘Esc returns to Sessions from a session, where bare Esc is Claude's", () => {
+    activeView.set("session");
+    const e = makeKeyEvent({ metaKey: true, key: "Escape" });
+    expect(handleGlobalKeydown(e)).toBe(true);
+    expect(get(activeView)).toBe("sessions");
+    expect(e.preventDefault).toHaveBeenCalled();
+  });
+
+  it("Ctrl+Esc returns to Sessions", () => {
+    activeView.set("session");
+    expect(handleGlobalKeydown(makeKeyEvent({ ctrlKey: true, key: "Escape" }))).toBe(true);
+    expect(get(activeView)).toBe("sessions");
+  });
+
+  it("⌘Esc does not fall through to the modal ladder", () => {
+    jumpOpen.set(true);
+    activeView.set("session");
+    expect(handleGlobalKeydown(makeKeyEvent({ metaKey: true, key: "Escape" }))).toBe(true);
+    expect(get(jumpOpen)).toBe(true);
+    expect(get(activeView)).toBe("sessions");
+  });
+
+  it("a rebound chord fires and the old one no longer does", () => {
+    keymap.set({ ...DEFAULT_KEYMAP, jump: { mod: true, shift: false, key: "p" } });
+
+    const rebound = makeKeyEvent({ metaKey: true, key: "p" });
+    expect(handleGlobalKeydown(rebound)).toBe(true);
+    expect(get(jumpOpen)).toBe(true);
+
+    jumpOpen.set(false);
+    const old = makeKeyEvent({ metaKey: true, key: "k" });
+    expect(handleGlobalKeydown(old)).toBe(false);
+    expect(get(jumpOpen)).toBe(false);
+    expect(old.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("a rebound tab chord matches the new digit's code", () => {
+    keymap.set({ ...DEFAULT_KEYMAP, tab2: { mod: true, shift: false, key: "Digit8" } });
+    const e = makeKeyEvent({ metaKey: true, key: "8", code: "Digit8" });
+    expect(handleGlobalKeydown(e)).toBe(true);
+    expect(get(activeView)).toBe("files");
   });
 });

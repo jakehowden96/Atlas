@@ -5,7 +5,8 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel, getPanelData } from "./ipc";
 import { setTabTitle, activeTabId, setTabNeedsInput, setTabReady, tabs } from "./stores/terminal";
 import { panelData } from "./stores/panel";
-import { terminalFontSize } from "./stores/settings";
+import { keymap, terminalFontSize } from "./stores/settings";
+import { matchesAnyBinding } from "./keymap";
 import type { PanelData } from "../types/panel";
 import { updateSessionLabelByTabId } from "./stores/workspace";
 import { get } from "svelte/store";
@@ -117,24 +118,21 @@ export class TerminalSession {
   private registerKeyHandler() {
     this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       if (e.type !== "keydown") return true;
+      // Bare Escape stays the Claude Code TUI's while the terminal has focus,
+      // so it is consumed here whatever the keymap says. The one exception is
+      // the platform modifier: mod+Escape is `backToSessions`, and passes
+      // through with every other chord below.
+      if (e.key === "Escape" && !e.metaKey && !e.ctrlKey) return true;
       // Pass Mission Control's global chords through to the window-level
       // handler — returning false prevents xterm from consuming the key so it
       // bubbles up to App.svelte's <svelte:window onkeydown>.  We must NOT
       // call handleGlobalKeydown here because the window handler already does,
-      // which would fire every action twice.
-      // Alt disqualifies the chord for the reason `shortcuts.ts` gives: AltGr
-      // is Ctrl+Alt, and the terminal must still receive what it types.
-      const mod = (e.metaKey || e.ctrlKey) && !e.altKey;
-      // ⌘N / ⌘K / ⌘, — new session, jump palette, settings
-      if (mod && !e.shiftKey && ["n", "k", ","].includes(e.key.toLowerCase())) return false;
-      // ⌘\ (macOS) and Ctrl+Shift+\ (Windows/Linux) — activity rail
-      if (mod && e.key === "\\") return false;
-      // ⌘1–4 — top-bar tabs. Matched on e.code for the same reason the global
-      // handler does: with the modifier held, non-US layouts report punctuation.
-      if (mod && !e.shiftKey && /^Digit[1-4]$/.test(e.code)) return false;
-      // Escape is absent by design: the Claude Code TUI owns it while the
-      // terminal has focus.
-      return true;
+      // which would fire every action twice.  Reading the live keymap — rather
+      // than a hardcoded list — is what keeps a rebound chord working inside a
+      // focused terminal.  Alt disqualifies every chord inside `matchBinding`
+      // for the reason `keymap.ts` gives: AltGr is Ctrl+Alt, and the terminal
+      // must still receive what it types.
+      return !matchesAnyBinding(e, get(keymap));
     });
   }
 

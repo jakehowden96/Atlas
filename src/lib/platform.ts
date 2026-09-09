@@ -26,13 +26,26 @@ export function isMacPlatform(nav?: NavigatorLike): boolean {
 const IS_MAC: boolean = isMacPlatform();
 
 /**
+ * The platform modifier's label. macOS renders the glyph tight against the key;
+ * Windows and Linux spell the modifier out with a separator.
+ */
+export function modLabel(isMac: boolean = IS_MAC): string {
+  return isMac ? "⌘" : "Ctrl+";
+}
+
+/** Shift's label, written the same two ways. */
+export function shiftLabel(isMac: boolean = IS_MAC): string {
+  return isMac ? "⇧" : "Shift+";
+}
+
+/**
  * A full chord label, e.g. `chord("N")` -> "⌘N" or "Ctrl+N".
  *
- * macOS renders the glyph tight against the key; Windows and Linux spell the
- * modifier out with a separator.
+ * For a rebindable chord use `keymap.formatBinding()` instead; this stays for
+ * the fixed keys that are not in the global keymap.
  */
 export function chord(key: string, isMac: boolean = IS_MAC): string {
-  return `${isMac ? "⌘" : "Ctrl+"}${key}`;
+  return `${modLabel(isMac)}${key}`;
 }
 
 /** The Return key's label: a glyph on macOS, the word elsewhere. */

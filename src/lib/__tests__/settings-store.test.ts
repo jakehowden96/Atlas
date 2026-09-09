@@ -14,15 +14,19 @@ vi.mock("../ipc", () => ({
   stopSessionTail: vi.fn(),
 }));
 
+import { DEFAULT_KEYMAP } from "../keymap";
 import {
   autoAddReposFromWorkspaces,
   enableNotifications,
+  keymap,
   loadSettings,
   overviewOrdering,
   prRefreshMinutes,
+  resetKeymap,
   setAutoAddReposFromWorkspaces,
   setEnableNotifications,
   setFileSources,
+  setKeymap,
   setOpenFiles,
   setOverviewOrdering,
   setPrRefreshMinutes,
@@ -71,6 +75,7 @@ describe("settings store", () => {
     workspaces.set([]);
     openFiles.set([]);
     sources.set([]);
+    keymap.set({ ...DEFAULT_KEYMAP });
     vi.clearAllMocks();
   });
 
@@ -168,6 +173,49 @@ describe("settings store", () => {
       vi.mocked(readTextFile).mockResolvedValue(JSON.stringify({ terminalFontSize: 400 }));
       await loadSettings();
       expect(get(terminalFontSize)).toBe(24);
+    });
+
+    it("merges a partial persisted keymap over the defaults", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify({ keymap: { jump: { mod: true, shift: false, key: "p" } } }),
+      );
+      await loadSettings();
+
+      expect(get(keymap).jump).toEqual({ mod: true, shift: false, key: "p" });
+      expect(get(keymap).newSession).toEqual(DEFAULT_KEYMAP.newSession);
+    });
+
+    it("drops a malformed binding rather than throwing", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify({ keymap: { jump: "⌘P", settings: { mod: true, shift: false, key: "e" } } }),
+      );
+      await loadSettings();
+
+      expect(get(keymap).jump).toEqual(DEFAULT_KEYMAP.jump);
+      expect(get(keymap).settings).toEqual({ mod: true, shift: false, key: "e" });
+    });
+
+    it("a settings file from an earlier Atlas keeps every default chord", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(JSON.stringify({ theme: "dark" }));
+      await loadSettings();
+      expect(get(keymap)).toEqual(DEFAULT_KEYMAP);
+    });
+  });
+
+  describe("the keymap setters", () => {
+    it("setKeymap persists the whole map and resetKeymap puts it back", async () => {
+      allowWrites();
+      const next = { ...DEFAULT_KEYMAP, jump: { mod: true, shift: false, key: "p" } };
+      await setKeymap(next);
+      expect(get(keymap).jump).toEqual({ mod: true, shift: false, key: "p" });
+      expect(lastWritten().keymap.jump).toEqual({ mod: true, shift: false, key: "p" });
+
+      await resetKeymap();
+      expect(get(keymap)).toEqual(DEFAULT_KEYMAP);
+      expect(lastWritten().keymap).toEqual(DEFAULT_KEYMAP);
     });
   });
 

@@ -14,7 +14,7 @@
   import { basename } from "../../format";
   import { onDocsChanged, startDocsWatch, stopDocsWatch } from "../../ipc";
   import { log } from "../../logger";
-  import { chord } from "../../platform";
+  import { chords } from "../../stores/settings";
   import {
     activeFile,
     collapsed,
@@ -165,7 +165,7 @@
   <div class="finders">
     <button type="button" class="finder" disabled>Search</button>
     <button type="button" class="finder open" onclick={() => openDialogOpen.set(true)}>
-      Open… <span class="kbd">{chord("O")}</span>
+      Open… <span class="kbd">{$chords.openFile}</span>
     </button>
   </div>
 

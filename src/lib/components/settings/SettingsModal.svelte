@@ -1,18 +1,33 @@
 <script lang="ts">
+  import { get } from "svelte/store";
   import { enterLabel } from "../../platform";
   import { claudeInfo, type ClaudeInfo } from "../../ipc";
+  import {
+    ACTION_LABELS,
+    ACTIONS,
+    DEFAULT_KEYMAP,
+    findConflicts,
+    formatBinding,
+    parseBindingFromEvent,
+    type Action,
+    type Binding,
+    type Keymap,
+  } from "../../keymap";
   import { log } from "../../logger";
   import { addWorkspaceFolder, removeWorkspaceWithUndo } from "../../session-actions";
   import { prViewer, repoSlugsByWorkspace } from "../../stores/prs";
   import {
     autoAddReposFromWorkspaces,
     enableNotifications,
+    keymap,
     MAX_TERMINAL_FONT_SIZE,
     MIN_TERMINAL_FONT_SIZE,
     overviewOrdering,
     prRefreshMinutes,
+    resetKeymap,
     setAutoAddReposFromWorkspaces,
     setEnableNotifications,
+    setKeymap,
     setOverviewOrdering,
     setPrRefreshMinutes,
     setSoundOnNeedsYou,
@@ -34,10 +49,11 @@
   import SegmentedControl from "../ui/SegmentedControl.svelte";
   import Toggle from "../ui/Toggle.svelte";
 
-  type Section = "general" | "workspaces" | "prs" | "claude";
+  type Section = "general" | "keyboard" | "workspaces" | "prs" | "claude";
 
   const NAV: { id: Section; label: string }[] = [
     { id: "general", label: "General" },
+    { id: "keyboard", label: "Keyboard" },
     { id: "workspaces", label: "Workspaces" },
     { id: "prs", label: "Pull requests" },
     { id: "claude", label: "Claude Code" },
@@ -64,8 +80,13 @@
   let section = $state<Section>("general");
   let repoDraft = $state("");
   let claude = $state<ClaudeInfo | null>(null);
+  /* The keymap is edited as a draft so a clash can be shown before it is
+     saved. A conflicting draft is simply never persisted. */
+  let draft = $state<Keymap>({ ...get(keymap) });
+  let recording = $state<Action | null>(null);
 
   let title = $derived(NAV.find((n) => n.id === section)?.label ?? "Settings");
+  let conflicts = $derived(findConflicts(draft));
 
   // Fresh every open: the binary can be installed, and the hook written, while
   // Atlas is running.
@@ -75,6 +96,49 @@
       .then((info) => (claude = info))
       .catch((e) => log.warn("settings", `claude_info failed: ${e}`));
   });
+
+  // A fresh draft on every open, so an abandoned conflict does not linger.
+  $effect(() => {
+    if (!$settingsOpen) return;
+    draft = { ...get(keymap) };
+    recording = null;
+  });
+
+  /* Captured on the window in the capture phase, so the chord being recorded
+     does not also fire its own action on the way past. */
+  $effect(() => {
+    const action = recording;
+    if (action === null) return;
+    function onKeydown(e: KeyboardEvent) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape" && !e.metaKey && !e.ctrlKey) {
+        recording = null;
+        return;
+      }
+      const binding = parseBindingFromEvent(e);
+      // Null is a bare modifier or a chord without ⌘/Ctrl — keep listening.
+      if (!binding) return;
+      applyBinding(action as Action, binding);
+      recording = null;
+    }
+    window.addEventListener("keydown", onKeydown, true);
+    return () => window.removeEventListener("keydown", onKeydown, true);
+  });
+
+  function applyBinding(action: Action, binding: Binding) {
+    const next = { ...draft, [action]: binding };
+    draft = next;
+    // Refuse the save while two actions share a chord; both rows are marked.
+    if (findConflicts(next).length > 0) return;
+    void setKeymap(next);
+  }
+
+  function resetAll() {
+    draft = { ...DEFAULT_KEYMAP };
+    recording = null;
+    void resetKeymap();
+  }
 
   function close() {
     settingsOpen.set(false);
@@ -205,6 +269,59 @@
               />
             </div>
 
+          </div>
+        {:else if section === "keyboard"}
+          <div class="stack">
+            <p class="copy">
+              Every global chord. ⌘ and Ctrl are interchangeable, so one binding covers
+              both platforms. Recording needs the modifier held; Esc cancels.
+            </p>
+
+            <div class="list">
+              {#each ACTIONS as action (action)}
+                <div class="list-row key-row" class:clash={conflicts.includes(action)}>
+                  <span class="key-name">{ACTION_LABELS[action]}</span>
+                  <span class="mono-pill key-chord">{formatBinding(draft[action])}</span>
+                  <button
+                    type="button"
+                    class="key-btn"
+                    class:recording={recording === action}
+                    onclick={() => (recording = recording === action ? null : action)}
+                  >
+                    {recording === action ? "Press a chord…" : "Record"}
+                  </button>
+                  <button
+                    type="button"
+                    class="key-btn"
+                    onclick={() => applyBinding(action, DEFAULT_KEYMAP[action])}
+                  >
+                    Reset
+                  </button>
+                </div>
+              {/each}
+            </div>
+
+            {#if conflicts.length > 0}
+              <p class="copy bad">
+                Two actions share a chord. Nothing is saved until one of the marked rows
+                changes.
+              </p>
+            {/if}
+
+            <div class="row">
+              <div class="row-text">
+                <div class="row-title">Reset all shortcuts</div>
+                <div class="row-desc">Puts every chord back to its Atlas default.</div>
+              </div>
+              <button type="button" class="key-btn" onclick={resetAll}>Reset all</button>
+            </div>
+
+            <p class="copy">
+              Esc on its own is not rebindable: inside a session it belongs to the Claude
+              Code TUI, and everywhere else it closes whatever is open.
+              <strong>{formatBinding(draft.backToSessions)}</strong> is the way back to
+              Sessions from a focused terminal.
+            </p>
           </div>
         {:else if section === "workspaces"}
           <div class="stack">
@@ -683,6 +800,54 @@
   .add-hint {
     margin-left: 4px;
     font-size: 11px;
+  }
+
+  /* ── Keyboard ──────────────────────────────────────────────────────────── */
+  .key-row {
+    padding: 8px 12px;
+  }
+
+  .key-name {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-ui);
+    font-size: 12.5px;
+  }
+
+  .key-chord {
+    min-width: 74px;
+    text-align: center;
+  }
+
+  .key-row.clash .key-chord {
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+
+  /* Shaped like .remove, but neither button here is destructive, so hover
+     stays neutral rather than turning red. */
+  .key-btn {
+    height: 24px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .key-btn:hover {
+    border-color: var(--border2);
+    color: var(--text);
+  }
+
+  .key-btn.recording {
+    border-color: var(--accent);
+    color: var(--accent);
   }
 
   /* ── Watched-repo chips ────────────────────────────────────────────────── */
