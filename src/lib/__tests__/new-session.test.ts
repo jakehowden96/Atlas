@@ -181,21 +181,110 @@ describe("keyboard model", () => {
     expect(r.effect).toBeNull();
   });
 
-  it("leaves the arrow keys' caret behaviour alone by not binding left/right", () => {
+  it("leaves bare left/right to the filter input's caret", () => {
     expect(handleKey({ key: "ArrowLeft" }, state(), counts(3, 2)).handled).toBe(false);
     expect(handleKey({ key: "ArrowRight" }, state(), counts(3, 2)).handled).toBe(false);
   });
 
-  it("Tab moves focus between the columns, but only when Resume has rows", () => {
+  it("Shift+←/→ moves between the columns, directionally", () => {
+    const c = counts(3, 2);
+    const onWorkspaces = state({ mode: "resume" });
+    const right = handleKey({ key: "ArrowRight", shiftKey: true }, onWorkspaces, c);
+    expect(right.state.column).toBe("resume");
+    expect(right.handled).toBe(true);
+    expect(handleKey({ key: "ArrowLeft", shiftKey: true }, right.state, c).state.column).toBe(
+      "workspaces",
+    );
+  });
+
+  it("Shift+←/→ never moves the wrong way, and is a no-op at either end", () => {
+    const c = counts(3, 2);
+    const onResume = state({ mode: "resume", column: "resume" });
+    // Shift+→ while already on the right must not toggle back to the left.
+    expect(handleKey({ key: "ArrowRight", shiftKey: true }, onResume, c).state.column).toBe(
+      "resume",
+    );
+    expect(
+      handleKey({ key: "ArrowLeft", shiftKey: true }, state({ mode: "resume" }), c).state.column,
+    ).toBe("workspaces");
+  });
+
+  it("Shift+←/→ still claims the key when there is no second column", () => {
+    // Fresh mode has one column; the chord must not fall through to the input's
+    // text selection just because nothing moved.
+    const r = handleKey({ key: "ArrowRight", shiftKey: true }, state(), counts(3, 2));
+    expect(r.state.column).toBe("workspaces");
+    expect(r.handled).toBe(true);
+    expect(
+      handleKey({ key: "ArrowRight", shiftKey: true }, state({ mode: "resume" }), counts(3, 0))
+        .state.column,
+    ).toBe("workspaces");
+  });
+
+  it("toggleColumn only reaches Resume when that mode has rows", () => {
     const resumeState = state({ mode: "resume", column: "resume" });
     expect(toggleColumn(resumeState, counts(3, 2)).column).toBe("workspaces");
     expect(toggleColumn(state({ mode: "resume" }), counts(3, 2)).column).toBe("resume");
     expect(toggleColumn(state({ mode: "resume" }), counts(3, 0)).column).toBe("workspaces");
     expect(toggleColumn(state({ mode: "fresh" }), counts(3, 2)).column).toBe("workspaces");
   });
+
+  it("⌘⌫ removes the highlighted workspace, but never the add row", () => {
+    const c = counts(3, 0);
+    expect(handleKey({ key: "Backspace", metaKey: true }, state({ wsIndex: 1 }), c).effect).toBe(
+      "removeWorkspace",
+    );
+    expect(handleKey({ key: "Delete", ctrlKey: true }, state({ wsIndex: 1 }), c).effect).toBe(
+      "removeWorkspace",
+    );
+    // The add row sits at index === counts.workspaces and owns no workspace.
+    expect(handleKey({ key: "Backspace", metaKey: true }, state({ wsIndex: 3 }), c).effect).toBe(
+      null,
+    );
+    // Nor does the Resume column, whose highlight is a conversation.
+    const inResume = state({ mode: "resume", column: "resume" });
+    expect(handleKey({ key: "Backspace", metaKey: true }, inResume, counts(3, 2)).effect).toBe(
+      null,
+    );
+  });
+
+  it("leaves an unmodified Backspace to the filter input", () => {
+    expect(handleKey({ key: "Backspace" }, state({ wsIndex: 1 }), counts(3, 0)).handled).toBe(
+      false,
+    );
+  });
 });
 
-describe("Fresh ↔ Resume", () => {
+describe("New ↔ Resume", () => {
+  it("Tab flips the mode, and flips it back", () => {
+    const c = counts(3, 2);
+    const toResume = handleKey({ key: "Tab" }, state(), c);
+    expect(toResume.state.mode).toBe("resume");
+    expect(toResume.state.column).toBe("resume");
+    expect(toResume.handled).toBe(true);
+    expect(toResume.effect).toBeNull();
+    expect(handleKey({ key: "Tab" }, toResume.state, c).state.mode).toBe("fresh");
+  });
+
+  it("Shift+Tab flips it too — there are only the two modes", () => {
+    expect(handleKey({ key: "Tab", shiftKey: true }, state(), counts(3, 2)).state.mode).toBe(
+      "resume",
+    );
+  });
+
+  it("Tab into Resume with nothing to resume leaves focus on the workspaces", () => {
+    const r = handleKey({ key: "Tab" }, state(), counts(3, 0));
+    expect(r.state.mode).toBe("resume");
+    expect(r.state.column).toBe("workspaces");
+  });
+
+  it("Tab keeps the workspace, and clamps a stale index on the way", () => {
+    // wsIndex 9 with only 2 workspaces is really the add row at index 2.
+    const r = handleKey({ key: "Tab" }, state({ wsIndex: 9 }), counts(2, 3));
+    expect(r.state.mode).toBe("resume");
+    expect(r.state.wsIndex).toBe(2);
+  });
+
   it("keeps the selected workspace across a round trip", () => {
     const picked = state({ wsIndex: 2 });
     const resume = setMode(picked, "resume", counts(4, 3));

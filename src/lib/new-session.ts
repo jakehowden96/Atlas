@@ -93,7 +93,7 @@ export interface NewSessionCounts {
 }
 
 /** What the component must do; the state change is already applied. */
-export type NewSessionEffect = "start" | "close" | "addFolder" | null;
+export type NewSessionEffect = "start" | "close" | "addFolder" | "removeWorkspace" | null;
 
 export interface KeyResult {
   state: NewSessionState;
@@ -154,9 +154,9 @@ export function moveWithin(
 }
 
 /**
- * Switch Fresh↔Resume. The selected workspace is deliberately untouched — it is
- * what both modes are about — and focus follows into the Resume list when there
- * is one to pick from.
+ * Switch New↔Resume — what `Tab` does. The selected workspace is deliberately
+ * untouched — it is what both modes are about — and focus follows into the
+ * Resume list when there is one to pick from.
  */
 export function setMode(
   state: NewSessionState,
@@ -168,7 +168,14 @@ export function setMode(
   return { ...state, mode, column };
 }
 
-/** Tab / Shift+Tab. Arrow keys are left to the text input's caret. */
+/**
+ * Move between the workspace list and the Resume list — what `Shift+←/→` does.
+ *
+ * Bare ←/→ stay with the filter input's caret: a path is the thing people type
+ * in that box, and a column key that only fired at the caret's ends would be a
+ * key that mostly does nothing. Shift+Arrow's text selection is the cheaper
+ * thing to give up in a one-line filter.
+ */
 export function toggleColumn(
   state: NewSessionState,
   counts: NewSessionCounts,
@@ -194,6 +201,13 @@ export function handleKey(
     return { state: s, effect: "addFolder", handled: true };
   }
 
+  // ⌘⌫ removes the highlighted workspace. Modified so it cannot fire while the
+  // filter is being edited, and only over a real row — never the add row.
+  if (mod && (e.key === "Backspace" || e.key === "Delete")) {
+    const onRow = s.column === "workspaces" && s.wsIndex < counts.workspaces;
+    return { state: s, effect: onRow ? "removeWorkspace" : null, handled: true };
+  }
+
   switch (e.key) {
     case "Escape":
       return { state: s, effect: "close", handled: true };
@@ -202,7 +216,22 @@ export function handleKey(
     case "ArrowUp":
       return { state: moveWithin(s, counts, -1), effect: null, handled: true };
     case "Tab":
-      return { state: toggleColumn(s, counts), effect: null, handled: true };
+      // Tab is the mode switch; the columns moved to Shift+←/→.
+      return {
+        state: setMode(s, s.mode === "fresh" ? "resume" : "fresh", counts),
+        effect: null,
+        handled: true,
+      };
+    case "ArrowLeft":
+    case "ArrowRight": {
+      if (!e.shiftKey) return { state: s, effect: null, handled: false };
+      const want: NewSessionColumn = e.key === "ArrowRight" ? "resume" : "workspaces";
+      return {
+        state: s.column === want ? s : toggleColumn(s, counts),
+        effect: null,
+        handled: true,
+      };
+    }
     case "Enter":
       if (s.column === "workspaces" && s.wsIndex === counts.workspaces) {
         return { state: s, effect: "addFolder", handled: true };
