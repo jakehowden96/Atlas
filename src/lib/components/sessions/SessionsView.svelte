@@ -1,7 +1,13 @@
 <script lang="ts">
   import { chord } from "../../platform";
   import { onDestroy } from "svelte";
-  import { buildTiles, filterByWorkspace, pinKey, tileComparator } from "../../overview";
+  import {
+    buildTiles,
+    filterByWorkspace,
+    handleGridKey,
+    pinKey,
+    tileComparator,
+  } from "../../overview";
   import { addWorkspaceFolder } from "../../session-actions";
   import { liveSessionList } from "../../stores/liveSessions";
   import { tabs } from "../../stores/terminal";
@@ -55,6 +61,82 @@
     }
   });
 
+  /* Roving tabindex: the grid is a single tab stop and the arrows move inside
+     it. `focusin` is what keeps this index honest — a click, a Tab and an arrow
+     all arrive the same way, including from the buttons nested in a tile. */
+  let chipsEl: HTMLDivElement | undefined = $state();
+  let gridEl: HTMLDivElement | undefined = $state();
+  let focusIndex = $state(0);
+
+  $effect(() => {
+    if (focusIndex > tiles.length - 1) focusIndex = Math.max(0, tiles.length - 1);
+  });
+
+  /* `auto-fit` picks the track count from the window width, so read it back off
+     the laid-out grid. Tracks `auto-fit` collapsed to 0px are not columns. */
+  function columnCount(): number {
+    if (!gridEl) return 1;
+    const tracks = getComputedStyle(gridEl)
+      .gridTemplateColumns.split(" ")
+      .filter((track) => Number.parseFloat(track) > 0);
+    return Math.max(1, tracks.length);
+  }
+
+  /* `.grid` is `overflow: auto`, so the tile arrowed onto is routinely off the
+     bottom. `focus` would scroll it to the middle; `nearest` just uncovers it. */
+  function focusTile(index: number) {
+    const el = gridEl?.children[index];
+    if (!(el instanceof HTMLElement)) return;
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: "nearest" });
+  }
+
+  function chipButtons(): HTMLButtonElement[] {
+    return [...(chipsEl?.querySelectorAll("button") ?? [])];
+  }
+
+  /** ↑ out of the top row lands on the filter that is actually applied. */
+  function focusChip() {
+    const at =
+      $wsFilter === "all" ? 0 : activeWorkspaces.findIndex((ws) => ws.path === $wsFilter) + 1;
+    chipButtons()[Math.max(0, at)]?.focus();
+  }
+
+  function onGridFocusIn(e: FocusEvent) {
+    const children = [...(gridEl?.children ?? [])];
+    const at = children.findIndex((tile) => tile.contains(e.target as Node));
+    if (at >= 0) focusIndex = at;
+  }
+
+  function onGridKeydown(e: KeyboardEvent) {
+    const result = handleGridKey(e, focusIndex, tiles.length, columnCount());
+    if (!result.handled) return;
+    e.preventDefault();
+    if (result.effect === "chips") {
+      focusChip();
+      return;
+    }
+    focusIndex = result.index;
+    focusTile(result.index);
+  }
+
+  /* The chip row is its own tab stop: ←/→ walk it and ↓ drops into the grid. */
+  function onChipsKeydown(e: KeyboardEvent) {
+    if (e.key === "ArrowDown") {
+      if (tiles.length === 0) return;
+      e.preventDefault();
+      focusTile(focusIndex);
+      return;
+    }
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    const chips = chipButtons();
+    const at = chips.indexOf(e.target as HTMLButtonElement);
+    const next = chips[at + (e.key === "ArrowRight" ? 1 : -1)];
+    if (at < 0 || !next) return;
+    e.preventDefault();
+    next.focus();
+  }
+
   const ORDER_LABEL: Record<string, string> = {
     attention: "Sorted by attention · needs-you first",
     workspace: "Grouped by workspace",
@@ -67,7 +149,8 @@
 </script>
 
 <div class="sessions">
-  <div class="chips">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="chips" bind:this={chipsEl} onkeydown={onChipsKeydown}>
     <Chip
       label="All"
       count={allTiles.length}
@@ -88,9 +171,16 @@
   </div>
 
   {#if tiles.length > 0}
-    <div class="grid">
-      {#each tiles as tile (tile.sessionUuid)}
-        <SessionTile {tile} {now} tailing={$tailTranscripts} pinned={pinned.has(pinKey(tile))} />
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="grid" bind:this={gridEl} onkeydown={onGridKeydown} onfocusin={onGridFocusIn}>
+      {#each tiles as tile, i (tile.sessionUuid)}
+        <SessionTile
+          {tile}
+          {now}
+          tailing={$tailTranscripts}
+          pinned={pinned.has(pinKey(tile))}
+          focused={i === focusIndex}
+        />
       {/each}
     </div>
   {:else}

@@ -229,3 +229,62 @@ export function formatElapsed(startedAt: string | null, now: number): string {
   }
   return `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, "0")}s`;
 }
+
+// ── Grid keyboard model ───────────────────────────────────────────────────────
+
+/** What the grid asks the view to do besides move focus between tiles. */
+export type GridKeyEffect = "chips" | null;
+
+export interface GridKeyResult {
+  /** The tile that should hold focus once the key is applied. */
+  index: number;
+  effect: GridKeyEffect;
+  /** False when the key was none of the grid's; the caller leaves it alone. */
+  handled: boolean;
+}
+
+/**
+ * Arrow/Home/End movement over the Sessions grid.
+ *
+ * `columns` is however many tracks `auto-fit` laid out at the current window
+ * width — the view reads it back off the DOM, so the CSS is never re-derived
+ * here. ←/→ step one tile in the sorted order, ↑/↓ step one row.
+ *
+ * Nothing wraps: ←/→ stop at the ends of their row rather than rolling onto the
+ * next one, because a grid is not a list and both rows are on screen at once.
+ * ↑ off the top row is the single exit — it hands focus back to the workspace
+ * chips, which is where ↓ brought it in.
+ *
+ * Enter, Space and the permission keys need none of these three numbers, so
+ * they stay on the tile itself.
+ */
+export function handleGridKey(
+  e: { key: string },
+  index: number,
+  total: number,
+  columns: number,
+): GridKeyResult {
+  if (total <= 0) return { index: 0, effect: null, handled: false };
+  const at = Math.min(Math.max(0, index), total - 1);
+  const cols = Math.max(1, columns);
+  const stay: GridKeyResult = { index: at, effect: null, handled: true };
+  const to = (next: number): GridKeyResult =>
+    next >= 0 && next < total ? { index: next, effect: null, handled: true } : stay;
+
+  switch (e.key) {
+    case "ArrowLeft":
+      return at % cols === 0 ? stay : to(at - 1);
+    case "ArrowRight":
+      return (at + 1) % cols === 0 ? stay : to(at + 1);
+    case "ArrowUp":
+      return at < cols ? { index: at, effect: "chips", handled: true } : to(at - cols);
+    case "ArrowDown":
+      return to(at + cols);
+    case "Home":
+      return to(0);
+    case "End":
+      return to(total - 1);
+    default:
+      return { index: at, effect: null, handled: false };
+  }
+}

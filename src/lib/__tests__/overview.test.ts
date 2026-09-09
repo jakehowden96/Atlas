@@ -7,6 +7,7 @@ import {
   filterByWorkspace,
   compareByWorkspace,
   formatElapsed,
+  handleGridKey,
   pinKey,
   planSegments,
   tileComparator,
@@ -356,5 +357,67 @@ describe("formatElapsed", () => {
 
   it("never goes negative on clock skew", () => {
     expect(formatElapsed("2026-01-01T00:00:00.000Z", start - 5_000)).toBe("0m 00s");
+  });
+});
+
+describe("handleGridKey", () => {
+  // Seven tiles over three columns: rows [0 1 2] [3 4 5] [6].
+  const press = (key: string, index: number, total = 7, columns = 3) =>
+    handleGridKey({ key }, index, total, columns);
+
+  it("steps one tile along the row", () => {
+    expect(press("ArrowRight", 0).index).toBe(1);
+    expect(press("ArrowLeft", 4).index).toBe(3);
+  });
+
+  it("stops at the ends of a row rather than rolling onto the next", () => {
+    expect(press("ArrowRight", 2).index).toBe(2);
+    expect(press("ArrowLeft", 3).index).toBe(3);
+    expect(press("ArrowRight", 6).index).toBe(6);
+  });
+
+  it("moves a whole row at a time, by the column count", () => {
+    expect(press("ArrowDown", 1).index).toBe(4);
+    expect(press("ArrowUp", 4).index).toBe(1);
+    expect(press("ArrowDown", 0, 7, 2).index).toBe(2);
+  });
+
+  it("stays put when the row below is not there", () => {
+    expect(press("ArrowDown", 4).index).toBe(4);
+    expect(press("ArrowDown", 6).index).toBe(6);
+  });
+
+  it("hands focus back to the chips off the top row", () => {
+    expect(press("ArrowUp", 1).effect).toBe("chips");
+    expect(press("ArrowUp", 1).index).toBe(1);
+    expect(press("ArrowUp", 3).effect).toBeNull();
+  });
+
+  it("takes Home and End to the first and last tile", () => {
+    expect(press("Home", 5).index).toBe(0);
+    expect(press("End", 0).index).toBe(6);
+  });
+
+  it("consumes every key it moves on, so the grid does not also scroll", () => {
+    for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"]) {
+      expect(press(key, 2).handled).toBe(true);
+    }
+  });
+
+  it("leaves other keys alone", () => {
+    expect(press("Enter", 2)).toEqual({ index: 2, effect: null, handled: false });
+    expect(press("y", 2).handled).toBe(false);
+  });
+
+  it("walks a one-column grid with ↑/↓ only", () => {
+    expect(press("ArrowRight", 0, 3, 1).index).toBe(0);
+    expect(press("ArrowLeft", 1, 3, 1).index).toBe(1);
+    expect(press("ArrowDown", 0, 3, 1).index).toBe(1);
+    expect(press("ArrowUp", 0, 3, 1).effect).toBe("chips");
+  });
+
+  it("survives an empty grid and an index that outran the tiles", () => {
+    expect(press("ArrowDown", 0, 0)).toEqual({ index: 0, effect: null, handled: false });
+    expect(press("ArrowLeft", 99).index).toBe(6);
   });
 });

@@ -18,9 +18,11 @@
     tailing: boolean;
     /** Pinned tiles sort to the top of the Sessions grid. */
     pinned: boolean;
+    /** The grid's roving tab stop: only the focused tile is Tab-reachable. */
+    focused: boolean;
   }
 
-  let { tile, now, tailing, pinned }: Props = $props();
+  let { tile, now, tailing, pinned, focused }: Props = $props();
 
   const PILL: Record<SessionState, PillState> = {
     running: "running",
@@ -58,19 +60,30 @@
     showView("session");
   }
 
+  /* Only the card's own keys — the pin, close, Deny and Allow buttons sit
+     inside it and answer Enter themselves, and the card must not open behind
+     them. Arrows are left to bubble; the grid does the moving. */
   function onKeydown(e: KeyboardEvent) {
-    if (e.key !== "Enter" && e.key !== " ") return;
-    e.preventDefault();
-    open();
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      open();
+      return;
+    }
+    // Answering a permission prompt is the most valuable keystroke here, so it
+    // gets the prompt's own y/n rather than a chord.
+    if (!needsYou) return;
+    if (e.key === "y" || e.key === "Y") allow(e);
+    else if (e.key === "n" || e.key === "N") deny(e);
   }
 
   // Both stop propagation — the whole card is clickable.
-  function allow(e: MouseEvent) {
+  function allow(e: Event) {
     e.stopPropagation();
     if (tile.terminalTabId) allowPendingTool(tile.terminalTabId);
   }
 
-  function deny(e: MouseEvent) {
+  function deny(e: Event) {
     e.stopPropagation();
     if (tile.terminalTabId) denyPendingTool(tile.terminalTabId);
   }
@@ -92,7 +105,7 @@
   class="tile"
   class:needs={needsYou}
   role="button"
-  tabindex="0"
+  tabindex={focused ? 0 : -1}
   onclick={open}
   onkeydown={onKeydown}
 >
@@ -141,8 +154,8 @@
       <span class="wants">
         Wants to run <span class="tool">{live.pendingTool?.name ?? live.lastTool ?? "a tool"}</span>
       </span>
-      <button type="button" class="deny" onclick={deny}>Deny</button>
-      <button type="button" class="allow" onclick={allow}>Allow</button>
+      <button type="button" class="deny" onclick={deny}>Deny <kbd>n</kbd></button>
+      <button type="button" class="allow" onclick={allow}>Allow <kbd>y</kbd></button>
     </div>
   {/if}
 
@@ -207,10 +220,18 @@
       0 1px 2px rgba(0, 0, 0, 0.04);
   }
 
-  .tile:hover,
-  .tile:focus-visible {
+  .tile:hover {
     box-shadow:
       0 0 0 1px var(--border2),
+      0 8px 24px rgba(0, 0, 0, 0.08);
+  }
+
+  /* Its own ring rather than the hover lift: with the arrow keys moving focus
+     around the grid, where focus is has to read differently from what the
+     pointer happens to be over. */
+  .tile:focus-visible {
+    box-shadow:
+      0 0 0 2px var(--accent),
       0 8px 24px rgba(0, 0, 0, 0.08);
     outline: none;
   }
@@ -362,13 +383,25 @@
 
   .deny,
   .allow {
+    display: flex;
+    align-items: center;
     flex-shrink: 0;
+    gap: 6px;
     height: 24px;
     padding: 0 10px;
     border-radius: var(--r-md);
     font-family: var(--font-ui);
     font-size: 11.5px;
     cursor: pointer;
+  }
+
+  /* The keys answer the prompt on the focused tile, so the hint belongs on the
+     button rather than in a legend somewhere off the card. */
+  .deny kbd,
+  .allow kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    opacity: 0.65;
   }
 
   .deny {
