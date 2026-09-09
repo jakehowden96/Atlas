@@ -104,7 +104,7 @@
   .loading-text {
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
   }
 
   @keyframes spin {

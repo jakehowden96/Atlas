@@ -285,7 +285,7 @@
     place-items: center;
     margin: 0;
     color: var(--muted);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
   }
 
   /* ── Tabs ──────────────────────────────────────────────────────────────── */
@@ -318,7 +318,7 @@
     min-width: 0;
     overflow: hidden;
     color: inherit;
-    font-size: 12px;
+    font-size: var(--fs-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
     cursor: pointer;
@@ -335,7 +335,7 @@
   .tab-close {
     flex-shrink: 0;
     color: var(--muted);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
     line-height: 1;
     cursor: pointer;
   }
@@ -362,7 +362,7 @@
     min-width: 0;
     overflow: hidden;
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     white-space: nowrap;
   }
 
@@ -381,7 +381,7 @@
     border-radius: 9px;
     background: var(--surface2);
     color: var(--warn);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     font-weight: 600;
   }
 
@@ -400,7 +400,7 @@
     border: 1px solid var(--border);
     border-radius: var(--r-md);
     color: var(--muted);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     cursor: pointer;
   }
 
@@ -442,7 +442,7 @@
 
   .kbd {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
     opacity: 0.7;
   }
 
@@ -462,7 +462,7 @@
     background: var(--term-bg);
     color: var(--text);
     font-family: var(--font-mono);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     line-height: 1.7;
     resize: none;
     tab-size: 2;
@@ -490,7 +490,7 @@
     max-width: 640px;
     color: var(--text);
     font-family: var(--font-ui);
-    font-size: 14px;
+    font-size: var(--fs-md);
     line-height: 1.65;
   }
 
@@ -502,7 +502,7 @@
     padding: 0 12px;
     border-top: 1px solid var(--border);
     color: var(--muted);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   /* ── Rendered markdown ─────────────────────────────────────────────────── */
@@ -510,19 +510,19 @@
     margin: 0 0 12px;
     padding-bottom: 8px;
     border-bottom: 1px solid var(--border);
-    font-size: 24px;
+    font-size: var(--fs-2xl);
     font-weight: 600;
   }
 
   .page :global(h2) {
     margin: 24px 0 8px;
-    font-size: 18px;
+    font-size: var(--fs-xl);
     font-weight: 600;
   }
 
   .page :global(h3) {
     margin: 20px 0 6px;
-    font-size: 15px;
+    font-size: var(--fs-md);
     font-weight: 600;
   }
 
@@ -567,7 +567,7 @@
     border-radius: var(--r-xs);
     background: var(--surface2);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-sm);
   }
 
   .page :global(.md-pre) {
@@ -582,7 +582,7 @@
   .page :global(.md-pre code) {
     color: var(--term-text);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     line-height: 1.6;
   }
 

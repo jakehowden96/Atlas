@@ -25,7 +25,12 @@
   --border: rgba(0, 0, 0, 0.08);
   --border2: rgba(0, 0, 0, 0.14);
   --text: #17181b;
-  --muted: #60656d;
+  /* Body ink is held to 7:1 (WCAG AAA), not 4.5. This is the token behind
+     every secondary label in the app — the status line, tile metadata, tree
+     rows, footers — so it was the whole of the "text is thin and doesn't
+     stand out" report. Scaled proportionally, one factor across all three
+     channels so the hue holds, until the worst surface (--surface3) clears 7. */
+  --muted: #474a50;
   /* Round 1 darkened the terminal ink for light and left these, its chrome
      twins, at the dark theme's values: as text on --surface3 they measured
      accent 3.16, warn 2.18, danger 3.70. All three are text far more often
@@ -50,7 +55,7 @@
      unchanged. */
   --t-user: #17181b;
   --t-step: #207956;
-  --t-tool: #60656d;
+  --t-tool: #474a50;
   --t-warn: #906415;
   --overlay: rgba(23, 24, 27, 0.35);
   --shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
@@ -72,6 +77,33 @@
   /* Type — @fontsource-variable ships the families as "* Variable" */
   --font-ui: "Geist Variable", Geist, system-ui, sans-serif;
   --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
+
+  /* Type scale.
+
+     The review said the text is thin and does not stand out, in both themes,
+     and separately named the Sessions tab label and the "N running · N needs
+     you" status line as hard to read. Ninety-seven of the app's font-size
+     declarations were under 12px, twenty-one of them at 10px, and there were
+     sixteen distinct sizes in half-pixel steps with no scale behind them.
+
+     12px is the floor: nothing in the app renders smaller. The steps are
+     close together at the bottom because this is a dense screen, and open up
+     for the display numbers. Anything not on the scale is a bug in the
+     stylesheet that declares it — `__tests__/typography.test.ts` says so. */
+  --fs-2xs: 12px;
+  --fs-xs: 13px;
+  --fs-sm: 14px;
+  --fs-md: 15px;
+  --fs-lg: 16px;
+  --fs-xl: 19px;
+  --fs-2xl: 24px;
+
+  /* Weight. 450 rather than 400 for body: Geist is a variable face, and at
+     400 on these backgrounds it is exactly the "thin" the review reported. */
+  --fw-body: 450;
+  --fw-medium: 500;
+  --fw-semi: 600;
+  --fw-bold: 700;
 }
 
 :root[data-theme="dark"] {
@@ -84,7 +116,7 @@
   --border: rgba(255, 255, 255, 0.08);
   --border2: rgba(255, 255, 255, 0.16);
   --text: #e6e7ea;
-  --muted: #9398a1;
+  --muted: #acb2bc;
   --accent: #2fa37a;
   --accent-ink: #0f1012;
   --warn: #e0a53a;
@@ -97,7 +129,7 @@
   --term-text: #c9cbd1;
   --t-user: #e6e7ea;
   --t-step: #2fa37a;
-  --t-tool: #9398a1;
+  --t-tool: #acb2bc;
   --t-warn: #e0a53a;
   --overlay: rgba(0, 0, 0, 0.55);
   --shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
@@ -114,7 +146,7 @@
     --border: rgba(255, 255, 255, 0.08);
     --border2: rgba(255, 255, 255, 0.16);
     --text: #e6e7ea;
-    --muted: #9398a1;
+    --muted: #acb2bc;
     --accent: #2fa37a;
     --accent-ink: #0f1012;
     --warn: #e0a53a;
@@ -125,7 +157,7 @@
     --term-text: #c9cbd1;
     --t-user: #e6e7ea;
     --t-step: #2fa37a;
-    --t-tool: #9398a1;
+    --t-tool: #acb2bc;
     --t-warn: #e0a53a;
     --overlay: rgba(0, 0, 0, 0.55);
     --shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
@@ -176,9 +208,15 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-ui);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  line-height: 1.5;
 }
+
+/* No `-webkit-font-smoothing: antialiased`. On macOS that switches off
+   subpixel rendering, which makes every glyph in the app measurably lighter —
+   it was half of "the text is thin", the other half being the sizes above.
+   The default gives the strokes their full weight back. */
 
 ::selection {
   background: color-mix(in srgb, var(--accent) 35%, transparent);

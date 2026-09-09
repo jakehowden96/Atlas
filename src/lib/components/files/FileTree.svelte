@@ -304,7 +304,7 @@
     min-width: 0;
     overflow: hidden;
     color: var(--text);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -320,7 +320,7 @@
     height: 20px;
     border-radius: var(--r-sm);
     color: var(--muted);
-    font-size: 15px;
+    font-size: var(--fs-md);
     line-height: 1;
     cursor: pointer;
   }
@@ -349,7 +349,7 @@
     border-radius: var(--r-md);
     background: var(--surface2);
     color: var(--muted);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     white-space: nowrap;
   }
 
@@ -369,7 +369,7 @@
   .kbd {
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
   }
 
   .sections {
@@ -390,7 +390,7 @@
   .label {
     margin: 0 0 4px 8px;
     color: var(--muted);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -399,7 +399,7 @@
   .empty {
     margin: 0 0 0 8px;
     color: var(--muted);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
 
   .empty.nested {
@@ -419,7 +419,7 @@
     min-width: 0;
     overflow: hidden;
     color: var(--muted);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -429,7 +429,7 @@
   .forget {
     flex-shrink: 0;
     color: var(--muted);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
     line-height: 1;
     opacity: 0;
     cursor: pointer;
@@ -452,7 +452,7 @@
     padding: 0 8px;
     border-radius: var(--r-sm);
     color: var(--text);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     text-align: left;
     cursor: pointer;
   }
@@ -511,6 +511,6 @@
     padding: 8px;
     border-top: 1px solid var(--border);
     color: var(--muted);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 </style>

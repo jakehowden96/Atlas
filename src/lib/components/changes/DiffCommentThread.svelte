@@ -130,7 +130,7 @@
     background: transparent;
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     cursor: pointer;
   }
 
@@ -179,7 +179,7 @@
     padding: 0 10px;
     border-radius: var(--r-md);
     font-family: var(--font-ui);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     font-weight: 500;
     cursor: pointer;
   }

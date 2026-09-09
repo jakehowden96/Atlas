@@ -264,7 +264,7 @@
   .glyph {
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     font-weight: 600;
   }
 
@@ -276,7 +276,7 @@
     background: transparent;
     color: var(--text);
     font-family: var(--font-ui);
-    font-size: 13.5px;
+    font-size: var(--fs-sm);
   }
 
   /* Replaces the outline above. The field is borderless because the bar is its
@@ -295,7 +295,7 @@
     border-radius: var(--r-xs);
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
   }
 
   .list {
@@ -309,7 +309,7 @@
   .empty {
     margin: 6px 8px;
     color: var(--muted);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
 
   .row {
@@ -344,7 +344,7 @@
     background: var(--surface2);
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     text-align: center;
     text-transform: uppercase;
   }
@@ -362,7 +362,7 @@
 
   .label {
     overflow: hidden;
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -372,7 +372,7 @@
     overflow: hidden;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -381,7 +381,7 @@
     flex-shrink: 0;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
   }
 
   .state.warn {

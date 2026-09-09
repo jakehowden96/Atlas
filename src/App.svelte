@@ -303,7 +303,7 @@
 
   .wordmark {
     margin-right: 10px;
-    font-size: 13px;
+    font-size: var(--fs-sm);
     font-weight: 600;
   }
 
@@ -324,7 +324,7 @@
     gap: 6px;
     color: var(--text);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     white-space: nowrap;
   }
 
@@ -364,7 +364,7 @@
     background: var(--surface2);
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     white-space: nowrap;
     cursor: pointer;
   }
@@ -380,7 +380,7 @@
     border-radius: var(--r-xs);
     background: var(--surface);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
   }
 
   .new-session {
@@ -391,7 +391,7 @@
     background: var(--ink);
     color: var(--ink-text);
     font-family: var(--font-ui);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     white-space: nowrap;
     cursor: pointer;
@@ -400,7 +400,7 @@
   .kbd-inline {
     margin-left: 4px;
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
     opacity: 0.6;
   }
 
@@ -423,7 +423,7 @@
   }
 
   .gear :global(.material-symbols-outlined) {
-    font-size: 16px;
+    font-size: var(--fs-lg);
   }
 
   /* ── View host ─────────────────────────────────────────────────────────── */

@@ -230,7 +230,7 @@
     justify-content: space-between;
     margin-bottom: 8px;
     color: var(--muted);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -254,7 +254,7 @@
 
   .none {
     color: var(--muted);
-    font-size: 12px;
+    font-size: var(--fs-sm);
   }
 
   /* ── Plan ──────────────────────────────────────────────────────────────── */
@@ -262,7 +262,7 @@
     display: flex;
     align-items: flex-start;
     gap: 8px;
-    font-size: 12px;
+    font-size: var(--fs-sm);
     line-height: 1.4;
   }
 
@@ -326,7 +326,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 12px;
+    font-size: var(--fs-sm);
   }
 
   .agent-dot {
@@ -356,7 +356,7 @@
     padding-left: 12px;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
   }
 
   /* ── Turn ──────────────────────────────────────────────────────────────── */
@@ -375,13 +375,13 @@
 
   .stat-label {
     color: var(--muted);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   .stat-value {
     margin-top: 2px;
     font-family: var(--font-mono);
-    font-size: 14px;
+    font-size: var(--fs-md);
     font-weight: 500;
   }
 
@@ -389,7 +389,7 @@
     margin-top: 6px;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
   }
 
   .ctx-track {
@@ -417,7 +417,7 @@
     background: none;
     color: var(--accent);
     font-family: var(--font-ui);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     font-weight: 500;
     letter-spacing: 0;
     text-transform: none;
@@ -436,7 +436,7 @@
     gap: 4px;
     color: var(--term-text);
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
 
   .file {

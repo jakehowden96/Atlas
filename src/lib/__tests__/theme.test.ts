@@ -80,9 +80,13 @@ describe("xterm palettes", () => {
       }
     });
 
-    it(`${name} inks clear 4.5:1 against its own background`, () => {
+    /* 7:1, not 4.5. This palette is the ink Claude Code's TUI is read in for
+       hours at a time — it is the app's body text more than any token in the
+       chrome is, and "the text is thin and doesn't stand out" was reported
+       against Claude itself in both themes. */
+    it(`${name} inks clear 7:1 against its own background`, () => {
       for (const key of INK_KEYS) {
-        expect(contrast(palette[key], palette.background), key).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(palette[key], palette.background), key).toBeGreaterThanOrEqual(7);
       }
       expect(
         contrast(palette.selectionForeground, palette.selectionBackground),
@@ -91,6 +95,40 @@ describe("xterm palettes", () => {
       expect(contrast(palette.cursor, palette.background)).toBeGreaterThanOrEqual(3);
     });
   }
+
+  /* Darkening light to 7:1 very nearly collapsed `bright*` onto `*` — solved
+     naively, `brightYellow` and `yellow` came out one step apart. A TUI uses
+     the bright half for emphasis, so the two halves have to stay tellable
+     apart after any future contrast change. */
+  it("keeps light's bright colours visibly heavier than their normals", () => {
+    const pairs = [
+      ["red", "brightRed"],
+      ["green", "brightGreen"],
+      ["yellow", "brightYellow"],
+      ["blue", "brightBlue"],
+      ["magenta", "brightMagenta"],
+      ["cyan", "brightCyan"],
+    ] as const;
+    for (const [normal, bright] of pairs) {
+      const n = contrast(lightXtermTheme[normal], lightXtermTheme.background);
+      const b = contrast(lightXtermTheme[bright], lightXtermTheme.background);
+      expect(b - n, `${bright} vs ${normal}`).toBeGreaterThanOrEqual(1.5);
+    }
+  });
+
+  /* `brightBlack` is what a TUI writes secondary text in. Raising the floor to
+     7:1 pulled it much closer to the primary foreground, so the thing worth
+     pinning is that it is still the *dimmer* of the two: readable, but not
+     competing with the text it sits under. Comparing it against the saturated
+     hues would say nothing — luminance there is a property of the hue. */
+  it("keeps dim text below the primary foreground in both palettes", () => {
+    for (const palette of [lightXtermTheme, darkXtermTheme]) {
+      const dim = contrast(palette.brightBlack, palette.background);
+      const fg = contrast(palette.foreground, palette.background);
+      expect(dim).toBeGreaterThanOrEqual(7);
+      expect(fg - dim).toBeGreaterThanOrEqual(1.5);
+    }
+  });
 
   it("mirrors the --term-bg / --term-text / --accent tokens", () => {
     expect(lightXtermTheme.background).toBe("#fafafb");
@@ -242,13 +280,24 @@ describe("app.css token blocks", () => {
     }
   });
 
+  /* The text roles that carry reading matter: primary ink, the secondary ink
+     used for every label and metadata line in the app, and their two twins
+     inside the terminal panes. WCAG 1.4.6 (AAA) asks 7:1 of these.
+
+     The semantic colours are held to AA instead, deliberately. A green, an
+     amber and a red cannot reach 7:1 on a light surface without all three
+     collapsing towards black, which costs them the only thing they are there
+     for. They carry state that is also spelled out in words next to them. */
+  const BODY_INKS = new Set(["--text", "--muted", "--term-text", "--t-user", "--t-tool"]);
+  const floorFor = (ink: string) => (BODY_INKS.has(ink) ? 7 : 4.5);
+
   for (const [name, tokens] of [
     ["light", LIGHT],
     ["dark", DARK_EXPLICIT],
   ] as const) {
     /* Measured, not asserted in a comment — this is what "make both themes
        consistent" reduces to once it is checkable. */
-    it(`${name} clears 4.5:1 for every ink on every surface it renders on`, () => {
+    it(`${name} clears its floor for every ink on every surface it renders on`, () => {
       for (const [ink, surfaces] of Object.entries(ON)) {
         for (const surface of surfaces) {
           const fg = tokens[ink];
@@ -256,7 +305,7 @@ describe("app.css token blocks", () => {
           expect(fg, `${name} ${ink}`).toMatch(/^#[0-9a-f]{6}$/);
           expect(bg, `${name} ${surface}`).toMatch(/^#[0-9a-f]{6}$/);
           expect(contrast(fg, bg), `${name}: ${ink} on ${surface}`).toBeGreaterThanOrEqual(
-            4.5,
+            floorFor(ink),
           );
         }
       }
@@ -274,6 +323,15 @@ describe("app.css token blocks", () => {
     const dark = floor(DARK_EXPLICIT);
     expect(light).toBeGreaterThanOrEqual(4.5);
     expect(dark).toBeGreaterThanOrEqual(4.5);
+    /* And separately: no body ink in either theme is the weak one. */
+    const bodyFloor = (tokens: Record<string, string>) =>
+      Math.min(
+        ...Object.entries(ON)
+          .filter(([ink]) => BODY_INKS.has(ink))
+          .flatMap(([ink, surfaces]) => surfaces.map((s) => contrast(tokens[ink], tokens[s]))),
+      );
+    expect(bodyFloor(LIGHT)).toBeGreaterThanOrEqual(7);
+    expect(bodyFloor(DARK_EXPLICIT)).toBeGreaterThanOrEqual(7);
     // Comparable margins: neither theme's weakest pair is far below the other's.
     expect(Math.abs(light - dark)).toBeLessThan(1.5);
   });

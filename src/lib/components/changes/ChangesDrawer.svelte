@@ -406,7 +406,7 @@
 
   .title {
     flex-shrink: 0;
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     font-weight: 600;
   }
 
@@ -414,7 +414,7 @@
     flex-shrink: 0;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     white-space: nowrap;
   }
 
@@ -439,7 +439,7 @@
     flex-shrink: 0;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     white-space: nowrap;
   }
 
@@ -455,7 +455,7 @@
     background: transparent;
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 13px;
+    font-size: var(--fs-sm);
     cursor: pointer;
   }
 
@@ -488,7 +488,7 @@
     background: var(--surface2);
     color: var(--text);
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     font-weight: 600;
   }
 
@@ -497,7 +497,7 @@
     flex: 1;
     place-items: center;
     color: var(--muted);
-    font-size: 12px;
+    font-size: var(--fs-sm);
   }
 
   /* ── Footer ────────────────────────────────────────────────────────────── */
@@ -514,7 +514,7 @@
   .foot-text {
     overflow: hidden;
     color: var(--muted);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -533,7 +533,7 @@
     border: 1px solid var(--border2);
     background: transparent;
     color: var(--text);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     font-weight: 500;
   }
 
@@ -546,7 +546,7 @@
     border: none;
     background: var(--accent);
     color: var(--accent-ink);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     font-weight: 600;
   }
 

@@ -94,7 +94,7 @@
     background: transparent;
     color: var(--seg-ink);
     font-family: var(--font-ui);
-    font-size: 13px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     white-space: nowrap;
     cursor: pointer;
@@ -103,7 +103,7 @@
   .seg-group.sm .seg {
     padding: 3px 10px;
     border-radius: var(--r-sm);
-    font-size: 12px;
+    font-size: var(--fs-sm);
   }
 
   .seg-group.fill .seg {
@@ -130,7 +130,7 @@
   .count {
     color: var(--seg-count);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   .dot {
@@ -150,7 +150,7 @@
     background: var(--warn);
     color: #fff;
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
     font-weight: 600;
   }
 </style>

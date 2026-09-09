@@ -293,7 +293,7 @@
   .meta {
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     white-space: nowrap;
   }
 
@@ -305,7 +305,7 @@
     background: var(--surface);
     color: var(--text);
     font-family: var(--font-ui);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     white-space: nowrap;
     cursor: pointer;
@@ -331,7 +331,7 @@
   .empty {
     margin: 24px 0;
     color: var(--muted);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     text-align: center;
   }
 
@@ -370,7 +370,7 @@
   .repo {
     overflow: hidden;
     font-family: var(--font-mono);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -379,13 +379,13 @@
   .open-count {
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     white-space: nowrap;
   }
 
   .linked {
     color: var(--muted);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     white-space: nowrap;
   }
 
@@ -399,7 +399,7 @@
     background: none;
     color: var(--accent);
     font-family: var(--font-ui);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     white-space: nowrap;
     cursor: pointer;
   }
@@ -411,7 +411,7 @@
     background: color-mix(in srgb, var(--danger) 8%, transparent);
     color: var(--danger);
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     line-height: 1.4;
   }
 
@@ -461,7 +461,7 @@
 
   .pr-title {
     overflow: hidden;
-    font-size: 13px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -470,7 +470,7 @@
   .pr-number {
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   .draft-pill {
@@ -478,14 +478,14 @@
     border: 1px solid var(--border2);
     border-radius: 9px;
     color: var(--muted);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     white-space: nowrap;
   }
 
   .pr-sub {
     overflow: hidden;
     color: var(--muted);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -503,7 +503,7 @@
     padding: 0 8px;
     border-radius: 10px;
     background: color-mix(in srgb, currentColor 14%, transparent);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     font-weight: 600;
     white-space: nowrap;
   }
@@ -514,7 +514,7 @@
   .pill-muted  { color: var(--muted); }
 
   .work {
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
 
   .ext {
@@ -529,7 +529,7 @@
     background: transparent;
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 13px;
+    font-size: var(--fs-sm);
     cursor: pointer;
   }
 

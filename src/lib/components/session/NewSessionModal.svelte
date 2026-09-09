@@ -449,7 +449,7 @@
     border-bottom: 1px solid var(--border);
     background: var(--surface2);
     color: var(--muted);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -458,7 +458,7 @@
   .glyph {
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     font-weight: 600;
   }
 
@@ -470,7 +470,7 @@
     background: transparent;
     color: var(--text);
     font-family: var(--font-ui);
-    font-size: 13.5px;
+    font-size: var(--fs-sm);
   }
 
   /* Replaces the outline above. The field is borderless because the bar is its
@@ -489,7 +489,7 @@
     border-radius: var(--r-xs);
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
   }
 
   .cols {
@@ -515,7 +515,7 @@
     padding: 6px 8px 4px;
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -524,7 +524,7 @@
   .col-empty {
     margin: 4px 8px;
     color: var(--muted);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
 
   .ws-row {
@@ -576,7 +576,7 @@
     border-radius: var(--r-sm);
     background: transparent;
     color: var(--muted);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     line-height: 1;
     cursor: pointer;
     opacity: 0;
@@ -616,7 +616,7 @@
   }
 
   .ws-name {
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     font-weight: 500;
   }
 
@@ -624,7 +624,7 @@
     overflow: hidden;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -633,7 +633,7 @@
     flex-shrink: 0;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
   }
 
   .add-row {
@@ -649,7 +649,7 @@
     background: transparent;
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     text-align: left;
     cursor: pointer;
   }
@@ -681,14 +681,14 @@
 
   .add-path {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   .add-kbd {
     margin-left: auto;
     flex-shrink: 0;
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
   }
 
   /* ── Right column ──────────────────────────────────────────────────────── */
@@ -731,8 +731,8 @@
     gap: 5px;
     flex-shrink: 0;
     font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 400;
+    font-size: var(--fs-2xs);
+    font-weight: var(--fw-body);
     letter-spacing: 0;
     text-transform: none;
   }
@@ -744,7 +744,7 @@
   .fresh-copy {
     margin: 0;
     color: var(--muted);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     line-height: 1.5;
   }
 
@@ -774,13 +774,13 @@
 
   .resume-caption {
     color: var(--muted);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   .resume-empty {
     margin: 0;
     color: var(--muted);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
 
   .resume-row {
@@ -838,7 +838,7 @@
 
   .resume-title {
     overflow: hidden;
-    font-size: 12px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -849,7 +849,7 @@
     overflow: hidden;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -862,7 +862,7 @@
     flex-shrink: 0;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   .hints span {
@@ -879,7 +879,7 @@
     background: var(--surface);
     color: var(--text);
     font: inherit;
-    font-size: 10px;
+    font-size: var(--fs-2xs);
   }
 
   .start {
@@ -890,7 +890,7 @@
     background: var(--ink);
     color: var(--ink-text);
     font-family: var(--font-ui);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     cursor: pointer;
   }
@@ -903,7 +903,7 @@
   .start-kbd {
     margin-left: 4px;
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
     opacity: 0.6;
   }
 </style>

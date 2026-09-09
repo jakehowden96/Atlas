@@ -309,7 +309,7 @@
 
   .sorted {
     color: var(--muted);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     white-space: nowrap;
   }
 
@@ -352,20 +352,20 @@
     background: var(--surface);
     color: var(--accent);
     font-family: var(--font-mono);
-    font-size: 18px;
+    font-size: var(--fs-xl);
     font-weight: 600;
   }
 
   .empty-title {
     margin-top: 6px;
-    font-size: 16px;
+    font-size: var(--fs-lg);
     font-weight: 600;
   }
 
   .empty-copy {
     margin: 0;
     color: var(--muted);
-    font-size: 13px;
+    font-size: var(--fs-sm);
     line-height: 1.5;
   }
 
@@ -381,7 +381,7 @@
     padding: 0 14px;
     border-radius: var(--r-lg);
     font-family: var(--font-ui);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     cursor: pointer;
   }
@@ -404,7 +404,7 @@
     margin-top: 14px;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   .hints span {
@@ -420,7 +420,7 @@
     border-radius: var(--r-xs);
     background: var(--surface);
     font: inherit;
-    font-size: 10px;
+    font-size: var(--fs-2xs);
     color: var(--text);
   }
 </style>

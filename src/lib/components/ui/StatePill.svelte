@@ -39,7 +39,7 @@
     background: color-mix(in srgb, var(--pill-colour) 14%, transparent);
     color: var(--pill-colour);
     font-family: var(--font-ui);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     font-weight: 600;
     white-space: nowrap;
   }

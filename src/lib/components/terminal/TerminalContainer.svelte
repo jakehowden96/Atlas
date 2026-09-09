@@ -73,6 +73,6 @@
     margin: 0;
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
   }
 </style>

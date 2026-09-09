@@ -472,7 +472,7 @@
 
   .note {
     color: var(--muted);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   .spacer {
@@ -482,7 +482,7 @@
   .live {
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     white-space: nowrap;
   }
 
@@ -491,7 +491,7 @@
     place-items: center;
     flex: 1;
     color: var(--muted);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
   }
 
   /* ── KPI strip ─────────────────────────────────────────────────────────── */
@@ -521,13 +521,13 @@
 
   .kpi-label {
     color: var(--muted);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     white-space: nowrap;
   }
 
   .kpi-delta {
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     font-weight: 500;
   }
 
@@ -552,7 +552,7 @@
 
   .kpi-value {
     font-family: var(--font-mono);
-    font-size: 19px;
+    font-size: var(--fs-xl);
     font-weight: 500;
     line-height: 1.1;
     letter-spacing: -0.01em;
@@ -562,7 +562,7 @@
   .kpi-sub {
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     font-variant-numeric: tabular-nums;
   }
 
@@ -600,7 +600,7 @@
   }
 
   .card-title {
-    font-size: 12px;
+    font-size: var(--fs-sm);
     font-weight: 600;
     white-space: nowrap;
   }
@@ -608,7 +608,7 @@
   .card-sub {
     overflow: hidden;
     color: var(--muted);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -617,19 +617,19 @@
     margin: 0;
     padding: 14px 12px;
     color: var(--muted);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
 
   .footnote {
     margin: 0;
     padding: 6px 12px;
     color: var(--muted);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
   }
 
   .num {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     font-variant-numeric: tabular-nums;
     text-align: right;
   }
@@ -640,7 +640,7 @@
 
   .num-head {
     color: var(--muted);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     font-weight: 600;
     letter-spacing: 0.04em;
     text-align: right;
@@ -675,7 +675,7 @@
     justify-content: flex-end;
     gap: 5px;
     color: var(--muted);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -689,7 +689,7 @@
 
   .model-row {
     height: 24px;
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
 
   .model-row:hover {
@@ -724,7 +724,7 @@
 
   .week-total {
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
   }
 
   .stack {
@@ -761,7 +761,7 @@
     overflow: hidden;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
     text-align: center;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -789,7 +789,7 @@
   .tool-name {
     overflow: hidden;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -823,7 +823,7 @@
     padding: 6px 12px;
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     text-align: left;
     cursor: pointer;
   }
@@ -878,7 +878,7 @@
   .ws-text {
     position: relative;
     overflow: hidden;
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -915,7 +915,7 @@
     gap: 8px;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
     white-space: nowrap;
   }
 
@@ -925,7 +925,7 @@
     gap: 3px;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
   }
 
   .legend-cell {
@@ -951,7 +951,7 @@
   .recent-head {
     padding: 7px 12px;
     color: var(--muted);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -981,7 +981,7 @@
   .recent-title {
     overflow: hidden;
     color: var(--text);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -996,7 +996,7 @@
   .recent-model {
     overflow: hidden;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }

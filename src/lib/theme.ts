@@ -4,12 +4,23 @@
  * CSS vars, so this file is the source of truth for any code path that needs
  * the palette as plain hex strings.
  *
- * Contrast: every ANSI colour below clears 4.5:1 against its own `--term-bg`
- * (WCAG relative luminance; the floors are light `green` at 5.05 and dark
- * `brightBlack` at 6.47). This is enforced by `__tests__/theme.test.ts` rather
- * than by this comment. The single exception is `black`, which is the ANSI
- * *background* tone rather than an ink — it is deliberately close to
- * `--term-bg` so `ESC[40m` fills read as the terminal surface.
+ * Contrast: every ANSI colour below clears 7:1 against its own `--term-bg`
+ * — AAA, not AA. This palette is the ink Claude Code's TUI is read in for
+ * hours at a time, so it is the app's body text more than any token in the
+ * chrome is, and "the text is thin and doesn't stand out against the
+ * background" was reported against Claude itself in both themes. Enforced by
+ * `__tests__/theme.test.ts` rather than by this comment. The single exception
+ * is `black`, which is the ANSI *background* tone rather than an ink — it is
+ * deliberately close to `--term-bg` so `ESC[40m` fills read as the terminal
+ * surface.
+ *
+ * Light needs the whole set darkened to get there, which on its own would
+ * have collapsed `bright*` onto `*` — several pairs landed within one step of
+ * each other at 7:1, and a TUI uses the bright half for emphasis. So the
+ * coloured normals sit at 7:1 and the coloured brights at 9:1: on a light
+ * ground, more ink is what emphasis looks like. `brightBlack` is the dim role
+ * and stays the lightest ink in the palette at 7:1 exactly, so de-emphasised
+ * text still reads as de-emphasised.
  *
  * The named slots are only half the story: `terminal-session.ts` sets xterm's
  * `minimumContrastRatio` for the dim/faint and 256-colour paths an ITheme
@@ -28,20 +39,20 @@ export const lightXtermTheme = {
   selectionBackground: "#cfe8dd",
   selectionForeground: "#17181b",
   black: "#17181b",
-  red: "#c0392f",
-  green: "#207a58",
-  yellow: "#8a6013",
-  blue: "#1a6bad",
-  magenta: "#9a3d8c",
-  cyan: "#0f7370",
-  white: "#60656d", // --muted
-  brightBlack: "#5a5f67",
-  brightRed: "#a52f26",
-  brightGreen: "#1b6f4e",
-  brightYellow: "#74510f",
-  brightBlue: "#14578c",
-  brightMagenta: "#7f3273",
-  brightCyan: "#0b5f5c",
+  red: "#9d2f27",
+  green: "#1a6146",
+  yellow: "#725010",
+  blue: "#165991",
+  magenta: "#88367c",
+  cyan: "#0d605e",
+  white: "#474a50", // --muted
+  brightBlack: "#52565e",
+  brightRed: "#82251e",
+  brightGreen: "#145039",
+  brightYellow: "#5d410c",
+  brightBlue: "#114975",
+  brightMagenta: "#6f2c65",
+  brightCyan: "#094f4c",
   brightWhite: "#2b2e35",
 } as const;
 
@@ -54,14 +65,14 @@ export const darkXtermTheme = {
   selectionBackground: "#2c3b36",
   selectionForeground: "#e6e7ea",
   black: "#25272c",
-  red: "#f0736b",
+  red: "#f8776e",
   green: "#46c294",
   yellow: "#e0a53a",
   blue: "#6bb6ec",
   magenta: "#d48ac0",
   cyan: "#4fc4bd",
   white: "#c9cbd1",
-  brightBlack: "#9398a1", // --muted
+  brightBlack: "#acb2bc", // --muted
   brightRed: "#f79890",
   brightGreen: "#6fd3ad",
   brightYellow: "#edc06a",

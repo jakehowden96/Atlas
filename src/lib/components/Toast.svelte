@@ -112,7 +112,7 @@
 
   .title {
     font-family: var(--font-ui);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     color: var(--text);
   }
@@ -120,7 +120,7 @@
   .body {
     margin-top: 2px;
     font-family: var(--font-ui);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     color: var(--muted);
     overflow-wrap: anywhere;
   }
@@ -133,7 +133,7 @@
     background: var(--surface2);
     color: var(--text);
     font-family: var(--font-ui);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     line-height: 1.2;
     cursor: pointer;
   }
@@ -149,7 +149,7 @@
     background: transparent;
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 13px;
+    font-size: var(--fs-sm);
     line-height: 1;
     cursor: pointer;
   }

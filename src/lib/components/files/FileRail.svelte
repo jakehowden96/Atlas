@@ -216,7 +216,7 @@
   .label {
     margin: 0 0 4px 8px;
     color: var(--muted);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -225,7 +225,7 @@
   .none {
     margin: 0 0 0 8px;
     color: var(--muted);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
 
   .row {
@@ -234,7 +234,7 @@
     padding: 4px 8px;
     border-radius: var(--r-sm);
     color: var(--text);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     overflow: hidden;
     text-align: left;
     text-overflow: ellipsis;
@@ -266,7 +266,7 @@
     gap: 4px 10px;
     margin: 0;
     padding: 0 8px;
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
 
   .props dt {
@@ -317,7 +317,7 @@
     min-width: 0;
     overflow: hidden;
     color: var(--text);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -325,7 +325,7 @@
 
   .delta {
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
   }
 
   .added {

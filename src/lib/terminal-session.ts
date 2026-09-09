@@ -111,8 +111,9 @@ export class TerminalSession {
       /* theme.ts constrains the 16 named ANSI slots, but Claude Code's TUI also
          leans on dim/faint SGR and 256-colour indices an ITheme cannot name.
          This is xterm's own lever over those paths, and the WebGL renderer
-         loaded below honours it. */
-      minimumContrastRatio: 4.5,
+         loaded below honours it. 7 rather than 4.5, to match the floor the
+         named slots are held to in `theme.ts`. */
+      minimumContrastRatio: 7,
       /* xterm keeps 1000 lines by default, and a Claude Code session passes
          that inside an hour — the earlier transcript was genuinely gone, not
          just unpainted. 10k lines is roughly a full day of one session and

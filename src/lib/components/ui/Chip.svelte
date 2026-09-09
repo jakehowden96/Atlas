@@ -29,7 +29,7 @@
     background: var(--surface);
     color: var(--text);
     font-family: var(--font-ui);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     white-space: nowrap;
     cursor: pointer;
@@ -54,7 +54,7 @@
 
   .count {
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     opacity: 0.7;
   }
 </style>

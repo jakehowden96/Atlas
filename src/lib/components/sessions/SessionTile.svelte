@@ -281,7 +281,7 @@
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    font-size: 13px;
+    font-size: var(--fs-sm);
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -294,7 +294,7 @@
     max-width: 45%;
     overflow: hidden;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     white-space: nowrap;
   }
 
@@ -323,7 +323,7 @@
     flex-shrink: 0;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   /* Stays out of the way until the card is hovered, but remains reachable by
@@ -340,7 +340,7 @@
     border-radius: var(--r-sm);
     background: transparent;
     color: var(--muted);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     line-height: 1;
     cursor: pointer;
     opacity: 0;
@@ -361,7 +361,7 @@
   }
 
   .pin :global(.material-symbols-outlined) {
-    font-size: 15px;
+    font-size: var(--fs-md);
   }
 
   .pin.on :global(.material-symbols-outlined) {
@@ -406,7 +406,7 @@
     background: var(--term-bg);
     color: var(--t-step);
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
   }
 
   .working-dot {
@@ -438,7 +438,7 @@
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    font-size: 12px;
+    font-size: var(--fs-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -458,7 +458,7 @@
     padding: 0 10px;
     border-radius: var(--r-md);
     font-family: var(--font-ui);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     cursor: pointer;
   }
 
@@ -467,7 +467,7 @@
   .deny kbd,
   .allow kbd {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
     opacity: 0.65;
   }
 
@@ -504,7 +504,7 @@
 
   .step {
     overflow: hidden;
-    font-size: 12px;
+    font-size: var(--fs-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -532,7 +532,7 @@
     flex-shrink: 0;
     gap: 5px;
     color: var(--muted);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   .agent-dot {
@@ -553,7 +553,7 @@
     gap: 6px;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   .ctx-track {
@@ -579,7 +579,7 @@
   .diff {
     flex-shrink: 0;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   .added {

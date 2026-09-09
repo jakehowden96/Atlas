@@ -153,7 +153,7 @@
     height: 22px;
     border-radius: var(--r-sm);
     color: var(--muted);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     cursor: pointer;
   }
 
@@ -182,7 +182,7 @@
     border-radius: var(--r-xs);
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     white-space: nowrap;
     cursor: pointer;
   }
@@ -200,7 +200,7 @@
     flex-shrink: 0;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
 
   .kbd {
@@ -210,7 +210,7 @@
     border-radius: var(--r-xs);
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
   }
 
   /* ── Listing ───────────────────────────────────────────────────────────── */
@@ -226,7 +226,7 @@
   .message {
     margin: 6px 8px;
     color: var(--muted);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
 
   .row {
@@ -238,7 +238,7 @@
     padding: 0 8px;
     border-radius: var(--r-sm);
     color: var(--text);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     text-align: left;
     cursor: pointer;
   }
@@ -258,7 +258,7 @@
     flex-shrink: 0;
     width: 8px;
     color: var(--muted);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
     text-align: center;
   }
 
@@ -282,7 +282,7 @@
 
   .note {
     color: var(--muted);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
 
   .add {
@@ -293,7 +293,7 @@
     background: var(--ink);
     color: var(--ink-text);
     font-family: var(--font-ui);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     font-weight: 500;
     cursor: pointer;
   }

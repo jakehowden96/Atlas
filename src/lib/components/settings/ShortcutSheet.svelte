@@ -146,14 +146,14 @@
     gap: 10px;
     padding: 14px 16px;
     border-bottom: 1px solid var(--border);
-    font-size: 13px;
+    font-size: var(--fs-sm);
     font-weight: 600;
   }
 
   .hint {
     color: var(--muted);
-    font-size: 11.5px;
-    font-weight: 400;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-body);
   }
 
   .spacer {
@@ -168,7 +168,7 @@
     height: 22px;
     border-radius: var(--r-sm);
     color: var(--muted);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     cursor: pointer;
   }
 
@@ -194,7 +194,7 @@
   .group-title {
     margin-bottom: 5px;
     color: var(--muted);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -212,11 +212,11 @@
     min-width: 78px;
     color: var(--text);
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
 
   .what {
     color: var(--muted);
-    font-size: 12px;
+    font-size: var(--fs-sm);
   }
 </style>

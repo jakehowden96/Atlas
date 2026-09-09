@@ -217,7 +217,7 @@
     background: var(--surface);
     color: var(--text);
     font-family: var(--font-ui);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     white-space: nowrap;
     cursor: pointer;
@@ -230,13 +230,13 @@
   .hint {
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-2xs);
   }
 
   .label {
     min-width: 0;
     overflow: hidden;
-    font-size: 13px;
+    font-size: var(--fs-sm);
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -244,7 +244,7 @@
 
   .empty-label {
     color: var(--muted);
-    font-weight: 400;
+    font-weight: var(--fw-body);
   }
 
   /* Which project this terminal belongs to. Same colour-plus-name pairing as
@@ -258,7 +258,7 @@
     max-width: 180px;
     overflow: hidden;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -275,7 +275,7 @@
     overflow: hidden;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -330,7 +330,7 @@
     background: var(--surface);
     color: var(--text);
     font-family: var(--font-ui);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     cursor: pointer;
   }
@@ -365,7 +365,7 @@
     background: var(--surface);
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     cursor: pointer;
   }
 
@@ -380,7 +380,7 @@
     border-radius: var(--r-md);
     background: transparent;
     color: var(--muted);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     cursor: pointer;
   }
 
@@ -413,7 +413,7 @@
     border-top: 1px solid var(--border);
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   .last-tool {

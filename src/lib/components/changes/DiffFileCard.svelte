@@ -337,7 +337,7 @@
     width: 10px;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     transition: transform 0.15s ease;
   }
 
@@ -355,7 +355,7 @@
     background: var(--surface2);
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 9.5px;
+    font-size: var(--fs-2xs);
     font-weight: 700;
   }
 
@@ -380,7 +380,7 @@
     overflow: hidden;
     color: var(--text);
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -390,7 +390,7 @@
   .removed {
     flex-shrink: 0;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   .added {
@@ -408,7 +408,7 @@
     gap: 5px;
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     cursor: pointer;
     user-select: none;
   }
@@ -509,7 +509,7 @@
 
   .hunk-text {
     color: var(--muted);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   .row.commentable {
@@ -542,7 +542,7 @@
     background: transparent;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     cursor: pointer;
   }
 

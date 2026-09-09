@@ -545,7 +545,7 @@
   .nav-title {
     padding: 0 10px 12px;
     font-family: var(--font-ui);
-    font-size: 13px;
+    font-size: var(--fs-sm);
     font-weight: 600;
   }
 
@@ -556,7 +556,7 @@
     background: transparent;
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     text-align: left;
     cursor: pointer;
   }
@@ -579,7 +579,7 @@
   .version {
     padding: 0 10px;
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     color: var(--muted);
   }
 
@@ -599,7 +599,7 @@
     padding: 0 18px;
     border-bottom: 1px solid var(--border);
     font-family: var(--font-ui);
-    font-size: 13px;
+    font-size: var(--fs-sm);
     font-weight: 600;
   }
 
@@ -616,7 +616,7 @@
     background: transparent;
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 14px;
+    font-size: var(--fs-md);
     cursor: pointer;
   }
 
@@ -657,26 +657,26 @@
 
   .row-title {
     font-family: var(--font-ui);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     font-weight: 500;
   }
 
   .row-desc {
     font-family: var(--font-ui);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     line-height: 1.45;
     color: var(--muted);
   }
 
   code {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   .copy {
     margin: 0;
     font-family: var(--font-ui);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     line-height: 1.5;
     color: var(--muted);
   }
@@ -697,7 +697,7 @@
     border: 1px solid var(--border);
     border-radius: var(--r-md);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-sm);
   }
 
   .stepper button {
@@ -775,7 +775,7 @@
   .ws-name {
     overflow: hidden;
     font-family: var(--font-ui);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     font-weight: 500;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -784,7 +784,7 @@
   .ws-path {
     overflow: hidden;
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     color: var(--muted);
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -792,7 +792,7 @@
 
   .ws-count {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     color: var(--muted);
     white-space: nowrap;
   }
@@ -805,7 +805,7 @@
     background: transparent;
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     font-weight: 500;
     cursor: pointer;
   }
@@ -825,7 +825,7 @@
     background: var(--bg);
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     text-align: left;
     cursor: pointer;
   }
@@ -844,7 +844,7 @@
 
   .add-hint {
     margin-left: 4px;
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
 
   /* ── Keyboard ──────────────────────────────────────────────────────────── */
@@ -856,7 +856,7 @@
     flex: 1;
     min-width: 0;
     font-family: var(--font-ui);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
   }
 
   .key-chords {
@@ -892,7 +892,7 @@
     background: transparent;
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     font-weight: 500;
     white-space: nowrap;
     cursor: pointer;
@@ -925,7 +925,7 @@
     border-radius: 13px;
     background: var(--surface2);
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
 
   .chip-x {
@@ -950,7 +950,7 @@
     background: transparent;
     color: var(--text);
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     outline: none;
   }
 
@@ -980,14 +980,14 @@
   .hook-name {
     width: 130px;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     font-weight: 500;
   }
 
   .hook-desc {
     flex: 1;
     font-family: var(--font-ui);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     color: var(--muted);
   }
 
@@ -997,7 +997,7 @@
     background: var(--surface2);
     color: var(--muted);
     font-family: var(--font-ui);
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     font-weight: 500;
   }
 
@@ -1011,7 +1011,7 @@
     border: 1px solid var(--border);
     border-radius: var(--r-md);
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     color: var(--muted);
   }
 </style>
