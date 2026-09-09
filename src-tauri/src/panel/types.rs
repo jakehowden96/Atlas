@@ -10,8 +10,6 @@ pub struct PanelData {
     #[serde(default)]
     pub is_git: bool,
     pub diff: Option<DiffData>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plan: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,19 +46,6 @@ pub struct GitStatus {
     pub has_unpushed: bool,
     pub commits_behind: u32,
     pub branch: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RepoInfo {
-    pub name: String,
-    pub branch: String,
-    pub commits_behind: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BranchInfo {
-    pub name: String,
-    pub is_current: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

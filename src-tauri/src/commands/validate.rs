@@ -53,32 +53,6 @@ pub(crate) fn validate_branch_name(branch: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn validate_file_paths(cwd: &str, files: &[String]) -> Result<(), String> {
-    let base = match std::fs::canonicalize(cwd) {
-        Ok(p) => p,
-        Err(_) => return Err(format!("Cannot resolve working directory: {}", cwd)),
-    };
-    for file in files {
-        if file.is_empty() {
-            return Err("File path cannot be empty".to_string());
-        }
-        if std::path::Path::new(file).is_absolute() {
-            return Err(format!("File path must be relative: {}", file));
-        }
-        // Reject any path containing .. components to prevent traversal
-        if file.split('/').any(|c| c == "..") || file.split('\\').any(|c| c == "..") {
-            return Err(format!("File path contains '..': {}", file));
-        }
-        let resolved = base.join(file);
-        let normalized = resolved.to_string_lossy();
-        let base_str = base.to_string_lossy();
-        if !normalized.starts_with(base_str.as_ref()) {
-            return Err(format!("File path escapes repository: {}", file));
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,7 +108,8 @@ mod tests {
 
     #[test]
     fn validate_cwd_accepts_existing_dir() {
-        assert!(validate_cwd("/tmp").is_ok());
+        let tmp = std::env::temp_dir();
+        assert!(validate_cwd(tmp.to_str().unwrap()).is_ok());
     }
 
     #[test]
@@ -173,26 +148,6 @@ mod tests {
     #[test]
     fn validate_branch_name_rejects_lock_suffix() {
         assert!(validate_branch_name("refs/heads/main.lock").is_err());
-    }
-
-    #[test]
-    fn validate_file_paths_rejects_absolute_path() {
-        assert!(validate_file_paths("/tmp", &["/etc/passwd".to_string()]).is_err());
-    }
-
-    #[test]
-    fn validate_file_paths_rejects_traversal() {
-        assert!(validate_file_paths("/tmp", &["../../etc/passwd".to_string()]).is_err());
-    }
-
-    #[test]
-    fn validate_file_paths_accepts_relative() {
-        assert!(validate_file_paths("/tmp", &["subdir/file.txt".to_string()]).is_ok());
-    }
-
-    #[test]
-    fn validate_file_paths_rejects_empty() {
-        assert!(validate_file_paths("/tmp", &["".to_string()]).is_err());
     }
 
     #[test]

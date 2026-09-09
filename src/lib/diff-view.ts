@@ -1,6 +1,6 @@
 import type { DiffFile, DiffHunk } from "./diff-parser";
 
-// Pure helpers shared by DiffViewer and its subcomponents
+// Pure helpers shared by the Changes drawer and its subcomponents
 // (DiffFileTree, DiffFileCard). Extracted so the logic is unit-testable.
 
 /** Flat list entry: a parsed file with pre-computed +/- counts. */
@@ -106,20 +106,6 @@ export function cssEscape(s: string): string {
 
 export function totalLines(file: DiffFile): number {
   return file.hunks.reduce((sum, h) => sum + h.lines.length, 0);
-}
-
-export function renderRawForFile(file: DiffFile): string {
-  const out: string[] = [];
-  for (const hunk of file.hunks) {
-    out.push(hunk.header);
-    for (const line of hunk.lines) {
-      if (line.type === "hunk-header") continue;
-      if (line.type === "add") out.push("+" + line.content);
-      else if (line.type === "remove") out.push("-" + line.content);
-      else out.push(" " + line.content);
-    }
-  }
-  return out.join("\n");
 }
 
 // ---------- Split view ----------

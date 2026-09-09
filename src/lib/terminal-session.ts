@@ -5,12 +5,13 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel, getPanelData } from "./ipc";
 import { setTabTitle, activeTabId, setTabNeedsInput, setTabReady, tabs } from "./stores/terminal";
 import { panelData } from "./stores/panel";
+import { keymap, terminalFontSize } from "./stores/settings";
+import { matchesAnyBinding } from "./keymap";
 import type { PanelData } from "../types/panel";
 import { updateSessionLabelByTabId } from "./stores/workspace";
 import { get } from "svelte/store";
 import { showToast } from "./stores/toast";
-import { setRefreshHandler } from "./shortcuts";
-import { xtermTheme } from "./theme";
+import { activeXtermTheme, themeMode } from "./theme";
 import { log } from "./logger";
 
 export interface TerminalSessionOptions {
@@ -21,6 +22,11 @@ export interface TerminalSessionOptions {
   cwd?: string;
   onData?: (data: string) => void;
 }
+
+/** How long a terminal waits for its container to be laid out before spawning
+ *  the PTY anyway. Long enough to cover a view switch, short enough that a tab
+ *  nobody opens still gets a shell. */
+const SPAWN_SIZE_TIMEOUT_MS = 1000;
 
 export class TerminalSession {
   private terminal: Terminal;
@@ -34,20 +40,93 @@ export class TerminalSession {
   private _visible: boolean;
   private initialCwd?: string;
   private externalOnData?: (data: string) => void;
+  private unsubscribeTheme: (() => void) | null = null;
+  private unsubscribeFontSize: (() => void) | null = null;
+  private prefersDark: MediaQueryList | null = null;
+  private container: HTMLDivElement;
+  /** Held while the container has no size yet; see `spawnWhenSized`. */
+  private pendingSpawn: ((ptyId: number) => void) | null = null;
+  private spawnFallback: ReturnType<typeof setTimeout> | null = null;
+
+  /** Re-read the palette for the current mode; also fires on OS-preference
+      changes so a terminal on "system" follows the OS without a respawn. */
+  private applyXtermTheme = () => {
+    this.terminal.options.theme = activeXtermTheme(get(themeMode));
+  };
+
+  /** Settings' font-size stepper reaches every open terminal through this.
+      xterm reflows the buffer on the change, so the pane has to be refit and
+      the PTY told its new dimensions. The subscribe fires once immediately
+      with the size the terminal was built at, where this is a no-op. */
+  private applyFontSize = (size: number) => {
+    if (this.terminal.options.fontSize === size) return;
+    this.terminal.options.fontSize = size;
+    this.refit();
+  };
+
+  /**
+   * True once the browser has given the container a box.
+   *
+   * A view Atlas is not showing is `display: none` (`App.svelte` `.view.hidden`),
+   * so everything inside it measures 0x0 — and a tab is constructed the moment
+   * it enters `$tabs`, which is usually while the Sessions grid is still up.
+   * `fit()` against a 0x0 element does not fail; it hands xterm a fallback
+   * geometry, and a PTY spawned at that size lays the TUI out for a viewport
+   * that is not the one on screen.
+   */
+  private hasSize(): boolean {
+    return this.container.clientWidth > 0 && this.container.clientHeight > 0;
+  }
+
+  /** Fit to the container and tell the PTY, but never against a 0x0 box. */
+  private refit() {
+    if (!this.hasSize()) return;
+    this.fitAddon.fit();
+    if (this.ptyId !== null) {
+      ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
+    }
+  }
 
   constructor(opts: TerminalSessionOptions) {
     this.tabId = opts.tabId;
+    this.container = opts.container;
     this._visible = opts.visible;
     this.initialCwd = opts.cwd;
     this.externalOnData = opts.onData;
 
     this.terminal = new Terminal({
       cursorBlink: true,
-      fontSize: 14,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
-      theme: xtermTheme,
+      fontSize: get(terminalFontSize),
+      /* Claude Code's TUI draws box- and half-block art that must tile
+         vertically; a loose line height leaves gaps between rows and breaks
+         the banner. 1.2 keeps the pane readable without splitting glyphs. */
+      lineHeight: 1.2,
+      fontFamily: "'Geist Mono Variable', 'Geist Mono', monospace",
+      /* Geist Mono is a variable font, and at 400 in the WebGL renderer its
+         strokes read lighter than the same face in the surrounding UI. 500 is
+         the smallest step that looks deliberate; 600 blooms against --term-bg
+         in the light theme. */
+      fontWeight: 500,
+      fontWeightBold: 700,
+      /* theme.ts constrains the 16 named ANSI slots, but Claude Code's TUI also
+         leans on dim/faint SGR and 256-colour indices an ITheme cannot name.
+         This is xterm's own lever over those paths, and the WebGL renderer
+         loaded below honours it. 7 rather than 4.5, to match the floor the
+         named slots are held to in `theme.ts`. */
+      minimumContrastRatio: 7,
+      /* xterm keeps 1000 lines by default, and a Claude Code session passes
+         that inside an hour — the earlier transcript was genuinely gone, not
+         just unpainted. 10k lines is roughly a full day of one session and
+         costs a few MB; every tab stays mounted for the life of the app, so
+         this is per-tab memory and not a number to raise casually. */
+      scrollback: 10000,
+      theme: activeXtermTheme(get(themeMode)),
       allowProposedApi: true,
     });
+
+    this.unsubscribeTheme = themeMode.subscribe(this.applyXtermTheme);
+    this.prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
+    this.prefersDark.addEventListener("change", this.applyXtermTheme);
 
     this.fitAddon = new FitAddon();
     this.terminal.loadAddon(this.fitAddon);
@@ -61,12 +140,13 @@ export class TerminalSession {
       // WebGL not available, canvas renderer is fine
     }
 
-    this.fitAddon.fit();
+    // After the fit addon exists — the first emission has to be able to refit.
+    this.unsubscribeFontSize = terminalFontSize.subscribe(this.applyFontSize);
     this.registerKeyHandler();
     this.registerOscHandlers();
     this.registerReadinessHandler();
     this.setupResizeObserver(opts.container);
-    this.spawnPty(opts.onPtyReady);
+    this.spawnWhenSized(opts.onPtyReady);
     this.setupEnterRefresh();
     if (this._visible) this.startPolling();
   }
@@ -74,47 +154,39 @@ export class TerminalSession {
   private registerKeyHandler() {
     this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       if (e.type !== "keydown") return true;
-      // Pass through global shortcuts to the window-level handler — returning
-      // false prevents xterm from consuming the key so it bubbles up to
-      // TerminalContainer's <svelte:window onkeydown>.  We must NOT call
-      // handleGlobalKeydown here because the window handler already does,
-      // which would cause actions like openFile to fire twice.
-      if (e.ctrlKey && e.key === "Tab") return false;
-      if (e.ctrlKey && !e.shiftKey && e.key === "t") return false;
-      if (e.ctrlKey && !e.shiftKey && e.key === "w") return false;
-      if (e.ctrlKey && !e.shiftKey && e.key === "o") return false;
-      if (e.ctrlKey && !e.shiftKey && e.key === "s") return false;
-      if (e.ctrlKey && !e.shiftKey && e.key >= "1" && e.key <= "9") return false;
-      // All Ctrl+Shift combos are global shortcuts (panel toggle, section
-      // switching, manual refresh) — pass them all through rather than
-      // maintaining a duplicate list that drifts from shortcuts.ts.
-      if (e.ctrlKey && e.shiftKey) return false;
-      return true;
+      // Bare Escape stays the Claude Code TUI's while the terminal has focus,
+      // so it is consumed here whatever the keymap says. The one exception is
+      // the platform modifier: mod+Escape is `backToSessions`, and passes
+      // through with every other chord below.
+      if (e.key === "Escape" && !e.metaKey && !e.ctrlKey) return true;
+      // Pass Mission Control's global chords through to the window-level
+      // handler — returning false prevents xterm from consuming the key so it
+      // bubbles up to App.svelte's <svelte:window onkeydown>.  We must NOT
+      // call handleGlobalKeydown here because the window handler already does,
+      // which would fire every action twice.  Reading the live keymap — rather
+      // than a hardcoded list — is what keeps a rebound chord working inside a
+      // focused terminal.  Alt disqualifies every chord inside `matchBinding`
+      // for the reason `keymap.ts` gives: AltGr is Ctrl+Alt, and the terminal
+      // must still receive what it types.
+      return !matchesAnyBinding(e, get(keymap));
     });
   }
 
-  private checkOscReadiness() {
-    const tab = get(tabs).find(t => t.id === this.tabId);
-    if (tab?.type === "terminal" && tab.commandWrittenAt && !tab.ready) {
-      // 300ms gate: shell preexec hooks fire within ~50ms of command entry;
-      // Claude Code's title arrives 500ms+ later. This cleanly separates them.
-      if (Date.now() - tab.commandWrittenAt > 300) {
-        setTabReady(this.tabId);
-      }
-    }
-  }
-
   private registerOscHandlers() {
-    // OSC 0 & 2: tab title — also triggers readiness after the command gate
+    // OSC 0 & 2: tab title. Titles do *not* mark the tab ready — only entering
+    // the alternate screen buffer does. A title used to count once it arrived
+    // more than 300ms after the command was written, on the theory that the
+    // shell's own titles land sooner than Claude Code's; a prompt that paints
+    // later than that — a slow PSReadLine, oh-my-posh — cleared the overlay
+    // while the shell still had `claude --session-id …` on screen, which is
+    // the raw command people saw flash before the TUI.
     this.terminal.parser.registerOscHandler(0, (data) => {
       setTabTitle(this.tabId, data);
-      this.checkOscReadiness();
       updateSessionLabelByTabId(this.tabId, data);
       return true;
     });
     this.terminal.parser.registerOscHandler(2, (data) => {
       setTabTitle(this.tabId, data);
-      this.checkOscReadiness();
       updateSessionLabelByTabId(this.tabId, data);
       return true;
     });
@@ -149,7 +221,7 @@ export class TerminalSession {
     this.terminal.parser.registerCsiHandler({ final: "h", prefix: "?" }, (params) => {
       if (params.includes(1049)) {
         const tab = get(tabs).find(t => t.id === this.tabId);
-        if (tab?.type === "terminal" && tab.ready === false) {
+        if (tab?.ready === false) {
           setTabReady(this.tabId);
         }
       }
@@ -164,23 +236,60 @@ export class TerminalSession {
     // we measure the container and fit xterm to it.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        this.fitAddon.fit();
+        if (!this.hasSize()) return;
+        this.refit();
         this.terminal.focus();
-        if (this.ptyId !== null) {
-          ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
-        }
       });
     });
   }
 
+  /**
+   * Spawn the PTY at the size the pane really is.
+   *
+   * When the container already has a box — the tab was created while its view
+   * was on screen — this is the old immediate path. Otherwise the spawn waits
+   * for the first non-zero measurement, which arrives from the resize observer
+   * the moment the view stops being `display: none`.
+   *
+   * The timeout is the floor, not the plan: if the container somehow never
+   * gains a size, spawning late at a fallback geometry is what this code did
+   * before, and is better than a tab that never gets a PTY at all.
+   */
+  private spawnWhenSized(onPtyReady: (ptyId: number) => void) {
+    if (this.hasSize()) {
+      this.fitAddon.fit();
+      void this.spawnPty(onPtyReady);
+      return;
+    }
+    this.pendingSpawn = onPtyReady;
+    this.spawnFallback = setTimeout(() => {
+      log.warn("terminal", `tab=${this.tabId} never got a size; spawning anyway`);
+      this.flushPendingSpawn();
+    }, SPAWN_SIZE_TIMEOUT_MS);
+  }
+
+  /** Start the deferred PTY, at whatever geometry the terminal now has. */
+  private flushPendingSpawn() {
+    const onPtyReady = this.pendingSpawn;
+    if (!onPtyReady) return;
+    this.pendingSpawn = null;
+    if (this.spawnFallback) {
+      clearTimeout(this.spawnFallback);
+      this.spawnFallback = null;
+    }
+    if (this.hasSize()) this.fitAddon.fit();
+    void this.spawnPty(onPtyReady);
+  }
+
   private setupResizeObserver(container: HTMLDivElement) {
     this.resizeObserver = new ResizeObserver(() => {
-      if (this._visible) {
-        this.fitAddon.fit();
-        if (this.ptyId !== null) {
-          ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
-        }
+      if (!this.hasSize()) return;
+      // The first real measurement is what the deferred spawn was waiting for.
+      if (this.pendingSpawn) {
+        this.flushPendingSpawn();
+        return;
       }
+      if (this._visible) this.refit();
     });
     this.resizeObserver.observe(container);
   }
@@ -212,7 +321,7 @@ export class TerminalSession {
       }
     } catch (e) {
       log.error("terminal", `spawnPty failed for tab=${this.tabId}`, e);
-      showToast(`Failed to spawn terminal: ${e}`);
+      showToast("Failed to spawn terminal", { body: String(e) });
       return;
     }
 
@@ -270,7 +379,7 @@ export class TerminalSession {
         }
       } catch (e) {
         log.error("terminal", `panel refresh failed for tab=${this.tabId}`, e);
-        showToast(`Panel refresh failed: ${e}`);
+        showToast("Panel refresh failed", { body: String(e) });
       }
     }, 300);
   }
@@ -306,11 +415,8 @@ export class TerminalSession {
     // First rAF: fit terminal and focus (lightweight, runs in the next paint)
     requestAnimationFrame(() => {
       if (!this._visible) return;
-      this.fitAddon.fit();
+      this.refit();
       this.terminal.focus();
-      if (this.ptyId !== null) {
-        ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
-      }
 
       // Second rAF: guarantees a paint between tab highlight and the heavier panel data work
       requestAnimationFrame(() => {
@@ -327,9 +433,6 @@ export class TerminalSession {
         } else {
           panelData.set(null);
         }
-        setRefreshHandler(() => {
-          if (this.currentCwd) this.scheduleRefresh(this.currentCwd);
-        });
         this.startPolling();
       });
     });
@@ -338,6 +441,10 @@ export class TerminalSession {
   destroy() {
     log.info("terminal", `destroy tab=${this.tabId} ptyId=${this.ptyId}`);
     this.resizeObserver?.disconnect();
+    if (this.spawnFallback) clearTimeout(this.spawnFallback);
+    this.unsubscribeTheme?.();
+    this.unsubscribeFontSize?.();
+    this.prefersDark?.removeEventListener("change", this.applyXtermTheme);
     this.stopPolling();
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     if (this.ptyId !== null) {

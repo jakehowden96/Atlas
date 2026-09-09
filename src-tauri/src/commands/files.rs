@@ -1,0 +1,700 @@
+//! Files screen backend: the workspace document tree, `~/.claude/plans`,
+//! reading and writing documents, and watching for external edits.
+//!
+//! The frontend cannot do this with `@tauri-apps/plugin-fs` alone: workspaces
+//! routinely live outside `$HOME`, and a recursive walk from the frontend would
+//! cost one IPC round trip per directory.
+
+use super::validate::validate_cwd;
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use serde::Serialize;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{mpsc, Mutex};
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter, State};
+
+/// The extensions the Files screen shows and edits.
+///
+/// An allowlist rather than "anything that is not binary": the editor reads a
+/// whole file into a textarea, so a `.png` or a `.pdf` reaching it renders as
+/// mojibake. Add to this list to teach the screen a new file type — nothing
+/// else needs to change, since a file with no Markdown preview simply opens in
+/// the source pane.
+const DOC_EXTENSIONS: &[&str] = &[
+    // Prose.
+    "md", "markdown", "txt", "rst", "adoc",
+    // Web and app source.
+    "ts", "tsx", "js", "jsx", "mjs", "cjs", "svelte", "vue", "css", "scss", "less", "html", "htm",
+    // Everything else people keep in a repo.
+    "rs", "go", "py", "rb", "java", "kt", "kts", "swift", "c", "h", "cc", "cpp", "hpp", "cs", "php",
+    "lua", "sql", "sh", "bash", "zsh", "ps1", "r",
+    // Config and data.
+    "json", "jsonc", "yaml", "yml", "toml", "ini", "cfg", "xml",
+];
+
+/// Caps on the walk, so a stray home-directory workspace cannot hang the UI.
+const MAX_DEPTH: usize = 8;
+const MAX_ENTRIES: usize = 2000;
+
+/// Largest file the editor will open.
+const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
+
+/// Gap of quiet before a changed path is announced. One save is several
+/// filesystem events, and the frontend re-reads the file when it hears about
+/// one, so this is a trailing edge — emitting on the first event would race a
+/// half-written file.
+const DEBOUNCE: Duration = Duration::from_millis(300);
+
+#[derive(serde::Serialize)]
+pub struct DocEntry {
+    /// Forward-slash path relative to the workspace root — the tree key.
+    pub rel_path: String,
+    pub name: String,
+    /// Directories are returned too, so the tree can show empty folders.
+    pub is_dir: bool,
+    pub size: u64,
+    /// RFC3339, or None when the platform does not report mtime.
+    pub modified: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct PlanEntry {
+    pub path: String,
+    pub name: String,
+    pub modified: Option<String>,
+}
+
+/// One child of a browsed directory, for the Open… dialog.
+#[derive(serde::Serialize)]
+pub struct DirEntry {
+    pub name: String,
+    /// Absolute.
+    pub path: String,
+    pub is_dir: bool,
+    /// A document the editor can open. Never true for a directory.
+    pub is_text: bool,
+}
+
+fn rfc3339(time: std::time::SystemTime) -> String {
+    chrono::DateTime::<chrono::Utc>::from(time).to_rfc3339()
+}
+
+/// True for the extensions the Files screen handles, case-insensitively.
+fn is_doc_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| DOC_EXTENSIONS.iter().any(|d| ext.eq_ignore_ascii_case(d)))
+}
+
+/// Directories the walk never descends into. `.git` and `.svelte-kit` fall out
+/// of the leading-dot rule; the rest are build and dependency output.
+fn should_prune_dir(name: &str) -> bool {
+    name.starts_with('.') || matches!(name, "node_modules" | "target" | "dist" | "build")
+}
+
+/// Every document under `root`, plus the directories on the way to them.
+///
+/// Sorted directories-first then case-insensitively by name, which also orders
+/// each sibling group that way once the frontend rebuilds the tree — so it does
+/// not have to re-sort.
+fn walk_docs(root: &Path) -> Vec<DocEntry> {
+    let mut entries: Vec<DocEntry> = Vec::new();
+    let mut stack = vec![(root.to_path_buf(), 0usize)];
+    let mut depth_capped = false;
+
+    'walk: while let Some((dir, depth)) = stack.pop() {
+        let read_dir = match std::fs::read_dir(&dir) {
+            Ok(r) => r,
+            Err(e) => {
+                log::warn!("Skipping {} while walking docs: {}", dir.display(), e);
+                continue;
+            }
+        };
+
+        for entry in read_dir.flatten() {
+            if entries.len() >= MAX_ENTRIES {
+                log::warn!(
+                    "Doc walk of {} hit the {} entry cap — the tree is truncated",
+                    root.display(),
+                    MAX_ENTRIES
+                );
+                break 'walk;
+            }
+
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let name = name.to_string();
+            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+
+            if is_dir {
+                if should_prune_dir(&name) {
+                    continue;
+                }
+                if depth + 1 < MAX_DEPTH {
+                    stack.push((path.clone(), depth + 1));
+                } else {
+                    depth_capped = true;
+                }
+            } else if !is_doc_file(&path) {
+                continue;
+            }
+
+            let Ok(rel) = path.strip_prefix(root) else {
+                continue;
+            };
+            let metadata = entry.metadata().ok();
+
+            entries.push(DocEntry {
+                rel_path: rel.to_string_lossy().replace('\\', "/"),
+                name,
+                is_dir,
+                size: if is_dir {
+                    0
+                } else {
+                    metadata.as_ref().map(|m| m.len()).unwrap_or(0)
+                },
+                modified: metadata.and_then(|m| m.modified().ok()).map(rfc3339),
+            });
+        }
+    }
+
+    if depth_capped {
+        log::warn!(
+            "Doc walk of {} hit the depth cap of {} — deeper directories were skipped",
+            root.display(),
+            MAX_DEPTH
+        );
+    }
+
+    entries.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            .then_with(|| a.rel_path.cmp(&b.rel_path))
+    });
+    entries
+}
+
+/// Every file the editor can open under a workspace, directories included.
+#[tauri::command(async)]
+pub async fn list_workspace_docs(workspace_path: String) -> Result<Vec<DocEntry>, String> {
+    validate_cwd(&workspace_path)?;
+    tokio::task::spawn_blocking(move || Ok(walk_docs(Path::new(&workspace_path))))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// Every child of `dir`, one level deep and unfiltered.
+///
+/// `walk_docs` recurses and keeps only documents, which is the wrong shape for
+/// a folder browser: the Open… dialog lists what is really in the folder and
+/// greys out what it cannot open, so the folder looks like itself.
+fn list_children(dir: &Path) -> Result<Vec<DirEntry>, String> {
+    let read_dir = std::fs::read_dir(dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
+
+    let mut entries: Vec<DirEntry> = Vec::new();
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        entries.push(DirEntry {
+            name: name.to_string(),
+            path: path.to_string_lossy().to_string(),
+            is_dir,
+            is_text: !is_dir && is_doc_file(&path),
+        });
+    }
+
+    entries.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    Ok(entries)
+}
+
+/// The contents of one directory, for the Open… dialog's browser.
+#[tauri::command(async)]
+pub async fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
+    validate_cwd(&path)?;
+    tokio::task::spawn_blocking(move || list_children(Path::new(&path)))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+}
+
+fn claude_plans_dir() -> Result<PathBuf, String> {
+    dirs::home_dir()
+        .map(|h| h.join(".claude").join("plans"))
+        .ok_or_else(|| "Could not resolve the home directory".to_string())
+}
+
+/// The `.md` files directly inside `dir`. `name` is the file stem, because the
+/// real names are a slugified cwd plus a random suffix
+/// (`c-users-me-github-atlas-atl-curried-thacker.md`), not a session id.
+/// Matching a plan to a workspace happens in the frontend, where the workspace
+/// list lives.
+fn list_plans_in(dir: &Path) -> Result<Vec<PlanEntry>, String> {
+    let read_dir = match std::fs::read_dir(dir) {
+        Ok(r) => r,
+        // A fresh install has no plans directory.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("{}: {}", dir.display(), e)),
+    };
+
+    let mut plans: Vec<PlanEntry> = Vec::new();
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if !path.is_file()
+            || !path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("md"))
+        {
+            continue;
+        }
+        let Some(name) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        plans.push(PlanEntry {
+            name: name.to_string(),
+            path: path.to_string_lossy().to_string(),
+            modified: entry
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .map(rfc3339),
+        });
+    }
+
+    plans.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(plans)
+}
+
+#[tauri::command(async)]
+pub fn list_claude_plans() -> Result<Vec<PlanEntry>, String> {
+    list_plans_in(&claude_plans_dir()?)
+}
+
+/// Absolute, and one of the document extensions — the Files screen is documents
+/// only.
+fn validate_doc_path(path: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(path);
+    if !path.is_absolute() {
+        return Err(format!("Path must be absolute: {}", path.display()));
+    }
+    if !is_doc_file(&path) {
+        return Err(format!(
+            "Not a file type the Files screen can open: {}",
+            path.display()
+        ));
+    }
+    Ok(path)
+}
+
+#[tauri::command(async)]
+pub fn read_text_file_at(path: String) -> Result<String, String> {
+    let path = validate_doc_path(&path)?;
+    let metadata = std::fs::metadata(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
+    if metadata.len() > MAX_READ_BYTES {
+        return Err(format!(
+            "{} is {} bytes — the editor opens files up to 2 MB",
+            path.display(),
+            metadata.len()
+        ));
+    }
+    std::fs::read_to_string(&path).map_err(|e| format!("{}: {}", path.display(), e))
+}
+
+#[tauri::command(async)]
+pub fn write_text_file_at(path: String, contents: String) -> Result<(), String> {
+    let path = validate_doc_path(&path)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("Path has no parent directory: {}", path.display()))?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| format!("Path has no file name: {}", path.display()))?;
+
+    // New notes land in directories that may not exist yet.
+    std::fs::create_dir_all(parent).map_err(|e| format!("{}: {}", parent.display(), e))?;
+    // Write through the resolved parent, so a symlinked directory cannot
+    // redirect the write somewhere outside the tree the user picked.
+    let real_parent =
+        std::fs::canonicalize(parent).map_err(|e| format!("{}: {}", parent.display(), e))?;
+
+    std::fs::write(real_parent.join(name), contents)
+        .map_err(|e| format!("{}: {}", path.display(), e))
+}
+
+/// One `notify` watcher per watched workspace. Dropping a watcher stops it and
+/// disconnects its channel, which ends the matching debounce thread.
+#[derive(Default)]
+pub struct DocsWatchers(Mutex<HashMap<String, RecommendedWatcher>>);
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocsChangedEvent {
+    workspace_path: String,
+    rel_path: String,
+}
+
+/// The forward-slash path of a changed file relative to the workspace, or
+/// `None` when it is not a document the Files screen shows.
+///
+/// `roots` is every spelling of the workspace an event path may arrive under,
+/// because the two backends disagree: `notify`'s macOS watcher canonicalizes
+/// the root and FSEvents reports its own resolved path, so a workspace reached
+/// through a symlink (`/tmp` -> `/private/tmp`) never matches the path the UI
+/// passed in — while on Windows the events are joined onto that path verbatim
+/// and it is the *canonical* form (`\\?\C:\...`) that fails to strip.
+fn watched_rel_path(roots: &[PathBuf], path: &Path) -> Option<String> {
+    if !is_doc_file(path) {
+        return None;
+    }
+    let rel = roots.iter().find_map(|root| path.strip_prefix(root).ok())?;
+    let names: Vec<&str> = rel
+        .components()
+        .map(|c| c.as_os_str().to_str())
+        .collect::<Option<Vec<_>>>()?;
+    let (_, dirs) = names.split_last()?;
+    if dirs.iter().any(|d| should_prune_dir(d)) {
+        return None;
+    }
+    Some(names.join("/"))
+}
+
+fn spawn_docs_watcher(
+    app: AppHandle,
+    workspace_path: String,
+) -> Result<RecommendedWatcher, String> {
+    let root = PathBuf::from(&workspace_path);
+    // Both spellings of the root — see `watched_rel_path`. The raw one is kept
+    // first because it is what the Windows backend reports.
+    let mut roots = vec![root.clone()];
+    match std::fs::canonicalize(&root) {
+        Ok(canonical) if canonical != root => roots.push(canonical),
+        Ok(_) => {}
+        Err(e) => log::warn!("Could not canonicalize {}: {}", root.display(), e),
+    }
+    let (tx, rx) = mpsc::channel();
+
+    let mut watcher = RecommendedWatcher::new(
+        move |res: Result<Event, notify::Error>| {
+            if let Ok(event) = res {
+                let _ = tx.send(event);
+            }
+        },
+        notify::Config::default().with_poll_interval(Duration::from_millis(500)),
+    )
+    .map_err(|e| e.to_string())?;
+
+    watcher
+        .watch(&root, RecursiveMode::Recursive)
+        .map_err(|e| e.to_string())?;
+
+    std::thread::spawn(move || {
+        // Path -> when it was last touched. A path is announced once it has
+        // been quiet for DEBOUNCE, so a burst of writes to one file collapses
+        // into a single event while a second file still gets its own.
+        let mut pending: HashMap<String, Instant> = HashMap::new();
+
+        loop {
+            match rx.recv_timeout(DEBOUNCE) {
+                Ok(event) => {
+                    if matches!(
+                        event.kind,
+                        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+                    ) {
+                        for path in &event.paths {
+                            if let Some(rel) = watched_rel_path(&roots, path) {
+                                pending.insert(rel, Instant::now());
+                            }
+                        }
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                // The watcher was dropped by `stop_docs_watch`.
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+
+            let now = Instant::now();
+            pending.retain(|rel_path, last_seen| {
+                if now.duration_since(*last_seen) < DEBOUNCE {
+                    return true;
+                }
+                let _ = app.emit(
+                    "docs-changed",
+                    DocsChangedEvent {
+                        workspace_path: workspace_path.clone(),
+                        rel_path: rel_path.clone(),
+                    },
+                );
+                false
+            });
+        }
+    });
+
+    Ok(watcher)
+}
+
+/// Watch a workspace for document edits made outside Atlas. Changes then arrive
+/// as debounced `docs-changed` events until `stop_docs_watch`.
+#[tauri::command]
+pub fn start_docs_watch(
+    workspace_path: String,
+    app: AppHandle,
+    watchers: State<'_, DocsWatchers>,
+) -> Result<(), String> {
+    validate_cwd(&workspace_path)?;
+    let mut watchers = watchers.0.lock().map_err(|e| e.to_string())?;
+    if watchers.contains_key(&workspace_path) {
+        return Ok(());
+    }
+    let watcher = spawn_docs_watcher(app, workspace_path.clone())?;
+    watchers.insert(workspace_path, watcher);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn stop_docs_watch(
+    workspace_path: String,
+    watchers: State<'_, DocsWatchers>,
+) -> Result<(), String> {
+    let mut watchers = watchers.0.lock().map_err(|e| e.to_string())?;
+    watchers.remove(&workspace_path);
+    Ok(())
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn touch(path: &Path) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "x").unwrap();
+    }
+
+    fn rel_paths(entries: &[DocEntry]) -> Vec<&str> {
+        entries.iter().map(|e| e.rel_path.as_str()).collect()
+    }
+
+    #[test]
+    fn doc_extensions_are_matched_case_insensitively() {
+        assert!(is_doc_file(Path::new("/w/notes.md")));
+        assert!(is_doc_file(Path::new("/w/NOTES.MD")));
+        assert!(is_doc_file(Path::new("/w/notes.txt")));
+        assert!(is_doc_file(Path::new("/w/notes.markdown")));
+        // Source files are documents too — the screen edits a repo, not a
+        // notebook. Preview is still Markdown-only; these open as source.
+        assert!(is_doc_file(Path::new("/w/main.rs")));
+        assert!(is_doc_file(Path::new("/w/ipc.TS")));
+        assert!(is_doc_file(Path::new("/w/App.svelte")));
+        // Still an allowlist: a file the editor would render as mojibake, and
+        // one with no extension to match on, stay out.
+        assert!(!is_doc_file(Path::new("/w/icon.png")));
+        assert!(!is_doc_file(Path::new("/w/README")));
+    }
+
+    #[test]
+    fn walk_keeps_docs_and_prunes_build_and_vcs_dirs() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        touch(&root.join("README.md"));
+        touch(&root.join("docs/guide.markdown"));
+        touch(&root.join("src/main.rs"));
+        touch(&root.join("src/icon.png"));
+        touch(&root.join(".git/COMMIT_EDITMSG.md"));
+        touch(&root.join("node_modules/pkg/readme.md"));
+        touch(&root.join("target/debug/notes.txt"));
+
+        let entries = walk_docs(root);
+        let paths = rel_paths(&entries);
+
+        assert!(paths.contains(&"README.md"));
+        assert!(paths.contains(&"docs/guide.markdown"));
+        assert!(paths.contains(&"src/main.rs"), "source files are listed now");
+        assert!(!paths.iter().any(|p| p.contains(".git")));
+        assert!(!paths.iter().any(|p| p.contains("node_modules")));
+        assert!(!paths.iter().any(|p| p.contains("target")));
+        assert!(!paths.iter().any(|p| p.ends_with(".png")));
+        // Directories come back even when they hold no documents.
+        assert!(entries.iter().any(|e| e.rel_path == "src" && e.is_dir));
+    }
+
+    #[test]
+    fn walk_stops_at_the_depth_cap() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        touch(&root.join("d1/d2/d3/d4/d5/d6/d7/within.md"));
+        touch(&root.join("d1/d2/d3/d4/d5/d6/d7/d8/beyond.md"));
+
+        let entries = walk_docs(root);
+        let paths = rel_paths(&entries);
+
+        assert!(paths.contains(&"d1/d2/d3/d4/d5/d6/d7/within.md"));
+        assert!(!paths.iter().any(|p| p.ends_with("beyond.md")));
+    }
+
+    #[test]
+    fn walk_sorts_directories_first_then_by_name() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        touch(&root.join("Alpha.md"));
+        touch(&root.join("beta.md"));
+        touch(&root.join("zeta/inner.md"));
+
+        let entries = walk_docs(root);
+        assert_eq!(entries[0].rel_path, "zeta");
+        assert!(entries[0].is_dir);
+
+        let files: Vec<&str> = entries
+            .iter()
+            .filter(|e| !e.is_dir)
+            .map(|e| e.name.as_str())
+            .collect();
+        assert_eq!(files, vec!["Alpha.md", "beta.md", "inner.md"]);
+    }
+
+    #[test]
+    fn list_children_is_flat_and_marks_only_documents() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        touch(&root.join("notes.md"));
+        touch(&root.join("main.rs"));
+        touch(&root.join("icon.png"));
+        touch(&root.join("sub/deep.md"));
+
+        let entries = list_children(root).unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        // Directories first, then by name — and nothing from inside `sub`, which
+        // the dialog reaches by walking into it.
+        assert_eq!(names, vec!["sub", "icon.png", "main.rs", "notes.md"]);
+
+        let by_name = |n: &str| entries.iter().find(|e| e.name == n).unwrap();
+        assert!(by_name("notes.md").is_text);
+        assert!(by_name("main.rs").is_text);
+        // Listed so the folder looks right, but the dialog greys it out.
+        assert!(!by_name("icon.png").is_text);
+        assert!(by_name("sub").is_dir && !by_name("sub").is_text);
+    }
+
+    #[test]
+    fn write_text_file_at_refuses_a_path_the_editor_cannot_open() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("icon.png");
+        let err = write_text_file_at(
+            path.to_string_lossy().to_string(),
+            "not an image".to_string(),
+        )
+        .unwrap_err();
+        assert!(err.contains("icon.png"), "unexpected error: {}", err);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn write_text_file_at_accepts_a_source_path() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("src/main.rs");
+        write_text_file_at(path.to_string_lossy().to_string(), "fn main() {}".to_string())
+            .unwrap();
+        assert_eq!(
+            read_text_file_at(path.to_string_lossy().to_string()).unwrap(),
+            "fn main() {}"
+        );
+    }
+
+    #[test]
+    fn write_text_file_at_creates_parents_and_round_trips() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("notes/new/note.md");
+        write_text_file_at(path.to_string_lossy().to_string(), "hello".to_string()).unwrap();
+        assert_eq!(
+            read_text_file_at(path.to_string_lossy().to_string()).unwrap(),
+            "hello"
+        );
+    }
+
+    #[test]
+    fn list_plans_in_missing_directory_is_empty() {
+        let tmp = TempDir::new().unwrap();
+        assert!(list_plans_in(&tmp.path().join("no-plans-here"))
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn list_plans_in_returns_markdown_stems() {
+        let tmp = TempDir::new().unwrap();
+        touch(&tmp.path().join("c-users-me-github-atlas-atl-curried-thacker.md"));
+        touch(&tmp.path().join("notes.txt"));
+
+        let plans = list_plans_in(tmp.path()).unwrap();
+        assert_eq!(plans.len(), 1);
+        assert_eq!(plans[0].name, "c-users-me-github-atlas-atl-curried-thacker");
+        assert!(plans[0].path.ends_with(".md"));
+    }
+
+    #[test]
+    fn watched_paths_are_documents_outside_pruned_dirs() {
+        let roots = [PathBuf::from("/w")];
+        assert_eq!(
+            watched_rel_path(&roots, Path::new("/w/docs/guide.md")),
+            Some("docs/guide.md".to_string())
+        );
+        assert_eq!(
+            watched_rel_path(&roots, Path::new("/w/src/main.rs")),
+            Some("src/main.rs".to_string())
+        );
+        assert_eq!(watched_rel_path(&roots, Path::new("/w/src/icon.png")), None);
+        assert_eq!(
+            watched_rel_path(&roots, Path::new("/w/node_modules/pkg/readme.md")),
+            None
+        );
+        assert_eq!(watched_rel_path(&roots, Path::new("/elsewhere/a.md")), None);
+    }
+
+    #[test]
+    fn watched_paths_match_any_spelling_of_the_root() {
+        // The shape of a macOS event: the workspace was registered as `/tmp/w`
+        // and FSEvents reports the resolved `/private/tmp/w`. Neither root can
+        // strip both, which is why the watcher carries both.
+        let roots = [PathBuf::from("/tmp/w"), PathBuf::from("/private/tmp/w")];
+        assert_eq!(
+            watched_rel_path(&roots, Path::new("/private/tmp/w/notes.md")),
+            Some("notes.md".to_string())
+        );
+        assert_eq!(
+            watched_rel_path(&roots, Path::new("/tmp/w/notes.md")),
+            Some("notes.md".to_string())
+        );
+        assert_eq!(watched_rel_path(&roots, Path::new("/other/notes.md")), None);
+    }
+
+    #[test]
+    fn canonicalizing_a_real_root_keeps_it_strippable() {
+        // Guards the Windows half: `canonicalize` hands back a `\\?\C:\...`
+        // verbatim path there, and the events never carry that prefix — so the
+        // raw root has to stay in the list.
+        let tmp = TempDir::new().unwrap();
+        let raw = tmp.path().to_path_buf();
+        let canonical = std::fs::canonicalize(&raw).unwrap();
+        let roots = [raw.clone(), canonical.clone()];
+
+        assert_eq!(
+            watched_rel_path(&roots, &raw.join("notes.md")),
+            Some("notes.md".to_string())
+        );
+        assert_eq!(
+            watched_rel_path(&roots, &canonical.join("notes.md")),
+            Some("notes.md".to_string())
+        );
+    }
+}

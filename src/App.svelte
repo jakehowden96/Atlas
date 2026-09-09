@@ -1,149 +1,124 @@
 <script lang="ts">
-  
   import type { UnlistenFn } from "@tauri-apps/api/event";
-  import type { FileTab } from "./types/terminal";
-  import { open } from "@tauri-apps/plugin-dialog";
   import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-  import { Terminal } from "@xterm/xterm";
-import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { get } from "svelte/store";
-  import AgentManager from "./lib/components/layout/AgentManager.svelte";
-  import Resizer from "./lib/components/layout/Resizer.svelte";
-  import SettingsModal from "./lib/components/panel/SettingsModal.svelte";
-  import SidePanel from "./lib/components/panel/SidePanel.svelte";
   import Toast from "./lib/components/Toast.svelte";
-  import TerminalContainer from "./lib/components/terminal/TerminalContainer.svelte";
-  import { onClaudeNotification, onPanelUpdate, ptyKill, ptyWrite } from "./lib/ipc";
+  import FilesView from "./lib/components/files/FilesView.svelte";
+  import SessionsView from "./lib/components/sessions/SessionsView.svelte";
+  import PrsView from "./lib/components/prs/PrsView.svelte";
+  import SettingsModal from "./lib/components/settings/SettingsModal.svelte";
+  import ShortcutSheet from "./lib/components/settings/ShortcutSheet.svelte";
+  import JumpPalette from "./lib/components/session/JumpPalette.svelte";
+  import NewSessionModal from "./lib/components/session/NewSessionModal.svelte";
+  import StatsView from "./lib/components/stats/StatsView.svelte";
+  import SessionView from "./lib/components/session/SessionView.svelte";
+  import SegmentedControl, { type Segment } from "./lib/components/ui/SegmentedControl.svelte";
+  import { onClaudeNotification, onPanelUpdate, onSessionUpdate } from "./lib/ipc";
   import { log } from "./lib/logger";
-  import { panelData, panelVisible, togglePanel } from "./lib/stores/panel";
-  import { enableNotifications, loadSettings, skipPermissions } from "./lib/stores/settings";
-  import { activeTab, activeTabId, addTab, removeTab, setTabNeedsInput, setTabReady, sidebarTabOrder, tabs } from "./lib/stores/terminal";
+  import { buildTiles, shouldClearNeedsInput } from "./lib/overview";
+  import { filesTouched } from "./lib/session-view";
+  import { handleGlobalKeydown } from "./lib/shortcuts";
+  import { todayCost } from "./lib/stats-derive";
+  import { dirtyFiles } from "./lib/stores/files";
+  import { liveSessionList, upsertLiveSession } from "./lib/stores/liveSessions";
+  import { panelData, setSessionTouchedFiles } from "./lib/stores/panel";
+  import { prsAttentionCount, startPrPolling } from "./lib/stores/prs";
+  import { chords, enableNotifications, loadSettings, settingsOpen } from "./lib/stores/settings";
+  import { startStatsFeed, statsSummary } from "./lib/stores/stats";
+  import { activeTabId, setTabNeedsInput, tabs } from "./lib/stores/terminal";
+  import { activeView, jumpOpen, openNewSession, showView, type View } from "./lib/stores/view";
   import {
-    activeSessionId,
     activeWorkspacePath,
-    addSession,
     loadWorkspaces,
-    removeSession,
-    removeWorkspace,
-    resumeSession,
+    sessionDiffStats,
     setSessionDiffStats,
-    setWorkspaceColor,
-    addWorkspace as storeAddWorkspace,
-    stripBundleExtension,
-    updateSessionStatus,
-    workspaces,
+    visibleWorkspaces,
   } from "./lib/stores/workspace";
 
-  let panelFraction = $state(0.5);
-  let tabIndexMap = $derived(new Map($sidebarTabOrder.map((id, i) => [id, i + 1])));
-  let fileRows = $derived(
-    ($tabs.filter((t): t is FileTab => t.type === "file")).map((t) => ({
-      id: t.id,
-      title: t.title,
-      filePath: t.filePath,
-      workspacePath: t.workspacePath,
-      dirty: t.dirty,
-    })),
-  );
-  let sidebarWidth = $state(160);
-  let isResizing = $state(false);
-  let mainStageWidth = $state(0);
-  let panelWidth = $derived(Math.round(mainStageWidth * panelFraction));
   let unlisten: UnlistenFn | null = null;
   let unlistenNotification: UnlistenFn | null = null;
-  // eslint-disable-next-line svelte/prefer-svelte-reactivity
-  const spawningSessionIds = new Set<string>();
+  let unlistenSession: UnlistenFn | null = null;
+  let stopPrPolling: (() => void) | null = null;
+  let stopStatsFeed: (() => void) | null = null;
 
-  let openTabIds = $derived(new Set($tabs.map(t => t.id)));
-
-  // Generic terminal tabs the user has opened via the terminal button —
-  // anything of type "terminal" that isn't tied to a workspace session.
-  // These get a dedicated sidebar list so the user can return to them
-  // after switching away.
-  let sessionTabIds = $derived(
-    new Set(
-      $workspaces.flatMap((w) =>
-        w.sessions.map((s) => s.terminalTabId).filter((id): id is string => !!id),
-      ),
-    ),
+  // ── Top-bar status, off the same tiles the Sessions grid builds ───────────
+  // Not off `$liveSessionList`: the backend never reports `needsYou` — the
+  // transcript cannot see a permission prompt, so `live.rs` `finalize` only
+  // ever assigns Idle or Running, and a blocked session arrived here as
+  // "running" while its tile correctly said needs-you. The Notification hook's
+  // flag is the only needs-you signal and `buildTiles` is where it is folded
+  // in, so counting anywhere else is counting the wrong thing.
+  let needsInputTabs = $derived(
+    new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)),
   );
-  let terminalRows = $derived(
-    $tabs
-      .filter((t) => t.type === "terminal" && !sessionTabIds.has(t.id))
-      .map((t) => ({
-        id: t.id,
-        title: t.type === "terminal" ? t.title : "",
-        cwd: t.type === "terminal" ? t.cwd : undefined,
-      })),
+  let statusTiles = $derived(
+    buildTiles($liveSessionList, $visibleWorkspaces, $sessionDiffStats, needsInputTabs),
   );
+  let needsYou = $derived(statusTiles.filter((t) => t.state === "needsYou").length);
+  let running = $derived(statusTiles.filter((t) => t.state === "running").length);
+  let idle = $derived(statusTiles.filter((t) => t.state === "idle").length);
+  /* Today's spend comes off the persisted stats, not off `liveSessionList`:
+     that list holds only the sessions Atlas is tailing, so a day's work done
+     in Claude Code outside Atlas — or before this launch — read as $0. The
+     backend recomputes within a second of a transcript write, so this stays
+     current without a clock of its own beyond the midnight rollover. */
+  let costClock = $state(Date.now());
+  const costTicker = setInterval(() => {
+    costClock = Date.now();
+  }, 60_000);
+  onDestroy(() => clearInterval(costTicker));
+  let spendToday = $derived(todayCost($statsSummary, new Date(costClock)));
 
-  // Panel auto-hides when there are no tabs. When the first tab appears
-  // we auto-open it. Beyond that the user owns visibility via togglePanel —
-  // we don't reopen on every panelData update (that broke the close button).
-  // The PRs screen is a full-pane takeover (no diff context), so we force
-  // the panel closed while it's active and restore it when leaving.
-  let hadActiveTab = $state(false);
-  let prevSuppress = $state(false);
-  $effect(() => {
-    const hasActiveTab = !!$activeTabId;
-    const suppress = $activeTab?.type === "prs" || $activeTab?.type === "stats";
-    if (!hasActiveTab) {
-      panelVisible.set(false);
-      hadActiveTab = false;
-    } else if (suppress) {
-      panelVisible.set(false);
-    } else if (!hadActiveTab || prevSuppress) {
-      panelVisible.set(true);
-      hadActiveTab = true;
-    }
-    prevSuppress = suppress;
-  });
+  // The Pull requests badge counts PRs asking for action; at zero it is left
+  // off entirely rather than shown as a "0" alert pill.
+  let viewOptions = $derived<Segment[]>([
+    { id: "sessions", label: "Sessions", count: $liveSessionList.length },
+    { id: "files", label: "Files", dot: $dirtyFiles.size > 0 },
+    {
+      id: "prs",
+      label: "Pull requests",
+      count: $prsAttentionCount > 0 ? $prsAttentionCount : undefined,
+      alert: true,
+    },
+    { id: "stats", label: "Stats" },
+  ]);
 
-  // Clear needsInput when switching to a tab
+  // Clear needsInput once the user is actually looking at the session — see
+  // `shouldClearNeedsInput`. Gating on `$activeTabId` alone cleared the flag
+  // off sessions nobody had opened, because `activeTabId` moves on a spawn, on
+  // a neighbouring tab closing and on SessionView reconciling itself while it
+  // is hidden behind another view.
   $effect(() => {
-    if ($activeTabId) {
+    if (shouldClearNeedsInput($activeView, $activeTabId)) {
       setTabNeedsInput($activeTabId, false);
     }
   });
-
-  const MIN_PANEL_FRACTION = 0.2;
-  const MAX_PANEL_FRACTION = 0.8;
-  const MIN_SIDEBAR_WIDTH = 120;
-  const MAX_SIDEBAR_WIDTH = 280;
-
-  function handleResize(delta: number) {
-    if (mainStageWidth <= 0) return;
-    const deltaFraction = delta / mainStageWidth;
-    panelFraction = Math.min(
-      MAX_PANEL_FRACTION,
-      Math.max(MIN_PANEL_FRACTION, panelFraction + deltaFraction),
-    );
-  }
-
-  function handleSidebarResize(delta: number) {
-    sidebarWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, sidebarWidth - delta));
-  }
-
-  function handleResizeStart() { isResizing = true; }
-  function handleResizeEnd() { isResizing = false; }
 
   onMount(async () => {
     await log.init();
     log.info("app", "onMount started");
     await loadWorkspaces();
-    const ws = get(workspaces);
+    const ws = get(visibleWorkspaces);
     log.info("app", `workspaces loaded: ${ws.length}`);
     if (ws.length > 0 && !get(activeWorkspacePath)) {
       activeWorkspacePath.set(ws[0].path);
       log.info("app", `active workspace set: ${ws[0].path}`);
     }
     await loadSettings();
+    // Poll from the shell, not from PrsView: the top-bar badge has to stay
+    // current while the Pull requests screen is unmounted.
+    stopPrPolling = startPrPolling();
+    // Owned here rather than by the Stats screen: the top bar's spend figure
+    // has to stay current while that screen is unmounted.
+    stopStatsFeed = await startStatsFeed();
     unlisten = await onPanelUpdate((sessionId, data) => {
       if (sessionId === get(activeTabId)) {
-        const active = get(tabs).find((t) => t.id === sessionId);
-        // PRs is a non-terminal full-pane screen; everything else feeds the diff panel.
-        if (active?.type !== "prs") panelData.set(data);
+        panelData.set(data);
       }
+      // The Files rail asks which sessions have touched the document it is
+      // showing, so the per-file counts are kept for every session too.
+      setSessionTouchedFiles(sessionId, filesTouched(data));
       // Update diff badge for any session, not just the active one
       if (data.diff && (data.diff.files_changed > 0 || data.diff.lines_added > 0 || data.diff.lines_removed > 0)) {
         setSessionDiffStats(sessionId, {
@@ -154,6 +129,9 @@ import { onDestroy, onMount } from "svelte";
       } else {
         setSessionDiffStats(sessionId, null);
       }
+    });
+    unlistenSession = await onSessionUpdate((_sessionUuid, session) => {
+      upsertLiveSession(session);
     });
     unlistenNotification = await onClaudeNotification(async (event) => {
       const { session_id, notification } = event;
@@ -190,404 +168,89 @@ import { onDestroy, onMount } from "svelte";
   onDestroy(() => {
     unlisten?.();
     unlistenNotification?.();
+    unlistenSession?.();
+    stopPrPolling?.();
+    stopStatsFeed?.();
   });
-
-  /**
-   * Singleton PRs screen. Native Svelte view backed by `gh pr list` per
-   * watched repo — no PTY, no `prs` CLI dependency.
-   */
-  let prevTabBeforePrs = "";
-  function spawnPrsTab(activate: boolean): string {
-    const id = crypto.randomUUID();
-    addTab({ type: "prs", id, title: "PRs" }, { activate });
-    return id;
-  }
-
-  /** Singleton Stats screen — Claude Code session analytics. */
-  let prevTabBeforeStats = "";
-  function spawnStatsTab(activate: boolean): string {
-    const id = crypto.randomUUID();
-    addTab({ type: "stats", id, title: "Stats" }, { activate });
-    return id;
-  }
-
-  /**
-   * Spawn a terminal tab in the given workspace directory and run `claude`.
-   */
-  async function spawnClaudeSession(workspacePath: string, existingSessionId?: string) {
-    const tabId = crypto.randomUUID();
-    const terminal = new Terminal();
-    let session: { id: string };
-
-    if (existingSessionId) {
-      await resumeSession(existingSessionId, tabId);
-      session = { id: existingSessionId };
-    } else {
-      const wsName = get(workspaces).find((w) => w.path === workspacePath)?.name
-        ?? stripBundleExtension(workspacePath.split("/").filter(Boolean).pop() ?? "New session");
-      session = await addSession(workspacePath, wsName, tabId);
-    }
-
-    addTab({ type: "terminal", id: tabId, title: "", ptyId: -1, terminal, cwd: workspacePath, ready: false });
-
-    // Once the PTY is ready, send the claude command.
-    // We watch for the ptyId to become available via a short poll since
-    // handlePtyReady fires inside TerminalContainer.
-    let pollAttempts = 0;
-    const poll = setInterval(async () => {
-      pollAttempts++;
-      const currentTabs = get(tabs);
-      const tab = currentTabs.find((t) => t.id === tabId);
-      // Stop polling if the tab was removed or we've exceeded a reasonable timeout (10s)
-      if (!tab || pollAttempts > 100) {
-        clearInterval(poll);
-        return;
-      }
-      if (tab.type === "terminal" && tab.ptyId >= 0) {
-        clearInterval(poll);
-        const skip = get(skipPermissions) ? " --dangerously-skip-permissions" : "";
-        const cmd = `claude${skip}\n`;
-        // Small delay to let the shell prompt render
-        setTimeout(() => {
-          // Re-check: the tab may have been closed during the delay,
-          // in which case its PTY is dead and the write must be skipped.
-          const current = get(tabs).find((t) => t.id === tabId);
-          if (current?.type !== "terminal" || current.ptyId < 0) return;
-          ptyWrite(current.ptyId, cmd);
-          tabs.update((t) =>
-            t.map((x) => (x.id === tabId && x.type === "terminal" ? { ...x, commandWrittenAt: Date.now() } : x)),
-          );
-          updateSessionStatus(session.id, "running");
-          // Readiness is triggered by TerminalSession detecting Claude Code's
-          // OSC title (after a 300ms gate to skip shell-emitted titles) or
-          // alternate screen buffer activation. Safety fallback after 5s.
-          setTimeout(() => {
-            const current = get(tabs).find((t) => t.id === tabId);
-            if (current?.type === "terminal" && current.ready === false) {
-              setTabReady(tabId);
-            }
-          }, 5000);
-        }, 300);
-      }
-    }, 100);
-
-    return session;
-  }
 </script>
 
+<svelte:window onkeydown={handleGlobalKeydown} />
+
 <div class="titlebar" data-tauri-drag-region></div>
+
 <div class="app">
-  <div class="sidebar" style="width: {sidebarWidth}px">
-  <AgentManager
-    workspaces={$workspaces}
-    activeWorkspacePath={$activeWorkspacePath}
-    activeTabId={$activeTabId}
-    prsActive={$activeTab?.type === "prs"}
-    statsActive={$activeTab?.type === "stats"}
-    {openTabIds}
-    {terminalRows}
-    {fileRows}
-    {tabIndexMap}
-    on:newTerminal={() => {
-      const id = crypto.randomUUID();
-      const terminal = new Terminal();
-      const wsPath = get(activeWorkspacePath);
-      addTab({ type: "terminal", id, title: "Terminal", ptyId: -1, terminal, cwd: wsPath || undefined });
-    }}
-    on:selectTerminal={(e) => {
-      activeTabId.set(e.detail.tabId);
-    }}
-    on:closeTerminal={async (e) => {
-      const tab = get(tabs).find((t) => t.id === e.detail.tabId);
-      if (tab && tab.type === "terminal" && tab.ptyId >= 0) {
-        try { await ptyKill(tab.ptyId); } catch {}
-      }
-      removeTab(e.detail.tabId);
-    }}
-    on:selectFile={(e) => {
-      activeTabId.set(e.detail.tabId);
-    }}
-    on:closeFile={(e) => {
-      removeTab(e.detail.tabId);
-    }}
-    on:openPrs={() => {
-      // Toggle: if the PRs tab is already showing, return to the
-      // previously active tab. Otherwise activate it (creating the
-      // singleton lazily — first click is the first render).
-      const existing = get(tabs).find((t) => t.type === "prs");
-      const id = existing ? existing.id : spawnPrsTab(true);
-      if (existing) {
-        if (get(activeTabId) === id) {
-          activeTabId.set(prevTabBeforePrs);
-        } else {
-          prevTabBeforePrs = get(activeTabId);
-          activeTabId.set(id);
-        }
-      } else {
-        prevTabBeforePrs = get(activeTabId);
-      }
-    }}
-    on:openStats={() => {
-      const existing = get(tabs).find((t) => t.type === "stats");
-      const id = existing ? existing.id : spawnStatsTab(true);
-      if (existing) {
-        if (get(activeTabId) === id) {
-          activeTabId.set(prevTabBeforeStats);
-        } else {
-          prevTabBeforeStats = get(activeTabId);
-          activeTabId.set(id);
-        }
-      } else {
-        prevTabBeforeStats = get(activeTabId);
-      }
-    }}
-    on:addWorkspace={async () => {
-      const selected = await open({ directory: true, multiple: false, title: "Select workspace folder" });
-      if (typeof selected === "string") await storeAddWorkspace(selected);
-    }}
-    on:newSession={(e) => {
-      spawnClaudeSession(e.detail.workspacePath);
-    }}
-    on:selectSession={(e) => {
-      activeWorkspacePath.set(e.detail.workspacePath);
-      activeSessionId.set(e.detail.sessionId);
-      const ws = get(workspaces).find((w) => w.path === e.detail.workspacePath);
-      const session = ws?.sessions.find((s) => s.id === e.detail.sessionId);
-      if (!session) return;
+  <header class="topbar">
+    <div class="dots"><span></span><span></span><span></span></div>
+    <span class="wordmark">Atlas</span>
+    <!-- Session is a detail view Sessions opens in place, not a tab of its own,
+         so Sessions stays lit while it is showing. -->
+    <SegmentedControl
+      options={viewOptions}
+      value={$activeView === "session" ? "sessions" : $activeView}
+      onChange={(id) => showView(id as View)}
+    />
 
-      if (spawningSessionIds.has(session.id)) return;
+    <div class="spacer"></div>
 
-      // If the session is running and has a terminal tab, switch to it
-      if (session.terminalTabId && session.status === "running") {
-        const existing = get(tabs).find((t) => t.id === session.terminalTabId);
-        if (existing) {
-          activeTabId.set(existing.id);
-          return;
-        }
-      }
+    <span class="status">
+      <span class="status-dot"></span>
+      {running} running · <span class="status-needs">{needsYou} needs you</span> · {idle} idle · ${spendToday.toFixed(2)} today
+    </span>
 
-      // Spawn a fresh Claude session if not actively running (or running with a missing tab)
-      if (session.status !== "running" || !get(tabs).find((t) => t.id === session.terminalTabId)) {
-        spawningSessionIds.add(session.id);
-        spawnClaudeSession(e.detail.workspacePath, session.id)
-          .finally(() => spawningSessionIds.delete(session.id));
-      }
-    }}
-    on:deleteSession={async (e) => {
-      const { workspacePath, sessionId } = e.detail;
-      const ws = get(workspaces).find((w) => w.path === workspacePath);
-      const session = ws?.sessions.find((s) => s.id === sessionId);
-      // Close the terminal tab if the session is open
-      if (session?.terminalTabId) {
-        const tab = get(tabs).find((t) => t.id === session.terminalTabId);
-        if (tab && tab.type === "terminal" && tab.ptyId >= 0) {
-          try { await ptyKill(tab.ptyId); } catch {}
-        }
-        if (tab) removeTab(tab.id);
-      }
-      await removeSession(workspacePath, sessionId);
-    }}
-    on:selectWorkspace={(e) => {
-      activeWorkspacePath.set(e.detail.workspacePath);
-    }}
-    on:setWorkspaceColor={(e) => {
-      setWorkspaceColor(e.detail.workspacePath, e.detail.color);
-    }}
-    on:deleteWorkspace={async (e) => {
-      const { workspacePath } = e.detail;
-      const ws = get(workspaces).find((w) => w.path === workspacePath);
-      if (ws) {
-        for (const session of ws.sessions) {
-          if (session.terminalTabId) {
-            const tab = get(tabs).find((t) => t.id === session.terminalTabId);
-            if (tab && tab.type === "terminal" && tab.ptyId >= 0) {
-              try { await ptyKill(tab.ptyId); } catch {}
-            }
-            if (tab) removeTab(tab.id);
-          }
-        }
-      }
-      await removeWorkspace(workspacePath);
-      if (get(activeWorkspacePath) === workspacePath) {
-        activeWorkspacePath.set("");
-        activeSessionId.set("");
-      }
-    }}
-  />
-  </div>
-  <Resizer onResize={handleSidebarResize} />
-  <div class="main-stage" bind:clientWidth={mainStageWidth}>
-    <div class="terminal-section">
-      <TerminalContainer />
-    </div>
-    {#if $panelVisible}
-      <Resizer onResize={handleResize} onDragStart={handleResizeStart} onDragEnd={handleResizeEnd} />
-      <div class="panel-section" class:resizing={isResizing} style="width: {panelWidth}px">
-        <SidePanel />
-      </div>
-    {:else}
-      <button class="panel-open-btn" onclick={togglePanel} title="Open Diff Panel">
-        <span class="material-symbols-outlined">right_panel_open</span>
-      </button>
+    <button type="button" class="jump" onclick={() => jumpOpen.set(true)}>
+      Jump to…
+      <span class="kbd">{$chords.jump}</span>
+    </button>
+
+    <button type="button" class="new-session" onclick={() => openNewSession()}>
+      + Session <span class="kbd-inline">{$chords.newSession}</span>
+    </button>
+
+    <button type="button" class="gear" title={`Settings (${$chords.settings})`} onclick={() => settingsOpen.set(true)}>
+      <span class="material-symbols-outlined">settings</span>
+    </button>
+  </header>
+
+  <div class="view-host">
+    {#if $activeView === "sessions"}
+      <div class="view"><SessionsView /></div>
+    {:else if $activeView === "files"}
+      <div class="view"><FilesView /></div>
+    {:else if $activeView === "prs"}
+      <div class="view"><PrsView /></div>
+    {:else if $activeView === "stats"}
+      <div class="view"><StatsView /></div>
     {/if}
+
+    <!-- Session stays mounted: an xterm instance cannot survive a remount, so
+         hiding it is the only way to keep PTYs alive across view switches. -->
+    <div class="view" class:hidden={$activeView !== "session"}>
+      <SessionView />
+    </div>
   </div>
 </div>
+
+<NewSessionModal />
+<JumpPalette />
+
 <SettingsModal />
+<ShortcutSheet />
 <Toast />
 
 <style>
-  :global(:root) {
-    /* Everforest Hard Dark palette — canonical values
-       Contrast targets (against bg0 #272e33):
-         fg #d3c6aa  → 7.97:1  AAA  (default body, headings)
-         grey2       → 5.36:1  AA   (captions, hints)
-         primary     → 6.92:1  AAA  (links, accents)
-       Surface hierarchy (tonal depth) */
-    --surface: #272e33;              /* bg0 */
-    --surface-container-lowest: #1e2326; /* bg_dim */
-    --surface-container-low: #2e383c;  /* bg1 */
-    --surface-container: #374145;     /* bg2 */
-    --surface-container-high: #414b50; /* bg3 */
-    --surface-container-highest: #495156; /* bg4 */
-    --surface-bright: #4f5b58;       /* bg5 */
-
-    /* Foreground */
-    --on-surface: #d3c6aa;           /* fg — AAA on bg0 */
-    --on-surface-variant: #9da9a0;   /* grey2 — AA on bg0 */
-
-    /* Outline — at least 3:1 against surface for non-text contrast */
-    --outline-variant: #7a8478;      /* grey0 — 3.66:1 on bg0 */
-
-    /* Primary (blue) */
-    --primary: #7fbbb3;
-    --primary-container: #6ba89f;
-    --on-primary: #272e33;
-    --primary-dim: #5a948c;
-
-    /* Secondary (green) */
-    --secondary: #a7c080;
-    --secondary-container: #404d44; /* bg_green */
-
-    /* Error (red) */
-    --error: #e67e80;
-    --error-container: #4e3e43;     /* bg_red */
-
-    /* Tertiary (orange) */
-    --tertiary: #e69875;
-
-    /* Named colors */
-    --yellow: #dbbc7f;
-    --cyan: #83c092;
-    --amber: #e69875;
-
-    /* Radius */
-    --radius: 8px;
-    --radius-sm: 6px;
-    --radius-md: 10px;
-    --radius-lg: 14px;
-
-    /* Spacing scale */
-    --spacing-2-5: 0.5rem;
-    --spacing-4: 0.9rem;
-    --spacing-5: 1.1rem;
-
-    /* Typography */
-    --font-display: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    --font-body: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    --font-mono: "JetBrains Mono Variable", "JetBrains Mono", "Fira Code", Menlo, monospace;
-
-    font-size: 115%;
-  }
-
-  /* Everforest Hard Light — applied when the OS is in light mode.
-     Contrast targets (against bg0 #fffbef):
-       on-surface #3a464c → 10.3:1  AAA   (default body)
-       grey1     #939f91 → 3.28:1  large/icon only
-       primary   #3a94c5 → 3.91:1  AA-large + non-text
-       error     #f85552 → 3.69:1  non-text contrast
-     Hard light uses #fffbef (warm bg0); we slightly cool the fg vs the
-     Everforest grey scale so body text comfortably clears AAA. */
-  @media (prefers-color-scheme: light) {
-    :global(:root) {
-      --surface: #fffbef;              /* bg0 */
-      --surface-container-lowest: #f3ead3; /* bg_dim */
-      --surface-container-low: #f8f5e4;  /* bg1 */
-      --surface-container: #f2efdf;     /* bg2 */
-      --surface-container-high: #edeada; /* bg3 */
-      --surface-container-highest: #e6e2cc; /* bg4 */
-      --surface-bright: #bec5b2;        /* bg5 */
-
-      --on-surface: #3a464c;            /* darker than Everforest fg for AAA */
-      --on-surface-variant: #5c6a72;    /* Everforest fg — AA on bg0 */
-
-      --outline-variant: #939f91;       /* grey1 — 3.28:1 non-text */
-
-      --primary: #3a94c5;
-      --primary-container: #2b7faa;
-      --on-primary: #fffbef;
-      --primary-dim: #2f7ea6;
-
-      --secondary: #8da101;
-      --secondary-container: #e5e6c5;   /* bg_green */
-
-      --error: #f85552;
-      --error-container: #fbe3da;       /* bg_red */
-
-      --tertiary: #f57d26;
-
-      --yellow: #dfa000;
-      --cyan: #35a77c;
-      --amber: #f57d26;
-    }
-  }
-
   /* Keep terminal at its own font size — xterm manages this internally */
   :global(.xterm) {
     font-size: initial;
-  }
-
-  :global(body) {
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    background: var(--surface);
-    color: var(--on-surface);
-    font-family: var(--font-body);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
   }
 
   :global(*) {
     box-sizing: border-box;
   }
 
-  :global(::selection) {
-    background: color-mix(in srgb, var(--primary) 35%, transparent);
-    color: var(--on-surface);
-  }
-
   :global(.material-symbols-outlined) {
     font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
     font-size: 1.25rem;
     vertical-align: middle;
-  }
-
-  :global(::-webkit-scrollbar) {
-    width: 6px;
-    height: 6px;
-  }
-
-  :global(::-webkit-scrollbar-track) {
-    background: transparent;
-  }
-
-  :global(::-webkit-scrollbar-thumb) {
-    background: color-mix(in srgb, var(--outline-variant) 50%, transparent);
-    border-radius: 3px;
-  }
-
-  :global(::-webkit-scrollbar-thumb:hover) {
-    background: var(--outline-variant);
   }
 
   .titlebar {
@@ -598,76 +261,192 @@ import { onDestroy, onMount } from "svelte";
     height: 28px;
     z-index: 1000;
     background: var(--surface);
-    border-bottom: 1px solid var(--outline-variant);
+    border-bottom: 1px solid var(--border);
     -webkit-app-region: drag;
     app-region: drag;
   }
 
   .app {
     display: flex;
+    flex-direction: column;
     height: calc(100vh - 28px);
     width: 100vw;
     margin-top: 28px;
+    background: var(--bg);
   }
 
-  .sidebar {
-    flex-shrink: 0;
-    height: 100%;
-    overflow: hidden;
-  }
-
-  .main-stage {
-    flex: 1;
-    display: flex;
-    min-width: 0;
-    overflow: hidden;
-    position: relative;
-  }
-
-  .terminal-section {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  .panel-section {
-    flex-shrink: 0;
-    overflow: hidden;
-    border-left: 1px solid var(--outline-variant);
-    contain: inline-size layout style;
-  }
-
-  .panel-section.resizing {
-    pointer-events: none;
-    will-change: width;
-  }
-
-  .panel-open-btn {
-    position: absolute;
-    top: 4px;
-    right: 4px;
+  /* ── Top bar ───────────────────────────────────────────────────────────── */
+  .topbar {
     display: flex;
     align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    background: none;
-    border: none;
-    color: var(--on-surface-variant);
+    flex-shrink: 0;
+    gap: 10px;
+    height: 46px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .dots {
+    display: flex;
+    gap: 7px;
+    margin-right: 6px;
+  }
+
+  .dots span {
+    display: block;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--surface3);
+  }
+
+  .wordmark {
+    margin-right: 10px;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+
+  .spacer {
+    flex: 1;
+  }
+
+  /* The counts are the top bar's primary readout, so they sit at --text
+     rather than --muted. --warn (#e0a53a) is ~2.2:1 on white — fine as a
+     fill, unreadable as text — so needs-you carries its own darkened token.
+     On a dark surface --warn already clears 4.5:1 and the darkened amber
+     would not, so the token flips back there. It lives here rather than in
+     app.css because app.css belongs to another change this wave. */
+  .status {
+    --warn-ink: #8f6200;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    white-space: nowrap;
+  }
+
+  :global(:root[data-theme="dark"]) .status {
+    --warn-ink: var(--warn);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme="light"])) .status {
+      --warn-ink: var(--warn);
+    }
+  }
+
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: atlasPulse 1.6s ease-in-out infinite;
+  }
+
+  .status-needs {
+    color: var(--warn-ink);
+  }
+
+  .jump {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 1 220px;
+    min-width: 140px;
+    height: 28px;
+    padding: 0 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background: var(--surface2);
+    color: var(--muted);
+    font-family: var(--font-ui);
+    font-size: var(--fs-sm);
+    white-space: nowrap;
     cursor: pointer;
-    border-radius: var(--radius-sm);
+  }
+
+  .jump:hover {
+    border-color: var(--border2);
+  }
+
+  .kbd {
+    margin-left: auto;
+    padding: 1px 5px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-xs);
+    background: var(--surface);
+    font-family: var(--font-mono);
+    font-size: var(--fs-2xs);
+  }
+
+  .new-session {
+    height: 28px;
+    padding: 0 12px;
+    border: none;
+    border-radius: var(--r-lg);
+    background: var(--ink);
+    color: var(--ink-text);
+    font-family: var(--font-ui);
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .kbd-inline {
+    margin-left: 4px;
+    font-family: var(--font-mono);
+    font-size: var(--fs-2xs);
+    opacity: 0.6;
+  }
+
+  .gear {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
     padding: 0;
-    transition: background 0.15s, color 0.15s;
-    z-index: 10;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
   }
 
-  .panel-open-btn:hover {
-    background: var(--surface-container-high);
-    color: var(--on-surface);
+  .gear:hover {
+    border-color: var(--border2);
+    color: var(--text);
   }
 
-  .panel-open-btn :global(.material-symbols-outlined) {
-    font-size: 1rem;
+  .gear :global(.material-symbols-outlined) {
+    font-size: var(--fs-lg);
+  }
+
+  /* ── View host ─────────────────────────────────────────────────────────── */
+  .view-host {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .view {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    animation: atlasFadeIn 0.18s ease;
+  }
+
+  /* display:none also restarts atlasFadeIn when the pane comes back. */
+  .view.hidden {
+    display: none;
   }
 
 </style>

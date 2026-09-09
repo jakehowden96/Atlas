@@ -1,70 +1,106 @@
-import { switchToTab, cycleTab } from "./stores/terminal";
-import { togglePanel } from "./stores/panel";
-import { cycleWorkspace } from "./stores/workspace";
-import { openFile } from "./file-open";
-import { saveActiveFile } from "./file-save";
+import { get } from "svelte/store";
+import { ACTIONS, matchesAction, type Action } from "./keymap";
+import { saveActiveFile } from "./stores/files";
+import { keymap, settingsOpen } from "./stores/settings";
+import {
+  activeView,
+  diffOpen,
+  jumpOpen,
+  newSessionOpen,
+  openDialogOpen,
+  openNewSession,
+  railOpen,
+  shortcutsOpen,
+  showView,
+  TAB_VIEWS,
+  type View,
+} from "./stores/view";
 
-// Set by TerminalTab when it knows its CWD — used for manual refresh
-export let requestPanelRefresh: (() => void) | null = null;
-export function setRefreshHandler(handler: () => void) {
-  requestPanelRefresh = handler;
-}
+/** What each action does once its chord matches. */
+const RUN: Record<Action, () => void> = {
+  newSession: () => openNewSession(),
+  jump: () => jumpOpen.set(true),
+  settings: () => settingsOpen.set(true),
+  saveFile: () => void saveActiveFile(),
+  openFile: () => openDialogOpen.set(true),
+  toggleRail: () => railOpen.update((v) => !v),
+  tab1: () => showView(TAB_VIEWS[0]),
+  tab2: () => showView(TAB_VIEWS[1]),
+  tab3: () => showView(TAB_VIEWS[2]),
+  tab4: () => showView(TAB_VIEWS[3]),
+  backToSessions: () => showView("sessions"),
+  shortcuts: () => shortcutsOpen.update((v) => !v),
+};
 
+/**
+ * Actions that only fire on one screen. Save and Open… have nothing to act on
+ * anywhere but Files, so the chord is left alone on every other view.
+ */
+const SCOPED: Partial<Record<Action, View>> = {
+  saveFile: "files",
+  openFile: "files",
+};
+
+/**
+ * Mission Control's global chords. Returns true when the event was consumed.
+ *
+ * Escape is deliberately *not* consumed when nothing is open — the Claude Code
+ * TUI owns it, and `TerminalSession.attachCustomKeyEventHandler` never lets it
+ * reach this handler while the terminal has focus.
+ */
 export function handleGlobalKeydown(e: KeyboardEvent): boolean {
-  // Ctrl+O: open file
-  if (e.ctrlKey && !e.shiftKey && e.key === "o") {
+  // The keymap first, so mod+Escape reaches `backToSessions` rather than
+  // falling through into the bare-Escape ladder below.
+  const bindings = get(keymap);
+  for (const action of ACTIONS) {
+    if (!matchesAction(e, bindings[action])) continue;
+    const scope = SCOPED[action];
+    if (scope && get(activeView) !== scope) continue;
     e.preventDefault();
-    openFile();
+    RUN[action]();
     return true;
   }
 
-  // Ctrl+S: save active file
-  if (e.ctrlKey && !e.shiftKey && e.key === "s") {
-    e.preventDefault();
-    saveActiveFile();
-    return true;
-  }
-
-  // Ctrl+Tab / Ctrl+Shift+Tab: cycle tabs
-  if (e.ctrlKey && e.key === "Tab") {
-    e.preventDefault();
-    cycleTab(e.shiftKey ? -1 : 1);
-    return true;
-  }
-
-  // Ctrl+1-9: switch tabs
-  if (e.ctrlKey && !e.shiftKey && e.key >= "1" && e.key <= "9") {
-    e.preventDefault();
-    switchToTab(parseInt(e.key, 10) - 1);
-    return true;
-  }
-
-  // Ctrl+Shift+\: toggle panel
-  if (e.ctrlKey && e.shiftKey && e.key === "\\") {
-    e.preventDefault();
-    togglePanel();
-    return true;
-  }
-
-  // Ctrl+Shift+[: previous workspace
-  if (e.ctrlKey && e.shiftKey && e.key === "[") {
-    e.preventDefault();
-    cycleWorkspace(-1);
-    return true;
-  }
-
-  // Ctrl+Shift+]: next workspace
-  if (e.ctrlKey && e.shiftKey && e.key === "]") {
-    e.preventDefault();
-    cycleWorkspace(1);
-    return true;
-  }
-
-  // Ctrl+Shift+R: manual refresh panel
-  if (e.ctrlKey && e.shiftKey && e.key === "R") {
-    e.preventDefault();
-    requestPanelRefresh?.();
-    return true;
+  // Esc — topmost modal, then the Changes drawer, then back to Sessions. This
+  // is ordered modal dismissal rather than a binding, so it is not rebindable.
+  if (e.key === "Escape") {
+    // The sheet can be opened over any of the others, so it dismisses first.
+    if (get(shortcutsOpen)) {
+      e.preventDefault();
+      shortcutsOpen.set(false);
+      return true;
+    }
+    if (get(jumpOpen)) {
+      e.preventDefault();
+      jumpOpen.set(false);
+      return true;
+    }
+    if (get(openDialogOpen)) {
+      e.preventDefault();
+      openDialogOpen.set(false);
+      return true;
+    }
+    if (get(newSessionOpen)) {
+      e.preventDefault();
+      newSessionOpen.set(false);
+      return true;
+    }
+    if (get(settingsOpen)) {
+      e.preventDefault();
+      settingsOpen.set(false);
+      return true;
+    }
+    if (get(diffOpen)) {
+      e.preventDefault();
+      diffOpen.set(false);
+      return true;
+    }
+    if (get(activeView) === "session") {
+      e.preventDefault();
+      showView("sessions");
+      return true;
+    }
+    return false;
   }
 
   return false;
