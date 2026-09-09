@@ -2,7 +2,7 @@
   import { chord, enterLabel } from "../../platform";
   /**
    * The command-style New Session modal: pick a workspace on the left, then
-   * start a Fresh conversation or Resume a prior one on the right.
+   * start a New conversation or Resume a prior one on the right.
    *
    * The keyboard model and the workspace filter live in `../../new-session.ts`
    * so they can be unit-tested without a Svelte compiler; this file is the
@@ -48,6 +48,8 @@
   let resumable = $state<ResumableSession[]>([]);
   let loadingResume = $state(false);
   let inputEl = $state<HTMLInputElement | null>(null);
+  let wsColEl = $state<HTMLDivElement | null>(null);
+  let resumePaneEl = $state<HTMLDivElement | null>(null);
   /** A file the caller wants the session to start on, shown under the input. */
   let attached = $state("");
   /** Frozen at open — the ages in the list would otherwise re-render constantly. */
@@ -84,8 +86,10 @@
     selected !== null && (view.mode === "fresh" || pickedResume !== null),
   );
 
+  // The id stays "fresh" — `NewSessionSeed` and the Stats view read it. Only the
+  // label the user sees changed.
   let modeOptions = $derived<Segment[]>([
-    { id: "fresh", label: "Fresh" },
+    { id: "fresh", label: "New" },
     { id: "resume", label: "Resume", count: resumable.length },
   ]);
 
@@ -106,6 +110,17 @@
   // post-open `tick()` because the input is mounted by `Modal`, one flush later.
   $effect(() => {
     if ($newSessionOpen) inputEl?.focus();
+  });
+
+  // Keep the highlighted row on screen when ↑/↓ walks past the visible window.
+  // Queried out of the column rather than held in a ref array so a filtered list
+  // cannot leave stale entries behind; both columns render in document order.
+  $effect(() => {
+    const row =
+      view.column === "resume"
+        ? resumePaneEl?.querySelectorAll(".resume-row")[view.resumeIndex]
+        : wsColEl?.querySelectorAll(".ws-row, .add-row")[view.wsIndex];
+    row?.scrollIntoView({ block: "nearest" });
   });
 
   // The Resume list follows the selected workspace.
@@ -233,6 +248,9 @@
     if (result.effect === "close") close();
     else if (result.effect === "start") void start();
     else if (result.effect === "addFolder") void addRow();
+    else if (result.effect === "removeWorkspace" && selected) {
+      void removeWorkspaceWithUndo(selected.path);
+    }
   }
 
   function onInput(e: Event) {
@@ -281,11 +299,14 @@
     {/if}
 
     <div class="cols">
-      <div class="ws-col">
+      <div class="ws-col" bind:this={wsColEl}>
         <div class="col-head">Workspaces · recent first</div>
 
         {#each filtered as ws, i (ws.path)}
-          <div class="ws-row-wrap">
+          <div
+            class="ws-row-wrap"
+            class:selected={view.column === "workspaces" && i === view.wsIndex}
+          >
             <button
               type="button"
               class="ws-row"
@@ -303,7 +324,7 @@
               type="button"
               class="ws-remove"
               aria-label="Remove {ws.name}"
-              title="Remove workspace"
+              title="Remove workspace ({chord('⌫')})"
               onclick={() => void removeWorkspaceWithUndo(ws.path)}
             >✕</button>
           </div>
@@ -333,8 +354,9 @@
 
       <div class="right-col">
         <div>
-          <div class="col-head">
-            Start in {selected?.name ?? "…"}
+          <div class="col-head mode-head">
+            <span>Start in {selected?.name ?? "…"}</span>
+            <span class="mode-hint"><kbd>tab</kbd> switches</span>
           </div>
           <SegmentedControl
             options={modeOptions}
@@ -345,7 +367,7 @@
         </div>
 
         {#if view.mode === "resume"}
-          <div class="resume-pane">
+          <div class="resume-pane" bind:this={resumePaneEl}>
             <div class="resume-caption">
               From <span class="mono">claude --resume</span> · newest first
             </div>
@@ -353,7 +375,7 @@
               <p class="resume-empty">Reading transcripts…</p>
             {:else if resumable.length === 0}
               <p class="resume-empty">
-                No prior sessions in this workspace yet — start a Fresh one.
+                No prior sessions in this workspace yet — start a New one.
               </p>
             {:else}
               {#each resumable as row, i (row.sessionId)}
@@ -384,6 +406,15 @@
         {/if}
 
         <div class="grow"></div>
+
+        <div class="hints">
+          <span><kbd>↑↓</kbd> select</span>
+          {#if view.mode === "resume" && resumable.length > 0}
+            <span><kbd>⇧←→</kbd> column</span>
+          {/if}
+          <span><kbd>{chord("O")}</kbd> add</span>
+          <span><kbd>{chord("⌫")}</kbd> remove</span>
+        </div>
 
         <button type="button" class="start" disabled={!canStart} onclick={start}>
           {view.mode === "resume" ? "Resume session" : "Start session"}
@@ -515,6 +546,15 @@
     background: var(--surface2);
   }
 
+  .ws-row:focus-visible,
+  .add-row:focus-visible,
+  .resume-row:focus-visible,
+  .ws-remove:focus-visible,
+  .start:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+  }
+
   /* Stays out of the way until the row is hovered, but remains reachable by
      keyboard — focus-visible brings it back regardless of pointer. */
   .ws-remove {
@@ -537,6 +577,7 @@
   }
 
   .ws-row-wrap:hover .ws-remove,
+  .ws-row-wrap.selected .ws-remove,
   .ws-remove:focus-visible {
     opacity: 1;
   }
@@ -545,9 +586,12 @@
     color: var(--text);
   }
 
+  /* The caret stays in the filter box, so DOM focus never lands on a row — this
+     highlight is the only thing telling you what ⏎ will act on. It has to read
+     as a selection on its own, hence the accent rather than a border tint. */
   .ws-row.selected {
     background: var(--surface2);
-    box-shadow: inset 0 0 0 1px var(--border2);
+    box-shadow: inset 0 0 0 1px var(--accent);
   }
 
   .swatch {
@@ -610,6 +654,7 @@
 
   .add-row.selected {
     background: var(--surface2);
+    box-shadow: inset 0 0 0 1px var(--accent);
   }
 
   .add-box {
@@ -653,6 +698,27 @@
   .right-col .col-head {
     padding: 0;
     margin-bottom: 8px;
+  }
+
+  .mode-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  /* Tab is the only way to reach the segmented control, so it is labelled where
+     the control is rather than only in the footer hints. */
+  .mode-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
   }
 
   .grow {
@@ -715,7 +781,8 @@
   }
 
   .resume-row.selected {
-    border-color: var(--text);
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
   }
 
   .radio {
@@ -766,6 +833,33 @@
   }
 
   /* ── Footer ────────────────────────────────────────────────────────────── */
+  .hints {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    flex-shrink: 0;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  .hints span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .mode-hint kbd,
+  .hints kbd {
+    padding: 1px 5px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-xs);
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 10px;
+  }
+
   .start {
     flex-shrink: 0;
     height: 32px;
