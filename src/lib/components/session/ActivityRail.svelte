@@ -82,6 +82,17 @@
   let live = $derived(tile?.live ?? null);
   let plan = $derived(planCounts(live?.plan ?? []));
   let subagents = $derived(live?.subagents ?? []);
+  /* One dispatch can open twenty agents, so the list folds away. It starts
+     open: the usual case is one or two, and hiding live work by default would
+     cost more than the scrolling it saves. The count stays in the heading, so a
+     folded section still says whether anything is running. */
+  let agentsOpen = $state(true);
+  let agentsRunning = $derived(subagents.filter((a) => !a.done).length);
+  let agentSummary = $derived(
+    agentsRunning > 0
+      ? `${agentsRunning}/${subagents.length} running`
+      : `${subagents.length} done`,
+  );
   /* Same pairing as the Sessions tile: the bar reads as a proportion, the
      label as a size — `68k` is the unit the model actually meters. */
   let contextPct = $derived(Math.min(100, Math.round((live?.contextPct ?? 0) * 100)));
@@ -115,18 +126,31 @@
 
     {#if subagents.length > 0}
       <section>
-        <div class="heading"><span>Subagents</span></div>
-        <div class="rows">
-          {#each subagents as agent, i (i)}
-            <div class="agent">
-              <div class="agent-task">
-                <span class="agent-dot" class:pulsing={!agent.done}></span>
-                {agent.task}
+        <button
+          type="button"
+          class="heading toggle"
+          aria-expanded={agentsOpen}
+          onclick={() => (agentsOpen = !agentsOpen)}
+        >
+          <span>Subagents</span>
+          <span class="heading-end">
+            <span class="count">{agentSummary}</span>
+            <span class="twisty" class:open={agentsOpen} aria-hidden="true">▸</span>
+          </span>
+        </button>
+        {#if agentsOpen}
+          <div class="rows">
+            {#each subagents as agent, i (i)}
+              <div class="agent" class:done={agent.done}>
+                <div class="agent-task">
+                  <span class="agent-dot" class:pulsing={!agent.done}></span>
+                  {agent.task}
+                </div>
+                <div class="agent-meta">{subagentMeta(agent, now)}</div>
               </div>
-              <div class="agent-meta">{subagentMeta(agent, now)}</div>
-            </div>
-          {/each}
-        </div>
+            {/each}
+          </div>
+        {/if}
       </section>
     {/if}
 
@@ -266,6 +290,27 @@
   }
 
   /* ── Subagents ─────────────────────────────────────────────────────────── */
+  /* The Subagents heading is a disclosure button. It keeps `.heading` for the
+     type and colour and only sheds the button chrome — `font-family` included,
+     which `.heading` does not set and the UA would otherwise win. */
+  .heading.toggle {
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .twisty {
+    display: inline-block;
+    transition: transform 120ms ease;
+  }
+
+  .twisty.open {
+    transform: rotate(90deg);
+  }
+
   .agent {
     padding: 8px 10px;
     border: 1px solid var(--border);
@@ -290,6 +335,16 @@
 
   .agent-dot.pulsing {
     animation: atlasPulse 1.6s ease-in-out infinite;
+  }
+
+  /* A finished agent stays listed — it is what the session did — but recedes,
+     so a live one is the row the eye lands on. */
+  .agent.done {
+    opacity: 0.62;
+  }
+
+  .agent.done .agent-dot {
+    background: var(--muted);
   }
 
   .agent-meta {

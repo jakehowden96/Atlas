@@ -48,7 +48,14 @@ function todo(text: string, status: string): PlanItem {
 }
 
 function agent(overrides: Partial<Subagent> = {}): Subagent {
-  return { task: "Search", startedAt: null, toolCount: 0, done: false, ...overrides };
+  return {
+    task: "Search",
+    startedAt: null,
+    finishedAt: null,
+    toolCount: 0,
+    done: false,
+    ...overrides,
+  };
 }
 
 const TWO_FILE_DIFF = `diff --git a/src/a.ts b/src/a.ts
@@ -158,6 +165,28 @@ describe("subagentMeta", () => {
   it("prefixes the elapsed clock when the start time is known", () => {
     const meta = subagentMeta(
       agent({ startedAt: "2026-01-01T00:00:00Z", toolCount: 2 }),
+      now,
+    );
+    expect(meta).toBe("2m 10s · 2 tools");
+  });
+
+  it("stops a finished agent's clock at the moment it finished", () => {
+    const meta = subagentMeta(
+      agent({
+        startedAt: "2026-01-01T00:00:00Z",
+        finishedAt: "2026-01-01T00:00:30Z",
+        toolCount: 2,
+        done: true,
+      }),
+      // An hour later: the row still reports the 30s the agent actually took.
+      now + 3_600_000,
+    );
+    expect(meta).toBe("0m 30s · 2 tools");
+  });
+
+  it("falls back to the live clock when the finish carried no timestamp", () => {
+    const meta = subagentMeta(
+      agent({ startedAt: "2026-01-01T00:00:00Z", toolCount: 2, done: true }),
       now,
     );
     expect(meta).toBe("2m 10s · 2 tools");

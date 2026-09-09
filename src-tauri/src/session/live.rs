@@ -77,6 +77,10 @@ pub struct PlanItem {
 pub struct Subagent {
     pub task: String,
     pub started_at: Option<String>,
+    /// When it stopped, so a finished agent shows how long it took rather than
+    /// a clock that keeps running. None while it is still going, and also when
+    /// the line that ended it carried no timestamp — `done` is the flag.
+    pub finished_at: Option<String>,
     pub tool_count: u32,
     pub done: bool,
 }
@@ -364,7 +368,7 @@ impl SessionTail {
         match line_type(&obj) {
             "user" => self.fold_user(&obj, timestamp),
             "assistant" => self.fold_assistant(&obj, timestamp),
-            "system" => self.fold_system(&obj),
+            "system" => self.fold_system(&obj, timestamp),
             "ai-title" => {
                 if let Some(title) = obj.get("aiTitle").and_then(|v| v.as_str()) {
                     self.session.title = Some(title.to_string());
@@ -385,7 +389,7 @@ impl SessionTail {
             // subagent the same either way, so only the id is acted on.
             if let Some((tool_use_id, _status)) = task_notification(text) {
                 if let Some(&idx) = self.subagent_index.get(tool_use_id) {
-                    self.session.subagents[idx].done = true;
+                    self.finish_subagent(idx, timestamp.clone());
                 }
             }
             if !is_meta {
@@ -407,7 +411,7 @@ impl SessionTail {
                 if async_launch {
                     self.background_subagents.insert(idx);
                 } else {
-                    self.session.subagents[idx].done = true;
+                    self.finish_subagent(idx, timestamp.clone());
                 }
             }
             let role = if result.is_error { LineRole::Alert } else { LineRole::Tool };
@@ -462,6 +466,7 @@ impl SessionTail {
                 self.session.subagents.push(Subagent {
                     task: subagent_task(tool.input),
                     started_at: timestamp.clone(),
+                    finished_at: None,
                     tool_count: 0,
                     done: false,
                 });
@@ -484,7 +489,7 @@ impl SessionTail {
     /// exactly, so this is only a backstop: it settles subagents whose
     /// notification can never arrive, such as ones still open when Claude Code
     /// was killed and later resumed.
-    fn fold_system(&mut self, obj: &Value) {
+    fn fold_system(&mut self, obj: &Value, timestamp: Option<String>) {
         if obj.get("subtype").and_then(|v| v.as_str()) != Some("turn_duration") {
             return;
         }
@@ -496,19 +501,32 @@ impl SessionTail {
             Some(count) => {
                 self.seen_background_count = true;
                 if count == 0 {
-                    self.settle_background();
+                    self.settle_background(timestamp);
                 }
             }
-            None if self.seen_background_count => self.settle_background(),
+            None if self.seen_background_count => self.settle_background(timestamp),
             None => {}
         }
     }
 
     /// No background agent is live, so none of ours can still be running.
-    fn settle_background(&mut self) {
-        for &idx in &self.background_subagents {
-            self.session.subagents[idx].done = true;
+    fn settle_background(&mut self, at: Option<String>) {
+        let open: Vec<usize> = self.background_subagents.iter().copied().collect();
+        for idx in open {
+            self.finish_subagent(idx, at.clone());
         }
+    }
+
+    /// Mark a subagent finished, keeping the first finish. A background agent
+    /// notifies again if the user resumes it, and re-finishing would move the
+    /// recorded end past the work it actually describes.
+    fn finish_subagent(&mut self, idx: usize, at: Option<String>) {
+        let agent = &mut self.session.subagents[idx];
+        if agent.done {
+            return;
+        }
+        agent.done = true;
+        agent.finished_at = at;
     }
 
     fn push_line(&mut self, role: LineRole, text: String, timestamp: Option<String>) {
@@ -1185,6 +1203,29 @@ mod tests {
         assert!(tail.poll());
         assert!(tail.session().subagents[0].done, "the notification ends it");
         assert_eq!(tail.session().state, SessionState::Idle);
+    }
+
+    /// The rail shows a finished agent how long it took, so the end has to be
+    /// recorded rather than measured against the clock.
+    #[test]
+    fn finishing_records_when_it_happened_and_keeps_the_first_one() {
+        let lines = bg_lines();
+        let (dir, mut tail) = tail_with(&lines[SPAWN..=COUNT_ONE]);
+        tail.poll();
+        assert!(tail.session().subagents[0].finished_at.is_none(), "still running");
+
+        let path = dir.path().join(format!("{}.jsonl", UUID));
+        append(&path, &lines[NOTIFICATION..=NOTIFICATION]);
+        tail.poll();
+        let finished = tail.session().subagents[0].finished_at.clone();
+        assert_eq!(finished.as_deref(), Some("2026-09-09T08:55:54.217Z"));
+
+        // Resuming the agent notifies again; the first finish is the one that
+        // describes the work, so a later notification must not move it.
+        let again = lines[NOTIFICATION].replace("08:55:54.217Z", "09:44:00.000Z");
+        append(&path, &[again]);
+        tail.poll();
+        assert_eq!(tail.session().subagents[0].finished_at, finished);
     }
 
     /// `pendingBackgroundAgentCount` is Claude Code's own count of live

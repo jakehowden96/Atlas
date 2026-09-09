@@ -23,6 +23,9 @@ export interface PlanItem {
 export interface Subagent {
   task: string;
   startedAt: string | null;
+  /** When it stopped. Null while it is still running, and when the line that
+   *  ended it carried no timestamp — `done` is the flag. */
+  finishedAt: string | null;
   toolCount: number;
   done: boolean;
 }
