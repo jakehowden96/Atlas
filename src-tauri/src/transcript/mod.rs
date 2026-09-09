@@ -18,22 +18,55 @@ pub(crate) struct Pricing {
     pub cache_read: f64,
 }
 
-/// Approximate API-equivalent pricing per million tokens.
-/// Prices are labelled as approximate in the UI; labelled per Anthropic pricing as of 2026-06.
+/// Claude 3 Opus, Opus 4 and Opus 4.1 — the Opus versions that cost 3x what
+/// every Opus from 4.5 on does.
+///
+/// Note the two id shapes: models up to Claude 3.5 put the version first
+/// (`claude-3-opus-20240229`), everything since puts the family first
+/// (`claude-opus-4-1-20250805`, and the undated `claude-opus-4-20250514`).
+/// `claude-opus-4-5` and later match none of these.
+fn is_legacy_opus(m: &str) -> bool {
+    m.contains("3-opus") || m.contains("opus-4-1") || m.contains("opus-4-2025")
+}
+
+/// Approximate API-equivalent pricing per million tokens, from Anthropic's
+/// published list prices (checked 2026-09-09). `cache_write` is the 5-minute
+/// rate — a transcript's `cache_creation_input_tokens` does not say which TTL
+/// was written, and 5 minutes is what an interactive session uses.
+///
+/// Matched on model *family*, with a version arm only where a family changed
+/// price, so a model newer than this table is priced as its family instead of
+/// falling through to an unrelated tier. That fall-through is why every
+/// `claude-opus-5` session was billed at Sonnet rates: the old table asked for
+/// `opus-4` and `opus-3` by name, and Opus 5 answered to neither.
 pub(crate) fn pricing_for(model: &str) -> Pricing {
     let m = model.to_ascii_lowercase();
-    if m.contains("opus-4") || m.contains("opus-3") || m.contains("fable") {
-        // Opus 4.x + fable-5 (conservative estimate — fable pricing not yet published)
-        Pricing { input: 15.0, output: 75.0, cache_write: 18.75, cache_read: 1.5 }
-    } else if m.contains("sonnet-4") || m.contains("sonnet-3-5") || m.contains("sonnet-3") {
-        Pricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.3 }
-    } else if m.contains("haiku-4") || m.contains("haiku-3-5") {
-        Pricing { input: 0.8, output: 4.0, cache_write: 1.0, cache_read: 0.08 }
-    } else if m.contains("haiku-3") {
-        Pricing { input: 0.25, output: 1.25, cache_write: 0.3, cache_read: 0.03 }
-    } else {
-        // Unknown model — mid-range Sonnet-tier fallback
-        Pricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.3 }
+    match model_family(&m).as_str() {
+        // Fable 5.1 reads cache at 0.025x input; Fable 5 at the usual 0.1x.
+        "Fable" => Pricing {
+            input: 10.0,
+            output: 50.0,
+            cache_write: 12.5,
+            cache_read: if m.contains("fable-5-1") { 0.25 } else { 1.0 },
+        },
+        "Opus" if is_legacy_opus(&m) => {
+            Pricing { input: 15.0, output: 75.0, cache_write: 18.75, cache_read: 1.5 }
+        }
+        "Opus" => Pricing { input: 5.0, output: 25.0, cache_write: 6.25, cache_read: 0.5 },
+        "Sonnet" if m.contains("sonnet-5") => {
+            Pricing { input: 2.0, output: 10.0, cache_write: 2.5, cache_read: 0.2 }
+        }
+        "Sonnet" => Pricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.3 },
+        // Version-first ids again — `claude-3-5-haiku-…`, `claude-3-haiku-…`.
+        "Haiku" if m.contains("3-5-haiku") => {
+            Pricing { input: 0.8, output: 4.0, cache_write: 1.0, cache_read: 0.08 }
+        }
+        "Haiku" if m.contains("3-haiku") => {
+            Pricing { input: 0.25, output: 1.25, cache_write: 0.3, cache_read: 0.03 }
+        }
+        "Haiku" => Pricing { input: 1.0, output: 5.0, cache_write: 1.25, cache_read: 0.1 },
+        // A model from no family we know — mid-range Sonnet-tier fallback.
+        _ => Pricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.3 },
     }
 }
 
@@ -255,6 +288,40 @@ mod tests {
         assert_eq!(context_window_for("claude-sonnet-4-6"), 1_000_000);
         assert_eq!(context_window_for("claude-fable-5"), 1_000_000);
         assert_eq!(context_window_for("some-future-model"), DEFAULT_CONTEXT_WINDOW);
+    }
+
+    #[test]
+    fn pricing_follows_the_family_so_a_new_version_never_falls_through() {
+        // The regression: `claude-opus-5` answered to neither `opus-4` nor
+        // `opus-3`, so it was priced at the Sonnet fallback — every cost Atlas
+        // showed for it, live and in Stats, came out at 3/5ths of the real rate
+        // on input and 3/5ths on output.
+        let opus5 = pricing_for("claude-opus-5");
+        assert_eq!((opus5.input, opus5.output), (5.0, 25.0));
+        assert_eq!((opus5.cache_write, opus5.cache_read), (6.25, 0.5));
+
+        // A version this table has never heard of prices as its family.
+        assert_eq!(pricing_for("claude-opus-9-20991231").input, 5.0);
+        assert_eq!(pricing_for("claude-haiku-9").input, 1.0);
+
+        assert_eq!(pricing_for("claude-sonnet-5").input, 2.0);
+        assert_eq!(pricing_for("claude-sonnet-4-6").input, 3.0);
+        assert_eq!(pricing_for("claude-haiku-4-5-20251001").input, 1.0);
+        // Fable 5.1 reads cache at 0.025x input, Fable 5 at 0.1x.
+        assert_eq!(pricing_for("claude-fable-5-1").cache_read, 0.25);
+        assert_eq!(pricing_for("claude-fable-5").cache_read, 1.0);
+
+        // Retired models keep their own rates, so old sessions in Stats stay
+        // right. Both id shapes are covered — see `is_legacy_opus`.
+        assert_eq!(pricing_for("claude-opus-4-1-20250805").input, 15.0);
+        assert_eq!(pricing_for("claude-opus-4-20250514").input, 15.0);
+        assert_eq!(pricing_for("claude-3-opus-20240229").input, 15.0);
+        assert_eq!(pricing_for("claude-opus-4-5").input, 5.0);
+        assert_eq!(pricing_for("claude-3-5-haiku-20241022").input, 0.8);
+        assert_eq!(pricing_for("claude-3-haiku-20240307").input, 0.25);
+
+        // An unrecognised family keeps the mid-range fallback.
+        assert_eq!(pricing_for("some-future-model").input, 3.0);
     }
 
     #[test]
