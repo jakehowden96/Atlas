@@ -5,9 +5,15 @@
  * the palette as plain hex strings.
  *
  * Contrast: every ANSI colour below clears 4.5:1 against its own `--term-bg`
- * (verified against WCAG relative luminance). The single exception is `black`,
- * which is the ANSI *background* tone rather than an ink — it is deliberately
- * close to `--term-bg` so `ESC[40m` fills read as the terminal surface.
+ * (WCAG relative luminance; the floors are light `green` at 5.05 and dark
+ * `brightBlack` at 6.47). This is enforced by `__tests__/theme.test.ts` rather
+ * than by this comment. The single exception is `black`, which is the ANSI
+ * *background* tone rather than an ink — it is deliberately close to
+ * `--term-bg` so `ESC[40m` fills read as the terminal surface.
+ *
+ * The named slots are only half the story: `terminal-session.ts` sets xterm's
+ * `minimumContrastRatio` for the dim/faint and 256-colour paths an ITheme
+ * cannot reach.
  *
  * Keep this aligned with the token blocks in `src/app.css`.
  */
@@ -28,7 +34,7 @@ export const lightXtermTheme = {
   blue: "#1a6bad",
   magenta: "#9a3d8c",
   cyan: "#0f7370",
-  white: "#6b7079",
+  white: "#60656d", // --muted
   brightBlack: "#5a5f67",
   brightRed: "#a52f26",
   brightGreen: "#1b6f4e",
@@ -55,7 +61,7 @@ export const darkXtermTheme = {
   magenta: "#d48ac0",
   cyan: "#4fc4bd",
   white: "#c9cbd1",
-  brightBlack: "#8b8f98",
+  brightBlack: "#9398a1", // --muted
   brightRed: "#f79890",
   brightGreen: "#6fd3ad",
   brightYellow: "#edc06a",

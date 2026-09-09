@@ -71,6 +71,17 @@ export class TerminalSession {
          the banner. 1.2 keeps the pane readable without splitting glyphs. */
       lineHeight: 1.2,
       fontFamily: "'Geist Mono Variable', 'Geist Mono', monospace",
+      /* Geist Mono is a variable font, and at 400 in the WebGL renderer its
+         strokes read lighter than the same face in the surrounding UI. 500 is
+         the smallest step that looks deliberate; 600 blooms against --term-bg
+         in the light theme. */
+      fontWeight: 500,
+      fontWeightBold: 700,
+      /* theme.ts constrains the 16 named ANSI slots, but Claude Code's TUI also
+         leans on dim/faint SGR and 256-colour indices an ITheme cannot name.
+         This is xterm's own lever over those paths, and the WebGL renderer
+         loaded below honours it. */
+      minimumContrastRatio: 4.5,
       theme: activeXtermTheme(get(themeMode)),
       allowProposedApi: true,
     });
