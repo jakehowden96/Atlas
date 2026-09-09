@@ -2,7 +2,6 @@
   import type { UnlistenFn } from "@tauri-apps/api/event";
   import { onDestroy, onMount } from "svelte";
   import { get } from "svelte/store";
-  import type { SessionState } from "../../../types/session";
   import {
     buildDocTree,
     fileKey,
@@ -34,17 +33,8 @@
     sources,
     toggleCollapsed,
   } from "../../stores/files";
-  import { liveSessions } from "../../stores/liveSessions";
   import { openDialogOpen } from "../../stores/view";
   import { activeWorkspacePath, visibleWorkspaces } from "../../stores/workspace";
-
-  /** The plan dot takes its colour from the session state, as the tiles do. */
-  const STATE_COLOUR: Record<SessionState, string> = {
-    running: "var(--accent)",
-    needsYou: "var(--warn)",
-    error: "var(--danger)",
-    idle: "var(--muted)",
-  };
 
   let tree = $derived(buildDocTree($docEntries));
   let docCount = $derived($docEntries.filter((e) => !e.is_dir).length);
@@ -61,22 +51,6 @@
         .map((f) => f.path),
     ),
   );
-
-  // A plan file names a workspace, not a session, so the dot reports the state
-  // of that workspace's most recently active session.
-  let planState: SessionState | null = $derived.by(() => {
-    if (!workspace) return null;
-    const uuids = new Set(
-      workspace.sessions.map((s) => s.claudeSessionId).filter((id): id is string => !!id),
-    );
-    let newest: { state: SessionState; at: string } | null = null;
-    for (const [uuid, live] of $liveSessions) {
-      if (!uuids.has(uuid)) continue;
-      const at = live.lastActivity ?? live.startedAt ?? "";
-      if (!newest || at > newest.at) newest = { state: live.state, at };
-    }
-    return newest?.state ?? null;
-  });
 
   // Show the plan's random suffix rather than the slugified cwd it starts with;
   // the whole section is already scoped to one workspace. The leading `-` a
@@ -166,28 +140,22 @@
 
 <aside class="tree">
   <div class="ws-row">
-    <div class="swatches">
+    <select class="ws-name" title={$fileWs} aria-label="Workspace" bind:value={$fileWs}>
+      {#if $visibleWorkspaces.length === 0}
+        <option value="">No workspace</option>
+      {/if}
       {#each $visibleWorkspaces as ws (ws.path)}
-        <button
-          type="button"
-          class="swatch"
-          class:on={ws.path === $fileWs}
-          style="--swatch: {ws.color ?? 'var(--muted)'}"
-          title={ws.name}
-          aria-label={ws.name}
-          onclick={() => fileWs.set(ws.path)}
-        ></button>
+        <option value={ws.path}>{ws.name}</option>
       {/each}
-    </div>
-    <span class="ws-name" title={$fileWs}>{workspace?.name ?? "No workspace"}</span>
+    </select>
     <button
       type="button"
       class="new-note"
       title="New note"
       aria-label="New note"
       disabled={!$fileWs}
-      onclick={newNote}
-    >+</button>
+      onclick={newNote}>+</button
+    >
   </div>
 
   <!-- Search is still inert: ⌘K already searches documents from the top bar.
@@ -213,11 +181,12 @@
           onclick={() => openFile("plans", plan.path)}
           title={plan.path}
         >
-          <span class="square" style="--dot: {planState ? STATE_COLOUR[planState] : 'var(--muted)'}"
-          ></span>
+          <span class="square"></span>
           <span class="name">{planLabel(plan.name)}</span>
           {#if $dirtyFiles.has(key)}<span class="unsaved"></span>{/if}
         </button>
+      {:else}
+        <p class="empty">Nothing yet</p>
       {/each}
     </section>
 
@@ -244,14 +213,14 @@
         {#each $sourceFiles.get(source) ?? [] as entry (entry.path)}
           {@render diskRow(entry.path, entry.name, 1)}
         {:else}
-          <p class="empty nested">No documents here</p>
+          <p class="empty nested">Nothing yet</p>
         {/each}
       {/each}
       {#each looseDiskFiles as path (path)}
         {@render diskRow(path, basename(path), 0)}
       {/each}
       {#if $sources.length === 0 && looseDiskFiles.length === 0}
-        <p class="empty">Nothing added yet</p>
+        <p class="empty">Nothing yet</p>
       {/if}
     </section>
   </div>
@@ -330,23 +299,6 @@
     flex-shrink: 0;
   }
 
-  .swatches {
-    display: flex;
-    gap: 4px;
-  }
-
-  .swatch {
-    width: 12px;
-    height: 12px;
-    border-radius: var(--r-xs);
-    background: var(--swatch);
-    cursor: pointer;
-  }
-
-  .swatch.on {
-    box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--swatch);
-  }
-
   .ws-name {
     flex: 1;
     min-width: 0;
@@ -356,10 +308,12 @@
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
+    cursor: pointer;
   }
 
   .new-note {
     display: flex;
+    flex-shrink: 0;
     align-items: center;
     justify-content: center;
     width: 20px;
@@ -537,15 +491,11 @@
     flex-shrink: 0;
     width: 6px;
     height: 6px;
+    background: var(--muted);
   }
 
   .circle {
     border-radius: 50%;
-    background: var(--accent);
-  }
-
-  .square {
-    background: var(--dot);
   }
 
   .unsaved {
@@ -553,7 +503,7 @@
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--warn);
+    background: var(--text);
   }
 
   .footer {
