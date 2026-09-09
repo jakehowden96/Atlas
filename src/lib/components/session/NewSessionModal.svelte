@@ -248,9 +248,6 @@
     if (result.effect === "close") close();
     else if (result.effect === "start") void start();
     else if (result.effect === "addFolder") void addRow();
-    else if (result.effect === "removeWorkspace" && selected) {
-      void removeWorkspaceWithUndo(selected.path);
-    }
   }
 
   function onInput(e: Event) {

@@ -93,7 +93,7 @@ export interface NewSessionCounts {
 }
 
 /** What the component must do; the state change is already applied. */
-export type NewSessionEffect = "start" | "close" | "addFolder" | "removeWorkspace" | null;
+export type NewSessionEffect = "start" | "close" | "addFolder" | null;
 
 export interface KeyResult {
   state: NewSessionState;
@@ -199,13 +199,6 @@ export function handleKey(
 
   if (mod && e.key.toLowerCase() === "o") {
     return { state: s, effect: "addFolder", handled: true };
-  }
-
-  // ⌘⌫ removes the highlighted workspace. Modified so it cannot fire while the
-  // filter is being edited, and only over a real row — never the add row.
-  if (mod && (e.key === "Backspace" || e.key === "Delete")) {
-    const onRow = s.column === "workspaces" && s.wsIndex < counts.workspaces;
-    return { state: s, effect: onRow ? "removeWorkspace" : null, handled: true };
   }
 
   switch (e.key) {

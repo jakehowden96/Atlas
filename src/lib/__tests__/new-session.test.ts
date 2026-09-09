@@ -229,25 +229,6 @@ describe("keyboard model", () => {
     expect(toggleColumn(state({ mode: "fresh" }), counts(3, 2)).column).toBe("workspaces");
   });
 
-  it("⌘⌫ removes the highlighted workspace, but never the add row", () => {
-    const c = counts(3, 0);
-    expect(handleKey({ key: "Backspace", metaKey: true }, state({ wsIndex: 1 }), c).effect).toBe(
-      "removeWorkspace",
-    );
-    expect(handleKey({ key: "Delete", ctrlKey: true }, state({ wsIndex: 1 }), c).effect).toBe(
-      "removeWorkspace",
-    );
-    // The add row sits at index === counts.workspaces and owns no workspace.
-    expect(handleKey({ key: "Backspace", metaKey: true }, state({ wsIndex: 3 }), c).effect).toBe(
-      null,
-    );
-    // Nor does the Resume column, whose highlight is a conversation.
-    const inResume = state({ mode: "resume", column: "resume" });
-    expect(handleKey({ key: "Backspace", metaKey: true }, inResume, counts(3, 2)).effect).toBe(
-      null,
-    );
-  });
-
   it("leaves an unmodified Backspace to the filter input", () => {
     expect(handleKey({ key: "Backspace" }, state({ wsIndex: 1 }), counts(3, 0)).handled).toBe(
       false,
