@@ -1,7 +1,13 @@
 <script lang="ts">
   import type { LineRole, SessionState } from "../../../types/session";
   import { formatTokens } from "../../format";
-  import { formatElapsed, pinKey, planSegments, type SessionTile } from "../../overview";
+  import {
+    formatElapsed,
+    pinKey,
+    planSegments,
+    previewLines,
+    type SessionTile,
+  } from "../../overview";
   import { allowPendingTool, closeSession, denyPendingTool } from "../../session-actions";
   import { togglePinnedSession } from "../../stores/settings";
   import { activeTabId } from "../../stores/terminal";
@@ -49,7 +55,7 @@
   let live = $derived(tile.live);
   let needsYou = $derived(tile.state === "needsYou");
   /** Blank lines render as a non-breaking space so row height stays stable. */
-  let preview = $derived(live.lines.slice(-6));
+  let preview = $derived(previewLines(live.lines));
   let segments = $derived(planSegments(live.plan));
   /* The bar reads as a proportion, the label as a size — `68k` answers "how
      much room is left" in the unit the model actually meters. */
@@ -379,15 +385,24 @@
   }
 
   /* ── Terminal preview ────────────────────────────────────────────────── */
+  /* A bottom-aligned column that clips what does not fit, so the newest line
+     sits against the footer and the pane fills with as much history as the
+     tile is tall. `previewLines` hands over more than can fit on purpose —
+     see the note there. `flex-end` is what makes the overflow fall off the
+     top, which is the end a tail should lose. */
   .preview {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
     flex: 1;
     min-height: 0;
     padding: 10px 14px;
     overflow: hidden;
     background: var(--term-bg);
     color: var(--term-text);
-    font: 11.5px/1.6 var(--font-mono);
+    font: var(--fs-xs)/1.6 var(--font-mono);
   }
+
 
   .preview.paused {
     display: grid;
@@ -418,7 +433,10 @@
     animation: atlasPulse 1.6s ease-in-out infinite;
   }
 
+  /* `flex-shrink: 0` because the preview is a flex column now: without it the
+     rows would compress instead of overflowing off the top. */
   .line {
+    flex-shrink: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

@@ -10,6 +10,7 @@ import {
   handleGridKey,
   pinKey,
   planSegments,
+  previewLines,
   tileComparator,
   type SessionTile,
 } from "../overview";
@@ -419,5 +420,25 @@ describe("handleGridKey", () => {
   it("survives an empty grid and an index that outran the tiles", () => {
     expect(press("ArrowDown", 0, 0)).toEqual({ index: 0, effect: null, handled: false });
     expect(press("ArrowLeft", 99).index).toBe(6);
+  });
+});
+
+function line(text: string) {
+  return { role: "step" as const, text, timestamp: null };
+}
+
+describe("previewLines", () => {
+  /* The tile preview was `lines.slice(-6)`, a fixed six regardless of how tall
+     the tile was. `grid-auto-rows: minmax(300px, 1fr)` stretches a single row
+     to the full window, so with three sessions open each tile stood about
+     880px tall and showed six lines over roughly 700px of empty pane. That is
+     the "transcript is not showing properly on the sessions page — it captures
+     the beginning but I cannot see it as it is outputting" report: the pane had
+     the room and was not using it. */
+  it("keeps the newest lines, which is what a tail shows", () => {
+    const lines = Array.from({ length: 60 }, (_, i) => line(`l${i}`));
+    const out = previewLines(lines);
+    expect(out[out.length - 1].text).toBe("l59");
+    expect(out.length).toBeGreaterThan(6);
   });
 });

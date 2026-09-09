@@ -4,7 +4,7 @@
  * The join, the sort and the filter live here rather than in the components so
  * they can be unit-tested without a Svelte compiler (README → Conventions).
  */
-import type { LiveSession, PlanItem, SessionState } from "../types/session";
+import type { LiveSession, PlanItem, SessionState, TranscriptLine } from "../types/session";
 import type { OverviewOrdering } from "./stores/settings";
 import type { View } from "./stores/view";
 import type { DiffStats, Workspace, WorkspaceSession } from "./stores/workspace";
@@ -316,4 +316,26 @@ export function handleGridKey(
     default:
       return { index: at, effect: null, handled: false };
   }
+}
+
+/**
+ * The transcript lines a tile's preview pane shows, newest last.
+ *
+ * This was a fixed `slice(-6)`. The grid stretches a single row to the full
+ * window height (`grid-auto-rows: minmax(300px, 1fr)`), so with a few sessions
+ * open a tile stands ~880px tall and those six lines sat above roughly 700px of
+ * empty pane — the review's "the transcript is not showing properly on the
+ * sessions page, it captures the beginning but I cannot see it as it is
+ * outputting". The pane had the room and was not using it.
+ *
+ * The count is not measured. The pane is a bottom-aligned column that clips its
+ * overflow, so handing it more lines than fit lets CSS decide how many are
+ * visible and keeps the newest ones against the footer, the way a tail reads.
+ * The cap is what a full-height tile can show at the preview's line height,
+ * with room to spare; the backend keeps 200.
+ */
+const PREVIEW_MAX_LINES = 48;
+
+export function previewLines(lines: TranscriptLine[]): TranscriptLine[] {
+  return lines.slice(-PREVIEW_MAX_LINES);
 }

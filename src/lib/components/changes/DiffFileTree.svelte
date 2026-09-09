@@ -101,7 +101,7 @@
     overflow-y: auto;
     overflow-x: hidden;
     border-right: 1px solid var(--border);
-    font: 11.5px var(--font-mono);
+    font: var(--fs-xs) var(--font-mono);
   }
 
   .filter {
@@ -111,7 +111,7 @@
     border-radius: var(--r-md);
     background: var(--surface2);
     color: var(--text);
-    font: 11.5px var(--font-mono);
+    font: var(--fs-xs) var(--font-mono);
     outline: none;
   }
 
@@ -144,7 +144,7 @@
     border-radius: var(--r-sm);
     background: transparent;
     color: var(--muted);
-    font: 11.5px var(--font-mono);
+    font: var(--fs-xs) var(--font-mono);
     text-align: left;
     cursor: pointer;
   }
@@ -170,7 +170,7 @@
     border: none;
     background: transparent;
     color: var(--text);
-    font: 11.5px var(--font-mono);
+    font: var(--fs-xs) var(--font-mono);
     text-align: left;
     text-overflow: ellipsis;
     white-space: nowrap;

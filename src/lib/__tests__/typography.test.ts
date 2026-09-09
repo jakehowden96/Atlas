@@ -19,13 +19,21 @@ interface Decl {
   line: number;
 }
 
+/* Both spellings. The `font:` shorthand sets a size too, and nine of them
+   were hiding under the first version of this guard — including the Sessions
+   tile's transcript preview at 11.5px, which is one of the two labels the
+   review named. */
+const SIZE_PATTERNS = [/font-size:\s*([0-9.]+)px/, /\bfont:\s*(?:[\w-]+\s+)*?([0-9.]+)px/];
+
 function fontSizesInPx(): Decl[] {
   const out: Decl[] = [];
   for (const [file, source] of Object.entries(SHEETS)) {
     const lines = source.split("\n");
     lines.forEach((text, i) => {
-      const m = /font-size:\s*([0-9.]+)px/.exec(text);
-      if (m) out.push({ file, px: Number.parseFloat(m[1]), line: i + 1 });
+      for (const pattern of SIZE_PATTERNS) {
+        const m = pattern.exec(text);
+        if (m) out.push({ file, px: Number.parseFloat(m[1]), line: i + 1 });
+      }
     });
   }
   return out;

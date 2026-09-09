@@ -430,7 +430,7 @@
     overflow-x: auto;
     overflow-y: hidden;
     background: var(--surface);
-    font: 12px/1.7 var(--font-mono);
+    font: var(--fs-sm)/1.7 var(--font-mono);
     contain: content;
   }
 

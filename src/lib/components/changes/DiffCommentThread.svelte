@@ -95,7 +95,7 @@
     border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
     border-radius: var(--r-md);
     background: var(--bg);
-    font: 12px/1.4 var(--font-ui);
+    font: var(--fs-sm)/1.4 var(--font-ui);
     color: var(--text);
   }
 
@@ -115,7 +115,7 @@
   .caption {
     margin-top: 6px;
     color: var(--muted);
-    font: 11px var(--font-ui);
+    font: var(--fs-xs) var(--font-ui);
   }
 
   .dismiss {
@@ -153,7 +153,7 @@
     border-radius: var(--r-sm);
     background: var(--surface);
     color: var(--text);
-    font: 12px/1.4 var(--font-ui);
+    font: var(--fs-sm)/1.4 var(--font-ui);
     resize: vertical;
     outline: none;
   }
