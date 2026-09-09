@@ -43,6 +43,8 @@
   let summary = $state<StatsSummary | null>(null);
   let loading = $state(true);
   let range = $state<Range>("30d");
+  /** The Tools card lists only its top rows until this flips. */
+  let toolsExpanded = $state(false);
   /** Ticks so the "Ns ago" indicator stays honest between recomputes. */
   let now = $state(new Date());
   let unlisten: UnlistenFn | null = null;
@@ -53,6 +55,9 @@
     { id: "30d", label: "30 days" },
     { id: "all", label: "All time" },
   ];
+
+  /** Tool rows shown collapsed; the rest arrive on "Show all". */
+  const TOOLS_COLLAPSED = 8;
 
   async function load() {
     loading = true;
@@ -85,6 +90,7 @@
   let models = $derived(summary ? sortedModels(modelsForRange(summary, range)) : []);
   let rows = $derived(modelRows(models));
   let tools = $derived(summary ? toolRows(summary, range) : []);
+  let visibleTools = $derived(toolsExpanded ? tools : tools.slice(0, TOOLS_COLLAPSED));
   let projects = $derived(summary ? projectRows(summary, range) : []);
   let recent = $derived(summary ? recentForRange(summary, range, now) : []);
   let spark = $derived(summary ? sparkSeries(summary.byDay ?? {}, range, now) : []);
@@ -320,7 +326,7 @@
           <p class="empty-card">No tool calls in this window.</p>
         {:else}
           <div class="tool-list">
-            {#each tools as tool (tool.name)}
+            {#each visibleTools as tool (tool.name)}
               <div class="tool-row">
                 <span class="tool-name" title={tool.name}>{tool.name}</span>
                 <span class="track">
@@ -336,6 +342,15 @@
               </div>
             {/each}
           </div>
+          {#if tools.length > TOOLS_COLLAPSED}
+            <button
+              type="button"
+              class="tool-toggle"
+              onclick={() => (toolsExpanded = !toolsExpanded)}
+            >
+              {toolsExpanded ? "Show fewer" : `Show all (${tools.length})`}
+            </button>
+          {/if}
         {/if}
       </section>
     </div>
@@ -772,8 +787,12 @@
   }
 
   /* ── Tools ─────────────────────────────────────────────────────────────── */
+  /* 8 rows tall in both states: expanding scrolls here instead of growing the row.
+     The reserved gutter keeps the bars the same width once the scrollbar appears. */
   .tool-list {
+    max-height: 192px;
     overflow-y: auto;
+    scrollbar-gutter: stable;
   }
 
   .tool-row {
@@ -817,6 +836,19 @@
 
   .err.muted {
     color: var(--muted);
+  }
+
+  .tool-toggle {
+    padding: 6px 12px;
+    color: var(--muted);
+    font-family: var(--font-ui);
+    font-size: 10.5px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .tool-toggle:hover {
+    color: var(--text);
   }
 
   /* ── By workspace ──────────────────────────────────────────────────────── */
