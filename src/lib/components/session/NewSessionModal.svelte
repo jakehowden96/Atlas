@@ -352,7 +352,9 @@
       <div class="right-col">
         <div>
           <div class="col-head mode-head">
-            <span>Start in {selected?.name ?? "…"}</span>
+            <span class="mode-title" title={selected?.name}>
+              Start in {selected?.name ?? "…"}
+            </span>
             <span class="mode-hint"><kbd>tab</kbd> switches</span>
           </div>
           <SegmentedControl
@@ -710,6 +712,15 @@
     gap: 10px;
   }
 
+  /* The right column is the narrow one — 268px in New mode — so a workspace
+     with a long name would otherwise push the tab hint out of the modal. */
+  .mode-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   /* Tab is the only way to reach the segmented control, so it is labelled where
      the control is rather than only in the footer hints. */
   .mode-hint {
@@ -733,6 +744,12 @@
     color: var(--muted);
     font-size: 11.5px;
     line-height: 1.5;
+  }
+
+  /* An absolute path has no spaces to wrap at, so this one sentence would run
+     off the end of the column and be cut. Break it anywhere instead. */
+  .fresh-copy .mono {
+    overflow-wrap: anywhere;
   }
 
   .mono {
