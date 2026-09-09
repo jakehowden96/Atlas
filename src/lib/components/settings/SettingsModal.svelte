@@ -194,7 +194,7 @@
 
             <div class="row">
               <div class="row-text">
-                <div class="row-title">Overview ordering</div>
+                <div class="row-title">Sessions ordering</div>
                 <div class="row-desc">Needs-you first, then running, then idle.</div>
               </div>
               <SegmentedControl
@@ -581,8 +581,12 @@
     border-bottom: none;
   }
 
+  /* Two rows of six. Fixed tracks and no shrink, so a longer palette grows the
+     row taller rather than squeezing the name and path beside it. */
   .swatches {
-    display: flex;
+    display: grid;
+    flex: none;
+    grid-template-columns: repeat(6, 14px);
     gap: 4px;
   }
 
