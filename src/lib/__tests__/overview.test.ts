@@ -33,6 +33,7 @@ function live(sessionUuid: string, overrides: Partial<LiveSession> = {}): LiveSe
     pendingTool: null,
     outputTokens: 0,
     costEstimate: 0,
+    contextTokens: 0,
     peakContext: 0,
     contextPct: 0,
     ...overrides,
@@ -264,6 +265,22 @@ describe("buildTiles", () => {
       ]),
     ];
     expect(buildTiles([], closed, new Map(), new Set())).toHaveLength(0);
+  });
+
+  /* Regression: cmd+shift+w while Claude is still writing to the transcript.
+     The row is detached (terminalTabId → null) but a trailing session-update
+     for its UUID can still land afterwards and repopulate `liveSessionList`.
+     That UUID belongs to `row-a`, closed or not, so it must never fall
+     through to the "no workspace row owns this" loop and render an orphan
+     tile that outlives the session and opens onto whatever tab is active. */
+  it("does not resurrect a closed session as an orphan tile", () => {
+    const closed = [
+      workspace("/code/atlas", [
+        { id: "row-a", claudeSessionId: "uuid-a", terminalTabId: null },
+      ]),
+    ];
+    const tiles = buildTiles([live("uuid-a")], closed, new Map(), new Set());
+    expect(tiles).toHaveLength(0);
   });
 
   it("does not double-count a row whose live session has arrived", () => {

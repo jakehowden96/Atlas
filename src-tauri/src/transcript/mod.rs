@@ -84,7 +84,9 @@ pub(crate) fn model_family(model: &str) -> String {
 /// Window assumed for a model we do not recognise.
 pub(crate) const DEFAULT_CONTEXT_WINDOW: u64 = 200_000;
 
-/// Usable context window per model family, in tokens.
+/// Raw context window per model family, in tokens. The 1M-window families run
+/// with the long-context beta on, so autocompact fires against this full
+/// window rather than a 200k cap.
 pub(crate) fn context_window_for(model: &str) -> u64 {
     match model_family(model).as_str() {
         "Haiku" => 200_000,
@@ -93,17 +95,14 @@ pub(crate) fn context_window_for(model: &str) -> u64 {
     }
 }
 
-/// Peak context as a fraction (0.0–1.0) of the model's window.
-///
-/// This is an approximation. The percentage the Claude Code TUI shows is
-/// measured against its autocompact threshold, not the raw window, so Atlas's
-/// number reads lower than the TUI's for the same session.
-pub(crate) fn context_pct(peak_context: u64, model: &str) -> f64 {
+/// Context as a fraction (0.0–1.0) of what the session can use before
+/// autocompact fires. Can exceed 1.0 with autocompact off; the views clamp.
+pub(crate) fn context_pct(tokens: u64, model: &str) -> f64 {
     let window = context_window_for(model);
     if window == 0 {
         return 0.0;
     }
-    peak_context as f64 / window as f64
+    tokens as f64 / window as f64
 }
 
 // ── Per-request accumulation ──────────────────────────────────────────────────
@@ -325,7 +324,9 @@ mod tests {
     }
 
     #[test]
-    fn context_pct_is_a_fraction_of_the_window() {
+    fn context_pct_measures_against_the_full_window() {
+        // A 1M-window model runs the long-context beta, so autocompact fires
+        // against the full 1M rather than a 200k cap.
         assert!((context_pct(500_000, "claude-opus-5") - 0.5).abs() < f64::EPSILON);
         assert!((context_pct(100_000, "claude-haiku-4-5") - 0.5).abs() < f64::EPSILON);
     }

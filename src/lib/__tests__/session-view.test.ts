@@ -4,6 +4,7 @@ import type { PanelData } from "../../types/panel";
 import type { PlanItem, Subagent } from "../../types/session";
 import {
   filesTouched,
+  groupFilesByRepo,
   planCounts,
   planRowState,
   subagentMeta,
@@ -115,6 +116,29 @@ describe("filesTouched", () => {
   it("names a deleted file by its old path", () => {
     const rows = filesTouched(panel(TWO_FILE_DIFF));
     expect(rows[1].path).toBe("src/gone.ts");
+  });
+});
+
+describe("groupFilesByRepo", () => {
+  it("is empty for no files", () => {
+    expect(groupFilesByRepo([])).toEqual([]);
+  });
+
+  it("keeps a single-repo session as one unnamed group", () => {
+    const rows = filesTouched(panel(TWO_FILE_DIFF));
+    expect(groupFilesByRepo(rows)).toEqual([{ repo: "", files: rows }]);
+  });
+
+  it("splits a multi-repo session into one group per repo, first-seen order", () => {
+    const multi = panel(TWO_FILE_DIFF + TWO_FILE_DIFF, [
+      { name: "api", raw: TWO_FILE_DIFF, files_changed: 2, lines_added: 2, lines_removed: 3 },
+      { name: "web", raw: TWO_FILE_DIFF, files_changed: 2, lines_added: 2, lines_removed: 3 },
+    ]);
+    const rows = filesTouched(multi);
+    expect(groupFilesByRepo(rows)).toEqual([
+      { repo: "api", files: rows.slice(0, 2) },
+      { repo: "web", files: rows.slice(2, 4) },
+    ]);
   });
 });
 

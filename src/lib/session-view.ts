@@ -54,6 +54,31 @@ export function filesTouched(panel: PanelData | null): TouchedFile[] {
   );
 }
 
+/** One repo's share of the rail's "Files touched" list, in first-seen order. */
+export interface RepoFileGroup {
+  repo: string;
+  files: TouchedFile[];
+}
+
+/**
+ * Fold `filesTouched`'s flat rows into one group per repo, so the rail shows
+ * the repo once as a heading rather than on every line under it.
+ */
+export function groupFilesByRepo(files: TouchedFile[]): RepoFileGroup[] {
+  const groups: RepoFileGroup[] = [];
+  const byRepo = new Map<string, RepoFileGroup>();
+  for (const file of files) {
+    let group = byRepo.get(file.repo);
+    if (!group) {
+      group = { repo: file.repo, files: [] };
+      byRepo.set(file.repo, group);
+      groups.push(group);
+    }
+    group.files.push(file);
+  }
+  return groups;
+}
+
 /**
  * Resolve the focused Atlas session id to the terminal tab that hosts its PTY.
  *

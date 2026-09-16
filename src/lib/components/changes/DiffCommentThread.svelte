@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { chord } from "../../platform";
+  import { enterLabel } from "../../platform";
   import {
     anchorDomKey,
     type ReviewAnchor,
@@ -38,7 +38,7 @@
       // drawer around it.
       e.stopPropagation();
       onClose();
-    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    } else if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       save();
     }
@@ -67,7 +67,7 @@
       <!-- svelte-ignore a11y_autofocus -->
       <textarea
         class="input"
-        placeholder={`Leave a review comment… (${chord("Enter")} to save, Esc to cancel)`}
+        placeholder={`Leave a review comment… (${enterLabel()} to save, Shift+${enterLabel()} for a new line, Esc to cancel)`}
         bind:value={body}
         onkeydown={composerKeydown}
         autofocus
@@ -143,6 +143,7 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+    max-width: 480px;
   }
 
   .input {

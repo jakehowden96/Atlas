@@ -7,6 +7,15 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig({
   plugins: [svelte()],
   clearScreen: false,
+  build: {
+    /* The default 500 kB warning is about download time over a network. Atlas
+       ships its bundle inside the app and loads it off local disk, so the one
+       chunk over that line (xterm plus the CodeMirror core, ~870 kB) costs
+       nothing to fetch. Raised rather than code-split: splitting the editor and
+       terminal out would mean dynamic imports through session-actions,
+       terminal-session and CodeEditor for no measurable gain here. */
+    chunkSizeWarningLimit: 1000,
+  },
   server: {
     port: 1420,
     strictPort: true,

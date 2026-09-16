@@ -627,11 +627,15 @@
     font-size: var(--fs-2xs);
   }
 
+  /* A number must never wrap. "16h 44m" outgrew the Time column and broke onto
+     a second line, which pushed the row past the fixed 24px `.recent-row`
+     height and left consecutive rows drawn over each other. */
   .num {
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
     font-variant-numeric: tabular-nums;
     text-align: right;
+    white-space: nowrap;
   }
 
   .num.strong {
@@ -941,7 +945,9 @@
   .recent-head,
   .recent-row {
     display: grid;
-    grid-template-columns: minmax(0, 1.6fr) 90px 60px 52px 56px 52px;
+    /* Time is 62px, not 52px: `fmtDuration` runs to "16h 44m" and nowrap would
+       otherwise push it under the Output column. */
+    grid-template-columns: minmax(0, 1.6fr) 90px 60px 62px 56px 52px;
     align-items: center;
     gap: 8px;
     padding: 0 12px;

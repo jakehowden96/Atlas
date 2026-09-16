@@ -8,7 +8,10 @@ mod transcript;
 
 use pty::manager::PtyManager;
 use session::manager::LiveSessionManager;
+use tauri::menu::{Menu, MenuItemBuilder, WINDOW_SUBMENU_ID};
 use tauri::{Emitter, Manager};
+
+const BACK_TO_SESSIONS_MENU_ID: &str = "back-to-sessions";
 
 fn setup_logging() {
     let log_dir = dirs::home_dir()
@@ -199,6 +202,32 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
+        // macOS can swallow ⌘Escape inside the webview before it ever becomes a
+        // JS keydown event (a known wry/WKWebView gap), so `backToSessions`
+        // cannot rely on JS alone. A native menu accelerator is delivered by
+        // AppKit before the webview sees the keypress, and — unlike a global
+        // shortcut — only fires while Atlas is the frontmost app.
+        .menu(|app_handle| {
+            let menu = Menu::default(app_handle)?;
+            let back_to_sessions = MenuItemBuilder::new("Back to Sessions")
+                .id(BACK_TO_SESSIONS_MENU_ID)
+                .accelerator("CmdOrCtrl+Escape")
+                .build(app_handle)?;
+            for item in menu.items()? {
+                if item.id().0 == WINDOW_SUBMENU_ID {
+                    if let Some(submenu) = item.as_submenu() {
+                        submenu.append(&back_to_sessions)?;
+                    }
+                    break;
+                }
+            }
+            Ok(menu)
+        })
+        .on_menu_event(|app, event| {
+            if event.id().0 == BACK_TO_SESSIONS_MENU_ID {
+                let _ = app.emit(BACK_TO_SESSIONS_MENU_ID, ());
+            }
+        })
         .manage(pty_manager)
         .manage(lsp_manager)
         .manage(live_sessions.clone())

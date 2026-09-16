@@ -54,6 +54,7 @@
       title: "Session",
       rows: [
         { action: "toggleRail" },
+        { action: "closeSession" },
         { keys: "Esc", label: "Back to Sessions, unless the terminal has focus" },
       ],
     },

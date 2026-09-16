@@ -70,11 +70,15 @@ export function buildTiles(
   // session invisible on the Overview.
   for (const workspace of workspaceList) {
     for (const row of workspace.sessions) {
+      // Claimed whether or not the row is currently open: a UUID a row owns
+      // must never fall through to the orphan loop below, or closing a
+      // session while its transcript is still catching up resurrects it as
+      // a tile the moment the trailing live-session update lands.
+      if (row.claudeSessionId) claimed.add(row.claudeSessionId);
       if (row.terminalTabId === null) continue; // persisted, not currently open
       const live =
         (row.claudeSessionId ? liveByUuid.get(row.claudeSessionId) : undefined) ??
         pendingLive(row);
-      if (row.claudeSessionId) claimed.add(row.claudeSessionId);
       tiles.push(toTile(live, workspace, row, diffStats, needsInputTabs));
     }
   }
@@ -112,6 +116,7 @@ function pendingLive(row: WorkspaceSession): LiveSession {
     pendingTool: null,
     outputTokens: 0,
     costEstimate: 0,
+    contextTokens: 0,
     peakContext: 0,
     contextPct: 0,
   };

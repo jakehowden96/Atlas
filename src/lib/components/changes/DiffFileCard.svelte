@@ -178,8 +178,6 @@
       </button>
     </div>
   {:else if !viewed}
-    <!-- `.lines` is the only horizontal scroller in the drawer; `.rows` widens
-         to the longest code line so row tints span the full scroll width. -->
     <div class="lines">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
@@ -427,23 +425,15 @@
 
   /* ── Diff lines ────────────────────────────────────────────────────────── */
   .lines {
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow: hidden;
     background: var(--surface);
     font: var(--fs-sm)/1.7 var(--font-mono);
     contain: content;
   }
 
-  /* Unified rows are as wide as the longest line so `.lines` scrolls sideways
-     and the row tints span the whole scroll width. */
+  /* Rows fill the column and long lines wrap, so nothing ever needs a
+     sideways scroll to be read. */
   .rows {
-    min-width: 100%;
-    width: max-content;
-  }
-
-  /* Split rows can't grow — the two sides have to stay paired — so they fill
-     the column and clip instead. */
-  .rows.split {
     width: 100%;
   }
 
@@ -470,12 +460,8 @@
   }
 
   .code {
-    white-space: pre;
-  }
-
-  .rows.split .code {
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: pre-wrap;
+    word-break: break-all;
   }
 
   /* Additions / deletions — design tokens, tinted over whatever is behind. */

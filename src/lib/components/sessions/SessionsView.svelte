@@ -17,7 +17,7 @@
     settingsOpen,
     tailTranscripts,
   } from "../../stores/settings";
-  import { jumpOpen, newSessionOpen, shortcutsOpen, wsFilter } from "../../stores/view";
+  import { activeView, jumpOpen, newSessionOpen, shortcutsOpen, wsFilter } from "../../stores/view";
   import { sessionDiffStats, visibleWorkspaces } from "../../stores/workspace";
   import Chip from "../ui/Chip.svelte";
   import SessionTile from "./SessionTile.svelte";
@@ -142,6 +142,30 @@
   $effect(() => {
     void tiles;
     untrack(() => claimFocus());
+  });
+
+  /**
+   * Arriving on the grid puts focus on the first tile.
+   *
+   * Sessions stays mounted behind every other screen now, so coming back to it
+   * is no longer a mount and the effect above — which only runs when `tiles`
+   * changes — never fires. Focus is still on whatever the last screen left it
+   * on, and coming back from a session that is xterm's own helper textarea:
+   * `focusIsSpokenFor` reads a textarea as a legitimate owner and `claimFocus`
+   * stands down, which is why the arrows did nothing until you clicked a tile.
+   *
+   * So this takes focus rather than claiming it loose, and resets the roving
+   * index: the grid is re-sorted while you are away, so the tile the index
+   * pointed at is rarely the one still under it. The first tile is the one the
+   * ordering says matters most.
+   */
+  $effect(() => {
+    if ($activeView !== "sessions") return;
+    focusIndex = 0;
+    void tick().then(() => {
+      if ($activeView !== "sessions" || modalOpen || tiles.length === 0) return;
+      focusTile(0);
+    });
   });
 
   /* A modal took focus away and has now given it back — to the wrong place. */

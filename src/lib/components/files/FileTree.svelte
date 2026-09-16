@@ -5,6 +5,7 @@
   import {
     buildDocTree,
     fileKey,
+    filterDocTree,
     hasUnsavedUnder,
     parseFileKey,
     planWorkspace,
@@ -36,10 +37,19 @@
   import { openDialogOpen } from "../../stores/view";
   import { activeWorkspacePath, visibleWorkspaces } from "../../stores/workspace";
 
-  let tree = $derived(buildDocTree($docEntries));
+  /** The tree filter. Matches on file and folder names, not on file contents. */
+  let query = $state("");
+  let searching = $derived(query.trim().length > 0);
+  const matches = (name: string) => name.toLowerCase().includes(query.trim().toLowerCase());
+
+  let tree = $derived(filterDocTree(buildDocTree($docEntries), query));
   let docCount = $derived($docEntries.filter((e) => !e.is_dir).length);
   let workspace = $derived($visibleWorkspaces.find((w) => w.path === $fileWs));
-  let myPlans = $derived($plans.filter((p) => planWorkspace(p, $visibleWorkspaces) === $fileWs));
+  let myPlans = $derived(
+    $plans
+      .filter((p) => planWorkspace(p, $visibleWorkspaces) === $fileWs)
+      .filter((p) => !searching || matches(planLabel(p.name))),
+  );
 
   // `hasUnsavedUnder` compares rel paths, so the dirty keys are narrowed to the
   // workspace on show and stripped back down to their paths once per change.
@@ -72,8 +82,15 @@
     return $openFiles
       .map(parseFileKey)
       .filter((file) => file.source === "disk" && !listed.has(file.path))
-      .map((file) => file.path);
+      .map((file) => file.path)
+      .filter((path) => !searching || matches(basename(path)));
   });
+
+  /** A registered folder's files, narrowed by the filter. */
+  function diskFiles(source: string) {
+    const entries = $sourceFiles.get(source) ?? [];
+    return searching ? entries.filter((e) => matches(e.name)) : entries;
+  }
 
   /** A new note is an unsaved buffer — nothing reaches disk until ⌘S. */
   function newNote() {
@@ -158,12 +175,19 @@
     >
   </div>
 
-  <!-- Search is still inert: ⌘K already searches documents from the top bar.
-       It is rendered disabled rather than omitted so the column does not shift.
-       No chord hint, because nothing handles one: the label read "Ctrl+P" on
-       Windows, where that is WebView2's own print dialog. -->
+  <!-- Filters the three sections below by name. `type="search"` for the native
+       clear affordance; no chord hint on it, because nothing handles one — the
+       label used to read "Ctrl+P", which on Windows is WebView2's own print
+       dialog. Open… keeps only the width its label needs, so the field gets
+       the rest of the column. -->
   <div class="finders">
-    <button type="button" class="finder" disabled>Search</button>
+    <input
+      class="finder search"
+      type="search"
+      placeholder="Search files"
+      aria-label="Search files"
+      bind:value={query}
+    />
     <button type="button" class="finder open" onclick={() => openDialogOpen.set(true)}>
       Open… <span class="kbd">{$chords.openFile}</span>
     </button>
@@ -210,7 +234,7 @@
             onclick={() => void removeSource(source)}>✕</button
           >
         </div>
-        {#each $sourceFiles.get(source) ?? [] as entry (entry.path)}
+        {#each diskFiles(source) as entry (entry.path)}
           {@render diskRow(entry.path, entry.name, 1)}
         {:else}
           <p class="empty nested">Nothing yet</p>
@@ -247,7 +271,9 @@
 {#snippet row(node: TreeNode, depth: number)}
   {@const key = fileKey($fileWs, node.relPath)}
   {#if node.isDir}
-    {@const shut = !$expanded.has(key)}
+    <!-- Every folder is open while filtering: a match inside a collapsed one
+         would otherwise be filtered in and still not on screen. -->
+    {@const shut = !searching && !$expanded.has(key)}
     <button
       type="button"
       class="row"
@@ -339,7 +365,6 @@
 
   .finder {
     display: flex;
-    flex: 1;
     align-items: center;
     justify-content: space-between;
     gap: 6px;
@@ -353,11 +378,26 @@
     white-space: nowrap;
   }
 
-  .finder:disabled {
-    opacity: 0.55;
+  /* The field takes the column; Open… keeps only what its label needs. It used
+     to be `flex: 1` on both, which spent half a 240px sidebar on a button. */
+  .finder.search {
+    flex: 1;
+    min-width: 0;
+    color: var(--text);
+    font-family: var(--font-ui);
+  }
+
+  .finder.search::placeholder {
+    color: var(--muted);
+  }
+
+  .finder.search:focus {
+    border-color: var(--border2);
+    outline: none;
   }
 
   .finder.open {
+    flex: 0 0 auto;
     cursor: pointer;
   }
 

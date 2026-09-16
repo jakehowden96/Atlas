@@ -1,5 +1,6 @@
 import { get } from "svelte/store";
 import { ACTIONS, matchesAction, type Action } from "./keymap";
+import { closeFocusedSession } from "./session-actions";
 import { saveActiveFile } from "./stores/files";
 import { keymap, settingsOpen } from "./stores/settings";
 import {
@@ -29,16 +30,19 @@ const RUN: Record<Action, () => void> = {
   tab3: () => showView(TAB_VIEWS[2]),
   tab4: () => showView(TAB_VIEWS[3]),
   backToSessions: () => showView("sessions"),
+  closeSession: () => void closeFocusedSession(),
   shortcuts: () => shortcutsOpen.update((v) => !v),
 };
 
 /**
  * Actions that only fire on one screen. Save and Open… have nothing to act on
- * anywhere but Files, so the chord is left alone on every other view.
+ * anywhere but Files, so the chord is left alone on every other view; Close
+ * session would otherwise kill a PTY from a screen that is not showing it.
  */
 const SCOPED: Partial<Record<Action, View>> = {
   saveFile: "files",
   openFile: "files",
+  closeSession: "session",
 };
 
 /**

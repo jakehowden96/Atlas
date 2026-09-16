@@ -14,7 +14,7 @@
   import StatsView from "./lib/components/stats/StatsView.svelte";
   import SessionView from "./lib/components/session/SessionView.svelte";
   import SegmentedControl, { type Segment } from "./lib/components/ui/SegmentedControl.svelte";
-  import { onClaudeNotification, onPanelUpdate, onSessionUpdate } from "./lib/ipc";
+  import { onBackToSessions, onClaudeNotification, onPanelUpdate, onSessionUpdate } from "./lib/ipc";
   import { log } from "./lib/logger";
   import { buildTiles, shouldClearNeedsInput } from "./lib/overview";
   import { filesTouched } from "./lib/session-view";
@@ -39,6 +39,7 @@
   let unlisten: UnlistenFn | null = null;
   let unlistenNotification: UnlistenFn | null = null;
   let unlistenSession: UnlistenFn | null = null;
+  let unlistenBackToSessions: UnlistenFn | null = null;
   let stopPrPolling: (() => void) | null = null;
   let stopStatsFeed: (() => void) | null = null;
 
@@ -133,6 +134,7 @@
     unlistenSession = await onSessionUpdate((_sessionUuid, session) => {
       upsertLiveSession(session);
     });
+    unlistenBackToSessions = await onBackToSessions(() => showView("sessions"));
     unlistenNotification = await onClaudeNotification(async (event) => {
       const { session_id, notification } = event;
       // Only mark as needing input for notification types that require user action.
@@ -169,6 +171,7 @@
     unlisten?.();
     unlistenNotification?.();
     unlistenSession?.();
+    unlistenBackToSessions?.();
     stopPrPolling?.();
     stopStatsFeed?.();
   });
@@ -212,9 +215,12 @@
   </header>
 
   <div class="view-host">
-    {#if $activeView === "sessions"}
-      <div class="view"><SessionsView /></div>
-    {:else if $activeView === "files"}
+    <!-- Sessions stays mounted too: rebuilding the grid from scratch on every
+         return was the visible delay coming back from a session. -->
+    <div class="view" class:hidden={$activeView !== "sessions"}>
+      <SessionsView />
+    </div>
+    {#if $activeView === "files"}
       <div class="view"><FilesView /></div>
     {:else if $activeView === "prs"}
       <div class="view"><PrsView /></div>

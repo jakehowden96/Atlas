@@ -21,6 +21,7 @@ export type Action =
   | "tab3"
   | "tab4"
   | "backToSessions"
+  | "closeSession"
   | "shortcuts";
 
 export interface Binding {
@@ -60,6 +61,7 @@ export const ACTIONS: Action[] = [
   "tab3",
   "tab4",
   "backToSessions",
+  "closeSession",
   "shortcuts",
 ];
 
@@ -76,6 +78,7 @@ export const ACTION_LABELS: Record<Action, string> = {
   tab3: "Pull requests tab",
   tab4: "Stats tab",
   backToSessions: "Back to Sessions",
+  closeSession: "Close session",
   shortcuts: "Keyboard shortcuts",
 };
 
@@ -97,6 +100,10 @@ export const DEFAULT_KEYMAP: Keymap = {
     { mod: true, shift: false, key: "Escape" },
     { mod: true, shift: false, key: "." },
   ],
+  /* Ends the focused session and returns to Sessions. ⇧ is what keeps this
+     off ⌘W, which `Menu::default` binds to Close Window on macOS — the OS
+     would take the window down before the webview saw the key. */
+  closeSession: [{ mod: true, shift: true, key: "w" }],
   /* The shortcut sheet. A bare `?` is the usual chord for it, but every binding
      here is dispatched off `svelte:window` with no is-typing guard, so a
      modifierless key would swallow the character everywhere text is entered —

@@ -38,7 +38,12 @@ export const lightXtermTheme = {
   cursorAccent: "#fafafb",
   selectionBackground: "#cfe8dd",
   selectionForeground: "#17181b",
-  black: "#17181b",
+  /* --surface3, the same slot dark's `black` takes. Left at #17181b it was
+     near-black ink on a light ground, and Claude Code fills the row behind
+     your own messages with `ESC[40m` — so every prompt you typed came back as
+     a black bar. `minimumContrastRatio` re-inks whatever the TUI writes on
+     top, so the fill only has to read as a raised surface. */
+  black: "#e5e5ea",
   red: "#9d2f27",
   green: "#1a6146",
   yellow: "#725010",

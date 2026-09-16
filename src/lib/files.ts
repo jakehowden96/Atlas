@@ -136,6 +136,26 @@ export function hasUnsavedUnder(node: TreeNode, dirty: ReadonlySet<string>): boo
 }
 
 /**
+ * The tree narrowed to the nodes whose name contains `query`, keeping the
+ * folders on the way to each match so a hit several levels down is still
+ * reachable. A folder that matches by its own name keeps everything under it.
+ *
+ * An empty query returns the same array it was given, so the unfiltered tree
+ * costs nothing to render.
+ */
+export function filterDocTree(nodes: TreeNode[], query: string): TreeNode[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return nodes;
+  const keep = (node: TreeNode): TreeNode | null => {
+    if (node.name.toLowerCase().includes(needle)) return node;
+    if (!node.isDir) return null;
+    const children = node.children.map(keep).filter((n): n is TreeNode => n !== null);
+    return children.length > 0 ? { ...node, children } : null;
+  };
+  return nodes.map(keep).filter((n): n is TreeNode => n !== null);
+}
+
+/**
  * The folders on the way to a rel path, outermost first — the rows that have to
  * be open for it to be on screen. A path at the root of the tree has none.
  */

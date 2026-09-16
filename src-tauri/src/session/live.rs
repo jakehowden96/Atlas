@@ -114,8 +114,17 @@ pub struct LiveSession {
     pub pending_tool: Option<PendingTool>,
     pub output_tokens: u64,
     pub cost_estimate: f64,
+    /// Context the newest request carried, plus the reply it produced — the
+    /// number Claude Code's own status line shows, which is read off the newest
+    /// assistant message the same way (`context_window.total_input_tokens` plus
+    /// `total_output_tokens`). Falls with a compact or a `/clear`, unlike
+    /// `peak_context`.
+    pub context_tokens: u64,
+    /// Highest context any one request in this session carried. Kept for the
+    /// historical record in Stats; the live views show `context_tokens`.
     pub peak_context: u64,
-    /// Fraction 0.0–1.0 of the model's window. Approximate — see `transcript::context_pct`.
+    /// Fraction 0.0–1.0 of what the session can use before autocompact fires,
+    /// from `context_tokens` — see `transcript::context_pct`.
     pub context_pct: f64,
 }
 
@@ -137,6 +146,7 @@ impl LiveSession {
             pending_tool: None,
             output_tokens: 0,
             cost_estimate: 0.0,
+            context_tokens: 0,
             peak_context: 0,
             context_pct: 0.0,
         }
@@ -256,6 +266,9 @@ pub struct SessionTail {
     session: LiveSession,
     /// requestId -> usage, so lines sharing a request are counted once.
     requests: HashMap<String, ReqData>,
+    /// Key into `requests` of the newest request seen. The map has no order, and
+    /// current context is the newest request's, not the biggest.
+    last_request: Option<String>,
     /// Unanswered `tool_use` blocks in call order: (id, name, input summary).
     outstanding: Vec<(String, String, String)>,
     /// `tool_use` id -> index into `session.subagents`.
@@ -284,6 +297,7 @@ impl SessionTail {
             reader: LineReader::new(),
             session: LiveSession::new(session_uuid),
             requests: HashMap::new(),
+            last_request: None,
             outstanding: Vec::new(),
             subagent_index: HashMap::new(),
             subagent_files: HashMap::new(),
@@ -337,6 +351,7 @@ impl SessionTail {
         let uuid = std::mem::take(&mut self.session.session_uuid);
         self.session = LiveSession::new(uuid);
         self.requests.clear();
+        self.last_request = None;
         self.outstanding.clear();
         self.subagent_index.clear();
         self.subagent_files.clear();
@@ -391,6 +406,15 @@ impl SessionTail {
                 if let Some(&idx) = self.subagent_index.get(tool_use_id) {
                     self.finish_subagent(idx, timestamp.clone());
                 }
+            }
+            // `/clear` wipes what Claude Code sends the model, but it is a local
+            // command with no assistant reply of its own — nothing else in the
+            // transcript says the window emptied until the next request lands.
+            // Reacting to the command line itself keeps `context_tokens` in step
+            // with Claude Code's own status line, which drops the moment `/clear`
+            // runs rather than staying at its pre-clear value until then.
+            if is_clear_command(text) {
+                self.last_request = None;
             }
             if !is_meta {
                 self.push_line(LineRole::User, format!("> {}", excerpt(text)), timestamp);
@@ -476,6 +500,7 @@ impl SessionTail {
         // Usage is repeated on every line of a request — take it once.
         if let (Some(model), Some(key)) = (assistant_model(obj), request_key(obj)) {
             self.session.model = Some(model.to_string());
+            self.last_request = Some(key.clone());
             let entry = self
                 .requests
                 .entry(key)
@@ -548,12 +573,23 @@ impl SessionTail {
             peak_context = peak_context.max(req.context());
             tool_calls += req.tool_names.len() as u32;
         }
+        // Newest request, not biggest: after a compact or a `/clear` the window
+        // really is emptier, and a peak would stay pinned to the old high while
+        // Claude Code's own status line counts back up from the bottom.
+        let context_tokens = self
+            .last_request
+            .as_ref()
+            .and_then(|key| self.requests.get(key))
+            .map(|req| req.context() + req.output_tokens)
+            .unwrap_or(0);
+
         self.session.output_tokens = output_tokens;
         self.session.cost_estimate = cost_estimate;
+        self.session.context_tokens = context_tokens;
         self.session.peak_context = peak_context;
         self.session.tool_calls = tool_calls;
         self.session.context_pct =
-            context_pct(peak_context, self.session.model.as_deref().unwrap_or(""));
+            context_pct(context_tokens, self.session.model.as_deref().unwrap_or(""));
 
         // The oldest unanswered call is the one actually blocking.
         self.session.pending_tool =
@@ -740,6 +776,13 @@ fn task_notification(text: &str) -> Option<(&str, &str)> {
     Some((tagged(text, "tool-use-id")?, tagged(text, "status")?))
 }
 
+/// Whether `text` is the `/clear` slash command line Claude Code writes when
+/// the user runs it — a plain-string user line, not a `<task-notification>` or
+/// a typed message.
+fn is_clear_command(text: &str) -> bool {
+    text.contains("<command-name>/clear</command-name>")
+}
+
 /// The contents of the first `<tag>…</tag>` in `text`.
 fn tagged<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
     let rest = &text[text.find(&format!("<{}>", tag))? + tag.len() + 2..];
@@ -868,6 +911,54 @@ mod tests {
             tail.session().output_tokens,
             naive_output
         );
+    }
+
+    /// One assistant line carrying the usage of a request that read `cache_read`
+    /// tokens of context and wrote `output` tokens back.
+    fn usage_line(id: &str, cache_read: u64, output: u64) -> String {
+        format!(
+            r#"{{"type":"assistant","requestId":"{id}","timestamp":"2026-09-07T21:50:59.000Z",
+            "message":{{"role":"assistant","model":"claude-opus-5","stop_reason":"end_turn",
+            "content":[{{"type":"text","text":"ok"}}],
+            "usage":{{"input_tokens":10,"cache_read_input_tokens":{cache_read},
+            "cache_creation_input_tokens":0,"output_tokens":{output}}}}}}}"#
+        )
+        .replace('\n', "")
+    }
+
+    #[test]
+    fn context_follows_the_newest_request_while_peak_keeps_the_high_water_mark() {
+        // The middle request is the biggest; the last one is what the window
+        // actually holds, because a compact dropped it back down.
+        let lines = vec![
+            usage_line("req_a", 50_000, 200),
+            usage_line("req_b", 143_000, 500),
+            usage_line("req_c", 60_000, 300),
+        ];
+        let (_dir, mut tail) = tail_with(&lines);
+        assert!(tail.poll());
+
+        assert_eq!(tail.session().context_tokens, 10 + 60_000 + 300);
+        assert_eq!(tail.session().peak_context, 10 + 143_000);
+        // The percentage comes off the live number, not the peak.
+        assert!((tail.session().context_pct - 60_310.0 / 1_000_000.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn clear_command_drops_context_to_zero_without_waiting_for_a_reply() {
+        // `/clear` itself carries no usage — nothing else says the window
+        // emptied until the next request lands, which may be a while.
+        let clear_line = r#"{"type":"user","timestamp":"2026-09-07T21:50:59.000Z",
+            "message":{"role":"user","content":"<command-name>/clear</command-name>\n            <command-message>clear</command-message>\n            <command-args></command-args>"}}"#
+            .replace('\n', "");
+        let lines = vec![usage_line("req_a", 143_000, 500), clear_line];
+        let (_dir, mut tail) = tail_with(&lines);
+        assert!(tail.poll());
+
+        assert_eq!(tail.session().context_tokens, 0);
+        assert_eq!(tail.session().context_pct, 0.0);
+        // The pre-clear high water mark is still worth keeping around.
+        assert_eq!(tail.session().peak_context, 10 + 143_000);
     }
 
     #[test]

@@ -24,6 +24,7 @@ import {
   tabs,
 } from "./stores/terminal";
 import { basename } from "./format";
+import { tabIdForSession } from "./session-view";
 import {
   activeSessionId,
   activeWorkspacePath,
@@ -187,6 +188,22 @@ export async function closeSession(sessionId: string) {
     focusedSessionId.set("");
     showView("sessions");
   }
+}
+
+/**
+ * End whichever session the Session view is showing — the entry point for the
+ * close chord.
+ *
+ * Resolves the session the same way the view's own ✕ button does: through
+ * `focusedSessionId`, falling back to `activeTabId` for a session that has a
+ * live tab but no focus recorded against it.
+ */
+export async function closeFocusedSession() {
+  const list = get(workspaces);
+  const tabId = tabIdForSession(list, get(focusedSessionId)) || get(activeTabId);
+  if (!tabId) return;
+  const session = list.flatMap((w) => w.sessions).find((s) => s.terminalTabId === tabId);
+  if (session) await closeSession(session.id);
 }
 
 /**

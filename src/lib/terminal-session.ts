@@ -67,12 +67,15 @@ export class TerminalSession {
   /**
    * True once the browser has given the container a box.
    *
-   * A view Atlas is not showing is `display: none` (`App.svelte` `.view.hidden`),
-   * so everything inside it measures 0x0 — and a tab is constructed the moment
-   * it enters `$tabs`, which is usually while the Sessions grid is still up.
-   * `fit()` against a 0x0 element does not fail; it hands xterm a fallback
-   * geometry, and a PTY spawned at that size lays the TUI out for a viewport
-   * that is not the one on screen.
+   * A tab is constructed the moment it enters `$tabs`, into a host the
+   * terminal registry (`terminal-registry.svelte.ts`) sizes to fill wherever
+   * it currently lives — a Sessions-grid tile if one has claimed it, or
+   * otherwise the parking root at the Session pane's last known size. Either
+   * one is `0x0` until the pane has been shown at least once (`App.svelte`'s
+   * `.view.hidden` keeps it un-rendered before then), which is usually still
+   * true while the Sessions grid is up. `fit()` against a 0x0 element does
+   * not fail; it hands xterm a fallback geometry, and a PTY spawned at that
+   * size lays the TUI out for a viewport that is not the one on screen.
    */
   private hasSize(): boolean {
     return this.container.clientWidth > 0 && this.container.clientHeight > 0;
@@ -148,7 +151,7 @@ export class TerminalSession {
     this.setupResizeObserver(opts.container);
     this.spawnWhenSized(opts.onPtyReady);
     this.setupEnterRefresh();
-    if (this._visible) this.startPolling();
+    this.startPolling();
   }
 
   private registerKeyHandler() {
@@ -289,7 +292,12 @@ export class TerminalSession {
         this.flushPendingSpawn();
         return;
       }
-      if (this._visible) this.refit();
+      // Not gated on `_visible`: the registry now fills the host to whatever
+      // box holds it — the Session pane or a Sessions-grid tile — so a tile
+      // resizing (window resize, grid reflow) has to refit and resize the PTY
+      // the same as the pane does, or the tile's terminal drifts out of sync
+      // with its own box.
+      this.refit();
     });
     this.resizeObserver.observe(container);
   }
@@ -384,12 +392,20 @@ export class TerminalSession {
     }, 300);
   }
 
+  /**
+   * Keep this session's diff data current, whether or not its pane is on screen.
+   *
+   * Not gated on visibility, and this matters: `panel.json` is only written by
+   * `refresh_panel`, and the Rust watcher's `panel-update` is what feeds *every*
+   * tile's `+/−` badge through `App.svelte`. Polling only the visible terminal
+   * meant the other tiles' badges were whatever they last happened to be, and
+   * once no terminal counts as visible on the Sessions grid, all of them froze.
+   * One `git diff` per session per 30s is what a live grid costs.
+   */
   private startPolling() {
     this.stopPolling();
     this.pollInterval = setInterval(() => {
-      if (this._visible && this.currentCwd) {
-        this.scheduleRefresh(this.currentCwd);
-      }
+      if (this.currentCwd) this.scheduleRefresh(this.currentCwd);
     }, 30000);
   }
 
@@ -404,10 +420,9 @@ export class TerminalSession {
     const wasVisible = this._visible;
     this._visible = visible;
 
-    if (!visible) {
-      this.stopPolling();
-      return;
-    }
+    // The panel poll runs for the life of the session — see `startPolling` —
+    // so going off screen only means stopping the refit-and-focus work below.
+    if (!visible) return;
 
     // No-op if already visible (e.g. duplicate effect fire)
     if (wasVisible) return;
@@ -433,7 +448,6 @@ export class TerminalSession {
         } else {
           panelData.set(null);
         }
-        this.startPolling();
       });
     });
   }

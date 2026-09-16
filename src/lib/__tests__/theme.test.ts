@@ -351,4 +351,19 @@ describe("app.css token blocks", () => {
     expect(darkXtermTheme.foreground).toBe(DARK_EXPLICIT["--term-text"]);
     expect(darkXtermTheme.cursor).toBe(DARK_EXPLICIT["--accent"]);
   });
+
+  /* `black` is the ANSI *background* slot, and Claude Code fills the row behind
+     your own messages with it. Light had it at near-black, which turned every
+     prompt into a black bar; pinning it to --surface3 in both themes is what
+     makes an `ESC[40m` fill read as a raised surface rather than as ink. */
+  it("maps the ANSI black slot onto --surface3 in both themes", () => {
+    expect(lightXtermTheme.black).toBe(LIGHT["--surface3"]);
+    expect(darkXtermTheme.black).toBe(DARK_EXPLICIT["--surface3"]);
+    for (const [name, palette, tokens] of [
+      ["light", lightXtermTheme, LIGHT],
+      ["dark", darkXtermTheme, DARK_EXPLICIT],
+    ] as const) {
+      expect(contrast(palette.black, tokens["--term-bg"]), name).toBeLessThan(1.5);
+    }
+  });
 });

@@ -52,8 +52,15 @@ export interface LiveSession {
   pendingTool: PendingTool | null;
   outputTokens: number;
   costEstimate: number;
+  /** Context the newest request carried plus its reply — matches the number
+   *  Claude Code's own status line shows, and falls with a compact or `/clear`. */
+  contextTokens: number;
+  /** Highest context any one request carried. Historical; the live views show
+   *  `contextTokens`. */
   peakContext: number;
-  /** Fraction 0–1 of the model's context window. Approximate. */
+  /** Fraction 0–1 of what the session can use before autocompact fires
+   *  (the model's context window — 200k for Haiku, 1M otherwise), from
+   *  `contextTokens`. Can exceed 1 with autocompact off; the views clamp. */
   contextPct: number;
 }
 

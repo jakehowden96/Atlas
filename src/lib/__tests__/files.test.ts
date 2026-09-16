@@ -29,6 +29,7 @@ import {
   buildDocTree,
   editorTarget,
   fileKey,
+  filterDocTree,
   hasUnsavedUnder,
   matchLineEndings,
   parentDir,
@@ -188,6 +189,54 @@ describe("buildDocTree", () => {
 
   it("is empty for an empty listing", () => {
     expect(buildDocTree([])).toEqual([]);
+  });
+});
+
+describe("filterDocTree", () => {
+  const roots = buildDocTree(
+    listed([
+      doc("docs", true),
+      doc("docs/guide.md"),
+      doc("docs/notes.md"),
+      doc("src", true),
+      doc("src/deep", true),
+      doc("src/deep/guide.test.ts"),
+      doc("README.md"),
+    ]),
+  );
+
+  it("returns the same array for a blank query", () => {
+    expect(filterDocTree(roots, "")).toBe(roots);
+    expect(filterDocTree(roots, "   ")).toBe(roots);
+  });
+
+  it("keeps the folders on the way to a match", () => {
+    const filtered = filterDocTree(roots, "guide");
+    expect(filtered.map((n) => n.name)).toEqual(["docs", "src"]);
+    expect(child(filtered[0], "guide.md")).toBeDefined();
+    // `notes.md` shares the folder but not the query.
+    expect(filtered[0].children.map((n) => n.name)).toEqual(["guide.md"]);
+    expect(child(child(filtered[1], "deep"), "guide.test.ts")).toBeDefined();
+  });
+
+  it("keeps everything under a folder that matches by its own name", () => {
+    const filtered = filterDocTree(roots, "docs");
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].children.map((n) => n.name)).toEqual(["guide.md", "notes.md"]);
+  });
+
+  it("matches without regard to case", () => {
+    expect(filterDocTree(roots, "README")).toHaveLength(1);
+    expect(filterDocTree(roots, "readme")[0].name).toBe("README.md");
+  });
+
+  it("is empty when nothing matches", () => {
+    expect(filterDocTree(roots, "zzz")).toEqual([]);
+  });
+
+  it("leaves the tree it was given untouched", () => {
+    filterDocTree(roots, "guide");
+    expect(child(roots[0], "notes.md")).toBeDefined();
   });
 });
 

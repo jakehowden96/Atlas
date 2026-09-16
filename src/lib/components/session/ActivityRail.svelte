@@ -5,6 +5,7 @@
   import type { SessionTile } from "../../overview";
   import { formatElapsed } from "../../overview";
   import {
+    groupFilesByRepo,
     planCounts,
     planRowState,
     subagentMeta,
@@ -81,6 +82,7 @@
 
   let live = $derived(tile?.live ?? null);
   let plan = $derived(planCounts(live?.plan ?? []));
+  let fileGroups = $derived(groupFilesByRepo(files));
   let subagents = $derived(live?.subagents ?? []);
   /* One dispatch can open twenty agents, so the list folds away. It starts
      open: the usual case is one or two, and hiding live work by default would
@@ -94,9 +96,11 @@
       : `${subagents.length} done`,
   );
   /* Same pairing as the Sessions tile: the bar reads as a proportion, the
-     label as a size — `68k` is the unit the model actually meters. */
+     label as a size — `68k` is the unit the model actually meters. The bar is
+     a fraction of the model's context window (200k for Haiku, 1M for the
+     rest), matching where Claude Code's own autocompact fires. */
   let contextPct = $derived(Math.min(100, Math.round((live?.contextPct ?? 0) * 100)));
-  let contextTokens = $derived(formatTokens(live?.peakContext ?? 0));
+  let contextTokens = $derived(formatTokens(live?.contextTokens ?? 0));
 </script>
 
 {#if visible && live}
@@ -163,7 +167,7 @@
           <div class="ctx-track">
             <span class="ctx-fill" class:hot={contextPct > 75} style="width: {contextPct}%"></span>
           </div>
-          <div class="stat-sub">{contextPct}% of window</div>
+          <div class="stat-sub">{contextPct}% until compact</div>
         </div>
         <div class="stat">
           <div class="stat-label">Cost</div>
@@ -186,18 +190,21 @@
         <button type="button" class="review" onclick={() => diffOpen.set(true)}>Review →</button>
       </div>
       <div class="files">
-        <!-- Keyed by repo *and* path: two repos under one workspace routinely
-             both have a `src/main.rs`. -->
-        {#each files as file (`${file.repo}/${file.path}`)}
-          <div class="file">
-            <span class="file-path"
-              >{#if file.repo}<span class="file-repo">{file.repo}/</span>{/if}{file.path}</span
-            >
-            <span class="file-delta">
-              <span class="added">+{file.added}</span>
-              <span class="removed">−{file.removed}</span>
-            </span>
-          </div>
+        {#each fileGroups as group (group.repo)}
+          {#if group.repo}
+            <div class="repo-title">{group.repo}</div>
+          {/if}
+          <!-- Keyed by path alone: the key only has to be unique within this
+               group's own each block, and two repos can share a path. -->
+          {#each group.files as file (file.path)}
+            <div class="file">
+              <span class="file-path">{file.path}</span>
+              <span class="file-delta">
+                <span class="added">+{file.added}</span>
+                <span class="removed">−{file.removed}</span>
+              </span>
+            </div>
+          {/each}
         {:else}
           <span class="none">Working tree clean</span>
         {/each}
@@ -451,10 +458,16 @@
     white-space: nowrap;
   }
 
-  /* Which repo the file is in, when the workspace holds more than one. Muted,
-     so the path still reads as the subject and the repo as its address. */
-  .file-repo {
+  /* One per repo, only when the workspace holds more than one — the anchor
+     the file rows under it read against, not a file row itself. */
+  .repo-title {
+    margin-top: 8px;
     color: var(--muted);
+    font-weight: 600;
+  }
+
+  .repo-title:first-child {
+    margin-top: 0;
   }
 
   .file-delta {

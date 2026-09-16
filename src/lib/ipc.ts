@@ -247,6 +247,14 @@ export async function stopDocsWatch(workspacePath: string): Promise<void> {
   return invoke("stop_docs_watch", { workspacePath });
 }
 
+/**
+ * Fires when the native ⌘Escape menu accelerator is pressed — see `lib.rs`
+ * for why that has to be a menu item rather than a JS keydown binding.
+ */
+export async function onBackToSessions(callback: () => void): Promise<UnlistenFn> {
+  return listen("back-to-sessions", () => callback());
+}
+
 export async function onDocsChanged(
   callback: (workspacePath: string, relPath: string) => void,
 ): Promise<UnlistenFn> {

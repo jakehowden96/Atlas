@@ -150,7 +150,7 @@
       <button
         type="button"
         class="close-session"
-        title="Close session"
+        title={`Close session (${$chords.closeSession})`}
         aria-label="Close session"
         onclick={endSession}
       >✕</button>
@@ -168,7 +168,7 @@
       <span class="last-tool">{tile?.live.lastTool ?? "—"}</span>
       <div class="spacer"></div>
       <span>{tile?.live.toolCalls ?? 0} tools</span>
-      <span>{formatTokens(tile?.live.peakContext ?? 0)} ctx</span>
+      <span>{formatTokens(tile?.live.contextTokens ?? 0)} ctx</span>
       <span>${(tile?.live.costEstimate ?? 0).toFixed(2)}</span>
     </footer>
   </div>
