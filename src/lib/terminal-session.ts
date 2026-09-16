@@ -5,6 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel, getPanelData } from "./ipc";
 import { setTabTitle, activeTabId, setTabNeedsInput, setTabReady, tabs } from "./stores/terminal";
 import { panelData } from "./stores/panel";
+import { clearTerminalScreen, setTerminalScreen } from "./stores/terminal-screen";
 import { keymap, terminalFontSize } from "./stores/settings";
 import { matchesAnyBinding } from "./keymap";
 import type { PanelData } from "../types/panel";
@@ -47,6 +48,8 @@ export class TerminalSession {
   /** Held while the container has no size yet; see `spawnWhenSized`. */
   private pendingSpawn: ((ptyId: number) => void) | null = null;
   private spawnFallback: ReturnType<typeof setTimeout> | null = null;
+  /** The frame a screen publish is waiting on; see `scheduleScreenPublish`. */
+  private screenFrame: number | null = null;
 
   /** Re-read the palette for the current mode; also fires on OS-preference
       changes so a terminal on "system" follows the OS without a respawn. */
@@ -69,13 +72,13 @@ export class TerminalSession {
    *
    * A tab is constructed the moment it enters `$tabs`, into a host the
    * terminal registry (`terminal-registry.svelte.ts`) sizes to fill wherever
-   * it currently lives — a Sessions-grid tile if one has claimed it, or
-   * otherwise the parking root at the Session pane's last known size. Either
-   * one is `0x0` until the pane has been shown at least once (`App.svelte`'s
-   * `.view.hidden` keeps it un-rendered before then), which is usually still
-   * true while the Sessions grid is up. `fit()` against a 0x0 element does
-   * not fail; it hands xterm a fallback geometry, and a PTY spawned at that
-   * size lays the TUI out for a viewport that is not the one on screen.
+   * it currently lives — the Session pane, or otherwise the parking root at
+   * the pane's last known size. Either one is `0x0` until the pane has been
+   * shown at least once (`App.svelte`'s `.view.hidden` keeps it un-rendered
+   * before then), which is usually still true while the Sessions grid is up.
+   * `fit()` against a 0x0 element does not fail; it hands xterm a fallback
+   * geometry, and a PTY spawned at that size lays the TUI out for a viewport
+   * that is not the one on screen.
    */
   private hasSize(): boolean {
     return this.container.clientWidth > 0 && this.container.clientHeight > 0;
@@ -148,6 +151,7 @@ export class TerminalSession {
     this.registerKeyHandler();
     this.registerOscHandlers();
     this.registerReadinessHandler();
+    this.terminal.onWriteParsed(() => this.scheduleScreenPublish());
     this.setupResizeObserver(opts.container);
     this.spawnWhenSized(opts.onPtyReady);
     this.setupEnterRefresh();
@@ -232,6 +236,32 @@ export class TerminalSession {
     });
   }
 
+  /**
+   * Hand the Sessions grid what this terminal is showing, at most once a frame.
+   *
+   * xterm parses writes in chunks and `onWriteParsed` fires per chunk, so a
+   * TUI repaint would publish several half-painted screens; coalescing to the
+   * next animation frame publishes the finished one. The rows are read from
+   * `baseY`, not `viewportY`: a pane the user has scrolled back still shows
+   * its tile the live bottom of the buffer, which is what the tile is for.
+   */
+  private scheduleScreenPublish() {
+    if (this.screenFrame !== null) return;
+    this.screenFrame = requestAnimationFrame(() => {
+      this.screenFrame = null;
+      this.publishScreen();
+    });
+  }
+
+  private publishScreen() {
+    const buffer = this.terminal.buffer.active;
+    const rows: string[] = [];
+    for (let i = 0; i < this.terminal.rows; i++) {
+      rows.push(buffer.getLine(buffer.baseY + i)?.translateToString(true) ?? "");
+    }
+    setTerminalScreen(this.tabId, rows);
+  }
+
   /** Re-fit the terminal and sync PTY dimensions. Call after layout changes. */
   fitTerminal() {
     // Double rAF: first lets the browser recalculate layout after CSS class
@@ -292,11 +322,10 @@ export class TerminalSession {
         this.flushPendingSpawn();
         return;
       }
-      // Not gated on `_visible`: the registry now fills the host to whatever
-      // box holds it — the Session pane or a Sessions-grid tile — so a tile
-      // resizing (window resize, grid reflow) has to refit and resize the PTY
-      // the same as the pane does, or the tile's terminal drifts out of sync
-      // with its own box.
+      // Not gated on `_visible`: the registry fills the host to whatever box
+      // holds it — the Session pane or the pane-sized parking root — so a
+      // backgrounded terminal follows a window resize the same as the visible
+      // one does, and comes back on screen already at the right geometry.
       this.refit();
     });
     this.resizeObserver.observe(container);
@@ -456,6 +485,8 @@ export class TerminalSession {
     log.info("terminal", `destroy tab=${this.tabId} ptyId=${this.ptyId}`);
     this.resizeObserver?.disconnect();
     if (this.spawnFallback) clearTimeout(this.spawnFallback);
+    if (this.screenFrame !== null) cancelAnimationFrame(this.screenFrame);
+    clearTerminalScreen(this.tabId);
     this.unsubscribeTheme?.();
     this.unsubscribeFontSize?.();
     this.prefersDark?.removeEventListener("change", this.applyXtermTheme);

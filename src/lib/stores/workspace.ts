@@ -297,6 +297,37 @@ export async function resumeSession(
   await persist();
 }
 
+/**
+ * Point the session row on `tabId` at a different Claude session UUID,
+ * without touching anything else. `claudeSessionId` on a row is only the id
+ * Atlas *asked* Claude Code to use at spawn — `/clear` and `/compact` can
+ * both make Claude Code mint a new one mid-tab, and the `SessionStart` hook's
+ * own report is the only way Atlas hears about it.
+ *
+ * Returns whether anything changed, so the caller can skip re-tailing when
+ * the reported id already matches (the ordinary case, on every session start).
+ */
+export async function rebindSessionClaudeId(
+  tabId: string,
+  claudeSessionId: string,
+): Promise<boolean> {
+  let changed = false;
+  workspaces.update((ws) =>
+    ws.map((w) => ({
+      ...w,
+      sessions: w.sessions.map((s) => {
+        if (s.terminalTabId === tabId && s.claudeSessionId !== claudeSessionId) {
+          changed = true;
+          return { ...s, claudeSessionId };
+        }
+        return s;
+      }),
+    })),
+  );
+  if (changed) await persist();
+  return changed;
+}
+
 export async function updateSessionStatus(
   sessionId: string,
   status: WorkspaceSession["status"],

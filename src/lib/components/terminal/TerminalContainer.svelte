@@ -85,8 +85,8 @@
     liveTabIds = nextIds;
   });
 
-  // The single placement pass — moves each tab's host to the pane, its tile,
-  // or the parking root. See `terminal-registry.svelte.ts`.
+  // The single placement pass — moves each tab's host to the pane or the
+  // parking root. See `terminal-registry.svelte.ts`.
   $effect(() => {
     placeTerminals($tabs.map((t) => t.id), showing, visibleTabId);
   });

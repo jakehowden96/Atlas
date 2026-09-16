@@ -4,7 +4,7 @@
 //! Linux and Windows with no `bash` and no `jq` dependency. `main` dispatches
 //! here before Tauri starts, so the process never opens a window.
 
-use crate::panel::types::{sessions_dir, ClaudeNotification};
+use crate::panel::types::{sessions_dir, ClaudeNotification, ClaudeSessionStart};
 use std::io::Read;
 use std::path::Path;
 use std::process::ExitCode;
@@ -70,33 +70,61 @@ fn write_notification(
     std::fs::write(dir.join("notification.json"), json)
 }
 
-/// `atlas hook notification` — reads Claude Code hook JSON on stdin and writes
-/// `~/.atlas/sessions/<ATLAS_SESSION_ID>/notification.json` for the file
-/// watcher to pick up.
-pub fn run_hook(kind: &str) -> ExitCode {
-    if kind != "notification" {
-        eprintln!("atlas hook: unknown hook kind '{}'", kind);
-        return ExitCode::FAILURE;
-    }
+/// The `session_id` and `source` of a `SessionStart` hook payload. `None`
+/// when the payload carries no `session_id` — nothing worth reporting.
+fn build_session_start(input: &str) -> Option<ClaudeSessionStart> {
+    let parsed: serde_json::Value = serde_json::from_str(input).ok()?;
+    let claude_session_id = parsed.get("session_id").and_then(|v| v.as_str())?.to_string();
+    let source = parsed
+        .get("source")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    Some(ClaudeSessionStart { claude_session_id, source })
+}
 
-    // Claude also runs outside Atlas, where there is no session to notify.
-    let Ok(session_id) = std::env::var("ATLAS_SESSION_ID") else {
-        return ExitCode::SUCCESS;
+fn write_session_start(
+    sessions_root: &Path,
+    session_id: &str,
+    session_start: &ClaudeSessionStart,
+) -> std::io::Result<()> {
+    let dir = sessions_root.join(session_id);
+    std::fs::create_dir_all(&dir)?;
+    let json = serde_json::to_string(session_start)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    std::fs::write(dir.join("session-id.json"), json)
+}
+
+/// Shared setup for every `atlas hook <kind>` entry point: validates
+/// `ATLAS_SESSION_ID` and reads the hook JSON off stdin. `Err` carries the
+/// exit code to return immediately — either Claude running outside Atlas
+/// (nothing to do) or a bad environment (a real failure).
+fn read_hook_input() -> Result<(String, String), ExitCode> {
+    let session_id = match std::env::var("ATLAS_SESSION_ID") {
+        Ok(id) if !id.is_empty() => id,
+        _ => return Err(ExitCode::SUCCESS),
     };
-    if session_id.is_empty() {
-        return ExitCode::SUCCESS;
-    }
     if !is_valid_session_id(&session_id) {
         eprintln!("atlas hook: invalid ATLAS_SESSION_ID");
-        return ExitCode::FAILURE;
+        return Err(ExitCode::FAILURE);
     }
 
     let mut input = String::new();
     if std::io::stdin().read_to_string(&mut input).is_err() {
         eprintln!("atlas hook: failed to read stdin");
-        return ExitCode::FAILURE;
+        return Err(ExitCode::FAILURE);
     }
+    Ok((session_id, input))
+}
 
+/// `atlas hook notification` — reads Claude Code hook JSON on stdin and writes
+/// `~/.atlas/sessions/<ATLAS_SESSION_ID>/notification.json` for the file
+/// watcher to pick up.
+fn run_notification_hook() -> ExitCode {
+    let (session_id, input) = match read_hook_input() {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
     let sessions_root = match sessions_dir() {
         Ok(d) => d,
         Err(e) => {
@@ -112,6 +140,50 @@ pub fn run_hook(kind: &str) -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("atlas hook: failed to write notification: {}", e);
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// `atlas hook session-start` — reads Claude Code's `SessionStart` hook JSON
+/// and writes `~/.atlas/sessions/<ATLAS_SESSION_ID>/session-id.json`, so the
+/// watcher can tell Atlas which Claude session UUID is live for this tab now.
+///
+/// Fires on every `SessionStart`, not only the first one: `/clear` and
+/// `/compact` fire it again mid-tab, each time with the real current session
+/// id — the only way Atlas hears that `--session-id`'s pinned UUID is no
+/// longer the one Claude Code is writing to.
+fn run_session_start_hook() -> ExitCode {
+    let (session_id, input) = match read_hook_input() {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
+    let Some(session_start) = build_session_start(&input) else {
+        return ExitCode::SUCCESS;
+    };
+    let sessions_root = match sessions_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("atlas hook: {}", e);
+            return ExitCode::FAILURE;
+        }
+    };
+
+    match write_session_start(&sessions_root, &session_id, &session_start) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("atlas hook: failed to write session-id: {}", e);
+            ExitCode::FAILURE
+        }
+    }
+}
+
+pub fn run_hook(kind: &str) -> ExitCode {
+    match kind {
+        "notification" => run_notification_hook(),
+        "session-start" => run_session_start_hook(),
+        _ => {
+            eprintln!("atlas hook: unknown hook kind '{}'", kind);
             ExitCode::FAILURE
         }
     }
@@ -232,5 +304,46 @@ mod tests {
             written,
             r#"{"notification_type":"permission_prompt","title":"Claude needs permission","message":"test","timestamp":"2025-01-01T00:00:00Z"}"#
         );
+    }
+
+    #[test]
+    fn builds_session_start_from_hook_json() {
+        let s = build_session_start(
+            r#"{"session_id":"9f8e7d6c-1234-4321-abcd-0123456789ab","source":"clear",
+                "hook_event_name":"SessionStart","cwd":"/home/j/code/atlas"}"#,
+        )
+        .expect("payload carries a session_id");
+        assert_eq!(s.claude_session_id, "9f8e7d6c-1234-4321-abcd-0123456789ab");
+        assert_eq!(s.source, "clear");
+    }
+
+    #[test]
+    fn session_start_with_no_session_id_is_none() {
+        assert!(build_session_start(r#"{"source":"startup"}"#).is_none());
+        assert!(build_session_start("not json").is_none());
+    }
+
+    #[test]
+    fn session_start_defaults_source_to_empty() {
+        let s = build_session_start(r#"{"session_id":"abc"}"#).unwrap();
+        assert_eq!(s.source, "");
+    }
+
+    #[test]
+    fn written_session_start_matches_the_watcher_shape() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = build_session_start(r#"{"session_id":"claude-9","source":"clear"}"#).unwrap();
+        write_session_start(dir.path(), "tab-1", &s).unwrap();
+
+        let written =
+            std::fs::read_to_string(dir.path().join("tab-1").join("session-id.json")).unwrap();
+        let parsed: ClaudeSessionStart = serde_json::from_str(&written).unwrap();
+        assert_eq!(parsed.claude_session_id, "claude-9");
+        assert_eq!(parsed.source, "clear");
+    }
+
+    #[test]
+    fn unknown_hook_kind_fails() {
+        assert_eq!(run_hook("stop"), ExitCode::FAILURE);
     }
 }

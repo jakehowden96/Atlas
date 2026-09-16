@@ -4,15 +4,16 @@ import type { LiveSession, SessionState } from "../../types/session";
 import {
   buildTiles,
   compareByAttention,
-  filterByWorkspace,
   compareByWorkspace,
+  filterByWorkspace,
   formatElapsed,
   handleGridKey,
   pinKey,
   planSegments,
   previewLines,
-  tileComparator,
   type SessionTile,
+  screenPreview,
+  tileComparator,
 } from "../overview";
 import type { DiffStats, Workspace } from "../stores/workspace";
 
@@ -457,5 +458,43 @@ describe("previewLines", () => {
     const out = previewLines(lines);
     expect(out[out.length - 1].text).toBe("l59");
     expect(out.length).toBeGreaterThan(6);
+  });
+});
+
+describe("screenPreview", () => {
+  /* Rows come straight off the xterm buffer, so the bottom of the screen is
+     whatever the TUI left there: blank rows below the last paint, and Claude
+     Code's own prompt box. Neither belongs on a tile whose job is to show
+     what the session is doing. */
+  const RULE = "─".repeat(60);
+  const STATUS = "  ? for shortcuts                       Opus · 12% context";
+
+  it("drops trailing blank rows", () => {
+    expect(screenPreview(["⏺ Read(src/a.ts)", "", "   ", ""])).toEqual(["⏺ Read(src/a.ts)"]);
+  });
+
+  it("removes the prompt box and the status line under it", () => {
+    const rows = ["⏺ Running tests…", "", RULE, "> ", RULE, STATUS, ""];
+    expect(screenPreview(rows)).toEqual(["⏺ Running tests…"]);
+  });
+
+  it("removes the boxed variant with corners", () => {
+    const rows = ["Done.", "╭" + "─".repeat(58) + "╮", "│ > type here", "╰" + "─".repeat(58) + "╯"];
+    expect(screenPreview(rows)).toEqual(["Done."]);
+  });
+
+  it("leaves a screen with no rule rows alone", () => {
+    const rows = ["Allow Bash(rm -rf dist)?", "  1. Yes", "  2. No"];
+    expect(screenPreview(rows)).toEqual(rows);
+  });
+
+  it("does not mistake a lone rule far up the screen for a prompt box", () => {
+    const rows = [RULE, ...Array.from({ length: 20 }, (_, i) => `line ${i}`), RULE];
+    expect(screenPreview(rows)).toEqual(rows);
+  });
+
+  it("keeps a rule the TUI drew as a divider in the output", () => {
+    const rows = ["Summary", RULE, "3 files changed"];
+    expect(screenPreview(rows)).toEqual(rows);
   });
 });

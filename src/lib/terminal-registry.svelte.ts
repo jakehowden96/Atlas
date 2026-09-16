@@ -8,8 +8,8 @@
  * `appendChild`'d somewhere else, Svelte's keyed reconciliation would yank it
  * back on the next re-run. Mounting each tab once with Svelte 5's imperative
  * `mount()`/`unmount()`, into a host `<div>` no `{#each}` ever manages, means
- * nothing fights over where that div lives — the Session pane, a tile's slot,
- * or the parking root below can all move it with a plain `appendChild`.
+ * nothing fights over where that div lives — the Session pane or the parking
+ * root below can move it with a plain `appendChild`.
  *
  * A remount is not an option either way: `TerminalTab`'s `onDestroy` kills the
  * PTY, so mounting a tab a second time would spawn a second Claude Code
@@ -34,8 +34,6 @@ interface Entry {
 }
 
 const entries = new Map<string, Entry>();
-/** Tile slots currently registered, keyed by tab id. */
-const tileSlots = new Map<string, HTMLElement>();
 let paneSlot: HTMLElement | null = null;
 
 /**
@@ -53,10 +51,12 @@ parkingRoot.style.overflow = "hidden";
 document.body.appendChild(parkingRoot);
 
 /** The host always fills whatever it is currently appended into — the
- *  Session pane, a tile's slot, or the fixed-size parking root — so a
- *  session refits (and resizes its PTY, via `TerminalSession`'s own resize
- *  observer) to the real box it is showing in rather than to one fixed
- *  geometry cropped into place. */
+ *  Session pane or the pane-sized parking root — so a session refits (and
+ *  resizes its PTY, via `TerminalSession`'s own resize observer) to the real
+ *  box it is showing in rather than to one fixed geometry cropped into
+ *  place. The Sessions grid never holds a host: a tile reads the terminal's
+ *  screen as text from `stores/terminal-screen.ts` instead, so the PTY keeps
+ *  the pane's geometry however often the grid is opened. */
 function sizeHost(host: HTMLDivElement) {
   host.style.width = "100%";
   host.style.height = "100%";
@@ -99,21 +99,12 @@ export function destroyTerminalTab(tabId: string): void {
   void unmount(entry.instance);
   entry.host.remove();
   entries.delete(tabId);
-  tileSlots.delete(tabId);
 }
 
 /** Session view's terminal pane registers the element its visible tab's host
  *  should be moved into. Pass `null` on unmount/teardown. */
 export function setPaneSlot(el: HTMLElement | null): void {
   paneSlot = el;
-}
-
-/** A tile registers the element it wants its tab's host moved into whenever
- *  it, rather than the Session pane, should be showing that tab. Pass `null`
- *  when the tile unmounts or stops matching a tab. */
-export function setTileSlot(tabId: string, el: HTMLElement | null): void {
-  if (el) tileSlots.set(tabId, el);
-  else tileSlots.delete(tabId);
 }
 
 /** The Session pane's current box, used only to size the parking root — a
@@ -129,17 +120,16 @@ export function setPaneSize(size: { w: number; h: number }): void {
 
 /**
  * The single placement pass. Every host's parent is exactly one of: the
- * Session pane (its tab is the one Session view is showing), a tile's slot,
- * or the parking root. Called from one `$effect` in `TerminalContainer` —
- * never from the pane or a tile directly, which only ever register where they
- * want a host, so nothing here ever fights over a node's position.
+ * Session pane (its tab is the one Session view is showing) or the parking
+ * root. Called from one `$effect` in `TerminalContainer` — never from the
+ * pane directly, which only registers where it wants a host, so nothing here
+ * ever fights over a node's position.
  */
 export function placeTerminals(tabIds: string[], showingPane: boolean, visibleTabId: string): void {
   for (const tabId of tabIds) {
     const entry = entries.get(tabId);
     if (!entry) continue;
-    const tileSlot = tileSlots.get(tabId);
-    const target = showingPane && tabId === visibleTabId ? paneSlot : tileSlot ?? parkingRoot;
+    const target = showingPane && tabId === visibleTabId ? paneSlot : parkingRoot;
     if (!target) continue;
     if (entry.host.parentElement !== target) {
       target.appendChild(entry.host);

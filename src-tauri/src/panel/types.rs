@@ -68,6 +68,25 @@ pub struct ClaudeNotificationEvent {
     pub notification: ClaudeNotification,
 }
 
+/// What Claude Code's `SessionStart` hook reports: the session UUID that is
+/// now live, and why it fired. `source` is `"startup"` or `"resume"` — where
+/// it always matches the id Atlas already asked for — or `"clear"` /
+/// `"compact"`, the two cases where Claude Code mints a session UUID of its
+/// own mid-tab that Atlas never chose and has to catch up with.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaudeSessionStart {
+    pub claude_session_id: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaudeSessionStartEvent {
+    /// Atlas's own tab id (`ATLAS_SESSION_ID`) — constant for the tab's whole
+    /// life, unlike `claude_session_id`.
+    pub session_id: String,
+    pub session_start: ClaudeSessionStart,
+}
+
 pub fn sessions_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir()
         .ok_or_else(|| "Could not determine home directory".to_string())?;

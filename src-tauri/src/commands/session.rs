@@ -60,6 +60,8 @@ pub struct ClaudeInfo {
     pub version: Option<String>,
     /// Whether Atlas's `hook notification` entry is in `~/.claude/settings.json`.
     pub notification_hook_installed: bool,
+    /// Whether Atlas's `hook session-start` entry is in `~/.claude/settings.json`.
+    pub session_start_hook_installed: bool,
 }
 
 fn which_claude() -> Option<String> {
@@ -94,8 +96,8 @@ fn claude_version() -> Option<String> {
         .map(str::to_string)
 }
 
-/// True when any command under `hooks.Notification` carries Atlas's marker.
-fn notification_hook_installed() -> bool {
+/// True when any command under `hooks[event]` carries `marker`.
+fn hook_installed(event: &str, marker: &str) -> bool {
     let Some(path) = dirs::home_dir().map(|h| h.join(".claude").join("settings.json")) else {
         return false;
     };
@@ -105,19 +107,25 @@ fn notification_hook_installed() -> bool {
     let Ok(settings) = serde_json::from_str::<serde_json::Value>(&raw) else {
         return false;
     };
-    settings["hooks"]["Notification"]
-        .as_array()
-        .is_some_and(|entries| {
-            entries.iter().any(|entry| {
-                entry["hooks"].as_array().is_some_and(|inner| {
-                    inner.iter().any(|hook| {
-                        hook.get("command")
-                            .and_then(|c| c.as_str())
-                            .is_some_and(|c| c.contains(crate::HOOK_MARKER))
-                    })
+    settings["hooks"][event].as_array().is_some_and(|entries| {
+        entries.iter().any(|entry| {
+            entry["hooks"].as_array().is_some_and(|inner| {
+                inner.iter().any(|hook| {
+                    hook.get("command")
+                        .and_then(|c| c.as_str())
+                        .is_some_and(|c| c.contains(marker))
                 })
             })
         })
+    })
+}
+
+fn notification_hook_installed() -> bool {
+    hook_installed("Notification", crate::HOOK_MARKER)
+}
+
+fn session_start_hook_installed() -> bool {
+    hook_installed("SessionStart", crate::SESSION_START_HOOK_MARKER)
 }
 
 #[tauri::command(async)]
@@ -126,6 +134,7 @@ pub async fn claude_info() -> Result<ClaudeInfo, String> {
         binary: which_claude(),
         version: claude_version(),
         notification_hook_installed: notification_hook_installed(),
+        session_start_hook_installed: session_start_hook_installed(),
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))

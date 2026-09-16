@@ -14,9 +14,16 @@
   import StatsView from "./lib/components/stats/StatsView.svelte";
   import SessionView from "./lib/components/session/SessionView.svelte";
   import SegmentedControl, { type Segment } from "./lib/components/ui/SegmentedControl.svelte";
-  import { onBackToSessions, onClaudeNotification, onPanelUpdate, onSessionUpdate } from "./lib/ipc";
+  import {
+    onBackToSessions,
+    onClaudeNotification,
+    onClaudeSessionStart,
+    onPanelUpdate,
+    onSessionUpdate,
+  } from "./lib/ipc";
   import { log } from "./lib/logger";
   import { buildTiles, shouldClearNeedsInput } from "./lib/overview";
+  import { handleClaudeSessionStart } from "./lib/session-actions";
   import { filesTouched } from "./lib/session-view";
   import { handleGlobalKeydown } from "./lib/shortcuts";
   import { todayCost } from "./lib/stats-derive";
@@ -38,6 +45,7 @@
 
   let unlisten: UnlistenFn | null = null;
   let unlistenNotification: UnlistenFn | null = null;
+  let unlistenSessionStart: UnlistenFn | null = null;
   let unlistenSession: UnlistenFn | null = null;
   let unlistenBackToSessions: UnlistenFn | null = null;
   let stopPrPolling: (() => void) | null = null;
@@ -134,6 +142,9 @@
     unlistenSession = await onSessionUpdate((_sessionUuid, session) => {
       upsertLiveSession(session);
     });
+    unlistenSessionStart = await onClaudeSessionStart((event) => {
+      void handleClaudeSessionStart(event.session_id, event.session_start.claude_session_id);
+    });
     unlistenBackToSessions = await onBackToSessions(() => showView("sessions"));
     unlistenNotification = await onClaudeNotification(async (event) => {
       const { session_id, notification } = event;
@@ -170,6 +181,7 @@
   onDestroy(() => {
     unlisten?.();
     unlistenNotification?.();
+    unlistenSessionStart?.();
     unlistenSession?.();
     unlistenBackToSessions?.();
     stopPrPolling?.();

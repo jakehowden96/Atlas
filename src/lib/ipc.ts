@@ -133,6 +133,7 @@ export interface ClaudeInfo {
   binary: string | null;
   version: string | null;
   notificationHookInstalled: boolean;
+  sessionStartHookInstalled: boolean;
 }
 
 /** Never rejects for a missing `claude` — every field degrades instead. */
@@ -193,6 +194,31 @@ export async function onClaudeNotification(
   callback: (event: ClaudeNotificationEvent) => void,
 ): Promise<UnlistenFn> {
   return listen<ClaudeNotificationEvent>("claude-notification", (event) => {
+    callback(event.payload);
+  });
+}
+
+/**
+ * Claude Code's `SessionStart` hook report: which Claude session UUID is now
+ * live for a tab, and why. `source` is `"startup"` or `"resume"` — where it
+ * always matches the id Atlas asked for — or `"clear"` / `"compact"`, the two
+ * cases where Claude Code mints one of its own mid-tab.
+ */
+export interface ClaudeSessionStart {
+  claude_session_id: string;
+  source: string;
+}
+
+export interface ClaudeSessionStartEvent {
+  /** Atlas's own tab id (`ATLAS_SESSION_ID`) — constant across a rotation. */
+  session_id: string;
+  session_start: ClaudeSessionStart;
+}
+
+export async function onClaudeSessionStart(
+  callback: (event: ClaudeSessionStartEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<ClaudeSessionStartEvent>("claude-session-start", (event) => {
     callback(event.payload);
   });
 }

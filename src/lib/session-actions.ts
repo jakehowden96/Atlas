@@ -32,6 +32,7 @@ import {
   addWorkspace,
   detachSession,
   hideWorkspace,
+  rebindSessionClaudeId,
   resumeSession,
   stripBundleExtension,
   unhideWorkspace,
@@ -137,6 +138,33 @@ export async function spawnClaudeSession(
   });
 
   return session;
+}
+
+/**
+ * React to `SessionStart`'s own report of which Claude session UUID is live
+ * for `tabId`. Almost always a no-op — the id already matches the one Atlas
+ * spawned with — but `/clear` and `/compact` can both make Claude Code mint a
+ * new one mid-tab, which nothing else tells Atlas. When that happens, this is
+ * what keeps the tail — and so the Overview tile's running/idle state —
+ * pointed at the transcript that is actually still growing, instead of the
+ * one Claude Code walked away from.
+ */
+export async function handleClaudeSessionStart(tabId: string, claudeSessionId: string) {
+  const session = get(workspaces)
+    .flatMap((w) => w.sessions)
+    .find((s) => s.terminalTabId === tabId);
+  if (!session || session.claudeSessionId === claudeSessionId) return;
+
+  const previous = session.claudeSessionId;
+  const rebound = await rebindSessionClaudeId(tabId, claudeSessionId);
+  if (!rebound) return;
+
+  endSessionTail(previous);
+  if (get(tailTranscripts)) {
+    startSessionTail(claudeSessionId).catch((e) =>
+      log.warn("session", `startSessionTail failed for ${claudeSessionId}: ${e}`),
+    );
+  }
 }
 
 /**

@@ -344,3 +344,51 @@ const PREVIEW_MAX_LINES = 48;
 export function previewLines(lines: TranscriptLine[]): TranscriptLine[] {
   return lines.slice(-PREVIEW_MAX_LINES);
 }
+
+/**
+ * The rows of a terminal screen a tile shows, newest last.
+ *
+ * `rows` is the xterm's visible buffer as `TerminalSession` published it. Two
+ * things come off the bottom: blank rows, and Claude Code's prompt box. The
+ * box is the TUI's own — a rule row, the `>` input, a rule row, then the
+ * shortcuts/context status line — so a tile cannot leave it out by omitting a
+ * component; it has to find it in the text. Two rule rows within a few rows
+ * of each other at the bottom of the screen is that box, and everything from
+ * the upper rule down goes. Anything else — a permission dialog, a TUI whose
+ * layout this does not recognise — stays, so the tile degrades to showing the
+ * screen as-is rather than eating rows it should not.
+ */
+const PROMPT_BOX_SEARCH_ROWS = 12;
+const PROMPT_BOX_MAX_HEIGHT = 8;
+const RULE_MIN_LENGTH = 8;
+const RULE_CHARS = /^[─━═\-╭╮╰╯┌┐└┘]+$/;
+
+function isRuleRow(row: string): boolean {
+  const t = row.trim();
+  return t.length >= RULE_MIN_LENGTH && RULE_CHARS.test(t);
+}
+
+function trimBlankTail(rows: readonly string[]): readonly string[] {
+  let end = rows.length;
+  while (end > 0 && rows[end - 1].trim() === "") end--;
+  return rows.slice(0, end);
+}
+
+export function screenPreview(rows: readonly string[]): string[] {
+  const trimmed = trimBlankTail(rows);
+  const floor = Math.max(0, trimmed.length - PROMPT_BOX_SEARCH_ROWS);
+
+  let lower = -1;
+  for (let i = trimmed.length - 1; i >= floor; i--) {
+    if (!isRuleRow(trimmed[i])) continue;
+    if (lower === -1) {
+      lower = i;
+      continue;
+    }
+    if (lower - i <= PROMPT_BOX_MAX_HEIGHT) {
+      return [...trimBlankTail(trimmed.slice(0, i))];
+    }
+    lower = i;
+  }
+  return [...trimmed];
+}

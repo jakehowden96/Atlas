@@ -27,6 +27,7 @@ import {
   removeSession,
   loadWorkspaces,
   resumeSession,
+  rebindSessionClaudeId,
   nextAvailableColor,
   WORKSPACE_COLORS,
   type Workspace,
@@ -177,6 +178,44 @@ describe("workspace store", () => {
       expect(session.status).toBe("running");
       expect(session.terminalTabId).toBe("tab-2");
       expect(session.claudeSessionId).toBe("claude-9");
+    });
+  });
+
+  describe("rebindSessionClaudeId", () => {
+    it("retags the session whose tab id matches", async () => {
+      await addWorkspace("/a");
+      await addSession("/a", "test", "tab-1", "claude-old");
+      const changed = await rebindSessionClaudeId("tab-1", "claude-new");
+      expect(changed).toBe(true);
+      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe("claude-new");
+    });
+
+    it("is a no-op when the id already matches", async () => {
+      await addWorkspace("/a");
+      await addSession("/a", "test", "tab-1", "claude-1");
+      vi.clearAllMocks();
+      const changed = await rebindSessionClaudeId("tab-1", "claude-1");
+      expect(changed).toBe(false);
+      expect(writeTextFile).not.toHaveBeenCalled();
+    });
+
+    it("leaves sessions on other tabs untouched", async () => {
+      await addWorkspace("/a");
+      await addSession("/a", "one", "tab-1", "claude-1");
+      await addSession("/a", "two", "tab-2", "claude-2");
+      await rebindSessionClaudeId("tab-1", "claude-1-new");
+      const sessions = get(workspaces)[0].sessions;
+      expect(sessions.find((s) => s.terminalTabId === "tab-2")?.claudeSessionId).toBe(
+        "claude-2",
+      );
+    });
+
+    it("does nothing when no session owns that tab id", async () => {
+      await addWorkspace("/a");
+      await addSession("/a", "test", "tab-1", "claude-1");
+      const changed = await rebindSessionClaudeId("tab-missing", "claude-new");
+      expect(changed).toBe(false);
+      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe("claude-1");
     });
   });
 

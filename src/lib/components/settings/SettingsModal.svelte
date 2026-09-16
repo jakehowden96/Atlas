@@ -471,7 +471,7 @@
         {:else}
           <div class="stack">
             <p class="copy">
-              Atlas reads Claude Code's own signals — no proxying. One hook is installed
+              Atlas reads Claude Code's own signals — no proxying. Two hooks are installed
               into <code>~/.claude/settings.json</code>; everything else comes from tailing
               the session transcript.
             </p>
@@ -485,6 +485,17 @@
                 </span>
                 <span class="badge" class:on={claude?.notificationHookInstalled}>
                   {claude?.notificationHookInstalled ? "installed" : "not installed"}
+                </span>
+              </div>
+              <div class="list-row hook-row">
+                <span class="hook-dot" class:on={claude?.sessionStartHookInstalled}></span>
+                <span class="hook-name">SessionStart</span>
+                <span class="hook-desc">
+                  Tells Atlas when <code>/clear</code> or <code>/compact</code> moves a
+                  session to a new id, so the tail follows it.
+                </span>
+                <span class="badge" class:on={claude?.sessionStartHookInstalled}>
+                  {claude?.sessionStartHookInstalled ? "installed" : "not installed"}
                 </span>
               </div>
             </div>

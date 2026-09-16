@@ -1,10 +1,13 @@
 <script lang="ts">
-  import { formatElapsed, pinKey, previewLines, type SessionTile } from "../../overview";
+  import type { SessionState } from "../../../types/session";
+  import { formatTokens } from "../../format";
+  import { formatElapsed, pinKey, previewLines, type SessionTile, screenPreview } from "../../overview";
   import { allowPendingTool, closeSession, denyPendingTool } from "../../session-actions";
   import { togglePinnedSession } from "../../stores/settings";
   import { activeTabId } from "../../stores/terminal";
-  import { setTileSlot } from "../../terminal-registry.svelte";
+  import { terminalScreens } from "../../stores/terminal-screen";
   import { focusedSessionId, showView } from "../../stores/view";
+  import StatePill, { type PillState } from "../ui/StatePill.svelte";
 
   interface Props {
     tile: SessionTile;
@@ -28,38 +31,32 @@
 
   let { tile, now, tailing, pinned, focused, focusVisible }: Props = $props();
 
+  const PILL: Record<SessionState, PillState> = {
+    running: "running",
+    needsYou: "needs",
+    idle: "idle",
+    error: "error",
+  };
+
   let live = $derived(tile.live);
   let needsYou = $derived(tile.state === "needsYou");
 
   /**
-   * The card's terminal slot: the registry moves the tab's real xterm host
-   * into this element whenever it isn't the one Session view is showing
-   * (`terminal-registry.svelte.ts` `placeTerminals`). The host fills the slot
-   * edge to edge and refits to it, so the terminal renders at this tile's own
-   * size rather than the Session pane's — see the note on `.terminal-slot`
-   * below.
+   * The terminal's screen as text, published by `TerminalSession` after every
+   * parsed write (`stores/terminal-screen.ts`). Live through a long tool call,
+   * which the transcript never was. `screenPreview` takes the TUI's prompt box
+   * and trailing blank rows off the bottom.
    *
    * `tile.terminalTabId` unset means a closed-but-resumable session with no
    * live PTY, and the transcript-tail `preview` below is the fallback for it.
    */
-  let terminalSlotEl: HTMLDivElement | undefined = $state();
-  $effect(() => {
-    const tabId = tile.terminalTabId;
-    if (!tabId || !terminalSlotEl) return;
-    setTileSlot(tabId, terminalSlotEl);
-    return () => setTileSlot(tabId, null);
-  });
+  let screen = $derived(
+    screenPreview($terminalScreens.get(tile.terminalTabId ?? "") ?? []),
+  );
 
   /** Blank lines render as a non-breaking space so row height stays stable. */
   let preview = $derived(previewLines(live.lines));
   let elapsed = $derived(formatElapsed(live.startedAt, now));
-  /* Claude Code appends to the transcript only as a message completes, so a
-     long tool call leaves `preview` frozen for minutes and the tile reads as
-     idle when it is anything but. This is the tile's own clock: how long since
-     the transcript last grew. Shown only while the session is running, where
-     the gap means "still working" rather than "finished". */
-  let working = $derived(tile.state === "running");
-  let sinceLine = $derived(formatElapsed(live.lastActivity, now));
 
   function open() {
     focusedSessionId.set(tile.atlasSessionId);
@@ -116,14 +113,24 @@
   class:needs={needsYou}
   role="button"
   tabindex={focused ? 0 : -1}
-  title="{tile.label} · {tile.workspaceName}{tile.branch ? ` · ${tile.branch}` : ''} · {elapsed}"
   onclick={open}
   onkeydown={onKeydown}
 >
-  <!-- Only on hover/focus, over the terminal rather than displacing it — the
-       tile is the terminal now, so identity (name, workspace, elapsed) lives
-       in the title tooltip instead of a permanent header. -->
-  <div class="overlay">
+  <!-- Same fields as the Session view's header, so the two screens read
+       alike: which session, which project, which branch, how long. -->
+  <div class="head">
+    <StatePill state={PILL[tile.state]} />
+    <span class="label">{tile.label}</span>
+    <span class="ws" title={tile.workspacePath}>
+      <span class="ws-dot" style="background: {tile.workspaceColour}"></span>
+      <span class="ws-name">{tile.workspaceName}</span>
+      {#if tile.branch}<span class="branch">· {tile.branch}</span>{/if}
+    </span>
+    <span class="elapsed">{elapsed}</span>
+    <span class="diff">
+      <span class="added">+{tile.diff?.linesAdded ?? 0}</span>
+      <span class="removed">−{tile.diff?.linesRemoved ?? 0}</span>
+    </span>
     <button
       type="button"
       class="pin"
@@ -146,27 +153,24 @@
     </button>
   </div>
 
-  <!-- The live terminal first. It is not gated on `tailing`, because it does
+  <!-- The live screen first. It is not gated on `tailing`, because it does
        not come from the transcript — a session with tailing off still shows
        what its terminal is doing. The transcript tail is the fallback for a
        session whose PTY is gone, which is the only case with nothing to read. -->
   {#if tile.terminalTabId}
-    <div class="preview live terminal-slot" bind:this={terminalSlotEl}></div>
+    <div class="preview">
+      {#each screen as row, i (i)}
+        <div class="line">{row || " "}</div>
+      {/each}
+    </div>
   {:else if tailing}
     <div class="preview">
       {#each preview as line, i (i)}
-        <div class="line">{line.text || " "}</div>
+        <div class="line">{line.text || " "}</div>
       {/each}
     </div>
   {:else}
     <div class="preview paused">Transcript tailing is off.</div>
-  {/if}
-
-  {#if tailing && working}
-    <div class="working" title="The transcript only grows as each message completes">
-      <span class="working-dot"></span>
-      working{sinceLine ? ` · ${sinceLine} since the last line` : ""}
-    </div>
   {/if}
 
   {#if needsYou}
@@ -179,6 +183,14 @@
     </div>
   {/if}
 
+  <!-- The Session view's footer, field for field. -->
+  <div class="foot">
+    <span class="last-tool">{live.lastTool ?? "—"}</span>
+    <div class="spacer"></div>
+    <span>{live.toolCalls} tools</span>
+    <span>{formatTokens(live.contextTokens)} ctx</span>
+    <span>${live.costEstimate.toFixed(2)}</span>
+  </div>
 </div>
 
 <style>
@@ -221,16 +233,73 @@
     outline: none;
   }
 
-  /* ── Overlay controls ───────────────────────────────────────────────────
-     Floats over the terminal instead of a permanent header — the tile has no
-     chrome of its own now, so pin/close only need to exist on hover/focus. */
-  .overlay {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    z-index: 1;
+  /* ── Header ──────────────────────────────────────────────────────────── */
+  .head {
     display: flex;
-    gap: 2px;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ws {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    max-width: 45%;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    white-space: nowrap;
+  }
+
+  /* Out of the muted tier: this is the answer to "which project am I looking
+     at", and it was competing with the branch name at the same weight. */
+  .ws-name {
+    flex-shrink: 0;
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .branch {
+    overflow: hidden;
+    color: var(--muted);
+    text-overflow: ellipsis;
+  }
+
+  .ws-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+  }
+
+  .elapsed,
+  .diff {
+    flex-shrink: 0;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+  }
+
+  .added {
+    color: var(--accent);
+  }
+
+  .removed {
+    margin-left: 4px;
+    color: var(--danger);
   }
 
   /* Stays out of the way until the card is hovered, but remains reachable by
@@ -240,12 +309,12 @@
     display: grid;
     place-items: center;
     flex-shrink: 0;
-    width: 24px;
-    height: 24px;
+    width: 20px;
+    height: 20px;
     padding: 0;
     border: none;
     border-radius: var(--r-sm);
-    background: color-mix(in srgb, var(--term-bg) 75%, transparent);
+    background: transparent;
     color: var(--muted);
     font-size: var(--fs-xs);
     line-height: 1;
@@ -286,11 +355,10 @@
   }
 
   /* ── Terminal preview ────────────────────────────────────────────────── */
-  /* A bottom-aligned column that clips what does not fit, so the newest line
-     sits against the tile's bottom edge and the pane fills with as much
-     history as the tile is tall. `previewLines` hands over more than can fit
-     on purpose — see the note there. `flex-end` is what makes the overflow
-     fall off the top, which is the end a tail should lose. */
+  /* A bottom-aligned column that clips what does not fit, so the newest row
+     sits against the tile's footer and the pane fills with as much of the
+     screen as the tile is tall. `flex-end` is what makes the overflow fall
+     off the top, which is the end a tail should lose. */
   .preview {
     display: flex;
     flex-direction: column;
@@ -304,59 +372,21 @@
     font: var(--fs-xs)/1.6 var(--font-mono);
   }
 
-
-  /* Holds the real xterm host the registry moves in — see
-     `terminal-registry.svelte.ts` `placeTerminals`. The host fills this slot
-     at 100% width/height, so the terminal refits (and resizes its PTY) to
-     the tile's own box rather than showing a fixed crop of the Session
-     pane's. The small left/bottom padding is a gutter that keeps the
-     terminal's own left column off the tile's edge. `pointer-events: none`
-     keeps the card clickable and its Allow/Deny buttons reachable — the
-     terminal underneath must not steal focus, wheel scroll or clicks meant
-     for the card. */
-  .terminal-slot {
-    position: relative;
-    padding: 0 0 6px 6px;
-    overflow: hidden;
-    pointer-events: none;
-  }
-
   .preview.paused {
     display: grid;
     place-items: center;
     color: var(--muted);
   }
 
-  /* Sits below the preview so a frozen preview is never the last word on
-     whether anything is happening. */
-  .working {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-    gap: 6px;
-    padding: 4px 14px;
-    background: var(--term-bg);
-    color: var(--t-step);
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-  }
-
-  .working-dot {
-    flex-shrink: 0;
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--t-step);
-    animation: atlasPulse 1.6s ease-in-out infinite;
-  }
-
-  /* `flex-shrink: 0` because the preview is a flex column now: without it the
-     rows would compress instead of overflowing off the top. */
+  /* `flex-shrink: 0` because the preview is a flex column: without it the
+     rows would compress instead of overflowing off the top. `pre-wrap`
+     rather than an ellipsis because a screen row is as wide as the Session
+     pane — clipping it would drop most of every line of prose — and `pre`
+     keeps the TUI's own indentation. */
   .line {
     flex-shrink: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
   }
 
   /* ── Permission bar ──────────────────────────────────────────────────── */
@@ -418,5 +448,30 @@
     background: var(--accent);
     color: var(--accent-ink);
     font-weight: 600;
+  }
+
+  /* ── Footer ──────────────────────────────────────────────────────────── */
+  .foot {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 14px;
+    padding: 8px 14px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+  }
+
+  .last-tool {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .spacer {
+    flex: 1;
   }
 </style>
