@@ -9,50 +9,14 @@ export interface TerminalTab {
   cwd?: string;
   onData?: (data: string) => void;
   needsInput?: boolean;
+  /** False until Claude Code's TUI enters the alternate screen buffer. The
+   *  terminal stays hidden behind the "Starting Claude Code…" overlay until
+   *  then, so the shell prompt and the launch command are never shown. */
   ready?: boolean;
-  commandWrittenAt?: number;
 }
 
-/** Singleton screen showing open PRs across watched repos. Not a PTY. */
-export interface PrsTab {
-  type: "prs";
-  id: string;
-  title: string;
-}
-
-/** Singleton screen showing Claude Code session stats. Not a PTY. */
-export interface StatsTab {
-  type: "stats";
-  id: string;
-  title: string;
-}
-
-export type FileLanguage =
-  | "markdown"
-  | "plaintext"
-  | "typescript"
-  | "javascript"
-  | "json"
-  | "yaml"
-  | "html"
-  | "css"
-  | "python"
-  | "rust"
-  | "toml"
-  | "shell"
-  | "unknown";
-
-export interface FileTab {
-  type: "file";
-  id: string;
-  title: string;
-  content: string;
-  filePath?: string;
-  workspacePath?: string;
-  language: FileLanguage;
-  dirty: boolean;
-  editing: boolean;
-  originalContent: string;
-}
-
-export type TabItem = TerminalTab | FileTab | PrsTab | StatsTab;
+/**
+ * Every tab is a Claude session PTY. PRs and Stats are top-level views now
+ * (`stores/view.ts`), and file tabs were removed with the sidebar.
+ */
+export type TabItem = TerminalTab;

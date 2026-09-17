@@ -13,7 +13,14 @@ export interface Pr {
   headRefName: string;
   ciState: CiState;
   reviewState: ReviewState;
+  /** Logins of individually requested reviewers; team requests are dropped. */
+  reviewRequestLogins: string[];
   commentsCount: number;
+}
+
+/** The signed-in GitHub user, or null when `gh` is missing or logged out. */
+export interface GhViewer {
+  login: string;
 }
 
 /** Per-repo result. `error` carries gh's stderr when the call failed. */
@@ -23,9 +30,12 @@ export interface RepoPrs {
   error: string | null;
 }
 
-/** What PrsView holds in component state. */
-export interface PrsSnapshot {
-  data: RepoPrs[] | null;
-  lastUpdated: number | null;
-  loading: boolean;
+/**
+ * A git repo Atlas can act in: a workspace that is itself a checkout, or a
+ * repo one directory inside one. `slug` is what a PR card is matched against
+ * to find where "Work on it" should start its session.
+ */
+export interface WorkspaceRepo {
+  path: string;
+  slug: string | null;
 }

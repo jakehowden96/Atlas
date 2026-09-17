@@ -9,7 +9,6 @@ import {
   statusLetter,
   cssEscape,
   totalLines,
-  renderRawForFile,
   toSplitRows,
 } from "../diff-view";
 
@@ -134,14 +133,6 @@ describe("cssEscape", () => {
 describe("totalLines", () => {
   it("sums lines across hunks", () => {
     expect(totalLines(makeFile("a.ts"))).toBe(5);
-  });
-});
-
-describe("renderRawForFile", () => {
-  it("re-emits unified diff text without the hunk-header line type", () => {
-    expect(renderRawForFile(makeFile("a.ts"))).toBe(
-      "@@ -1,3 +1,4 @@\n unchanged\n-old line\n+new line\n+another",
-    );
   });
 });
 

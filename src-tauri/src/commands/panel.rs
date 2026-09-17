@@ -91,7 +91,6 @@ fn build_panel_single(
             cwd: git_root.to_string(),
             is_git: true,
             diff: None,
-            plan: None,
         }));
     }
 
@@ -104,8 +103,6 @@ fn build_panel_single(
     } else {
         (None, None, None, None)
     };
-
-    let prev_plan = read_existing_plan(panel_path);
 
     let data = PanelData {
         version: 1,
@@ -123,7 +120,6 @@ fn build_panel_single(
             local_lines_added: local_la,
             local_lines_removed: local_lr,
         }),
-        plan: prev_plan,
     };
 
     write_panel(session_id, &data, panel_path);
@@ -201,13 +197,10 @@ fn build_panel_multi(
             cwd: root.to_string(),
             is_git: true,
             diff: None,
-            plan: None,
         }));
     }
 
     let combined = all_diffs.join("\n\n");
-    let prev_plan = read_existing_plan(panel_path);
-
     let data = PanelData {
         version: 1,
         timestamp: now_iso8601(),
@@ -224,17 +217,10 @@ fn build_panel_multi(
             local_lines_added: None,
             local_lines_removed: None,
         }),
-        plan: prev_plan,
     };
 
     write_panel(session_id, &data, panel_path);
     Ok(Some(data))
-}
-
-fn read_existing_plan(panel_path: &std::path::Path) -> Option<String> {
-    let contents = fs::read_to_string(panel_path).ok()?;
-    let existing: PanelData = serde_json::from_str(&contents).ok()?;
-    existing.plan
 }
 
 fn write_panel(session_id: &str, data: &PanelData, panel_path: &std::path::Path) {
@@ -306,7 +292,6 @@ mod tests {
                 local_lines_added: None,
                 local_lines_removed: None,
             }),
-            plan: None,
         };
 
         let json = serde_json::to_string(&data).unwrap();
@@ -319,51 +304,22 @@ mod tests {
         assert_eq!(diff.files_changed, 1);
         assert_eq!(diff.lines_added, 1);
         assert_eq!(diff.lines_removed, 0);
-        assert!(parsed.plan.is_none());
     }
 
+    /// A panel.json written before the `plan` field was dropped still loads —
+    /// serde ignores the unknown key, so no migration is needed.
     #[test]
-    fn panel_data_with_plan_roundtrip() {
-        let data = PanelData {
-            version: 1,
-            timestamp: "2024-01-01T00:00:00Z".to_string(),
-            cwd: "/tmp/test".to_string(),
-            is_git: true,
-            diff: None,
-            plan: Some("## Plan\nRefactor the auth module".to_string()),
-        };
-
-        let json = serde_json::to_string(&data).unwrap();
-        assert!(json.contains("\"plan\""));
-        let parsed: PanelData = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.plan.as_deref(), Some("## Plan\nRefactor the auth module"));
-    }
-
-    #[test]
-    fn panel_data_plan_omitted_when_none() {
-        let data = PanelData {
-            version: 1,
-            timestamp: "2024-01-01T00:00:00Z".to_string(),
-            cwd: "/tmp/test".to_string(),
-            is_git: true,
-            diff: None,
-            plan: None,
-        };
-
-        let json = serde_json::to_string(&data).unwrap();
-        assert!(!json.contains("\"plan\""), "plan field should be omitted when None");
-    }
-
-    #[test]
-    fn panel_data_deserializes_without_plan_field() {
+    fn panel_data_ignores_legacy_plan_field() {
         let json = r#"{
             "version": 1,
             "timestamp": "2024-01-01T00:00:00Z",
             "cwd": "/tmp/test",
-            "is_git": true
+            "is_git": true,
+            "plan": "Refactor the auth module"
         }"#;
         let parsed: PanelData = serde_json::from_str(json).unwrap();
-        assert!(parsed.plan.is_none());
+        assert_eq!(parsed.version, 1);
+        assert!(parsed.diff.is_none());
     }
 
     #[test]

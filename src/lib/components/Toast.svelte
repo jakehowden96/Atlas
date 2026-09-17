@@ -1,101 +1,160 @@
 <script lang="ts">
-  import { toasts, dismissToast, type Toast } from "../stores/toast";
+  import { untrack } from "svelte";
+  import { dismissToast, runToastAction, toasts, type Toast } from "../stores/toast";
 
-  let items = $derived<Toast[]>($toasts);
+  const EXIT_MS = 200;
 
-  function typeColor(type: Toast["type"]): string {
+  /**
+   * Mirrors the store, lagging removals by one exit animation — the same
+   * delayed-unmount pattern `Modal.svelte` uses. Both the 4s auto-dismiss and
+   * the close button remove from the store, so both animate out.
+   */
+  let rendered = $state<Toast[]>([]);
+  let leaving = $state<Set<string>>(new Set());
+
+  $effect(() => {
+    const live = $toasts;
+    untrack(() => {
+      const liveIds = new Set(live.map((t) => t.id));
+      const shown = new Set(rendered.map((t) => t.id));
+      const added = live.filter((t) => !shown.has(t.id));
+      if (added.length > 0) rendered = [...rendered, ...added];
+
+      for (const toast of rendered) {
+        if (liveIds.has(toast.id) || leaving.has(toast.id)) continue;
+        const id = toast.id;
+        leaving = new Set(leaving).add(id);
+        setTimeout(() => {
+          rendered = rendered.filter((t) => t.id !== id);
+          const next = new Set(leaving);
+          next.delete(id);
+          leaving = next;
+        }, EXIT_MS);
+      }
+    });
+  });
+
+  function dotColour(type: Toast["type"]): string {
     switch (type) {
       case "error":
-        return "var(--error)";
+        return "var(--danger)";
       case "warning":
-        return "var(--yellow)";
+        return "var(--warn)";
       default:
-        return "var(--primary)";
+        return "var(--accent)";
     }
   }
 </script>
 
-{#if items.length > 0}
-  <div class="toast-container">
-    {#each items as toast (toast.id)}
-      <div
-        class="toast"
-        style="border-left-color: {typeColor(toast.type)}"
-      >
-        <span class="toast-message">{toast.message}</span>
-        <button class="toast-dismiss" onclick={() => dismissToast(toast.id)}>
-          &times;
-        </button>
+{#if rendered.length > 0}
+  <div class="toast-stack">
+    {#each rendered as toast (toast.id)}
+      <div class="toast" class:leaving={leaving.has(toast.id)}>
+        <span class="dot" style="background: {dotColour(toast.type)}"></span>
+        <div class="text">
+          <div class="title">{toast.title}</div>
+          {#if toast.body}
+            <div class="body">{toast.body}</div>
+          {/if}
+        </div>
+        {#if toast.action}
+          <button
+            type="button"
+            class="action"
+            onclick={() => runToastAction(toast.id)}>{toast.action.label}</button>
+        {/if}
+        <button type="button" class="close" onclick={() => dismissToast(toast.id)}>✕</button>
       </div>
     {/each}
   </div>
 {/if}
 
 <style>
-  .toast-container {
+  .toast-stack {
     position: fixed;
-    bottom: 20px;
-    right: 20px;
-    z-index: 9999;
+    right: 16px;
+    bottom: 16px;
+    z-index: 30;
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    max-width: 400px;
-    max-height: 80vh;
-    overflow-y: auto;
+    gap: 8px;
+    width: 320px;
   }
 
   .toast {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 10px;
-    padding: var(--spacing-5) var(--spacing-5);
-    background: var(--surface-container-highest);
-    border: 1px solid color-mix(in srgb, var(--outline-variant) 20%, transparent);
-    border-left: 3px solid;
-    border-radius: var(--radius-md);
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-    animation: slide-in 0.2s ease-out;
+    padding: 12px 14px;
+    border: 1px solid var(--border2);
+    border-radius: 9px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    animation: atlasSlideUp 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
-  @keyframes slide-in {
-    from {
-      opacity: 0;
-      transform: translateY(8px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+  .toast.leaving {
+    animation: atlasSinkOut 0.2s ease both;
   }
 
-  .toast-message {
+  .dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    margin-top: 5px;
+    border-radius: 50%;
+  }
+
+  .text {
     flex: 1;
-    font-size: 13px;
-    color: var(--on-surface);
-    line-height: 1.45;
-    font-family: var(--font-body);
+    min-width: 0;
   }
 
-  .toast-dismiss {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    background: none;
-    border: none;
-    color: var(--on-surface-variant);
-    font-size: 15px;
+  .title {
+    font-family: var(--font-ui);
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  .body {
+    margin-top: 2px;
+    font-family: var(--font-ui);
+    font-size: var(--fs-xs);
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+
+  .action {
+    flex-shrink: 0;
+    padding: 3px 8px;
+    border: 1px solid var(--border2);
+    border-radius: var(--r-sm);
+    background: var(--surface2);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: var(--fs-xs);
+    line-height: 1.2;
     cursor: pointer;
-    border-radius: 6px;
-    padding: 0;
-    line-height: 1;
-    transition: background 0.15s, color 0.15s;
   }
 
-  .toast-dismiss:hover {
-    background: var(--surface-bright);
-    color: var(--on-surface);
+  .action:hover {
+    border-color: var(--accent);
+  }
+
+  .close {
+    flex-shrink: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--font-ui);
+    font-size: var(--fs-sm);
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .close:hover {
+    color: var(--text);
   }
 </style>

@@ -1,9 +1,17 @@
 mod commands;
+pub mod hook;
+mod lsp;
 mod panel;
 mod pty;
+mod session;
+mod transcript;
 
 use pty::manager::PtyManager;
+use session::manager::LiveSessionManager;
+use tauri::menu::{Menu, MenuItemBuilder, WINDOW_SUBMENU_ID};
 use tauri::{Emitter, Manager};
+
+const BACK_TO_SESSIONS_MENU_ID: &str = "back-to-sessions";
 
 fn setup_logging() {
     let log_dir = dirs::home_dir()
@@ -52,9 +60,110 @@ fn clean_old_logs(log_dir: &std::path::Path, max_age_days: u64) {
     }
 }
 
-/// Install the Atlas notification hook into ~/.claude/settings.json
-/// so Claude Code notifies Atlas when it needs input.
-fn install_notification_hook(script_path: &str) {
+/// Identifies Atlas's own entry in `hooks.Notification`. The command is
+/// `"<exe>" hook notification`, so the argv tail is the part that is stable
+/// across install locations and platforms.
+pub(crate) const HOOK_MARKER: &str = "hook notification";
+
+/// Identifies Atlas's own entry in `hooks.SessionStart`, the same way.
+pub(crate) const SESSION_START_HOOK_MARKER: &str = "hook session-start";
+
+/// The now-deleted `scripts/atlas-notify-hook.sh` entry, removed on upgrade so
+/// users do not end up running both.
+const LEGACY_HOOK_MARKER: &str = "atlas-notify-hook";
+
+/// `"<exe>" hook notification` — quoted because the path contains spaces on
+/// both Windows (`C:\Program Files\...`) and macOS (`/Applications/Atlas.app/...`).
+fn notification_hook_command() -> Result<String, std::io::Error> {
+    Ok(format!(
+        "\"{}\" hook notification",
+        std::env::current_exe()?.display()
+    ))
+}
+
+/// `"<exe>" hook session-start`, quoted the same way.
+fn session_start_hook_command() -> Result<String, std::io::Error> {
+    Ok(format!(
+        "\"{}\" hook session-start",
+        std::env::current_exe()?.display()
+    ))
+}
+
+fn hook_command_str(hook: &serde_json::Value) -> &str {
+    hook.get("command").and_then(|c| c.as_str()).unwrap_or("")
+}
+
+/// Merge one Atlas hook command into `settings["hooks"][event]`, appending it
+/// unless an entry already carries `marker`. Returns true when `settings` was
+/// modified. Shared by every hook Atlas installs.
+fn merge_hook(settings: &mut serde_json::Value, event: &str, marker: &str, command: &str) -> bool {
+    let Some(root) = settings.as_object_mut() else {
+        return false;
+    };
+    let hooks = root.entry("hooks").or_insert_with(|| serde_json::json!({}));
+    let Some(hooks_obj) = hooks.as_object_mut() else {
+        return false;
+    };
+    let entry_list = hooks_obj.entry(event).or_insert_with(|| serde_json::json!([]));
+    let Some(entries) = entry_list.as_array_mut() else {
+        return false;
+    };
+
+    let already_installed = entries.iter().any(|entry| {
+        entry
+            .get("hooks")
+            .and_then(|h| h.as_array())
+            .is_some_and(|inner| inner.iter().any(|hook| hook_command_str(hook).contains(marker)))
+    });
+    if already_installed {
+        return false;
+    }
+
+    entries.push(serde_json::json!({
+        "matcher": "",
+        "hooks": [{ "type": "command", "command": command }]
+    }));
+    true
+}
+
+/// Drop the old shell-script `Notification` entry, so it never runs alongside
+/// the command hook that replaced it. Returns true when `settings` changed.
+fn drop_legacy_notification_hook(settings: &mut serde_json::Value) -> bool {
+    let Some(entries) = settings
+        .get_mut("hooks")
+        .and_then(|h| h.get_mut("Notification"))
+        .and_then(|n| n.as_array_mut())
+    else {
+        return false;
+    };
+
+    let mut changed = false;
+    entries.retain_mut(|entry| {
+        let Some(inner) = entry.get_mut("hooks").and_then(|h| h.as_array_mut()) else {
+            return true;
+        };
+        let before = inner.len();
+        inner.retain(|hook| !hook_command_str(hook).contains(LEGACY_HOOK_MARKER));
+        if inner.len() == before {
+            return true;
+        }
+        changed = true;
+        // Drop the wrapper too if the legacy command was all it held.
+        !inner.is_empty()
+    });
+    changed
+}
+
+/// Merge Atlas's notification hook into a parsed `settings.json`, dropping any
+/// stale shell-script entry. Returns true when `settings` was modified.
+fn merge_notification_hook(settings: &mut serde_json::Value, command: &str) -> bool {
+    let legacy_dropped = drop_legacy_notification_hook(settings);
+    merge_hook(settings, "Notification", HOOK_MARKER, command) || legacy_dropped
+}
+
+/// Read-modify-write `~/.claude/settings.json`, applying `merge` and writing
+/// back only when it reports a change. Shared by every hook installer.
+fn update_claude_settings(merge: impl FnOnce(&mut serde_json::Value) -> bool, label: &str) {
     let claude_settings_path = match dirs::home_dir() {
         Some(h) => h.join(".claude").join("settings.json"),
         None => return,
@@ -69,57 +178,9 @@ fn install_notification_hook(script_path: &str) {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_else(|| serde_json::json!({}));
 
-    let Some(hooks) = settings
-        .as_object_mut()
-        .map(|obj| obj.entry("hooks").or_insert_with(|| serde_json::json!({})))
-    else {
+    if !merge(&mut settings) {
+        log::info!("Atlas {} hook already installed", label);
         return;
-    };
-
-    let Some(notification_hooks) = hooks
-        .as_object_mut()
-        .map(|obj| obj.entry("Notification").or_insert_with(|| serde_json::json!([])))
-    else {
-        return;
-    };
-
-    let already_installed = notification_hooks
-        .as_array()
-        .map(|arr| {
-            arr.iter().any(|entry| {
-                entry
-                    .get("hooks")
-                    .and_then(|h| h.as_array())
-                    .map(|hooks| {
-                        hooks.iter().any(|hook| {
-                            hook.get("command")
-                                .and_then(|c| c.as_str())
-                                .map(|c| c.contains("atlas-notify-hook"))
-                                .unwrap_or(false)
-                        })
-                    })
-                    .unwrap_or(false)
-            })
-        })
-        .unwrap_or(false);
-
-    if already_installed {
-        log::info!("Atlas notification hook already installed");
-        return;
-    }
-
-    let hook_entry = serde_json::json!({
-        "matcher": "",
-        "hooks": [
-            {
-                "type": "command",
-                "command": script_path
-            }
-        ]
-    });
-
-    if let Some(arr) = notification_hooks.as_array_mut() {
-        arr.push(hook_entry);
     }
 
     match serde_json::to_string_pretty(&settings) {
@@ -127,11 +188,27 @@ fn install_notification_hook(script_path: &str) {
             if let Err(e) = std::fs::write(&claude_settings_path, json) {
                 log::warn!("Failed to write Claude settings: {}", e);
             } else {
-                log::info!("Installed Atlas notification hook at {}", script_path);
+                log::info!("Installed Atlas {} hook", label);
             }
         }
         Err(e) => log::warn!("Failed to serialize Claude settings: {}", e),
     }
+}
+
+/// Install the Atlas notification hook into ~/.claude/settings.json
+/// so Claude Code notifies Atlas when it needs input.
+fn install_notification_hook(command: &str) {
+    update_claude_settings(|settings| merge_notification_hook(settings, command), "notification");
+}
+
+/// Install the Atlas session-start hook into ~/.claude/settings.json so Atlas
+/// hears the real session id whenever Claude Code rotates to a new one —
+/// `/clear` and `/compact` both do, and only this hook says so.
+fn install_session_start_hook(command: &str) {
+    update_claude_settings(
+        |settings| merge_hook(settings, "SessionStart", SESSION_START_HOOK_MARKER, command),
+        "session-start",
+    );
 }
 
 /// macOS GUI apps inherit launchd's bare PATH (/usr/bin:/bin:...), which lacks
@@ -157,14 +234,48 @@ pub fn run() {
     extend_path_for_gui_launch();
 
     let pty_manager = PtyManager::new();
+    let lsp_manager = lsp::LspManager::new();
+    let live_sessions = LiveSessionManager::new();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
+        // macOS can swallow ⌘Escape inside the webview before it ever becomes a
+        // JS keydown event (a known wry/WKWebView gap), so `backToSessions`
+        // cannot rely on JS alone. A native menu accelerator is delivered by
+        // AppKit before the webview sees the keypress, and — unlike a global
+        // shortcut — only fires while Atlas is the frontmost app.
+        .menu(|app_handle| {
+            let menu = Menu::default(app_handle)?;
+            let back_to_sessions = MenuItemBuilder::new("Back to Sessions")
+                .id(BACK_TO_SESSIONS_MENU_ID)
+                .accelerator("CmdOrCtrl+Escape")
+                .build(app_handle)?;
+            for item in menu.items()? {
+                if item.id().0 == WINDOW_SUBMENU_ID {
+                    if let Some(submenu) = item.as_submenu() {
+                        submenu.append(&back_to_sessions)?;
+                    }
+                    break;
+                }
+            }
+            Ok(menu)
+        })
+        .on_menu_event(|app, event| {
+            if event.id().0 == BACK_TO_SESSIONS_MENU_ID {
+                let _ = app.emit(BACK_TO_SESSIONS_MENU_ID, ());
+            }
+        })
         .manage(pty_manager)
+        .manage(lsp_manager)
+        .manage(live_sessions.clone())
+        .manage(commands::files::DocsWatchers::default())
         .invoke_handler(tauri::generate_handler![
+            lsp::lsp_start,
+            lsp::lsp_send,
+            lsp::lsp_stop,
             commands::terminal::pty_spawn,
             commands::terminal::pty_write,
             commands::terminal::pty_resize,
@@ -172,21 +283,24 @@ pub fn run() {
             commands::panel::get_session_dir,
             commands::panel::get_panel_data,
             commands::panel::refresh_panel,
-            commands::git::git_stage_all,
-            commands::git::git_stage_files,
-            commands::git::git_discard_all,
             commands::git::get_git_status,
-            commands::git::get_child_repos,
-            commands::git::git_fetch,
-            commands::git::git_pull,
-            commands::git::git_commit,
-            commands::git::git_push,
-            commands::git::git_list_branches,
             commands::git::git_checkout_branch,
-            commands::git::git_create_branch,
+            commands::git::list_workspace_repos,
             commands::prs::list_repo_prs,
+            commands::prs::gh_viewer,
             commands::prs::open_url,
             commands::stats::get_claude_stats,
+            commands::stats::list_resumable_sessions,
+            commands::session::start_session_tail,
+            commands::session::stop_session_tail,
+            commands::session::claude_info,
+            commands::files::list_workspace_docs,
+            commands::files::list_claude_plans,
+            commands::files::list_dir,
+            commands::files::read_text_file_at,
+            commands::files::write_text_file_at,
+            commands::files::start_docs_watch,
+            commands::files::stop_docs_watch,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -201,6 +315,14 @@ pub fn run() {
                 Err(e) => log::warn!("Failed to start stats watcher: {} — live stats updates will not work", e),
             }
 
+            // Separate from the stats watcher above: that one debounces a full
+            // recompute at 1s, which the live session view must not wait on.
+            let live_handle = app.handle().clone();
+            match session::manager::start_live_watcher(live_handle, live_sessions) {
+                Ok(watcher) => { app.manage(watcher); }
+                Err(e) => log::warn!("Failed to start live session watcher: {} — session updates will not work", e),
+            }
+
             // Back-fill stats from all historical transcripts on launch (off the UI thread).
             let launch_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -213,29 +335,180 @@ pub fn run() {
                 }
             });
 
-            // Install notification hook — resolve script path from bundled
-            // resources (production) or fall back to the repo scripts/ dir (dev).
-            let script_path = app
-                .path()
-                .resource_dir()
-                .ok()
-                .map(|r| r.join("atlas-notify-hook.sh"))
-                .filter(|p| p.exists())
-                .or_else(|| {
-                    let dev_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                        .parent()
-                        .map(|p| p.join("scripts").join("atlas-notify-hook.sh"))?;
-                    if dev_path.exists() { Some(dev_path) } else { None }
-                });
-
-            if let Some(path) = script_path {
-                install_notification_hook(&path.to_string_lossy());
-            } else {
-                log::warn!("Could not locate atlas-notify-hook.sh — notification hook not installed");
+            // Install the notification and session-start hooks, pointing at
+            // this executable — `current_exe()` resolves in both dev and
+            // bundled builds.
+            match notification_hook_command() {
+                Ok(command) => install_notification_hook(&command),
+                Err(e) => log::warn!(
+                    "Could not resolve the Atlas executable — notification hook not installed: {}",
+                    e
+                ),
+            }
+            match session_start_hook_command() {
+                Ok(command) => install_session_start_hook(&command),
+                Err(e) => log::warn!(
+                    "Could not resolve the Atlas executable — session-start hook not installed: {}",
+                    e
+                ),
             }
 
             Ok(())
         })
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| log::error!("Tauri application error: {}", e));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every `command` string under `hooks.Notification`, flattened.
+    fn commands(settings: &serde_json::Value) -> Vec<String> {
+        settings["hooks"]["Notification"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|entry| entry["hooks"].as_array().unwrap())
+            .map(|hook| hook["command"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    const NEW: &str = "\"C:\\Program Files\\Atlas\\Atlas.exe\" hook notification";
+
+    #[test]
+    fn installs_into_empty_settings() {
+        let mut settings = serde_json::json!({});
+        assert!(merge_notification_hook(&mut settings, NEW));
+        assert_eq!(commands(&settings), vec![NEW]);
+        assert_eq!(settings["hooks"]["Notification"][0]["matcher"], "");
+        assert_eq!(
+            settings["hooks"]["Notification"][0]["hooks"][0]["type"],
+            "command"
+        );
+    }
+
+    #[test]
+    fn second_install_is_a_no_op() {
+        let mut settings = serde_json::json!({});
+        assert!(merge_notification_hook(&mut settings, NEW));
+        assert!(!merge_notification_hook(&mut settings, NEW));
+        assert_eq!(commands(&settings), vec![NEW]);
+    }
+
+    #[test]
+    fn replaces_the_legacy_shell_hook() {
+        let mut settings = serde_json::json!({
+            "hooks": {
+                "Notification": [{
+                    "matcher": "",
+                    "hooks": [{ "type": "command", "command": "/repo/scripts/atlas-notify-hook.sh" }]
+                }]
+            }
+        });
+        assert!(merge_notification_hook(&mut settings, NEW));
+        assert_eq!(commands(&settings), vec![NEW]);
+    }
+
+    #[test]
+    fn keeps_other_hooks_and_other_keys() {
+        let mut settings = serde_json::json!({
+            "model": "opus",
+            "hooks": {
+                "Stop": [{ "matcher": "", "hooks": [{ "type": "command", "command": "other-stop" }] }],
+                "Notification": [{
+                    "matcher": "",
+                    "hooks": [
+                        { "type": "command", "command": "someone-elses-hook" },
+                        { "type": "command", "command": "/repo/scripts/atlas-notify-hook.sh" }
+                    ]
+                }]
+            }
+        });
+        assert!(merge_notification_hook(&mut settings, NEW));
+        assert_eq!(
+            commands(&settings),
+            vec!["someone-elses-hook".to_string(), NEW.to_string()]
+        );
+        assert_eq!(settings["model"], "opus");
+        assert_eq!(
+            settings["hooks"]["Stop"][0]["hooks"][0]["command"],
+            "other-stop"
+        );
+    }
+
+    #[test]
+    fn quotes_the_executable_path() {
+        let command = notification_hook_command().unwrap();
+        assert!(command.starts_with('"'));
+        assert!(command.ends_with("\" hook notification"));
+        assert!(command.contains(HOOK_MARKER));
+    }
+
+    const NEW_SESSION_START: &str = "\"C:\\Program Files\\Atlas\\Atlas.exe\" hook session-start";
+
+    fn session_start_commands(settings: &serde_json::Value) -> Vec<String> {
+        settings["hooks"]["SessionStart"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|entry| entry["hooks"].as_array().unwrap())
+            .map(|hook| hook["command"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn installs_session_start_into_empty_settings() {
+        let mut settings = serde_json::json!({});
+        assert!(merge_hook(
+            &mut settings,
+            "SessionStart",
+            SESSION_START_HOOK_MARKER,
+            NEW_SESSION_START
+        ));
+        assert_eq!(session_start_commands(&settings), vec![NEW_SESSION_START]);
+    }
+
+    #[test]
+    fn second_session_start_install_is_a_no_op() {
+        let mut settings = serde_json::json!({});
+        assert!(merge_hook(
+            &mut settings,
+            "SessionStart",
+            SESSION_START_HOOK_MARKER,
+            NEW_SESSION_START
+        ));
+        assert!(!merge_hook(
+            &mut settings,
+            "SessionStart",
+            SESSION_START_HOOK_MARKER,
+            NEW_SESSION_START
+        ));
+        assert_eq!(session_start_commands(&settings), vec![NEW_SESSION_START]);
+    }
+
+    /// The two hooks live under different keys, so installing one must never
+    /// disturb the other — this is what lets `Notification`'s legacy cleanup
+    /// stay scoped to `Notification` alone.
+    #[test]
+    fn session_start_and_notification_hooks_coexist() {
+        let mut settings = serde_json::json!({});
+        assert!(merge_notification_hook(&mut settings, NEW));
+        assert!(merge_hook(
+            &mut settings,
+            "SessionStart",
+            SESSION_START_HOOK_MARKER,
+            NEW_SESSION_START
+        ));
+        assert_eq!(commands(&settings), vec![NEW]);
+        assert_eq!(session_start_commands(&settings), vec![NEW_SESSION_START]);
+    }
+
+    #[test]
+    fn quotes_the_session_start_executable_path() {
+        let command = session_start_hook_command().unwrap();
+        assert!(command.starts_with('"'));
+        assert!(command.ends_with("\" hook session-start"));
+        assert!(command.contains(SESSION_START_HOOK_MARKER));
+    }
 }
