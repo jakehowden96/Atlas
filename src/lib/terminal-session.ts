@@ -1,11 +1,11 @@
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type IBufferCell, type IBufferLine } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel, getPanelData } from "./ipc";
 import { setTabTitle, activeTabId, setTabNeedsInput, setTabReady, tabs } from "./stores/terminal";
 import { panelData } from "./stores/panel";
-import { clearTerminalScreen, setTerminalScreen } from "./stores/terminal-screen";
+import { clearTerminalScreen, setTerminalScreen, type TerminalRow, type TerminalSegment } from "./stores/terminal-screen";
 import { keymap, terminalFontSize } from "./stores/settings";
 import { matchesAnyBinding } from "./keymap";
 import type { PanelData } from "../types/panel";
@@ -28,6 +28,66 @@ export interface TerminalSessionOptions {
  *  the PTY anyway. Long enough to cover a view switch, short enough that a tab
  *  nobody opens still gets a shell. */
 const SPAWN_SIZE_TIMEOUT_MS = 1000;
+
+/**
+ * Split a buffer line into same-styled runs for the Sessions grid.
+ *
+ * Only the 16 named ANSI slots are carried through — `fg`/`bg` beyond that
+ * (256-colour, true colour) are the TUI reaching for something `theme.ts`
+ * has no light/dark pair for, so those cells fall back to the pane's default
+ * ink rather than a colour that would not track the app's theme.
+ */
+function terminalRowStyle(line: IBufferLine, cols: number, cell: IBufferCell): TerminalRow {
+  const segments: TerminalSegment[] = [];
+  let current: TerminalSegment | null = null;
+  for (let x = 0; x < Math.min(line.length, cols); x++) {
+    line.getCell(x, cell);
+    // The second column of a wide (CJK-width) character: its glyph is
+    // already in the cell before it, so this column contributes nothing.
+    if (cell.getWidth() === 0) continue;
+    const fg = cell.isFgPalette() && cell.getFgColor() < 16 ? cell.getFgColor() : undefined;
+    const bg = cell.isBgPalette() && cell.getBgColor() < 16 ? cell.getBgColor() : undefined;
+    const bold = !!cell.isBold();
+    const dim = !!cell.isDim();
+    const italic = !!cell.isItalic();
+    const underline = !!cell.isUnderline();
+    const strikethrough = !!cell.isStrikethrough();
+    const inverse = !!cell.isInverse();
+    if (
+      current &&
+      current.fg === fg &&
+      current.bg === bg &&
+      !!current.bold === bold &&
+      !!current.dim === dim &&
+      !!current.italic === italic &&
+      !!current.underline === underline &&
+      !!current.strikethrough === strikethrough &&
+      !!current.inverse === inverse
+    ) {
+      current.text += cell.getChars() || " ";
+      continue;
+    }
+    current = { text: cell.getChars() || " ", fg, bg, bold, dim, italic, underline, strikethrough, inverse };
+    segments.push(current);
+  }
+  // Trim the trailing whitespace `translateToString(true)` would also drop
+  // — cells past where the TUI actually wrote — so a short line does not
+  // pad out to the pane's full width. A `bg` fill is kept even when blank:
+  // that is Claude Code shading a row (`ESC[40m`), not empty space.
+  while (segments.length > 0) {
+    const last = segments[segments.length - 1];
+    if (last.bg !== undefined) break;
+    const trimmed = last.text.replace(/\s+$/, "");
+    if (trimmed === last.text) break;
+    if (trimmed === "") {
+      segments.pop();
+      continue;
+    }
+    segments[segments.length - 1] = { ...last, text: trimmed };
+    break;
+  }
+  return segments;
+}
 
 export class TerminalSession {
   private terminal: Terminal;
@@ -255,11 +315,15 @@ export class TerminalSession {
 
   private publishScreen() {
     const buffer = this.terminal.buffer.active;
-    const rows: string[] = [];
+    const plain: string[] = [];
+    const styled: TerminalRow[] = [];
+    const cell: IBufferCell = this.terminal.buffer.active.getNullCell();
     for (let i = 0; i < this.terminal.rows; i++) {
-      rows.push(buffer.getLine(buffer.baseY + i)?.translateToString(true) ?? "");
+      const line = buffer.getLine(buffer.baseY + i);
+      plain.push(line?.translateToString(true) ?? "");
+      styled.push(line ? terminalRowStyle(line, this.terminal.cols, cell) : []);
     }
-    setTerminalScreen(this.tabId, rows);
+    setTerminalScreen(this.tabId, plain, styled);
   }
 
   /** Re-fit the terminal and sync PTY dimensions. Call after layout changes. */

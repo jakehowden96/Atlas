@@ -5,9 +5,23 @@
   import { allowPendingTool, closeSession, denyPendingTool } from "../../session-actions";
   import { togglePinnedSession } from "../../stores/settings";
   import { activeTabId } from "../../stores/terminal";
-  import { terminalScreens } from "../../stores/terminal-screen";
+  import { terminalScreens, type TerminalRow } from "../../stores/terminal-screen";
   import { focusedSessionId, showView } from "../../stores/view";
+  import { activeXtermTheme, themeMode } from "../../theme";
   import StatePill, { type PillState } from "../ui/StatePill.svelte";
+
+  const ANSI_NAMES = [
+    "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
+    "brightBlack", "brightRed", "brightGreen", "brightYellow",
+    "brightBlue", "brightMagenta", "brightCyan", "brightWhite",
+  ] as const;
+
+  /** Reactive so a mid-session theme switch re-colours the preview too. */
+  let palette = $derived(activeXtermTheme($themeMode));
+
+  function segColor(index: number | undefined): string | undefined {
+    return index === undefined ? undefined : palette[ANSI_NAMES[index]];
+  }
 
   interface Props {
     tile: SessionTile;
@@ -50,8 +64,12 @@
    * `tile.terminalTabId` unset means a closed-but-resumable session with no
    * live PTY, and the transcript-tail `preview` below is the fallback for it.
    */
-  let screen = $derived(
-    screenPreview($terminalScreens.get(tile.terminalTabId ?? "") ?? []),
+  let screenData = $derived($terminalScreens.get(tile.terminalTabId ?? ""));
+  /* `screenPreview` only ever trims rows off the bottom (blank tail, prompt
+     box), so its length is how many of the styled rows — same order, same
+     colour and weight the TUI painted them with — to keep. */
+  let screen: TerminalRow[] = $derived(
+    (screenData?.styled ?? []).slice(0, screenPreview(screenData?.plain ?? []).length),
   );
 
   /** Blank lines render as a non-breaking space so row height stays stable. */
@@ -160,7 +178,23 @@
   {#if tile.terminalTabId}
     <div class="preview">
       {#each screen as row, i (i)}
-        <div class="line">{row || " "}</div>
+        <div class="line">
+          {#if row.length === 0}
+            {" "}
+          {:else}
+            {#each row as seg, j (j)}
+              <span
+                class:bold={seg.bold}
+                class:dim={seg.dim}
+                class:italic={seg.italic}
+                class:underline={seg.underline}
+                class:strikethrough={seg.strikethrough}
+                style:color={seg.inverse ? segColor(seg.bg) : segColor(seg.fg)}
+                style:background={seg.inverse ? segColor(seg.fg) : segColor(seg.bg)}
+              >{seg.text}</span>
+            {/each}
+          {/if}
+        </div>
       {/each}
     </div>
   {:else if tailing}
@@ -387,6 +421,30 @@
     flex-shrink: 0;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
+  }
+
+  .line .bold {
+    font-weight: 700;
+  }
+
+  .line .dim {
+    opacity: 0.65;
+  }
+
+  .line .italic {
+    font-style: italic;
+  }
+
+  .line .underline {
+    text-decoration: underline;
+  }
+
+  .line .strikethrough {
+    text-decoration: line-through;
+  }
+
+  .line .underline.strikethrough {
+    text-decoration: underline line-through;
   }
 
   /* ── Permission bar ──────────────────────────────────────────────────── */
