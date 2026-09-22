@@ -195,7 +195,6 @@
 
 <div class="app">
   <header class="topbar">
-    <div class="dots"><span></span><span></span><span></span></div>
     <span class="wordmark">Atlas</span>
     <!-- Session is a detail view Sessions opens in place, not a tab of its own,
          so Sessions stays lit while it is showing. -->
@@ -303,20 +302,6 @@
     padding: 0 16px;
     border-bottom: 1px solid var(--border);
     background: var(--surface);
-  }
-
-  .dots {
-    display: flex;
-    gap: 7px;
-    margin-right: 6px;
-  }
-
-  .dots span {
-    display: block;
-    width: 11px;
-    height: 11px;
-    border-radius: 50%;
-    background: var(--surface3);
   }
 
   .wordmark {
