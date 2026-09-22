@@ -22,6 +22,11 @@
  * and stays the lightest ink in the palette at 7:1 exactly, so de-emphasised
  * text still reads as de-emphasised.
  *
+ * The dark palette's coloured slots are held to S≈35% at their existing
+ * lightness — WCAG contrast is luminance-only, so saturation is free to pull
+ * down. Dark `yellow` is exempt: it is `--warn`, and desaturating it at fixed
+ * lightness would fall to 6.88:1, under the 7:1 floor above.
+ *
  * The named slots are only half the story: `terminal-session.ts` sets xterm's
  * `minimumContrastRatio` for the dim/faint and 256-colour paths an ITheme
  * cannot reach.
@@ -44,20 +49,20 @@ export const lightXtermTheme = {
      a black bar. `minimumContrastRatio` re-inks whatever the TUI writes on
      top, so the fill only has to read as a raised surface. */
   black: "#e5e5ea",
-  red: "#9d2f27",
-  green: "#1a6146",
-  yellow: "#725010",
-  blue: "#165991",
-  magenta: "#88367c",
-  cyan: "#0d605e",
+  red: "#83443f",
+  green: "#285343",
+  yellow: "#58482a",
+  blue: "#365671",
+  magenta: "#803d76",
+  cyan: "#234a49",
   white: "#474a50", // --muted
   brightBlack: "#52565e",
-  brightRed: "#82251e",
-  brightGreen: "#145039",
-  brightYellow: "#5d410c",
-  brightBlue: "#114975",
-  brightMagenta: "#6f2c65",
-  brightCyan: "#094f4c",
+  brightRed: "#6b3734",
+  brightGreen: "#214436",
+  brightYellow: "#473a22",
+  brightBlue: "#2c465a",
+  brightMagenta: "#683260",
+  brightCyan: "#1d3b3a",
   brightWhite: "#2b2e35",
 } as const;
 
@@ -70,20 +75,20 @@ export const darkXtermTheme = {
   selectionBackground: "#2c3b36",
   selectionForeground: "#e6e7ea",
   black: "#25272c",
-  red: "#f8776e",
-  green: "#46c294",
+  red: "#ce9c98",
+  green: "#59af8f",
   yellow: "#e0a53a",
-  blue: "#6bb6ec",
-  magenta: "#d48ac0",
-  cyan: "#4fc4bd",
+  blue: "#8eb0c9",
+  magenta: "#cb93bc",
+  cyan: "#60b3ae",
   white: "#c9cbd1",
   brightBlack: "#acb2bc", // --muted
-  brightRed: "#f79890",
-  brightGreen: "#6fd3ad",
+  brightRed: "#d8b2af",
+  brightGreen: "#80c2a9",
   brightYellow: "#edc06a",
-  brightBlue: "#93cdf3",
-  brightMagenta: "#e3a8d3",
-  brightCyan: "#7ad7d1",
+  brightBlue: "#aec7d8",
+  brightMagenta: "#dab1cf",
+  brightCyan: "#8ac7c3",
   brightWhite: "#e6e7ea",
 } as const;
 
@@ -125,8 +130,8 @@ export function activeXtermTheme(mode: ThemeMode) {
    7:1 ink floor above; xterm's decoration API takes only #RRGGBB, so no
    alpha. Kept out of `lightXtermTheme`/`darkXtermTheme` since those are
    ITheme objects whose keys are asserted against xterm's type. */
-export const lightBlockTints = { user: "#f0f0f3", tool: "#e9eff8" } as const;
-export const darkBlockTints = { user: "#1a1c1f", tool: "#171f2b" } as const;
+export const lightBlockTints = { user: "#f0f0f3", tool: "#eaeaee" } as const;
+export const darkBlockTints = { user: "#1a1c1f", tool: "#1d1f23" } as const;
 
 /** The row-tint palette matching `mode` right now. */
 export function activeBlockTints(mode: ThemeMode) {

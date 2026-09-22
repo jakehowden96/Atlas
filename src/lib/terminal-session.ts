@@ -362,6 +362,11 @@ export class TerminalSession {
    * these tokens are opaque. The cache is keyed by screen row index rather
    * than by marker: in the alt buffer `ybase` is always 0, so a marker's
    * `line` is just its screen row and does not drift as the TUI repaints.
+   *
+   * The tool block's marker is the DOM border on the decoration element
+   * itself, the fill is now a neutral surface, and the element is z-index 6
+   * (above the renderer canvases, which set no z-index) so a bottom-layer
+   * decoration's border still paints.
    */
   private paintRowTints(plain: readonly string[]) {
     const buffer = this.terminal.buffer.active;
@@ -408,6 +413,14 @@ export class TerminalSession {
       // Never let a tinted row intercept clicks meant for the TUI beneath it.
       decoration.onRender((el) => {
         el.style.pointerEvents = "none";
+        if (want === "tool") {
+          el.style.borderLeftWidth = "2px";
+          el.style.borderLeftStyle = "solid";
+          el.style.borderLeftColor = "var(--border2)";
+          // Sit the rule in the 6px left padding TerminalTab.svelte gives
+          // `.xterm`, so it never overlaps column 0's glyph.
+          el.style.marginLeft = "-3px";
+        }
       });
       this.tints[i] = { kind: want, decoration, marker };
     }

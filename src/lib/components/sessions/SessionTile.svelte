@@ -471,6 +471,13 @@
     padding-inline: 14px;
   }
 
+  /* Tool blocks are told apart by form, not hue: a rule down the left edge
+     survives the desaturated palette where a blue fill did not. */
+  .line.tool {
+    border-left: 2px solid var(--border2);
+    padding-inline-start: 12px;
+  }
+
   /* ── Permission bar ──────────────────────────────────────────────────── */
   .permission {
     display: flex;
