@@ -119,5 +119,19 @@ export function activeXtermTheme(mode: ThemeMode) {
   return resolvedTheme(mode) === "dark" ? darkXtermTheme : lightXtermTheme;
 }
 
+/* Row-block tints for the classified terminal transcript, mirroring
+   --term-tint-user / --term-tint-tool from app.css. These are row
+   backgrounds, not inks, so held to "close to --term-bg" rather than the
+   7:1 ink floor above; xterm's decoration API takes only #RRGGBB, so no
+   alpha. Kept out of `lightXtermTheme`/`darkXtermTheme` since those are
+   ITheme objects whose keys are asserted against xterm's type. */
+export const lightBlockTints = { user: "#f0f0f3", tool: "#e9eff8" } as const;
+export const darkBlockTints = { user: "#1a1c1f", tool: "#171f2b" } as const;
+
+/** The row-tint palette matching `mode` right now. */
+export function activeBlockTints(mode: ThemeMode) {
+  return resolvedTheme(mode) === "dark" ? darkBlockTints : lightBlockTints;
+}
+
 /* Keep <html data-theme> in step with the store for the lifetime of the app. */
 themeMode.subscribe(applyTheme);

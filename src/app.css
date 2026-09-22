@@ -46,6 +46,10 @@
   --ink-text: #ffffff;
   --term-bg: #fafafb;
   --term-text: #2b2e35;
+  /* Row-block tints for the classified terminal transcript. xterm's
+     decoration API only takes `#RRGGBB`, so `theme.ts` mirrors these. */
+  --term-tint-user: #f0f0f3;
+  --term-tint-tool: #e9eff8;
   /* Transcript line roles. Their surface is --term-bg — SessionTile's preview
      pane and the session terminal — not --surface3, so 4.5:1 is measured
      against that. --t-tool is the muted role inside the terminal, so it *is*
@@ -127,6 +131,8 @@
   --ink-text: #0f1012;
   --term-bg: #111214;
   --term-text: #c9cbd1;
+  --term-tint-user: #1a1c1f;
+  --term-tint-tool: #171f2b;
   --t-user: #e6e7ea;
   --t-step: #2fa37a;
   --t-tool: #acb2bc;
@@ -155,6 +161,8 @@
     --ink-text: #0f1012;
     --term-bg: #111214;
     --term-text: #c9cbd1;
+    --term-tint-user: #1a1c1f;
+    --term-tint-tool: #171f2b;
     --t-user: #e6e7ea;
     --t-step: #2fa37a;
     --t-tool: #acb2bc;

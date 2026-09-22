@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { LiveSession, SessionState } from "../../types/session";
 import {
   buildTiles,
+  classifyRows,
   compareByAttention,
   compareByWorkspace,
   filterByWorkspace,
@@ -461,12 +462,15 @@ describe("previewLines", () => {
   });
 });
 
+/* Shared with classifyRows below, which also needs to tell a rule row from
+   real content. */
+const RULE = "─".repeat(60);
+
 describe("screenPreview", () => {
   /* Rows come straight off the xterm buffer, so the bottom of the screen is
      whatever the TUI left there: blank rows below the last paint, and Claude
      Code's own prompt box. Neither belongs on a tile whose job is to show
      what the session is doing. */
-  const RULE = "─".repeat(60);
   const STATUS = "  ? for shortcuts                       Opus · 12% context";
 
   it("drops trailing blank rows", () => {
@@ -496,5 +500,52 @@ describe("screenPreview", () => {
   it("keeps a rule the TUI drew as a divider in the output", () => {
     const rows = ["Summary", RULE, "3 files changed"];
     expect(screenPreview(rows)).toEqual(rows);
+  });
+});
+
+describe("classifyRows", () => {
+  it("classifies user input and its indented wrap as the same block", () => {
+    const rows = ["> fix the auth bug", "  that keeps logging users out"];
+    expect(classifyRows(rows)).toEqual(["user", "user"]);
+  });
+
+  it("classifies a tool call, its ⎿ result and an indented continuation as one block", () => {
+    const rows = ["⏺ Bash(pnpm test)", "  ⎿  total 48", "     24 passed"];
+    expect(classifyRows(rows)).toEqual(["tool", "tool", "tool"]);
+  });
+
+  it("classifies bare ⏺ prose as claude, not a tool call", () => {
+    expect(classifyRows(["⏺ Running tests…"])).toEqual(["claude"]);
+  });
+
+  it("treats blank and rule rows as boundaries that break the carried block", () => {
+    const rows = ["⏺ Bash(pnpm test)", "  ⎿  total 48", RULE, "Done running tests."];
+    expect(classifyRows(rows)).toEqual(["tool", "tool", null, "claude"]);
+  });
+
+  it("starts a fresh user block right after a ⎿ row", () => {
+    const rows = ["⏺ Bash(pnpm test)", "  ⎿  total 48", "> run it again"];
+    expect(classifyRows(rows)).toEqual(["tool", "tool", "user"]);
+  });
+
+  it("returns an empty array for an empty screen", () => {
+    expect(classifyRows([])).toEqual([]);
+  });
+
+  it("classifies one entry per screenPreview row, in the same order", () => {
+    const rows = [
+      "> fix the auth bug",
+      "⏺ I'll look at the auth flow.",
+      "⏺ Bash(pnpm test)",
+      "  ⎿  total 48",
+      "",
+      RULE,
+      "> ",
+      RULE,
+      "  ? for shortcuts                       Opus · 12% context",
+      "",
+    ];
+    const preview = screenPreview(rows);
+    expect(classifyRows(preview).length).toBe(preview.length);
   });
 });

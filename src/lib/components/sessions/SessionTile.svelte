@@ -1,7 +1,14 @@
 <script lang="ts">
   import type { SessionState } from "../../../types/session";
   import { formatTokens } from "../../format";
-  import { formatElapsed, pinKey, previewLines, type SessionTile, screenPreview } from "../../overview";
+  import {
+    classifyRows,
+    formatElapsed,
+    pinKey,
+    previewLines,
+    type SessionTile,
+    screenPreview,
+  } from "../../overview";
   import { allowPendingTool, closeSession, denyPendingTool } from "../../session-actions";
   import { togglePinnedSession } from "../../stores/settings";
   import { activeTabId } from "../../stores/terminal";
@@ -65,12 +72,12 @@
    * live PTY, and the transcript-tail `preview` below is the fallback for it.
    */
   let screenData = $derived($terminalScreens.get(tile.terminalTabId ?? ""));
+  let plainRows = $derived(screenPreview(screenData?.plain ?? []));
   /* `screenPreview` only ever trims rows off the bottom (blank tail, prompt
      box), so its length is how many of the styled rows — same order, same
      colour and weight the TUI painted them with — to keep. */
-  let screen: TerminalRow[] = $derived(
-    (screenData?.styled ?? []).slice(0, screenPreview(screenData?.plain ?? []).length),
-  );
+  let screen: TerminalRow[] = $derived((screenData?.styled ?? []).slice(0, plainRows.length));
+  let kinds = $derived(classifyRows(plainRows));
 
   /** Blank lines render as a non-breaking space so row height stays stable. */
   let preview = $derived(previewLines(live.lines));
@@ -178,7 +185,7 @@
   {#if tile.terminalTabId}
     <div class="preview">
       {#each screen as row, i (i)}
-        <div class="line">
+        <div class="line" class:user={kinds[i] === "user"} class:tool={kinds[i] === "tool"}>
           {#if row.length === 0}
             {" "}
           {:else}
@@ -445,6 +452,23 @@
 
   .line .underline.strikethrough {
     text-decoration: underline line-through;
+  }
+
+  .line.user {
+    background: var(--term-tint-user);
+  }
+
+  .line.tool {
+    background: var(--term-tint-tool);
+  }
+
+  /* Bleed the tint through the pane's 14px gutter so a block reads as a band
+     rather than an inset stripe. The padding gives back exactly what the
+     margin takes, so no row's text width changes. */
+  .line.user,
+  .line.tool {
+    margin-inline: -14px;
+    padding-inline: 14px;
   }
 
   /* ── Permission bar ──────────────────────────────────────────────────── */

@@ -392,3 +392,49 @@ export function screenPreview(rows: readonly string[]): string[] {
   }
   return [...trimmed];
 }
+
+/** The block a transcript row belongs to, for the row-tint feature. */
+export type RowBlock = "user" | "tool" | "claude" | null;
+
+const USER_ROW = /^>\s/;
+const TOOL_ROW = /^\s*(?:⏺\s+[A-Za-z][A-Za-z0-9_-]*\(|⎿)/;
+
+/**
+ * Classifies every row of a screen (or `screenPreview` output) into the
+ * block it belongs to, so the terminal pane and the tile preview can tint
+ * user input, tool calls and Claude's own prose differently.
+ *
+ * `⏺` alone does not mean a tool call — Claude Code prefixes its own prose
+ * with `⏺` too, so a tool row needs the marker followed by an identifier and
+ * an opening paren (`⏺ Bash(…)`), or the `⎿` continuation glyph. A bare
+ * `⏺ some prose` row classifies as `"claude"`.
+ *
+ * A non-blank row that starts with whitespace continues whatever block came
+ * before it — wrapped `> ` input and `⎿` tool output are both indented by
+ * the TUI — so indentation, not content, decides whether it carries the
+ * block forward. Blank rows and rule rows are boundaries: they classify as
+ * `null` and reset the carried block, so prose that follows a tool block is
+ * `"claude"` rather than inheriting `"tool"`.
+ */
+export function classifyRows(rows: readonly string[]): RowBlock[] {
+  const out: RowBlock[] = [];
+  let carry: RowBlock = null;
+  for (const row of rows) {
+    if (row.trim() === "" || isRuleRow(row)) {
+      out.push(null);
+      carry = null;
+    } else if (USER_ROW.test(row)) {
+      carry = "user";
+      out.push(carry);
+    } else if (TOOL_ROW.test(row)) {
+      carry = "tool";
+      out.push(carry);
+    } else if (/^\s/.test(row) && (carry === "user" || carry === "tool")) {
+      out.push(carry);
+    } else {
+      carry = "claude";
+      out.push(carry);
+    }
+  }
+  return out;
+}

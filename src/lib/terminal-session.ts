@@ -1,4 +1,4 @@
-import { Terminal, type IBufferCell, type IBufferLine } from "@xterm/xterm";
+import { Terminal, type IBufferCell, type IBufferLine, type IDecoration, type IMarker } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -12,7 +12,8 @@ import type { PanelData } from "../types/panel";
 import { updateSessionLabelByTabId } from "./stores/workspace";
 import { get } from "svelte/store";
 import { showToast } from "./stores/toast";
-import { activeXtermTheme, themeMode } from "./theme";
+import { activeBlockTints, activeXtermTheme, themeMode } from "./theme";
+import { classifyRows, screenPreview, type RowBlock } from "./overview";
 import { log } from "./logger";
 
 export interface TerminalSessionOptions {
@@ -110,11 +111,18 @@ export class TerminalSession {
   private spawnFallback: ReturnType<typeof setTimeout> | null = null;
   /** The frame a screen publish is waiting on; see `scheduleScreenPublish`. */
   private screenFrame: number | null = null;
+  /** One entry per screen row; see `paintRowTints`. */
+  private tints: ({ kind: RowBlock; decoration: IDecoration; marker: IMarker } | null)[] = [];
 
   /** Re-read the palette for the current mode; also fires on OS-preference
       changes so a terminal on "system" follows the OS without a respawn. */
   private applyXtermTheme = () => {
     this.terminal.options.theme = activeXtermTheme(get(themeMode));
+    // The row tints came from the old palette; drop them and repaint from the
+    // current buffer so an idle session doesn't keep stale-coloured tints
+    // after a theme switch.
+    this.clearRowTints();
+    this.publishScreen();
   };
 
   /** Settings' font-size stepper reaches every open terminal through this.
@@ -212,6 +220,10 @@ export class TerminalSession {
     this.registerOscHandlers();
     this.registerReadinessHandler();
     this.terminal.onWriteParsed(() => this.scheduleScreenPublish());
+    // Cols changing makes a cached tint's `width` stale, and a row shrink can
+    // orphan entries past the new row count — simplest is to drop the cache
+    // and let the next publish repaint it at the new geometry.
+    this.terminal.onResize(() => this.clearRowTints());
     this.setupResizeObserver(opts.container);
     this.spawnWhenSized(opts.onPtyReady);
     this.setupEnterRefresh();
@@ -324,6 +336,81 @@ export class TerminalSession {
       styled.push(line ? terminalRowStyle(line, this.terminal.cols, cell) : []);
     }
     setTerminalScreen(this.tabId, plain, styled);
+    this.paintRowTints(plain);
+  }
+
+  /** Dispose every cached row tint and drop the cache. */
+  private clearRowTints() {
+    for (const entry of this.tints) {
+      if (!entry) continue;
+      entry.decoration.dispose();
+      entry.marker.dispose();
+    }
+    this.tints = [];
+  }
+
+  /**
+   * Tint each screen row's background by the block it belongs to — user
+   * input, a tool call and its `⎿` output, or Claude's own prose.
+   *
+   * One decoration per row, not one per block: the decoration service keys
+   * its cell-colour lookup on `marker.line` alone, so `height` only sizes the
+   * overlay element and never extends a background past the marker's own
+   * row. `layer: "bottom"` plus `backgroundColor` paints behind the glyphs —
+   * the same path Claude Code's own `ESC[40m` fills use — so ANSI fg/bold/dim
+   * are left untouched, and the decoration API only accepts `#RRGGBB`, hence
+   * these tokens are opaque. The cache is keyed by screen row index rather
+   * than by marker: in the alt buffer `ybase` is always 0, so a marker's
+   * `line` is just its screen row and does not drift as the TUI repaints.
+   */
+  private paintRowTints(plain: readonly string[]) {
+    const buffer = this.terminal.buffer.active;
+    const kinds = classifyRows(screenPreview(plain));
+    const palette = activeBlockTints(get(themeMode));
+    const colour = (k: RowBlock): string | undefined =>
+      k === "user" ? palette.user : k === "tool" ? palette.tool : undefined;
+
+    for (let i = 0; i < this.terminal.rows; i++) {
+      const kind: RowBlock = kinds[i] ?? null;
+      const want: RowBlock = colour(kind) !== undefined ? kind : null;
+      const entry = this.tints[i] ?? null;
+
+      if (
+        entry &&
+        entry.kind === want &&
+        !entry.marker.isDisposed &&
+        entry.marker.line === buffer.baseY + i
+      ) {
+        continue;
+      }
+
+      if (entry) {
+        entry.decoration.dispose();
+        entry.marker.dispose();
+        this.tints[i] = null;
+      }
+      if (want === null) continue;
+
+      const marker = this.terminal.registerMarker(i - buffer.cursorY);
+      const decoration = this.terminal.registerDecoration({
+        marker,
+        x: 0,
+        width: this.terminal.cols,
+        height: 1,
+        layer: "bottom",
+        backgroundColor: colour(want),
+      });
+      if (!decoration) {
+        marker.dispose();
+        this.tints[i] = null;
+        continue;
+      }
+      // Never let a tinted row intercept clicks meant for the TUI beneath it.
+      decoration.onRender((el) => {
+        el.style.pointerEvents = "none";
+      });
+      this.tints[i] = { kind: want, decoration, marker };
+    }
   }
 
   /** Re-fit the terminal and sync PTY dimensions. Call after layout changes. */
@@ -551,6 +638,7 @@ export class TerminalSession {
     if (this.spawnFallback) clearTimeout(this.spawnFallback);
     if (this.screenFrame !== null) cancelAnimationFrame(this.screenFrame);
     clearTerminalScreen(this.tabId);
+    this.tints = [];
     this.unsubscribeTheme?.();
     this.unsubscribeFontSize?.();
     this.prefersDark?.removeEventListener("change", this.applyXtermTheme);

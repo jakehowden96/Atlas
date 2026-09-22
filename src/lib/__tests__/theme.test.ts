@@ -3,6 +3,8 @@ import { get } from "svelte/store";
 import {
   lightXtermTheme,
   darkXtermTheme,
+  lightBlockTints,
+  darkBlockTints,
   resolvedTheme,
   activeXtermTheme,
   applyTheme,
@@ -246,7 +248,7 @@ const ON: Record<string, string[]> = {
   "--accent": ["--bg", "--surface", "--surface2", "--surface3"],
   "--danger": ["--bg", "--surface", "--surface2", "--surface3"],
   "--warn": ["--bg", "--surface", "--surface2", "--surface3"],
-  "--term-text": ["--term-bg"],
+  "--term-text": ["--term-bg", "--term-tint-user", "--term-tint-tool"],
   "--t-user": ["--term-bg"],
   "--t-step": ["--term-bg"],
   "--t-tool": ["--term-bg"],
@@ -364,6 +366,38 @@ describe("app.css token blocks", () => {
       ["dark", darkXtermTheme, DARK_EXPLICIT],
     ] as const) {
       expect(contrast(palette.black, tokens["--term-bg"]), name).toBeLessThan(1.5);
+    }
+  });
+
+  /* Row tints are backgrounds, not inks: they only have to sit close to
+     --term-bg so a tinted row still reads as the terminal surface, the same
+     bar the ANSI black slot clears above. */
+  it("keeps the row tints subtle against --term-bg", () => {
+    for (const [name, tokens] of [
+      ["light", LIGHT],
+      ["dark", DARK_EXPLICIT],
+    ] as const) {
+      expect(contrast(tokens["--term-tint-user"], tokens["--term-bg"]), name).toBeLessThan(1.5);
+      expect(contrast(tokens["--term-tint-tool"], tokens["--term-bg"]), name).toBeLessThan(1.5);
+    }
+  });
+
+  it("mirrors the row tints into theme.ts", () => {
+    expect(lightBlockTints.user).toBe(LIGHT["--term-tint-user"]);
+    expect(lightBlockTints.tool).toBe(LIGHT["--term-tint-tool"]);
+    expect(darkBlockTints.user).toBe(DARK_EXPLICIT["--term-tint-user"]);
+    expect(darkBlockTints.tool).toBe(DARK_EXPLICIT["--term-tint-tool"]);
+  });
+
+  it("keeps every terminal ink readable on the row tints in both palettes", () => {
+    for (const [palette, tints] of [
+      [lightXtermTheme, lightBlockTints],
+      [darkXtermTheme, darkBlockTints],
+    ] as const) {
+      for (const key of INK_KEYS) {
+        expect(contrast(palette[key], tints.user), key).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(palette[key], tints.tool), key).toBeGreaterThanOrEqual(4.5);
+      }
     }
   });
 });
