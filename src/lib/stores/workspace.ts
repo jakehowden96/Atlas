@@ -12,6 +12,10 @@ export interface WorkspaceSession {
   /** UUID handed to `claude --session-id`; null for rows written before Atlas
    *  assigned session ids — those can only be started fresh, never resumed. */
   claudeSessionId: string | null;
+  /** The harness this session launches. Null for rows written before harnesses
+   *  existed — those predate the feature and were necessarily Claude Code, but
+   *  that translation happens at the read site in `session-actions.ts`. */
+  harnessId: string | null;
 }
 
 export interface Workspace {
@@ -117,6 +121,8 @@ export async function loadWorkspaces() {
         s.terminalTabId = null;
         // Written by a version of Atlas that did not track Claude session ids.
         s.claudeSessionId = s.claudeSessionId ?? null;
+        // Written by a version of Atlas that predates harnesses.
+        s.harnessId = s.harnessId ?? null;
       }
     }
     workspaces.set(data);
@@ -257,6 +263,7 @@ export async function addSession(
   label: string,
   terminalTabId: string,
   claudeSessionId: string | null,
+  harnessId: string | null,
 ): Promise<WorkspaceSession> {
   const session: WorkspaceSession = {
     id: crypto.randomUUID(),
@@ -265,11 +272,14 @@ export async function addSession(
     terminalTabId,
     createdAt: new Date().toISOString(),
     claudeSessionId,
+    harnessId,
   };
+  // Appended, not prepended: array order is insertion order under every
+  // ordering mode, and "opened" ordering depends on it directly.
   workspaces.update((ws) =>
     ws.map((w) =>
       w.path === workspacePath
-        ? { ...w, sessions: [session, ...w.sessions] }
+        ? { ...w, sessions: [...w.sessions, session] }
         : w,
     ),
   );

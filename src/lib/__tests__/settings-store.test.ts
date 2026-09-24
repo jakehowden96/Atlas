@@ -17,8 +17,11 @@ vi.mock("../ipc", () => ({
 import { DEFAULT_KEYMAP } from "../keymap";
 import {
   autoAddReposFromWorkspaces,
+  DEFAULT_HARNESSES,
   enableNotifications,
+  harnesses,
   keymap,
+  lastHarnessId,
   loadSettings,
   overviewOrdering,
   prRefreshMinutes,
@@ -26,7 +29,9 @@ import {
   setAutoAddReposFromWorkspaces,
   setEnableNotifications,
   setFileSources,
+  setHarnesses,
   setKeymap,
+  setLastHarnessId,
   setOpenFiles,
   setOverviewOrdering,
   setPrRefreshMinutes,
@@ -39,6 +44,7 @@ import {
   tailTranscripts,
   terminalFontSize,
   watchedRepos,
+  type HarnessConfig,
 } from "../stores/settings";
 import { openFiles, sources } from "../stores/files";
 import { liveSessions } from "../stores/liveSessions";
@@ -71,6 +77,8 @@ describe("settings store", () => {
     prRefreshMinutes.set(3);
     autoAddReposFromWorkspaces.set(false);
     tailTranscripts.set(true);
+    harnesses.set([...DEFAULT_HARNESSES]);
+    lastHarnessId.set("claude-code");
     liveSessions.set(new Map());
     workspaces.set([]);
     openFiles.set([]);
@@ -204,6 +212,54 @@ describe("settings store", () => {
       vi.mocked(readTextFile).mockResolvedValue(JSON.stringify({ theme: "dark" }));
       await loadSettings();
       expect(get(keymap)).toEqual(DEFAULT_KEYMAP);
+    });
+  });
+
+  describe("harnesses", () => {
+    const customHarness: HarnessConfig = {
+      id: "omp",
+      label: "omp",
+      command: "omp",
+      args: [],
+      resumable: false,
+      readyMode: "immediate",
+    };
+
+    it("loads a valid harnesses list from file", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify({ harnesses: [customHarness], lastHarnessId: "omp" }),
+      );
+      await loadSettings();
+      expect(get(harnesses)).toEqual([customHarness]);
+      expect(get(lastHarnessId)).toBe("omp");
+    });
+
+    it("drops a malformed entry, keeping the defaults if that empties the list", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify({ harnesses: [{ id: "bad" }] }),
+      );
+      await loadSettings();
+      expect(get(harnesses)).toEqual(DEFAULT_HARNESSES);
+    });
+
+    it("keeps the defaults when the file has no harnesses key at all", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(JSON.stringify({ theme: "dark" }));
+      await loadSettings();
+      expect(get(harnesses)).toEqual(DEFAULT_HARNESSES);
+      expect(get(lastHarnessId)).toBe("claude-code");
+    });
+
+    it("setHarnesses and setLastHarnessId persist and round-trip", async () => {
+      allowWrites();
+      await setHarnesses([...DEFAULT_HARNESSES, customHarness]);
+      await setLastHarnessId("omp");
+      expect(get(harnesses)).toEqual([...DEFAULT_HARNESSES, customHarness]);
+      expect(get(lastHarnessId)).toBe("omp");
+      expect(lastWritten().harnesses).toEqual([...DEFAULT_HARNESSES, customHarness]);
+      expect(lastWritten().lastHarnessId).toBe("omp");
     });
   });
 
@@ -389,6 +445,7 @@ describe("settings store", () => {
               terminalTabId: "tab-1",
               createdAt: "",
               claudeSessionId: "uuid-a",
+              harnessId: null,
             },
             {
               id: "s2",
@@ -397,6 +454,7 @@ describe("settings store", () => {
               terminalTabId: null,
               createdAt: "",
               claudeSessionId: "uuid-b",
+              harnessId: null,
             },
           ],
         },

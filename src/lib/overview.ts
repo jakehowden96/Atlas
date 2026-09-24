@@ -33,6 +33,9 @@ export interface SessionTile {
   state: SessionState;
   live: LiveSession;
   diff: DiffStats | null;
+  /** When the session was created — the row's, or the live session's own for
+   *  a tile no workspace row owns. What `"opened"` ordering sorts by. */
+  createdAt: string;
 }
 
 /**
@@ -50,7 +53,7 @@ export interface SessionTile {
  * Folding it in needs a terminal tab id, which only the workspace row carries,
  * so the second loop's rowless tiles can never read needs-you. That costs
  * nothing: the flag is set from `ATLAS_SESSION_ID`, which only a PTY Atlas
- * spawned carries, and every such PTY has a row (`spawnClaudeSession` writes
+ * spawned carries, and every such PTY has a row (`spawnHarnessSession` writes
  * one before it calls `addTab`). A session with no row is one Atlas never
  * started, so no notification for it can exist.
  */
@@ -142,6 +145,7 @@ function toTile(
     state: tabId !== null && needsInputTabs.has(tabId) ? "needsYou" : live.state,
     live,
     diff: tabId === null ? null : (diffStats.get(tabId) ?? null),
+    createdAt: row?.createdAt ?? live.startedAt ?? "",
   };
 }
 
@@ -184,6 +188,12 @@ export function compareByWorkspace(
   );
 }
 
+/** Opened order: strictly by session creation time, so the grid never
+ *  re-sorts on a status change. The default — see `overviewOrdering`. */
+export function compareByOpened(a: { createdAt: string }, b: { createdAt: string }): number {
+  return a.createdAt.localeCompare(b.createdAt);
+}
+
 /**
  * The comparator behind Settings › General › Overview ordering. "manual" has
  * no comparator: the grid keeps the order sessions arrived in.
@@ -196,6 +206,8 @@ function orderingComparator(
       return compareByWorkspace;
     case "manual":
       return null;
+    case "opened":
+      return compareByOpened;
     default:
       return compareByAttention;
   }

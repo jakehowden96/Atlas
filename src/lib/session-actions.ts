@@ -12,7 +12,7 @@ import { ptyKill, ptyWrite, startSessionTail, stopSessionTail } from "./ipc";
 import { log } from "./logger";
 import { removeLiveSession } from "./stores/liveSessions";
 import { showToast } from "./stores/toast";
-import { tailTranscripts } from "./stores/settings";
+import { DEFAULT_HARNESSES, harnesses, lastHarnessId, tailTranscripts, type HarnessConfig } from "./stores/settings";
 import { focusedSessionId, showView } from "./stores/view";
 import {
   activeTabId,
@@ -66,21 +66,45 @@ export async function closeSessionTab(tabId: string) {
 }
 
 /**
- * Spawn a terminal tab in the given workspace directory and run `claude`.
+ * Resolve a harness by id, falling back to Claude Code if the stored id no
+ * longer exists (e.g. a custom harness deleted in Settings after a session
+ * was created with it) — the one place a hardcoded id is allowed, purely as
+ * a safety net.
+ */
+function resolveHarness(harnessId: string): HarnessConfig {
+  const list = get(harnesses);
+  return (
+    list.find((h) => h.id === harnessId) ??
+    list.find((h) => h.id === "claude-code") ??
+    DEFAULT_HARNESSES[0]
+  );
+}
+
+/** Substitute the `{sessionId}`/`{resumeId}` tokens with the Claude session
+ *  UUID for this spawn. */
+function resolveArgs(args: string[], claudeSessionId: string): string[] {
+  return args.map((a) => (a === "{sessionId}" || a === "{resumeId}" ? claudeSessionId : a));
+}
+
+/**
+ * Spawn a terminal tab in the given workspace directory and launch a harness
+ * in it — Claude Code, `omp`, or a bare Terminal with nothing typed.
  *
  * `existingSessionId` reattaches an existing Atlas session row to the new tab.
  * `resumeSessionId` is the Claude session UUID to `--resume`; without it a
  * fresh UUID is minted and passed as `--session-id`, so the conversation can
- * be resumed later and its transcript located.
+ * be resumed later and its transcript located. `harnessId` defaults to
+ * whatever was last picked in the New Session modal.
  */
-export async function spawnClaudeSession(
+export async function spawnHarnessSession(
   workspacePath: string,
-  opts?: { existingSessionId?: string; resumeSessionId?: string },
+  opts?: { existingSessionId?: string; resumeSessionId?: string; harnessId?: string },
 ) {
   const tabId = crypto.randomUUID();
   const terminal = new Terminal();
   let session: { id: string };
 
+  const harness = resolveHarness(opts?.harnessId ?? get(lastHarnessId));
   const resumeSessionId = opts?.resumeSessionId;
   const claudeSessionId = resumeSessionId ?? crypto.randomUUID();
 
@@ -91,7 +115,7 @@ export async function spawnClaudeSession(
     const wsName =
       get(workspaces).find((w) => w.path === workspacePath)?.name ??
       stripBundleExtension(basename(workspacePath) || "New session");
-    session = await addSession(workspacePath, wsName, tabId, claudeSessionId);
+    session = await addSession(workspacePath, wsName, tabId, claudeSessionId, harness.id);
   }
 
   // Session view renders whichever session is focused, so a spawn has to move
@@ -105,13 +129,21 @@ export async function spawnClaudeSession(
   // on the tab a moment later; wait for it rather than for a clock.
   void awaitTabPty(tabId).then((tab) => {
     if (!tab) return;
-    const sessionFlag = resumeSessionId
-      ? `--resume ${resumeSessionId}`
-      : `--session-id ${claudeSessionId}`;
+
+    // Terminal: nothing to type, and nothing shaped like a TUI to wait on —
+    // no 300ms delay for a shell prompt, no 5s alt-screen fallback.
+    if (harness.command === "") {
+      updateSessionStatus(session.id, "running");
+      setTabReady(tabId);
+      return;
+    }
+
+    const argv = resumeSessionId && harness.resumeArgs ? harness.resumeArgs : harness.args;
+    const args = resolveArgs(argv, claudeSessionId);
     /* Submit with CR, not LF: CR is what the Enter key sends and what
        ConPTY/PSReadLine needs to run the line instead of just breaking
        it. `submitReview.ts` already writes "\r" for the same reason. */
-    const cmd = `claude ${sessionFlag}\r`;
+    const cmd = `${harness.command}${args.length > 0 ? ` ${args.join(" ")}` : ""}\r`;
     // Small delay to let the shell prompt render.
     setTimeout(() => {
       // Re-check: the tab may have been closed during the delay,
@@ -120,12 +152,17 @@ export async function spawnClaudeSession(
       if (!current || current.ptyId < 0) return;
       ptyWrite(current.ptyId, cmd);
       updateSessionStatus(session.id, "running");
-      // Tail the session's own transcript for structured live state, unless
-      // the user has turned transcript tailing off in Settings.
-      if (get(tailTranscripts)) {
+      // Tail the session's own transcript for structured live state — only a
+      // resumable (Claude Code-shaped) harness has a transcript to tail —
+      // unless the user has turned transcript tailing off in Settings.
+      if (harness.resumable && get(tailTranscripts)) {
         startSessionTail(claudeSessionId).catch((e) =>
           log.warn("session", `startSessionTail failed for ${claudeSessionId}: ${e}`),
         );
+      }
+      if (harness.readyMode === "immediate") {
+        setTabReady(tabId);
+        return;
       }
       // Readiness is TerminalSession seeing the alternate screen buffer turn
       // on — the one signal that means the TUI itself has started, and not
@@ -192,9 +229,10 @@ export function openSession(workspacePath: string, sessionId: string) {
   // Spawn a fresh Claude session if not actively running (or running with a missing tab)
   if (session.status !== "running" || !get(tabs).find((t) => t.id === session.terminalTabId)) {
     spawningSessionIds.add(session.id);
-    spawnClaudeSession(workspacePath, {
+    spawnHarnessSession(workspacePath, {
       existingSessionId: session.id,
       resumeSessionId: session.claudeSessionId ?? undefined,
+      harnessId: session.harnessId ?? "claude-code",
     }).finally(() => spawningSessionIds.delete(session.id));
   }
 }
@@ -212,10 +250,12 @@ export async function closeSession(sessionId: string) {
   endSessionTail(session.claudeSessionId);
   await detachSession(sessionId);
 
-  if (get(focusedSessionId) === sessionId) {
-    focusedSessionId.set("");
-    showView("sessions");
-  }
+  // Unconditional, matching `backToSessions`: gating this on `focusedSessionId`
+  // still matching `sessionId` was the bug — `closeFocusedSession`'s
+  // `activeTabId` fallback can resolve a session whose id no longer matches
+  // the store, and the gate then silently skips the return to Sessions.
+  focusedSessionId.set("");
+  showView("sessions");
 }
 
 /**

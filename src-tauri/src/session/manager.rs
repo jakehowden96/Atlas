@@ -116,7 +116,7 @@ impl LiveSessionManager {
         let tails = self.tails.lock().ok()?;
         tails
             .iter()
-            .find(|(_, tail)| tail.path() == path)
+            .find(|(uuid, tail)| tail.path() == path || owns_sidecar(tail.path(), uuid, path))
             .map(|(uuid, _)| uuid.clone())
     }
 
@@ -126,6 +126,15 @@ impl LiveSessionManager {
         let tail = tails.get_mut(session_uuid)?;
         tail.poll().then(|| tail.session().clone())
     }
+}
+
+/// A session's sidecar writes — `<uuid>/subagents/*`, `<uuid>/workflows/*` —
+/// sit beside its transcript and change its live state too, but they are not
+/// the transcript, so the watcher has to attribute them to it by directory.
+/// Without this a workflow's agents only surface when the parent transcript
+/// next grows, which during a run can be minutes.
+fn owns_sidecar(transcript: &Path, uuid: &str, path: &Path) -> bool {
+    transcript.parent().map(|dir| path.starts_with(dir.join(uuid))).unwrap_or(false)
 }
 
 /// Holds the watcher alive for the life of the app. `Manager::manage` is keyed
@@ -317,5 +326,28 @@ mod tests {
         manager.start(UUID, path.clone()).unwrap();
         let again = manager.start(UUID, path).unwrap();
         assert_eq!(again.lines.len(), 1, "the file is not re-read from the start");
+    }
+
+    #[test]
+    fn a_sidecar_write_is_attributed_to_the_session_that_owns_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = transcript(dir.path(), USER_LINE);
+        let manager = LiveSessionManager::new();
+        manager.start(UUID, path).unwrap();
+
+        assert_eq!(
+            manager.uuid_for_path(&dir.path().join(UUID).join("workflows").join("wf_x.json")),
+            Some(UUID.to_string())
+        );
+        assert_eq!(
+            manager.uuid_for_path(&dir.path().join(UUID).join("subagents").join("agent-a.jsonl")),
+            Some(UUID.to_string())
+        );
+        assert_eq!(manager.uuid_for_path(&dir.path().join("other-uuid.jsonl")), None);
+        assert_eq!(
+            manager.uuid_for_path(&dir.path().join(format!("{}-other", UUID)).join("x.json")),
+            None,
+            "a sibling dir that merely shares a prefix must not match"
+        );
     }
 }

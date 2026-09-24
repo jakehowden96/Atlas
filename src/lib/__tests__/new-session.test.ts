@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ageLabel,
   clampState,
+  cycleHarness,
   filterWorkspaces,
   findWorkspace,
   handleKey,
@@ -34,13 +35,15 @@ function ws(name: string, path: string, createdAt: string[] = []): Workspace {
       terminalTabId: null,
       createdAt: c,
       claudeSessionId: null,
+      harnessId: null,
     })),
   };
 }
 
-const counts = (workspaces: number, resumable: number): NewSessionCounts => ({
+const counts = (workspaces: number, resumable: number, harnesses = 1): NewSessionCounts => ({
   workspaces,
   resumable,
+  harnesses,
 });
 
 const state = (over: Partial<NewSessionState> = {}): NewSessionState => ({
@@ -237,6 +240,39 @@ describe("keyboard model", () => {
   });
 });
 
+describe("harness picker", () => {
+  it("cycleHarness wraps at both ends", () => {
+    const c = counts(3, 0, 3);
+    let s = state();
+    for (const expected of [1, 2, 0]) {
+      s = cycleHarness(s, c, 1);
+      expect(s.harnessIndex).toBe(expected);
+    }
+    s = cycleHarness(s, c, -1);
+    expect(s.harnessIndex).toBe(2);
+  });
+
+  it("⌥←/→ cycles the harness, and ⌥ wins over Shift when both are held", () => {
+    const c = counts(3, 2, 2);
+    const right = handleKey({ key: "ArrowRight", altKey: true }, state(), c);
+    expect(right.state.harnessIndex).toBe(1);
+    expect(right.handled).toBe(true);
+    expect(right.state.column).toBe("workspaces");
+
+    const both = handleKey(
+      { key: "ArrowRight", altKey: true, shiftKey: true },
+      state({ mode: "resume" }),
+      c,
+    );
+    expect(both.state.harnessIndex).toBe(1);
+    expect(both.state.column).toBe("workspaces");
+  });
+
+  it("clampState pulls a stale harness index back in range", () => {
+    expect(clampState(state({ harnessIndex: 5 }), counts(3, 0, 2)).harnessIndex).toBe(1);
+  });
+});
+
 describe("New ↔ Resume", () => {
   it("Tab flips the mode, and flips it back", () => {
     const c = counts(3, 2);
@@ -382,9 +418,9 @@ describe("the keys the modal advertises", () => {
      keyboard-only user pressed it and nothing happened. The hints are data now,
      and every one of them has to be a press the model actually claims. */
   it("are all claimed by handleKey", () => {
-    const counts = { workspaces: 2, resumable: 2 };
+    const counts = { workspaces: 2, resumable: 2, harnesses: 2 };
     // Resume mode with the Resume column focused: the state in which every
-    // hint, the column key included, is meaningful.
+    // hint, the column and harness keys included, is meaningful.
     const state = { ...INITIAL_STATE, mode: "resume" as const, column: "resume" as const };
     for (const hint of KEY_HINTS) {
       const result = handleKey(hint.probe, state, counts);
@@ -407,6 +443,16 @@ describe("the keys the modal advertises", () => {
     // Everything else is unconditional — those keys always work.
     for (const hint of KEY_HINTS.filter((h) => h.label !== "column")) {
       expect(hint.resumeOnly).toBeUndefined();
+    }
+  });
+
+  it("hides the harness key until more than one harness is configured", () => {
+    const harness = KEY_HINTS.find((h) => h.label === "harness");
+    expect(harness?.multiHarnessOnly).toBe(true);
+    expect(harness?.probe).toEqual({ key: "ArrowRight", altKey: true });
+    // Everything else is unconditional — those keys always work.
+    for (const hint of KEY_HINTS.filter((h) => h.label !== "harness")) {
+      expect(hint.multiHarnessOnly).toBeUndefined();
     }
   });
 });

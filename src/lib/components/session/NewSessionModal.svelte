@@ -31,8 +31,9 @@
   import {
     addWorkspaceFolder,
     removeWorkspaceWithUndo,
-    spawnClaudeSession,
+    spawnHarnessSession,
   } from "../../session-actions";
+  import { harnesses, lastHarnessId, setLastHarnessId, type HarnessConfig } from "../../stores/settings";
   import { showToast } from "../../stores/toast";
   import {
     focusedSessionId,
@@ -66,9 +67,12 @@
   let counts = $derived<NewSessionCounts>({
     workspaces: filtered.length,
     resumable: resumable.length,
+    harnesses: $harnesses.length,
   });
   /** `nav` with indices pulled back in range after the lists changed under it. */
   let view = $derived(clampState(nav, counts));
+  /** The harness the session will launch — driven by ⌥←/→. */
+  let selectedHarness = $derived<HarnessConfig | null>($harnesses[view.harnessIndex] ?? null);
   /**
    * "Add workspace…" is an action, not a selection, so the highlight landing on it
    * leaves the workspace picked. Deliberately derived from `nav` and `filtered`
@@ -91,8 +95,18 @@
   // label the user sees changed.
   let modeOptions = $derived<Segment[]>([
     { id: "fresh", label: "New" },
-    { id: "resume", label: "Resume", count: resumable.length },
+    {
+      id: "resume",
+      label: "Resume",
+      count: resumable.length,
+      disabled: !(selectedHarness?.resumable ?? false),
+    },
   ]);
+
+  // Which harness the session will launch.
+  let harnessOptions = $derived<Segment[]>(
+    $harnesses.map((h) => ({ id: h.id, label: h.label })),
+  );
 
   // Plain `let`s, not `$state` — they gate effects and must not re-trigger them.
   let wasOpen = false;
@@ -124,9 +138,12 @@
     row?.scrollIntoView({ block: "nearest" });
   });
 
-  // The Resume list follows the selected workspace.
+  // The Resume list follows the selected workspace, but only exists for a
+  // harness that can be resumed — omp and Terminal have nothing to list, so
+  // this never calls the IPC for them.
   $effect(() => {
-    const path = $newSessionOpen ? (selected?.path ?? "") : "";
+    const resumableHarness = selectedHarness?.resumable ?? false;
+    const path = $newSessionOpen && resumableHarness ? (selected?.path ?? "") : "";
     if (path === loadedFor) return;
     loadedFor = path;
     resumable = [];
@@ -150,7 +167,11 @@
   function applySeed() {
     const seed = get(newSessionSeed);
     query = "";
-    nav = { ...INITIAL_STATE };
+    const harnessIndex = Math.max(
+      0,
+      get(harnesses).findIndex((h) => h.id === get(lastHarnessId)),
+    );
+    nav = { ...INITIAL_STATE, harnessIndex };
     resumable = [];
     pendingResumeId = "";
     now = new Date();
@@ -180,6 +201,12 @@
 
   function chooseMode(id: string) {
     nav = setMode(view, id as NewSessionMode, counts);
+  }
+
+  function chooseHarness(id: string) {
+    const harnessIndex = $harnesses.findIndex((h) => h.id === id);
+    if (harnessIndex < 0) return;
+    nav = { ...view, harnessIndex };
   }
 
   function pickWorkspace(index: number) {
@@ -218,19 +245,21 @@
 
   async function start() {
     const ws = selected;
-    if (!ws || !canStart) return;
+    const harness = selectedHarness;
+    if (!ws || !harness || !canStart) return;
     const resumeSessionId = pickedResume?.sessionId;
     close();
+    void setLastHarnessId(harness.id);
     try {
       // Reattach the workspace row that already owns this conversation rather
       // than minting a second row for the same transcript.
       const existingSessionId = resumeSessionId
         ? ws.sessions.find((s) => s.claudeSessionId === resumeSessionId)?.id
         : undefined;
-      const session = await spawnClaudeSession(
-        ws.path,
-        resumeSessionId ? { resumeSessionId, existingSessionId } : undefined,
-      );
+      const session = await spawnHarnessSession(ws.path, {
+        harnessId: harness.id,
+        ...(resumeSessionId ? { resumeSessionId, existingSessionId } : {}),
+      });
       focusedSessionId.set(session.id);
       showView("session");
     } catch (e) {
@@ -245,7 +274,13 @@
     e.preventDefault();
     // Escape and ⌘O are also global chords; the modal answers them first.
     e.stopPropagation();
-    nav = result.state;
+    let next = result.state;
+    // The Resume UI depends on a resumable harness — omp and Terminal have
+    // nothing to resume — so Tab must not flip into it for one.
+    if (e.key === "Tab" && next.mode === "resume" && !(selectedHarness?.resumable ?? false)) {
+      next = { ...next, mode: "fresh", column: "workspaces" };
+    }
+    nav = next;
     if (result.effect === "close") close();
     else if (result.effect === "start") void start();
     else if (result.effect === "addFolder") void addRow();
@@ -356,6 +391,21 @@
             <span class="mode-title" title={selected?.name}>
               Start in {selected?.name ?? "…"}
             </span>
+            {#if counts.harnesses > 1}
+              <span class="mode-hint"><kbd>⌥←→</kbd> harness</span>
+            {/if}
+          </div>
+          <SegmentedControl
+            options={harnessOptions}
+            value={selectedHarness?.id ?? ""}
+            onChange={chooseHarness}
+            fill
+          />
+        </div>
+
+        <div>
+          <div class="col-head mode-head">
+            <span class="mode-title">New / Resume</span>
             <span class="mode-hint"><kbd>tab</kbd> switches</span>
           </div>
           <SegmentedControl
@@ -399,7 +449,7 @@
           </div>
         {:else}
           <p class="fresh-copy">
-            Opens a new Claude Code session in <span class="mono strong"
+            Opens a new {selectedHarness?.label ?? "session"} in <span class="mono strong"
               >{selected?.path ?? "—"}</span
             > with Atlas hooks attached.
           </p>
@@ -411,7 +461,7 @@
              footer cannot drift from what `handleKey` actually claims. -->
         <div class="hints">
           {#each KEY_HINTS as hint (hint.label)}
-            {#if !hint.resumeOnly || (view.mode === "resume" && resumable.length > 0)}
+            {#if (!hint.resumeOnly || (view.mode === "resume" && resumable.length > 0)) && (!hint.multiHarnessOnly || counts.harnesses > 1)}
               <span><kbd>{hint.keys}</kbd> {hint.label}</span>
             {/if}
           {/each}

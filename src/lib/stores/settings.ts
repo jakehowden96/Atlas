@@ -16,8 +16,32 @@ import { openFiles, sources } from "./files";
 import { liveSessions } from "./liveSessions";
 import { workspaces } from "./workspace";
 
-export type OverviewOrdering = "attention" | "workspace" | "manual";
+export type OverviewOrdering = "attention" | "workspace" | "manual" | "opened";
 export type PrRefreshMinutes = 1 | 3 | 10;
+
+export interface HarnessConfig {
+  id: string;
+  label: string;
+  command: string; // "" means "type nothing" (the Terminal case)
+  args: string[]; // "{sessionId}" token substituted for a fresh Claude session
+  resumable: boolean; // gates Resume UI; only true harness today is Claude Code
+  resumeArgs?: string[]; // used instead of args when resuming; "{resumeId}" token
+  readyMode: "altscreen" | "immediate";
+}
+
+export const DEFAULT_HARNESSES: HarnessConfig[] = [
+  {
+    id: "claude-code",
+    label: "Claude Code",
+    command: "claude",
+    args: ["--session-id", "{sessionId}"],
+    resumeArgs: ["--resume", "{resumeId}"],
+    resumable: true,
+    readyMode: "altscreen",
+  },
+  { id: "omp", label: "omp", command: "omp", args: [], resumable: false, readyMode: "altscreen" },
+  { id: "terminal", label: "Terminal", command: "", args: [], resumable: false, readyMode: "immediate" },
+];
 
 export const settingsOpen = writable(false);
 export const enableNotifications = writable(true);
@@ -31,8 +55,10 @@ export const prRefreshMinutes = writable<PrRefreshMinutes>(3);
 export const terminalFontSize = writable(13);
 /** A short ping when a permission prompt appears. */
 export const soundOnNeedsYou = writable(false);
-/** Overview tile order. "attention" is the design default. */
-export const overviewOrdering = writable<OverviewOrdering>("attention");
+/** Overview tile order. "opened" — sort strictly by creation time — is the
+    default: the design default "attention" and every other ordering re-sort
+    the whole grid on any status change, which reads as tiles shuffling. */
+export const overviewOrdering = writable<OverviewOrdering>("opened");
 /** Union every workspace's GitHub remote into the watched-repo list. */
 export const autoAddReposFromWorkspaces = writable(false);
 /** Read `~/.claude/projects/**.jsonl` live. Off degrades Overview tiles. */
@@ -40,6 +66,12 @@ export const tailTranscripts = writable(true);
 /** Overview tiles the user pinned, by `pinKey`. Pinned tiles sort above every
     other tile whatever the ordering is. */
 export const pinnedSessions = writable<string[]>([]);
+/** The harnesses New Session can launch. `DEFAULT_HARNESSES` is only the
+    store's initial value — a harness added later in Settings behaves
+    identically to the built-ins. */
+export const harnesses = writable<HarnessConfig[]>([...DEFAULT_HARNESSES]);
+/** The harness New Session pre-selects on open. */
+export const lastHarnessId = writable<string>("claude-code");
 /** The global chords. `shortcuts.ts` dispatches through this, and
     `terminal-session.ts` passes exactly these through to the window handler. */
 export const keymap = writable<Keymap>({ ...DEFAULT_KEYMAP });
@@ -65,6 +97,8 @@ interface PersistedSettings {
   autoAddReposFromWorkspaces?: boolean;
   tailTranscripts?: boolean;
   pinnedSessions?: string[];
+  harnesses?: HarnessConfig[];
+  lastHarnessId?: string;
   /** Files screen: the open tabs and the folders registered under "From disk".
    *  The stores live in `stores/files.ts`; they ride along here because this
    *  file is already read on boot. */
@@ -78,7 +112,28 @@ interface PersistedSettings {
 /** The three intervals the Pull requests screen offers. */
 export const PR_REFRESH_CHOICES: PrRefreshMinutes[] = [1, 3, 10];
 
-const ORDERING_CHOICES: OverviewOrdering[] = ["attention", "workspace", "manual"];
+const ORDERING_CHOICES: OverviewOrdering[] = ["attention", "workspace", "manual", "opened"];
+
+const READY_MODES = ["altscreen", "immediate"];
+
+/** Defensive check for a harness loaded from disk — a hand-edited or corrupted
+ *  file costs the user that one harness rather than the whole settings load. */
+function isValidHarness(v: unknown): v is HarnessConfig {
+  if (!v || typeof v !== "object") return false;
+  const h = v as Record<string, unknown>;
+  return (
+    typeof h.id === "string" &&
+    typeof h.label === "string" &&
+    typeof h.command === "string" &&
+    Array.isArray(h.args) &&
+    h.args.every((a) => typeof a === "string") &&
+    typeof h.resumable === "boolean" &&
+    (h.resumeArgs === undefined ||
+      (Array.isArray(h.resumeArgs) && h.resumeArgs.every((a) => typeof a === "string"))) &&
+    typeof h.readyMode === "string" &&
+    READY_MODES.includes(h.readyMode)
+  );
+}
 
 /** Terminal stepper bounds. Below 8 xterm stops being legible; above 24 a
     session pane holds too few columns for Claude Code's TUI to lay out. */
@@ -126,6 +181,14 @@ export async function loadSettings() {
     if (Array.isArray(data.pinnedSessions)) {
       pinnedSessions.set(data.pinnedSessions.filter((id) => typeof id === "string"));
     }
+    // Only overwrite the defaults when the file has a valid, non-empty list —
+    // an old settings.json with no `harnesses` key keeps the three defaults,
+    // and a corrupted file can't leave the picker empty.
+    if (Array.isArray(data.harnesses)) {
+      const valid = data.harnesses.filter(isValidHarness);
+      if (valid.length > 0) harnesses.set(valid);
+    }
+    if (typeof data.lastHarnessId === "string") lastHarnessId.set(data.lastHarnessId);
     if (Array.isArray(data.openFiles)) {
       openFiles.set(data.openFiles.filter((key) => typeof key === "string"));
     }
@@ -156,6 +219,8 @@ async function persistSettings() {
       autoAddReposFromWorkspaces: get(autoAddReposFromWorkspaces),
       tailTranscripts: get(tailTranscripts),
       pinnedSessions: get(pinnedSessions),
+      harnesses: get(harnesses),
+      lastHarnessId: get(lastHarnessId),
       openFiles: get(openFiles),
       fileSources: get(sources),
       keymap: get(keymap),
@@ -215,6 +280,18 @@ export async function togglePinnedSession(key: string) {
   pinnedSessions.set(
     current.includes(key) ? current.filter((id) => id !== key) : [...current, key],
   );
+  await persistSettings();
+}
+
+/** Replace the whole harness list — Settings' add/edit/remove all resolve to
+ *  "here's the new list". */
+export async function setHarnesses(list: HarnessConfig[]) {
+  harnesses.set(list);
+  await persistSettings();
+}
+
+export async function setLastHarnessId(id: string) {
+  lastHarnessId.set(id);
   await persistSettings();
 }
 

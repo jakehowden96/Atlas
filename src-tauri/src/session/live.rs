@@ -262,6 +262,8 @@ pub struct SessionTail {
     path: PathBuf,
     /// `<transcript dir>/<session uuid>/subagents`.
     subagents_dir: PathBuf,
+    /// `<transcript dir>/<session uuid>/workflows`.
+    workflows_dir: PathBuf,
     reader: LineReader,
     session: LiveSession,
     /// requestId -> usage, so lines sharing a request are counted once.
@@ -277,6 +279,16 @@ pub struct SessionTail {
     subagent_files: HashMap<String, SubagentCounter>,
     /// Indices into `session.subagents` of the ones launched in the background.
     background_subagents: HashSet<usize>,
+    /// Workflow run file -> (len, mtime) at the last poll. Claude Code rewrites
+    /// `wf_<runId>.json` whole rather than appending to it, so there is no
+    /// offset to advance and `LineReader` does not apply — the file is re-read
+    /// and re-parsed when this marker moves.
+    workflow_files: HashMap<PathBuf, (u64, Option<std::time::SystemTime>)>,
+    /// `"<runId>/<agentId>"` -> index into `session.subagents`, so a re-read
+    /// replaces the row it already contributed. Deliberately separate from
+    /// `subagent_index`: workflow agents are an independent source feeding the
+    /// same Vec, and the `Task`/`Agent` path never sees them.
+    workflow_agent_index: HashMap<String, usize>,
     /// Whether a `pendingBackgroundAgentCount` has ever been seen — see `fold_system`.
     seen_background_count: bool,
     /// `stop_reason` of the newest assistant line.
@@ -291,9 +303,14 @@ impl SessionTail {
             .parent()
             .map(|p| p.join(&session_uuid).join("subagents"))
             .unwrap_or_else(|| PathBuf::from("subagents"));
+        let workflows_dir = path
+            .parent()
+            .map(|p| p.join(&session_uuid).join("workflows"))
+            .unwrap_or_else(|| PathBuf::from("workflows"));
         SessionTail {
             path,
             subagents_dir,
+            workflows_dir,
             reader: LineReader::new(),
             session: LiveSession::new(session_uuid),
             requests: HashMap::new(),
@@ -302,6 +319,8 @@ impl SessionTail {
             subagent_index: HashMap::new(),
             subagent_files: HashMap::new(),
             background_subagents: HashSet::new(),
+            workflow_files: HashMap::new(),
+            workflow_agent_index: HashMap::new(),
             seen_background_count: false,
             last_stop_reason: None,
             working: None,
@@ -336,7 +355,9 @@ impl SessionTail {
             self.fold(raw);
         }
         // After folding: a subagent is only tracked once its `Agent` call is read.
-        let subagents_changed = self.poll_subagents();
+        let counts_changed = self.poll_subagents();
+        let workflow_changed = self.poll_workflow_agents();
+        let subagents_changed = counts_changed || workflow_changed;
         if lines.is_empty() && !rewound && !subagents_changed {
             self.apply_working_marker();
             return false;
@@ -356,6 +377,8 @@ impl SessionTail {
         self.subagent_index.clear();
         self.subagent_files.clear();
         self.background_subagents.clear();
+        self.workflow_files.clear();
+        self.workflow_agent_index.clear();
         self.seen_background_count = false;
         self.last_stop_reason = None;
         self.working = None;
@@ -685,6 +708,40 @@ impl SessionTail {
         }
         changed
     }
+
+    /// Fold in the agents of every workflow run whose file has changed.
+    ///
+    /// The `Workflow` tool spawns agents that never appear as `Task`/`Agent`
+    /// `tool_use` blocks in the parent transcript, so
+    /// `<session uuid>/workflows/wf_<runId>.json` is the only record of them.
+    fn poll_workflow_agents(&mut self) -> bool {
+        let Ok(entries) = std::fs::read_dir(&self.workflows_dir) else { return false };
+        let mut changed = false;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(meta) = std::fs::metadata(&path) else { continue };
+            let marker = (meta.len(), meta.modified().ok());
+            if self.workflow_files.get(&path) == Some(&marker) {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else { continue };
+            let Ok(run) = serde_json::from_str::<Value>(&text) else { continue };
+            self.workflow_files.insert(path.clone(), marker);
+            for (key, agent) in workflow_agents(&run) {
+                if let Some(&idx) = self.workflow_agent_index.get(&key) {
+                    self.session.subagents[idx] = agent;
+                } else {
+                    self.workflow_agent_index.insert(key, self.session.subagents.len());
+                    self.session.subagents.push(agent);
+                }
+            }
+            changed = true;
+        }
+        changed
+    }
 }
 
 // ── Rendering helpers ─────────────────────────────────────────────────────────
@@ -798,6 +855,84 @@ fn subagent_task(input: &Value) -> String {
         }
     }
     "Subagent".to_string()
+}
+
+/// Workflow files timestamp in epoch milliseconds; every other timestamp in
+/// this module is the transcript's own ISO-8601, which the frontend parses
+/// with `Date.parse`. Convert at the boundary so `Subagent` only ever carries
+/// one format.
+fn iso_from_epoch_ms(ms: i64) -> Option<String> {
+    chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ms)
+        .map(|dt| dt.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
+}
+
+fn workflow_task(entry: &Value) -> String {
+    for key in ["label", "phaseTitle", "agentType"] {
+        if let Some(value) = entry.get(key).and_then(|v| v.as_str()) {
+            if !value.trim().is_empty() {
+                return excerpt(value);
+            }
+        }
+    }
+    "Workflow agent".to_string()
+}
+
+/// The `workflow_agent` rows of one `wf_<runId>.json`, each keyed
+/// `"<runId>/<agentId>"` so a re-read updates the row it already contributed
+/// rather than pushing a duplicate.
+fn workflow_agents(run: &Value) -> Vec<(String, Subagent)> {
+    let run_id = run["runId"].as_str().unwrap_or("wf");
+    let run_over =
+        matches!(run.get("status").and_then(|v| v.as_str()), Some("completed") | Some("killed"));
+
+    run["workflowProgress"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| entry.get("type").and_then(|v| v.as_str()) == Some("workflow_agent"))
+        .map(|(i, entry)| {
+            let key = format!(
+                "{}/{}",
+                run_id,
+                entry["agentId"]
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("#{}", i))
+            );
+            let state = entry["state"].as_str().unwrap_or("");
+            let done = run_over || !matches!(state, "progress" | "queued");
+
+            let started_at_ms = entry["startedAt"]
+                .as_i64()
+                .or_else(|| entry["queuedAt"].as_i64());
+            let started_at = started_at_ms.and_then(iso_from_epoch_ms);
+
+            let finished_at = if !done {
+                None
+            } else {
+                entry["lastProgressAt"].as_i64().and_then(iso_from_epoch_ms).or_else(|| {
+                    started_at_ms.and_then(|start| {
+                        iso_from_epoch_ms(start + entry["durationMs"].as_i64().unwrap_or(0))
+                    })
+                })
+            };
+
+            let tool_count = entry["toolCalls"].as_u64().unwrap_or(0) as u32;
+
+            (
+                key,
+                Subagent {
+                    task: workflow_task(entry),
+                    started_at,
+                    finished_at,
+                    tool_count,
+                    done,
+                },
+            )
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -1422,5 +1557,129 @@ mod tests {
         // launch, which reports one — omits the flag.
         assert!(!is_async_launch(&serde_json::json!({"toolUseResult": {"stdout": ""}})));
         assert!(!is_async_launch(&serde_json::json!({"type": "user"})));
+    }
+
+    // ── Workflow agents ──────────────────────────────────────────────────────
+
+    /// Writes a `wf_test.json` into `<dir>/<uuid>/workflows/`, the way Claude
+    /// Code lays out one workflow run's sidecar file.
+    fn write_workflow(dir: &Path, uuid: &str, body: &str) {
+        let workflows = dir.join(uuid).join("workflows");
+        std::fs::create_dir_all(&workflows).unwrap();
+        std::fs::write(workflows.join("wf_test.json"), body).unwrap();
+    }
+
+    /// One workflow run with a single `workflow_agent` row, differing only by
+    /// `state` and whatever extra fields `extra` appends to that row.
+    fn workflow_body(state: &str, extra: &str) -> String {
+        format!(
+            concat!(
+                r#"{{"runId":"wf_test","workflowName":"test","status":"running","workflowProgress":["#,
+                r#"{{"type":"workflow_phase","index":1,"title":"Implement"}},"#,
+                r#"{{"type":"workflow_agent","agentId":"a668aa3f7b7f53893","label":"implement:add oldest-first sort","state":"{state}","startedAt":1790079889746,"toolCalls":42{extra}}}"#,
+                r#"]}}"#,
+            ),
+            state = state,
+            extra = extra,
+        )
+    }
+
+    #[test]
+    fn a_workflow_run_file_puts_its_agents_in_the_subagent_rail() {
+        let (dir, mut tail) = tail_with(&[]);
+        write_workflow(dir.path(), UUID, &workflow_body("progress", ""));
+
+        assert!(tail.poll());
+        let subagents = &tail.session().subagents;
+        assert_eq!(subagents.len(), 1);
+        let agent = &subagents[0];
+        assert_eq!(agent.task, "implement:add oldest-first sort");
+        assert!(!agent.done);
+        assert!(agent.finished_at.is_none());
+        assert_eq!(agent.tool_count, 42);
+        assert_eq!(agent.started_at, iso_from_epoch_ms(1790079889746));
+    }
+
+    #[test]
+    fn a_rewritten_workflow_file_updates_the_row_it_already_contributed() {
+        let (dir, mut tail) = tail_with(&[]);
+        write_workflow(dir.path(), UUID, &workflow_body("progress", ""));
+        assert!(tail.poll());
+        assert_eq!(tail.session().subagents.len(), 1);
+
+        // The rewritten body must differ in byte length/mtime from the first
+        // write for the change-detection to reliably fire in a fast test loop.
+        write_workflow(
+            dir.path(),
+            UUID,
+            &workflow_body("done", ", \"lastProgressAt\":1790080308664,\"durationMs\":418917"),
+        );
+        assert!(tail.poll());
+
+        let subagents = &tail.session().subagents;
+        assert_eq!(subagents.len(), 1, "the row is replaced, not duplicated");
+        let agent = &subagents[0];
+        assert!(agent.done);
+        assert_eq!(agent.finished_at, iso_from_epoch_ms(1790080308664));
+        assert_eq!(agent.tool_count, 42);
+    }
+
+    #[test]
+    fn polling_an_unchanged_workflow_file_changes_nothing() {
+        let (dir, mut tail) = tail_with(&[]);
+        write_workflow(dir.path(), UUID, &workflow_body("progress", ""));
+        assert!(tail.poll());
+
+        assert!(!tail.poll(), "an unchanged run file yields no update");
+        assert_eq!(tail.session().subagents.len(), 1);
+    }
+
+    #[test]
+    fn epoch_millis_become_the_same_iso_stamp_the_transcript_writes() {
+        let iso = iso_from_epoch_ms(1790079889746);
+        assert!(iso.is_some());
+        let iso = iso.unwrap();
+        assert_eq!(iso.len(), 24, "YYYY-MM-DDTHH:MM:SS.sssZ is 24 chars: {iso}");
+        assert!(iso.starts_with("2026-09-"), "unexpected date: {iso}");
+        assert!(iso.ends_with(".746Z"), "millis must round-trip: {iso}");
+        assert_eq!(&iso[4..5], "-");
+        assert_eq!(&iso[10..11], "T");
+    }
+
+    #[test]
+    fn workflow_agent_states_map_to_done_defensively() {
+        let progress = serde_json::json!({"runId": "wf_1", "status": "running",
+            "workflowProgress": [{"type": "workflow_agent", "agentId": "a1", "state": "progress", "startedAt": 1790079889746_i64}]});
+        assert!(!workflow_agents(&progress)[0].1.done, "progress is not done");
+
+        let queued = serde_json::json!({"runId": "wf_1", "status": "running",
+            "workflowProgress": [{"type": "workflow_agent", "agentId": "a1", "state": "queued", "queuedAt": 1790079889746_i64}]});
+        assert!(!workflow_agents(&queued)[0].1.done, "queued is not done");
+
+        let done = serde_json::json!({"runId": "wf_1", "status": "running",
+            "workflowProgress": [{"type": "workflow_agent", "agentId": "a1", "state": "done",
+                "startedAt": 1790079889746_i64, "lastProgressAt": 1790080308664_i64}]});
+        let (_, agent) = &workflow_agents(&done)[0];
+        assert!(agent.done, "done state is done");
+        assert_eq!(agent.finished_at, iso_from_epoch_ms(1790080308664));
+
+        let unknown_state = serde_json::json!({"runId": "wf_1", "status": "running",
+            "workflowProgress": [{"type": "workflow_agent", "agentId": "a1", "state": "cancelled", "startedAt": 1790079889746_i64}]});
+        assert!(
+            workflow_agents(&unknown_state)[0].1.done,
+            "an unrecognised state must not spin forever"
+        );
+
+        let killed_run = serde_json::json!({"runId": "wf_1", "status": "killed",
+            "workflowProgress": [{"type": "workflow_agent", "agentId": "a1", "state": "progress", "startedAt": 1790079889746_i64}]});
+        assert!(
+            workflow_agents(&killed_run)[0].1.done,
+            "a killed run finishes every agent regardless of its own state"
+        );
+
+        let no_label = serde_json::json!({"runId": "wf_1", "status": "running",
+            "workflowProgress": [{"type": "workflow_agent", "agentId": "a1", "state": "progress",
+                "agentType": "general-purpose", "startedAt": 1790079889746_i64}]});
+        assert_eq!(workflow_agents(&no_label)[0].1.task, "general-purpose");
     }
 }

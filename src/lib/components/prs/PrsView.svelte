@@ -2,7 +2,7 @@
   import { onDestroy, onMount } from "svelte";
   import { getGitStatus, gitCheckoutBranch, openUrl } from "../../ipc";
   import { log } from "../../logger";
-  import { spawnClaudeSession } from "../../session-actions";
+  import { spawnHarnessSession } from "../../session-actions";
   import {
     effectiveWatchedRepos,
     loadWorkspaceRepos,
@@ -163,7 +163,7 @@
       showToast(`Could not check out ${pr.headRefName}`, { body: String(e) });
       return;
     }
-    await spawnClaudeSession(path);
+    await spawnHarnessSession(path);
     showView("session");
   }
 </script>

@@ -5,6 +5,7 @@ import {
   buildTiles,
   classifyRows,
   compareByAttention,
+  compareByOpened,
   compareByWorkspace,
   filterByWorkspace,
   formatElapsed,
@@ -58,6 +59,7 @@ function workspace(
       terminalTabId: s.terminalTabId,
       createdAt: "2026-01-01T00:00:00.000Z",
       claudeSessionId: s.claudeSessionId,
+      harnessId: null,
     })),
   };
 }
@@ -88,6 +90,7 @@ describe("tileComparator", () => {
   it("maps attention and workspace to their comparators", () => {
     expect(tileComparator("attention")).toBe(compareByAttention);
     expect(tileComparator("workspace")).toBe(compareByWorkspace);
+    expect(tileComparator("opened")).toBe(compareByOpened);
   });
 
   it("returns null for manual, leaving arrival order alone", () => {
@@ -180,6 +183,26 @@ describe("compareByAttention", () => {
   });
 });
 
+describe("compareByOpened", () => {
+  it("sorts strictly by creation time, oldest first", () => {
+    const tiles = [
+      { id: "b", createdAt: "2026-01-02T00:00:00.000Z" },
+      { id: "a", createdAt: "2026-01-01T00:00:00.000Z" },
+      { id: "c", createdAt: "2026-01-03T00:00:00.000Z" },
+    ];
+    expect([...tiles].sort(compareByOpened).map((t) => t.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("does not re-sort when a tile's status changes — it never reads state", () => {
+    const tiles = [
+      { id: "a", createdAt: "2026-01-01T00:00:00.000Z", state: "idle" as SessionState },
+      { id: "b", createdAt: "2026-01-02T00:00:00.000Z", state: "idle" as SessionState },
+    ];
+    tiles[0].state = "needsYou";
+    expect([...tiles].sort(compareByOpened).map((t) => t.id)).toEqual(["a", "b"]);
+  });
+});
+
 describe("filterByWorkspace", () => {
   const tiles = [
     { workspacePath: "/code/atlas" },
@@ -230,6 +253,7 @@ describe("buildTiles", () => {
       workspacePath: "/code/docs",
       workspaceName: "docs",
       workspaceColour: "#2fa37a",
+      createdAt: "2026-01-01T00:00:00.000Z",
     });
   });
 
@@ -241,6 +265,18 @@ describe("buildTiles", () => {
     expect(tile?.terminalTabId).toBeNull();
     expect(tile?.diff).toBeNull();
     expect(tile?.label).toBe("Session");
+  });
+
+  it("takes an orphan tile's createdAt off the live session, since no row owns it", () => {
+    const tiles = buildTiles(
+      [live("orphan", { startedAt: "2026-02-01T00:00:00.000Z" })],
+      workspaceList,
+      new Map(),
+      new Set(),
+    );
+    expect(tiles.find((t) => t.sessionUuid === "orphan")?.createdAt).toBe(
+      "2026-02-01T00:00:00.000Z",
+    );
   });
 
   /* A spawned session has a PTY long before its transcript exists, and with

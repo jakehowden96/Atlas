@@ -147,8 +147,7 @@
     <StatePill state={PILL[tile.state]} />
     <span class="label">{tile.label}</span>
     <span class="ws" title={tile.workspacePath}>
-      <span class="ws-dot" style="background: {tile.workspaceColour}"></span>
-      <span class="ws-name">{tile.workspaceName}</span>
+      <span class="ws-chip" style="--tc: {tile.workspaceColour}">{tile.workspaceName}</span>
       {#if tile.branch}<span class="branch">· {tile.branch}</span>{/if}
     </span>
     <span class="elapsed">{elapsed}</span>
@@ -305,25 +304,24 @@
     white-space: nowrap;
   }
 
-  /* Out of the muted tier: this is the answer to "which project am I looking
-     at", and it was competing with the branch name at the same weight. */
-  .ws-name {
-    flex-shrink: 0;
-    color: var(--text);
-    font-weight: 500;
-  }
-
   .branch {
     overflow: hidden;
     color: var(--muted);
     text-overflow: ellipsis;
   }
 
-  .ws-dot {
-    flex-shrink: 0;
-    width: 8px;
-    height: 8px;
-    border-radius: 2px;
+  .ws-chip {
+    display: inline-block;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 20px;
+    background: color-mix(in srgb, var(--tc) 34%, transparent);
+    border: 1px solid color-mix(in srgb, var(--tc) 55%, transparent);
+    color: var(--tc);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
 
   .elapsed,

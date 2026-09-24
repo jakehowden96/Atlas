@@ -106,8 +106,7 @@
         <StatePill state={PILL[tile.state]} />
         <span class="label">{tile.label}</span>
         <span class="ws" title={tile.workspacePath}>
-          <span class="ws-dot" style="background: {tile.workspaceColour}"></span>
-          {tile.workspaceName}
+          <span class="ws-chip" style="--tc: {tile.workspaceColour}">{tile.workspaceName}</span>
         </span>
         <span class="subtitle">{subtitle}</span>
       {:else}
@@ -247,28 +246,30 @@
     font-weight: var(--fw-body);
   }
 
-  /* Which project this terminal belongs to. Same colour-plus-name pairing as
-     the Sessions grid, so the two screens read alike; the name carries it on
-     its own and the colour only reinforces. */
+  /* Which project this terminal belongs to. Same chip as the Sessions grid,
+     so the two screens read alike. */
   .ws {
     display: flex;
     align-items: center;
     flex-shrink: 0;
-    gap: 6px;
     max-width: 180px;
     overflow: hidden;
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
-    font-weight: 500;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
-  .ws-dot {
-    flex-shrink: 0;
-    width: 8px;
-    height: 8px;
-    border-radius: 2px;
+  .ws-chip {
+    display: inline-block;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 20px;
+    background: color-mix(in srgb, var(--tc) 34%, transparent);
+    border: 1px solid color-mix(in srgb, var(--tc) 55%, transparent);
+    color: var(--tc);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
 
   .subtitle {

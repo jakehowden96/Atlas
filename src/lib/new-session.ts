@@ -85,12 +85,15 @@ export interface NewSessionState {
   /** Index into the filtered workspaces; `counts.workspaces` is the add row. */
   wsIndex: number;
   resumeIndex: number;
+  /** Index into `$harnesses` — which harness the session will launch. */
+  harnessIndex: number;
 }
 
 export interface NewSessionCounts {
   /** Filtered workspace rows, not counting the always-present add row. */
   workspaces: number;
   resumable: number;
+  harnesses: number;
 }
 
 /** What the component must do; the state change is already applied. */
@@ -108,6 +111,7 @@ export const INITIAL_STATE: NewSessionState = {
   column: "workspaces",
   wsIndex: 0,
   resumeIndex: 0,
+  harnessIndex: 0,
 };
 
 function wrap(index: number, total: number, delta: number): number {
@@ -131,14 +135,19 @@ export function clampState(
       : Math.min(Math.max(0, state.resumeIndex), counts.resumable - 1);
   const column: NewSessionColumn =
     state.mode === "resume" && counts.resumable > 0 ? state.column : "workspaces";
+  const harnessIndex =
+    counts.harnesses === 0
+      ? 0
+      : Math.min(Math.max(0, state.harnessIndex), counts.harnesses - 1);
   if (
     wsIndex === state.wsIndex &&
     resumeIndex === state.resumeIndex &&
-    column === state.column
+    column === state.column &&
+    harnessIndex === state.harnessIndex
   ) {
     return state;
   }
-  return { ...state, wsIndex, resumeIndex, column };
+  return { ...state, wsIndex, resumeIndex, column, harnessIndex };
 }
 
 /** ↑/↓ inside the focused column, wrapping at both ends. */
@@ -152,6 +161,15 @@ export function moveWithin(
   }
   // +1 for the "Add workspace…" row that always sits under the list.
   return { ...state, wsIndex: wrap(state.wsIndex, counts.workspaces + 1, delta) };
+}
+
+/** ⌥←/→ cycles the harness picker, wrapping at both ends. */
+export function cycleHarness(
+  state: NewSessionState,
+  counts: NewSessionCounts,
+  delta: number,
+): NewSessionState {
+  return { ...state, harnessIndex: wrap(state.harnessIndex, counts.harnesses, delta) };
 }
 
 /**
@@ -191,7 +209,7 @@ export function toggleColumn(
  * `effect`; `handled` says whether to `preventDefault`.
  */
 export function handleKey(
-  e: { key: string; metaKey?: boolean; ctrlKey?: boolean; shiftKey?: boolean },
+  e: { key: string; metaKey?: boolean; ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean },
   state: NewSessionState,
   counts: NewSessionCounts,
 ): KeyResult {
@@ -218,6 +236,15 @@ export function handleKey(
       };
     case "ArrowLeft":
     case "ArrowRight": {
+      // Alt cycles the harness picker; Shift still switches columns. The two
+      // are mutually exclusive, but Alt wins if somehow both are held.
+      if (e.altKey) {
+        return {
+          state: cycleHarness(s, counts, e.key === "ArrowRight" ? 1 : -1),
+          effect: null,
+          handled: true,
+        };
+      }
       if (!e.shiftKey) return { state: s, effect: null, handled: false };
       const want: NewSessionColumn = e.key === "ArrowRight" ? "resume" : "workspaces";
       return {
@@ -250,7 +277,9 @@ export interface KeyHint {
   label: string;
   /** Hidden until the Resume column has rows to move into. */
   resumeOnly?: boolean;
-  probe: { key: string; metaKey?: boolean; shiftKey?: boolean };
+  /** Hidden until there is more than one harness configured to cycle through. */
+  multiHarnessOnly?: boolean;
+  probe: { key: string; metaKey?: boolean; shiftKey?: boolean; altKey?: boolean };
 }
 
 export const KEY_HINTS: KeyHint[] = [
@@ -260,6 +289,12 @@ export const KEY_HINTS: KeyHint[] = [
     label: "column",
     resumeOnly: true,
     probe: { key: "ArrowRight", shiftKey: true },
+  },
+  {
+    keys: "⌥←→",
+    label: "harness",
+    multiHarnessOnly: true,
+    probe: { key: "ArrowRight", altKey: true },
   },
   { keys: "tab", label: "New / Resume", probe: { key: "Tab" } },
   { keys: enterLabel(), label: "start", probe: { key: "Enter" } },

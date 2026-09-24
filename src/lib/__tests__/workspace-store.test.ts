@@ -133,45 +133,57 @@ describe("workspace store", () => {
   describe("addSession", () => {
     it("creates session with formatted label", async () => {
       await addWorkspace("/Users/jake/my-project");
-      await addSession("/Users/jake/my-project", "my-project", "tab-1", "claude-1");
+      await addSession("/Users/jake/my-project", "my-project", "tab-1", "claude-1", "claude-code");
       const ws = get(workspaces);
       expect(ws[0].sessions).toHaveLength(1);
       expect(ws[0].sessions[0].label).toBe("My Project");
     });
 
-    it("prepends to workspace sessions array", async () => {
+    it("appends to workspace sessions array, so array order is insertion order", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "first", "tab-1", "claude-1");
-      await addSession("/a", "second", "tab-2", "claude-2");
+      await addSession("/a", "first", "tab-1", "claude-1", "claude-code");
+      await addSession("/a", "second", "tab-2", "claude-2", "claude-code");
       const ws = get(workspaces);
       expect(ws[0].sessions).toHaveLength(2);
-      // Most recent session should be first
-      expect(ws[0].sessions[0].label).toBe("Second");
+      expect(ws[0].sessions[0].label).toBe("First");
+      expect(ws[0].sessions[1].label).toBe("Second");
     });
 
     it("sets activeSessionId", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1");
+      await addSession("/a", "test", "tab-1", "claude-1", "claude-code");
       expect(get(activeSessionId)).toBeTruthy();
     });
 
     it("stores the claude session id", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1");
+      await addSession("/a", "test", "tab-1", "claude-1", "claude-code");
       expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe("claude-1");
     });
 
     it("stores a null claude session id", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", null);
+      await addSession("/a", "test", "tab-1", null, "claude-code");
       expect(get(workspaces)[0].sessions[0].claudeSessionId).toBeNull();
+    });
+
+    it("stores the harness id", async () => {
+      await addWorkspace("/a");
+      await addSession("/a", "test", "tab-1", "claude-1", "omp");
+      expect(get(workspaces)[0].sessions[0].harnessId).toBe("omp");
+    });
+
+    it("stores a null harness id", async () => {
+      await addWorkspace("/a");
+      await addSession("/a", "test", "tab-1", "claude-1", null);
+      expect(get(workspaces)[0].sessions[0].harnessId).toBeNull();
     });
   });
 
   describe("resumeSession", () => {
     it("reattaches the tab and records the claude session id", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", null);
+      await addSession("/a", "test", "tab-1", null, "claude-code");
       const sessionId = get(workspaces)[0].sessions[0].id;
       await resumeSession(sessionId, "tab-2", "claude-9");
       const session = get(workspaces)[0].sessions[0];
@@ -184,7 +196,7 @@ describe("workspace store", () => {
   describe("rebindSessionClaudeId", () => {
     it("retags the session whose tab id matches", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-old");
+      await addSession("/a", "test", "tab-1", "claude-old", "claude-code");
       const changed = await rebindSessionClaudeId("tab-1", "claude-new");
       expect(changed).toBe(true);
       expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe("claude-new");
@@ -192,7 +204,7 @@ describe("workspace store", () => {
 
     it("is a no-op when the id already matches", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1");
+      await addSession("/a", "test", "tab-1", "claude-1", "claude-code");
       vi.clearAllMocks();
       const changed = await rebindSessionClaudeId("tab-1", "claude-1");
       expect(changed).toBe(false);
@@ -201,8 +213,8 @@ describe("workspace store", () => {
 
     it("leaves sessions on other tabs untouched", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "one", "tab-1", "claude-1");
-      await addSession("/a", "two", "tab-2", "claude-2");
+      await addSession("/a", "one", "tab-1", "claude-1", "claude-code");
+      await addSession("/a", "two", "tab-2", "claude-2", "claude-code");
       await rebindSessionClaudeId("tab-1", "claude-1-new");
       const sessions = get(workspaces)[0].sessions;
       expect(sessions.find((s) => s.terminalTabId === "tab-2")?.claudeSessionId).toBe(
@@ -212,7 +224,7 @@ describe("workspace store", () => {
 
     it("does nothing when no session owns that tab id", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1");
+      await addSession("/a", "test", "tab-1", "claude-1", "claude-code");
       const changed = await rebindSessionClaudeId("tab-missing", "claude-new");
       expect(changed).toBe(false);
       expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe("claude-1");
@@ -222,7 +234,7 @@ describe("workspace store", () => {
   describe("removeSession", () => {
     it("removes session from workspace", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1");
+      await addSession("/a", "test", "tab-1", "claude-1", "claude-code");
       const sessionId = get(workspaces)[0].sessions[0].id;
       await removeSession("/a", sessionId);
       expect(get(workspaces)[0].sessions).toHaveLength(0);
@@ -230,7 +242,7 @@ describe("workspace store", () => {
 
     it("clears activeSessionId if it matches", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1");
+      await addSession("/a", "test", "tab-1", "claude-1", "claude-code");
       const sessionId = get(workspaces)[0].sessions[0].id;
       activeSessionId.set(sessionId);
       await removeSession("/a", sessionId);
@@ -239,8 +251,8 @@ describe("workspace store", () => {
 
     it("does not clear activeSessionId if it does not match", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "first", "tab-1", "claude-1");
-      await addSession("/a", "second", "tab-2", "claude-2");
+      await addSession("/a", "first", "tab-1", "claude-1", "claude-code");
+      await addSession("/a", "second", "tab-2", "claude-2", "claude-code");
       const sessions = get(workspaces)[0].sessions;
       activeSessionId.set(sessions[0].id);
       await removeSession("/a", sessions[1].id);
@@ -307,6 +319,24 @@ describe("workspace store", () => {
       expect(get(workspaces)[0].sessions[0].claudeSessionId).toBeNull();
     });
 
+    it("migrates sessions written without harnessId to null", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify([
+          {
+            path: "/a",
+            name: "a",
+            color: "#e67e80",
+            sessions: [
+              { id: "s1", label: "S1", status: "idle", terminalTabId: null, createdAt: "", claudeSessionId: "claude-1" },
+            ],
+          },
+        ]),
+      );
+      await loadWorkspaces();
+      expect(get(workspaces)[0].sessions[0].harnessId).toBeNull();
+    });
+
     it("migrates a retired Everforest colour onto the new palette", async () => {
       vi.mocked(exists).mockResolvedValue(true);
       vi.mocked(readTextFile).mockResolvedValue(
@@ -355,7 +385,7 @@ describe("workspace store", () => {
 
     it("keeps a hidden workspace's sessions in the store", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "work", "tab-1", "claude-1");
+      await addSession("/a", "work", "tab-1", "claude-1", "claude-code");
       await hideWorkspace("/a");
 
       const ws = get(workspaces).find((w) => w.path === "/a");

@@ -490,6 +490,7 @@ describe("touchedBy", () => {
       state: "running",
       live: {} as SessionTile["live"],
       diff: null,
+      createdAt: "",
       ...overrides,
     };
   }

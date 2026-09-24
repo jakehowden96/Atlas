@@ -43,6 +43,7 @@ function workspace(
       terminalTabId: s.terminalTabId,
       createdAt: "",
       claudeSessionId: null,
+      harnessId: null,
     })),
   };
 }
