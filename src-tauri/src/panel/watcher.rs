@@ -114,6 +114,35 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
                                     log::warn!("Failed to read notification.json: {}", e);
                                 }
                             }
+                        } else if path.file_name().map_or(false, |f| f == "session-id.json") {
+                            let session_id = session_id_from_path(path);
+
+                            match std::fs::read_to_string(path) {
+                                Ok(contents) => {
+                                    // One-shot signal, same as notification.json.
+                                    let _ = std::fs::remove_file(path);
+                                    match serde_json::from_str::<ClaudeSessionStart>(&contents) {
+                                        Ok(session_start) => {
+                                            let _ = handle.emit(
+                                                "claude-session-start",
+                                                ClaudeSessionStartEvent {
+                                                    session_id,
+                                                    session_start,
+                                                },
+                                            );
+                                        }
+                                        Err(e) => {
+                                            log::warn!(
+                                                "Failed to parse session-id.json: {}",
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to read session-id.json: {}", e);
+                                }
+                            }
                         }
                     }
                 }

@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegui/nicegui/main/tauri/tauri.conf.json",
   "productName": "Atlas",
-  "version": "4.3.0",
+  "version": "2.0.0",
   "identifier": "com.atlas.dev",
   "build": {
     "frontendDist": "../dist",
@@ -15,10 +15,8 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
+      "icons/icon.ico",
       "icons/icon.png"
-    ],
-    "resources": [
-      "../scripts/atlas-notify-hook.sh"
     ]
   },
   "app": {
@@ -32,9 +30,10 @@
         "fullscreen": false,
         "minWidth": 800,
         "minHeight": 500,
-        "backgroundColor": "#272e33",
+        "backgroundColor": "#0f1012",
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-lcd-text"
       }
     ],
     "security": {

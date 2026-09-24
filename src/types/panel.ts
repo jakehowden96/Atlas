@@ -24,7 +24,6 @@ export interface PanelData {
   cwd: string;
   is_git: boolean;
   diff?: DiffData;
-  plan?: string;
 }
 
 export interface GitStatus {
@@ -33,15 +32,4 @@ export interface GitStatus {
   has_unpushed: boolean;
   commits_behind: number;
   branch: string;
-}
-
-export interface RepoInfo {
-  name: string;
-  branch: string;
-  commits_behind: number;
-}
-
-export interface BranchInfo {
-  name: string;
-  is_current: boolean;
 }
