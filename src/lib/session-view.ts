@@ -113,9 +113,9 @@ export function planRowState(item: PlanItem): PlanRowState {
 }
 
 /**
- * `2m 10s · 4 tools`. The design also shows per-subagent tokens, but the
- * transcript's `Task` results carry no usage block, so there is nothing
- * truthful to put there.
+ * `Explore · 2m 10s · 4 tools`. The design also shows per-subagent tokens,
+ * but the transcript's `Task` results carry no usage block, so there is
+ * nothing truthful to put there.
  *
  * A finished agent's clock stops at the moment it finished. Measuring it
  * against `now` instead left a row that had been done for an hour claiming to
@@ -126,5 +126,5 @@ export function subagentMeta(agent: Subagent, now: number): string {
   const finished = agent.finishedAt ? Date.parse(agent.finishedAt) : Number.NaN;
   const until = Number.isNaN(finished) ? now : finished;
   const elapsed = formatElapsed(agent.startedAt, until);
-  return elapsed ? `${elapsed} · ${tools}` : tools;
+  return [agent.agentType, elapsed, tools].filter(Boolean).join(" · ");
 }

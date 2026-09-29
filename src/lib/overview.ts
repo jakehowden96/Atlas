@@ -4,7 +4,7 @@
  * The join, the sort and the filter live here rather than in the components so
  * they can be unit-tested without a Svelte compiler (README → Conventions).
  */
-import type { LiveSession, PlanItem, SessionState, TranscriptLine } from "../types/session";
+import type { LiveSession, PlanItem, SessionState } from "../types/session";
 import type { OverviewOrdering } from "./stores/settings";
 import type { View } from "./stores/view";
 import type { DiffStats, Workspace, WorkspaceSession } from "./stores/workspace";
@@ -56,6 +56,9 @@ export interface SessionTile {
  * spawned carries, and every such PTY has a row (`spawnHarnessSession` writes
  * one before it calls `addTab`). A session with no row is one Atlas never
  * started, so no notification for it can exist.
+ *
+ * An idle transcript whose last reply ends on a question is also needs-you,
+ * since Claude is waiting on an answer the hook never reports.
  */
 export function buildTiles(
   sessions: LiveSession[],
@@ -122,6 +125,10 @@ function pendingLive(row: WorkspaceSession): LiveSession {
     contextTokens: 0,
     peakContext: 0,
     contextPct: 0,
+    lastPrompt: null,
+    lastReply: null,
+    turnEndedAt: null,
+    turnDurationMs: null,
   };
 }
 
@@ -133,6 +140,8 @@ function toTile(
   needsInputTabs: ReadonlySet<string>,
 ): SessionTile {
   const tabId = row?.terminalTabId ?? null;
+  const flagged = tabId !== null && needsInputTabs.has(tabId);
+  const asking = live.state === "idle" && splitReply(live.lastReply).question !== null;
   return {
     sessionUuid: live.sessionUuid,
     atlasSessionId: row?.id ?? "",
@@ -142,7 +151,7 @@ function toTile(
     workspaceColour: workspace?.color ?? "var(--surface3)",
     label: live.title ?? row?.label ?? "Session",
     branch: live.gitBranch ?? "",
-    state: tabId !== null && needsInputTabs.has(tabId) ? "needsYou" : live.state,
+    state: flagged || asking ? "needsYou" : live.state,
     live,
     diff: tabId === null ? null : (diffStats.get(tabId) ?? null),
     createdAt: row?.createdAt ?? live.startedAt ?? "",
@@ -276,6 +285,89 @@ export function formatElapsed(startedAt: string | null, now: number): string {
   return `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, "0")}s`;
 }
 
+// ── Session card ──────────────────────────────────────────────────────────────
+
+/** A tool name for the card, shortened for an MCP tool: `Linear · list_issues`
+ *  rather than `mcp__claude_ai_Linear__list_issues`. `null` reads as "—". */
+export function shortToolName(name: string | null): string {
+  if (name === null) return "—";
+  const match = name.match(/^mcp__(.+?)__(.+)$/);
+  if (!match) return name;
+  const server = match[1].replace(/^claude_ai_/, "");
+  return `${server} · ${match[2]}`;
+}
+
+/**
+ * Splits a reply's closing question off from the rest, so the card can show
+ * the question as its own callout. A paragraph ending in `?` — allowing for
+ * trailing markdown or quote punctuation — is the question; everything above
+ * it is the body.
+ */
+export function splitReply(reply: string | null): { body: string; question: string | null } {
+  if (!reply) return { body: "", question: null };
+  const paragraphs = reply
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter((p) => p !== "");
+  if (paragraphs.length === 0) return { body: "", question: null };
+  const last = paragraphs[paragraphs.length - 1];
+  if (/\?[\s*_`)"'”’]*$/.test(last)) {
+    return { body: paragraphs.slice(0, -1).join("\n\n"), question: last };
+  }
+  return { body: paragraphs.join("\n\n"), question: null };
+}
+
+/** Strips the markdown emphasis/code markers a plain-text card should not show. */
+export function plainText(s: string): string {
+  return s.replace(/\*\*|__|`/g, "");
+}
+
+/** `55s` under a minute, `1m 17s` under an hour, `1h 04m` above it. */
+export function formatWorked(ms: number): string {
+  const secs = Math.max(0, Math.round(ms / 1000));
+  if (secs < 60) return `${secs}s`;
+  if (secs < 3600) {
+    return `${Math.floor(secs / 60)}m ${secs % 60}s`;
+  }
+  const mins = Math.floor((secs % 3600) / 60);
+  return `${Math.floor(secs / 3600)}h ${String(mins).padStart(2, "0")}m`;
+}
+
+/** A turn's end time as the card shows it, e.g. `11:04`. */
+export function formatClock(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/**
+ * What a card's activity line says: the tool a running session is waiting on,
+ * or when an idle one last finished and how long that turn took. `null` for
+ * every other state, which the card handles separately.
+ */
+export function activity(
+  live: LiveSession,
+  clock: (iso: string) => string = formatClock,
+): { running: boolean; text: string } | null {
+  if (live.state === "running") {
+    const pending = live.pendingTool;
+    if (!pending) return { running: true, text: "Working…" };
+    const label = shortToolName(pending.name);
+    return {
+      running: true,
+      text: pending.inputSummary ? `${label} · ${pending.inputSummary}` : label,
+    };
+  }
+  if (live.state === "idle") {
+    const ended = live.turnEndedAt ?? live.lastActivity;
+    if (!ended) return null;
+    const worked =
+      live.turnEndedAt && live.turnDurationMs != null
+        ? ` · worked ${formatWorked(live.turnDurationMs)}`
+        : "";
+    return { running: false, text: `Finished ${clock(ended)}${worked}` };
+  }
+  return null;
+}
+
 // ── Grid keyboard model ───────────────────────────────────────────────────────
 
 /** What the grid asks the view to do besides move focus between tiles. */
@@ -336,29 +428,7 @@ export function handleGridKey(
 }
 
 /**
- * The transcript lines a tile's preview pane shows, newest last.
- *
- * This was a fixed `slice(-6)`. The grid stretches a single row to the full
- * window height (`grid-auto-rows: minmax(300px, 1fr)`), so with a few sessions
- * open a tile stands ~880px tall and those six lines sat above roughly 700px of
- * empty pane — the review's "the transcript is not showing properly on the
- * sessions page, it captures the beginning but I cannot see it as it is
- * outputting". The pane had the room and was not using it.
- *
- * The count is not measured. The pane is a bottom-aligned column that clips its
- * overflow, so handing it more lines than fit lets CSS decide how many are
- * visible and keeps the newest ones against the footer, the way a tail reads.
- * The cap is what a full-height tile can show at the preview's line height,
- * with room to spare; the backend keeps 200.
- */
-const PREVIEW_MAX_LINES = 48;
-
-export function previewLines(lines: TranscriptLine[]): TranscriptLine[] {
-  return lines.slice(-PREVIEW_MAX_LINES);
-}
-
-/**
- * The rows of a terminal screen a tile shows, newest last.
+ * The rows of a terminal screen — the rows `TerminalSession` tints.
  *
  * `rows` is the xterm's visible buffer as `TerminalSession` published it. Two
  * things come off the bottom: blank rows, and Claude Code's prompt box. The
@@ -413,8 +483,8 @@ const TOOL_ROW = /^\s*(?:⏺\s+[A-Za-z][A-Za-z0-9_-]*\(|⎿)/;
 
 /**
  * Classifies every row of a screen (or `screenPreview` output) into the
- * block it belongs to, so the terminal pane and the tile preview can tint
- * user input, tool calls and Claude's own prose differently.
+ * block it belongs to, so the terminal pane can tint user input, tool calls
+ * and Claude's own prose differently.
  *
  * `⏺` alone does not mean a tool call — Claude Code prefixes its own prose
  * with `⏺` too, so a tool row needs the marker followed by an identifier and

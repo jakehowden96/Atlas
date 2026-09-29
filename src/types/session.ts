@@ -22,6 +22,9 @@ export interface PlanItem {
 
 export interface Subagent {
   task: string;
+  /** Agent/Task `subagent_type`, `general-purpose` when omitted; a workflow
+   *  row's `agentType`. */
+  agentType: string | null;
   startedAt: string | null;
   /** When it stopped. Null while it is still running, and when the line that
    *  ended it carried no timestamp — `done` is the flag. */
@@ -62,6 +65,14 @@ export interface LiveSession {
    *  (the model's context window — 200k for Haiku, 1M otherwise), from
    *  `contextTokens`. Can exceed 1 with autocompact off; the views clamp. */
   contextPct: number;
+  /** The newest user prompt, for the Sessions grid card. */
+  lastPrompt: string | null;
+  /** The newest assistant reply's text, for the Sessions grid card. */
+  lastReply: string | null;
+  /** When the last turn ended, from its `turn_duration` system line. */
+  turnEndedAt: string | null;
+  /** How long the last turn ran, from its `turn_duration` system line. */
+  turnDurationMs: number | null;
 }
 
 export interface SessionUpdateEvent {

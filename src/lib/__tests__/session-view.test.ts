@@ -55,6 +55,7 @@ function todo(text: string, status: string): PlanItem {
 function agent(overrides: Partial<Subagent> = {}): Subagent {
   return {
     task: "Search",
+    agentType: null,
     startedAt: null,
     finishedAt: null,
     toolCount: 0,
@@ -233,5 +234,13 @@ describe("subagentMeta", () => {
       now,
     );
     expect(meta).toBe("2m 10s · 2 tools");
+  });
+
+  it("leads with the subagent type when known", () => {
+    const meta = subagentMeta(
+      agent({ agentType: "Explore", startedAt: "2026-01-01T00:00:00Z", toolCount: 2 }),
+      now,
+    );
+    expect(meta).toBe("Explore · 2m 10s · 2 tools");
   });
 });

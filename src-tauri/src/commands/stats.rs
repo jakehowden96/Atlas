@@ -8,6 +8,7 @@ use std::sync::{mpsc, Mutex};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
 
+use crate::session::omp;
 use crate::transcript::{
     assistant_model, line_type, model_family, request_key, requests_to_by_model, tool_results,
     tool_uses, user_text, ModelSessionData, ReqData,
@@ -92,6 +93,10 @@ pub struct SessionRecord {
     pub subagent_invocations: HashMap<String, u32>,
     #[serde(default)]
     pub user_chars: u64,
+    /// Which harness wrote this transcript — `None` for Claude Code, `Some("omp")`
+    /// for OMP. Absent from a file written before OMP was tracked here.
+    #[serde(default)]
+    pub harness: Option<String>,
 }
 
 /// Per-model aggregate — the Sonnet vs Opus comparison block.
@@ -692,6 +697,7 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
         by_model,
         by_model_subagents,
         subagent_invocations,
+        harness: None,
     })
 }
 
@@ -709,6 +715,37 @@ fn collect_session_files(projects_dir: &Path) -> Vec<PathBuf> {
             continue;
         }
         let Ok(session_entries) = std::fs::read_dir(project_entry.path()) else {
+            continue;
+        };
+        for session_entry in session_entries.flatten() {
+            let path = session_entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("jsonl")
+                && session_entry.file_type().map(|t| t.is_file()).unwrap_or(false)
+            {
+                files.push(path);
+            }
+        }
+    }
+    files
+}
+
+fn omp_sessions_dir() -> Option<PathBuf> {
+    omp::agent_dir().map(|d| d.join("sessions"))
+}
+
+/// Walk `~/.omp/agent/sessions/` and return paths of all session `*.jsonl`
+/// files (direct children of the slug subdirs, not a `task` call's own
+/// `<uuid>/<name>.jsonl` subagent files).
+fn collect_omp_session_files(sessions_dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let Ok(slug_entries) = std::fs::read_dir(sessions_dir) else {
+        return files;
+    };
+    for slug_entry in slug_entries.flatten() {
+        if !slug_entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let Ok(session_entries) = std::fs::read_dir(slug_entry.path()) else {
             continue;
         };
         for session_entry in session_entries.flatten() {
@@ -991,7 +1028,12 @@ pub fn recompute() -> Result<StatsSummary, String> {
         .map(|s| cache_from_json(&s))
         .unwrap_or_default();
 
-    let session_files = collect_session_files(&projects_dir);
+    let mut session_files = collect_session_files(&projects_dir);
+    if let Some(omp_dir) = omp_sessions_dir() {
+        if omp_dir.exists() {
+            session_files.extend(collect_omp_session_files(&omp_dir));
+        }
+    }
     let mut seen_paths: std::collections::HashSet<String> =
         std::collections::HashSet::with_capacity(session_files.len());
     let mut records: Vec<SessionRecord> = Vec::with_capacity(session_files.len());
@@ -1008,7 +1050,9 @@ pub fn recompute() -> Result<StatsSummary, String> {
             }
         }
 
-        match parse_session(path) {
+        let parsed =
+            if path.starts_with(&projects_dir) { parse_session(path) } else { omp::parse_omp_session(path) };
+        match parsed {
             Ok(rec) => records.push(rec),
             Err(e) => log::warn!("Failed to parse session {}: {}", path.display(), e),
         }
@@ -1094,7 +1138,7 @@ fn resumable_for_cwd(records: &[SessionRecord], cwd: &str) -> Vec<ResumableSessi
     let want = normalize_path(cwd);
     let mut matched: Vec<&SessionRecord> = records
         .iter()
-        .filter(|r| r.cwd.as_deref().is_some_and(|c| normalize_path(c) == want))
+        .filter(|r| r.harness.is_none() && r.cwd.as_deref().is_some_and(|c| normalize_path(c) == want))
         .collect();
     matched.sort_by(|a, b| b.last_timestamp.cmp(&a.last_timestamp));
     matched
@@ -1179,6 +1223,12 @@ pub fn start_stats_watcher(app_handle: AppHandle) -> Result<StatsWatcher, String
     watcher
         .watch(&projects_dir, RecursiveMode::Recursive)
         .map_err(|e| e.to_string())?;
+
+    if let Some(omp_dir) = omp_sessions_dir() {
+        if omp_dir.exists() {
+            watcher.watch(&omp_dir, RecursiveMode::Recursive).map_err(|e| e.to_string())?;
+        }
+    }
 
     let handle = app_handle.clone();
     std::thread::spawn(move || {
@@ -1402,6 +1452,7 @@ mod tests {
             by_model: HashMap::from([("Sonnet".to_string(), ModelSessionData::default())]),
             by_model_subagents: HashMap::new(),
             subagent_invocations: HashMap::new(),
+            harness: None,
         }
     }
 
@@ -1600,6 +1651,7 @@ mod tests {
             },
             by_model_subagents: HashMap::new(),
             subagent_invocations: HashMap::new(),
+            harness: None,
         };
         let records = vec![
             make_rec("s1", week_ts_1, "Opus"),
@@ -1649,6 +1701,7 @@ mod tests {
             },
             by_model_subagents: HashMap::new(),
             subagent_invocations: HashMap::new(),
+            harness: None,
         };
         let records = vec![
             make_rec("recent", &recent, "Sonnet"),
@@ -1745,5 +1798,39 @@ mod tests {
             ..rec("a", "2026-01-01T00:00:00Z")
         }];
         assert!(resumable_for_cwd(&records, "/repo/atlas").is_empty());
+    }
+
+    // ── OMP ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_omp_session_reads_usage_tools_and_subagents() {
+        let f = write_lines(&[
+            r#"{"type":"session","id":"omp-sess-1","cwd":"/repo/atlas","timestamp":"2026-01-01T00:00:00Z"}"#,
+            r#"{"type":"message","timestamp":"2026-01-01T00:00:01Z","message":{"role":"user","content":[{"type":"text","text":"hello there"}],"attribution":"user"}}"#,
+            r#"{"type":"message","timestamp":"2026-01-01T00:00:05Z","message":{"role":"assistant","model":"anthropic/claude-sonnet-5","stopReason":"toolUse","content":[{"type":"toolCall","id":"t1","name":"bash","arguments":{"command":"ls"}}],"usage":{"input":100,"output":50,"cacheRead":10,"cacheWrite":0,"totalTokens":160,"cost":{"total":0.02}}}}"#,
+            r#"{"type":"message","timestamp":"2026-01-01T00:00:06Z","message":{"role":"toolResult","toolCallId":"t1","toolName":"bash","isError":true,"content":[{"type":"text","text":"boom"}]}}"#,
+            r#"{"type":"message","timestamp":"2026-01-01T00:00:10Z","message":{"role":"assistant","model":"anthropic/claude-sonnet-5","stopReason":"toolUse","content":[{"type":"toolCall","id":"t2","name":"task","arguments":{"tasks":[{"name":"Scout1","agent":"scout","task":"look"}]}}],"usage":{"input":10,"output":5,"cacheRead":0,"cacheWrite":0,"totalTokens":15,"cost":{"total":0.01}}}}"#,
+        ]);
+
+        let rec = omp::parse_omp_session(f.path()).unwrap();
+        assert_eq!(rec.session_id, "omp-sess-1");
+        assert_eq!(rec.cwd.as_deref(), Some("/repo/atlas"));
+        assert_eq!(rec.user_messages, 1);
+        assert_eq!(rec.user_chars, 11, "\"hello there\" is 11 chars");
+        assert_eq!(rec.assistant_messages, 2);
+        assert_eq!(rec.output_tokens, 55);
+        assert!((rec.cost_estimate - 0.03).abs() < 1e-9);
+        assert_eq!(rec.tool_calls.get("bash").copied(), Some(1));
+        assert_eq!(rec.tool_calls.get("task").copied(), Some(1));
+        assert_eq!(rec.tool_errors, 1);
+        assert_eq!(rec.tool_errors_by_name.get("bash").copied(), Some(1));
+        assert_eq!(rec.subagents, 1);
+        assert_eq!(rec.peak_context, 110);
+        assert_eq!(rec.harness.as_deref(), Some("omp"));
+
+        assert!(
+            resumable_for_cwd(&[rec], "/repo/atlas").is_empty(),
+            "an omp session must not offer claude --resume"
+        );
     }
 }

@@ -29,6 +29,10 @@ function session(sessionUuid: string, overrides: Partial<LiveSession> = {}): Liv
     contextTokens: 0,
     peakContext: 0,
     contextPct: 0,
+    lastPrompt: null,
+    lastReply: null,
+    turnEndedAt: null,
+    turnDurationMs: null,
     ...overrides,
   };
 }

@@ -8,11 +8,18 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { Terminal } from "@xterm/xterm";
 import { get } from "svelte/store";
-import { ptyKill, ptyWrite, startSessionTail, stopSessionTail } from "./ipc";
+import { ptyKill, ptyWrite, startOmpTail, startSessionTail, stopSessionTail } from "./ipc";
 import { log } from "./logger";
 import { removeLiveSession } from "./stores/liveSessions";
 import { showToast } from "./stores/toast";
-import { DEFAULT_HARNESSES, harnesses, lastHarnessId, tailTranscripts, type HarnessConfig } from "./stores/settings";
+import {
+  DEFAULT_HARNESSES,
+  harnesses,
+  lastHarnessId,
+  tailTranscripts,
+  transcriptKind,
+  type HarnessConfig,
+} from "./stores/settings";
 import { focusedSessionId, showView } from "./stores/view";
 import {
   activeTabId,
@@ -152,13 +159,20 @@ export async function spawnHarnessSession(
       if (!current || current.ptyId < 0) return;
       ptyWrite(current.ptyId, cmd);
       updateSessionStatus(session.id, "running");
-      // Tail the session's own transcript for structured live state — only a
-      // resumable (Claude Code-shaped) harness has a transcript to tail —
+      // Tail the session's own transcript for structured live state — which
+      // command depends on the harness, and a bare Terminal has none at all —
       // unless the user has turned transcript tailing off in Settings.
-      if (harness.resumable && get(tailTranscripts)) {
-        startSessionTail(claudeSessionId).catch((e) =>
-          log.warn("session", `startSessionTail failed for ${claudeSessionId}: ${e}`),
-        );
+      if (get(tailTranscripts)) {
+        const kind = transcriptKind(harness);
+        if (kind === "claude") {
+          startSessionTail(claudeSessionId).catch((e) =>
+            log.warn("session", `startSessionTail failed for ${claudeSessionId}: ${e}`),
+          );
+        } else if (kind === "omp") {
+          startOmpTail(claudeSessionId, current.ptyId).catch((e) =>
+            log.warn("session", `startOmpTail failed for ${claudeSessionId}: ${e}`),
+          );
+        }
       }
       if (harness.readyMode === "immediate") {
         setTabReady(tabId);

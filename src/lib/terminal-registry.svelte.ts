@@ -54,9 +54,9 @@ document.body.appendChild(parkingRoot);
  *  Session pane or the pane-sized parking root — so a session refits (and
  *  resizes its PTY, via `TerminalSession`'s own resize observer) to the real
  *  box it is showing in rather than to one fixed geometry cropped into
- *  place. The Sessions grid never holds a host: a tile reads the terminal's
- *  screen as text from `stores/terminal-screen.ts` instead, so the PTY keeps
- *  the pane's geometry however often the grid is opened. */
+ *  place. The Sessions grid never holds a host: a tile reads the
+ *  transcript's last prompt and reply instead, so the PTY keeps the pane's
+ *  geometry however often the grid is opened. */
 function sizeHost(host: HTMLDivElement) {
   host.style.width = "100%";
   host.style.height = "100%";

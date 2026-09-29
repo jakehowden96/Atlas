@@ -128,6 +128,15 @@ export async function stopSessionTail(sessionUuid: string): Promise<void> {
   return invoke("stop_session_tail", { sessionUuid });
 }
 
+/**
+ * Start tailing an OMP session through its terminal's breadcrumb file.
+ * Updates then arrive as `session-update` events until `stopSessionTail`.
+ */
+export async function startOmpTail(sessionUuid: string, ptyId: number): Promise<void> {
+  log.info("ipc", `startOmpTail ${sessionUuid} ptyId=${ptyId}`);
+  return invoke("start_omp_tail", { sessionUuid, ptyId });
+}
+
 /** What Settings › Claude Code reports about the local Claude Code install. */
 export interface ClaudeInfo {
   binary: string | null;

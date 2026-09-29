@@ -1,6 +1,6 @@
 import { derived, writable, get } from "svelte/store";
 import { BaseDirectory, readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs";
-import { startSessionTail, stopSessionTail } from "../ipc";
+import { startOmpTail, startSessionTail, stopSessionTail } from "../ipc";
 import {
   ACTIONS,
   DEFAULT_KEYMAP,
@@ -14,6 +14,7 @@ import { log } from "../logger";
 import { themeMode, type ThemeMode } from "../theme";
 import { openFiles, sources } from "./files";
 import { liveSessions } from "./liveSessions";
+import { tabs } from "./terminal";
 import { workspaces } from "./workspace";
 
 export type OverviewOrdering = "attention" | "workspace" | "manual" | "opened";
@@ -27,6 +28,12 @@ export interface HarnessConfig {
   resumable: boolean; // gates Resume UI; only true harness today is Claude Code
   resumeArgs?: string[]; // used instead of args when resuming; "{resumeId}" token
   readyMode: "altscreen" | "immediate";
+}
+
+/** Which live-tail command a harness's transcript needs, or none for a bare
+ *  terminal harness. */
+export function transcriptKind(h: HarnessConfig): "claude" | "omp" | null {
+  return h.resumable ? "claude" : h.command === "omp" ? "omp" : null;
 }
 
 export const DEFAULT_HARNESSES: HarnessConfig[] = [
@@ -339,11 +346,15 @@ export async function setTailTranscripts(value: boolean) {
   if (value) {
     // Turning it back on re-arms the sessions that are still running; their
     // `liveSessions` entries survived the pause, so tiles fill back in.
-    for (const uuid of runningSessionUuids()) {
+    for (const { uuid, kind, ptyId } of runningTails()) {
       try {
-        await startSessionTail(uuid);
+        if (kind === "claude") {
+          await startSessionTail(uuid);
+        } else if (ptyId >= 0) {
+          await startOmpTail(uuid, ptyId);
+        }
       } catch (e) {
-        log.warn("settings", `startSessionTail failed for ${uuid}: ${e}`);
+        log.warn("settings", `start tail failed for ${uuid}: ${e}`);
       }
     }
   } else {
@@ -358,14 +369,22 @@ export async function setTailTranscripts(value: boolean) {
   await persistSettings();
 }
 
-function runningSessionUuids(): string[] {
-  const uuids: string[] = [];
+/** Every currently-running session with a live-tailable transcript, and which
+ *  command to tail it with. A harness id that no longer matches a configured
+ *  harness (deleted since) falls back to Claude Code's tail. */
+function runningTails(): { uuid: string; kind: "claude" | "omp"; ptyId: number }[] {
+  const harnessList = get(harnesses);
+  const tabList = get(tabs);
+  const results: { uuid: string; kind: "claude" | "omp"; ptyId: number }[] = [];
   for (const ws of get(workspaces)) {
     for (const session of ws.sessions) {
-      if (session.status === "running" && session.claudeSessionId) {
-        uuids.push(session.claudeSessionId);
-      }
+      if (session.status !== "running" || !session.claudeSessionId) continue;
+      const harness = harnessList.find((h) => h.id === (session.harnessId ?? "claude-code"));
+      const kind = harness ? transcriptKind(harness) : "claude";
+      if (!kind) continue;
+      const ptyId = tabList.find((t) => t.id === session.terminalTabId)?.ptyId ?? -1;
+      results.push({ uuid: session.claudeSessionId, kind, ptyId });
     }
   }
-  return uuids;
+  return results;
 }

@@ -18,10 +18,17 @@ use crate::transcript::{
 
 /// Transcript lines kept for the session view. The design shows the tail of the
 /// conversation, not its whole history.
-const MAX_LINES: usize = 200;
+pub(super) const MAX_LINES: usize = 200;
 
 /// Longest excerpt kept from a tool input or tool result on one rendered line.
 const EXCERPT: usize = 140;
+
+/// Longest prompt kept for the Sessions grid card.
+const PROMPT_SUMMARY: usize = 400;
+
+/// Longest reply kept for the Sessions grid card — long enough that a closing
+/// question survives.
+pub(super) const REPLY_SUMMARY: usize = 4000;
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
@@ -76,6 +83,9 @@ pub struct PlanItem {
 #[serde(rename_all = "camelCase")]
 pub struct Subagent {
     pub task: String,
+    /// Agent/Task `subagent_type`, `general-purpose` when omitted; a workflow
+    /// row's `agentType`.
+    pub agent_type: Option<String>,
     pub started_at: Option<String>,
     /// When it stopped, so a finished agent shows how long it took rather than
     /// a clock that keeps running. None while it is still going, and also when
@@ -126,10 +136,20 @@ pub struct LiveSession {
     /// Fraction 0.0–1.0 of what the session can use before autocompact fires,
     /// from `context_tokens` — see `transcript::context_pct`.
     pub context_pct: f64,
+    /// The newest user prompt, for the Sessions grid card. None for a
+    /// `<task-notification>` or a local slash command.
+    pub last_prompt: Option<String>,
+    /// The newest assistant reply's text, for the Sessions grid card. Cleared
+    /// the moment a new prompt lands.
+    pub last_reply: Option<String>,
+    /// When the last turn ended, from its `turn_duration` system line.
+    pub turn_ended_at: Option<String>,
+    /// How long the last turn ran, from its `turn_duration` system line.
+    pub turn_duration_ms: Option<u64>,
 }
 
 impl LiveSession {
-    fn new(session_uuid: String) -> Self {
+    pub(super) fn new(session_uuid: String) -> Self {
         LiveSession {
             session_uuid,
             state: SessionState::Running,
@@ -149,6 +169,10 @@ impl LiveSession {
             context_tokens: 0,
             peak_context: 0,
             context_pct: 0.0,
+            last_prompt: None,
+            last_reply: None,
+            turn_ended_at: None,
+            turn_duration_ms: None,
         }
     }
 }
@@ -158,13 +182,13 @@ impl LiveSession {
 /// Remembers where it stopped in a growing file so the file is never re-read
 /// from the start. The trailing bytes of an incomplete line are held back until
 /// the newline arrives, so a line written in two flushes still parses once.
-struct LineReader {
+pub(super) struct LineReader {
     offset: u64,
     partial: Vec<u8>,
 }
 
 impl LineReader {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         LineReader { offset: 0, partial: Vec::new() }
     }
 
@@ -175,7 +199,7 @@ impl LineReader {
 
     /// Complete lines appended since the last call. The bool is true when the
     /// file shrank (rotation/rewrite) and the caller must rebuild its state.
-    fn read_new(&mut self, path: &Path) -> (Vec<String>, bool) {
+    pub(super) fn read_new(&mut self, path: &Path) -> (Vec<String>, bool) {
         let Ok(meta) = std::fs::metadata(path) else {
             return (Vec::new(), false);
         };
@@ -441,6 +465,12 @@ impl SessionTail {
             }
             if !is_meta {
                 self.push_line(LineRole::User, format!("> {}", excerpt(text)), timestamp);
+                if let Some(prompt) = prompt_text(text) {
+                    self.session.last_prompt = Some(prompt);
+                    self.session.last_reply = None;
+                    self.session.turn_ended_at = None;
+                    self.session.turn_duration_ms = None;
+                }
             }
             return;
         }
@@ -474,6 +504,7 @@ impl SessionTail {
         }
 
         if let Some(content) = msg.get("content").and_then(|v| v.as_array()) {
+            let mut texts: Vec<&str> = Vec::new();
             for block in content {
                 // `thinking` blocks are deliberately not surfaced.
                 if block.get("type").and_then(|v| v.as_str()) == Some("text") {
@@ -484,9 +515,14 @@ impl SessionTail {
                                 excerpt(text),
                                 timestamp.clone(),
                             );
+                            texts.push(text);
                         }
                     }
                 }
+            }
+            if !texts.is_empty() {
+                self.session.last_reply =
+                    Some(capped(texts.join("\n\n").trim(), REPLY_SUMMARY));
             }
         }
 
@@ -512,6 +548,7 @@ impl SessionTail {
                     .insert(tool.id.to_string(), self.session.subagents.len());
                 self.session.subagents.push(Subagent {
                     task: subagent_task(tool.input),
+                    agent_type: Some(subagent_type(tool.input)),
                     started_at: timestamp.clone(),
                     finished_at: None,
                     tool_count: 0,
@@ -541,6 +578,8 @@ impl SessionTail {
         if obj.get("subtype").and_then(|v| v.as_str()) != Some("turn_duration") {
             return;
         }
+        self.session.turn_ended_at = timestamp.clone();
+        self.session.turn_duration_ms = obj.get("durationMs").and_then(|v| v.as_u64());
         // The field is omitted rather than written as `0` when nothing is
         // pending, so an absent value only means zero once we have seen the
         // field at all — a Claude Code that never writes it must not settle
@@ -747,7 +786,7 @@ impl SessionTail {
 // ── Rendering helpers ─────────────────────────────────────────────────────────
 
 /// One line, trimmed and capped — transcript text is multi-line and long.
-fn excerpt(text: &str) -> String {
+pub(super) fn excerpt(text: &str) -> String {
     let first = text.trim().lines().next().unwrap_or("").trim();
     if first.chars().count() <= EXCERPT {
         return first.to_string();
@@ -756,8 +795,37 @@ fn excerpt(text: &str) -> String {
     format!("{}…", cut)
 }
 
+/// `text` capped at `max` chars, with an ellipsis marking the cut.
+pub(super) fn capped(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let cut: String = text.chars().take(max).collect();
+    format!("{}…", cut)
+}
+
+/// The newest user prompt, for the Sessions grid card. None for a
+/// `<task-notification>` or a local slash command; a `<command-name>` is
+/// rendered as the slash command it names.
+pub(super) fn prompt_text(text: &str) -> Option<String> {
+    if task_notification(text).is_some() || text.trim_start().starts_with("<local-command-") {
+        return None;
+    }
+    let base = if let Some(name) = tagged(text, "command-name") {
+        format!("{} {}", name, tagged(text, "command-args").unwrap_or(""))
+    } else {
+        text.to_string()
+    };
+    let collapsed = base.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.is_empty() {
+        None
+    } else {
+        Some(capped(&collapsed, PROMPT_SUMMARY))
+    }
+}
+
 /// `tool_result.content` is usually a string but can be an array of blocks.
-fn result_text(content: &Value) -> String {
+pub(super) fn result_text(content: &Value) -> String {
     match content {
         Value::String(s) => s.clone(),
         Value::Array(blocks) => blocks
@@ -771,7 +839,7 @@ fn result_text(content: &Value) -> String {
 }
 
 /// The most identifying field of a tool's input, for `* Bash pnpm test`.
-fn input_summary(input: &Value) -> String {
+pub(super) fn input_summary(input: &Value) -> String {
     for key in ["command", "file_path", "path", "pattern", "description", "url", "prompt"] {
         if let Some(value) = input.get(key).and_then(|v| v.as_str()) {
             return excerpt(value);
@@ -846,6 +914,17 @@ fn tagged<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
     Some(rest[..rest.find(&format!("</{}>", tag))?].trim())
 }
 
+/// The `Agent`/`Task` tool's `subagent_type`, `general-purpose` when omitted.
+fn subagent_type(input: &Value) -> String {
+    input
+        .get("subagent_type")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("general-purpose")
+        .to_string()
+}
+
 fn subagent_task(input: &Value) -> String {
     for key in ["description", "subagent_type", "prompt"] {
         if let Some(value) = input.get(key).and_then(|v| v.as_str()) {
@@ -861,7 +940,7 @@ fn subagent_task(input: &Value) -> String {
 /// this module is the transcript's own ISO-8601, which the frontend parses
 /// with `Date.parse`. Convert at the boundary so `Subagent` only ever carries
 /// one format.
-fn iso_from_epoch_ms(ms: i64) -> Option<String> {
+pub(super) fn iso_from_epoch_ms(ms: i64) -> Option<String> {
     chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ms)
         .map(|dt| dt.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
 }
@@ -921,10 +1000,17 @@ fn workflow_agents(run: &Value) -> Vec<(String, Subagent)> {
 
             let tool_count = entry["toolCalls"].as_u64().unwrap_or(0) as u32;
 
+            let agent_type = entry["agentType"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+
             (
                 key,
                 Subagent {
                     task: workflow_task(entry),
+                    agent_type,
                     started_at,
                     finished_at,
                     tool_count,
@@ -1137,6 +1223,27 @@ mod tests {
         assert_eq!(plan[0].status, "completed");
         assert_eq!(plan[1].status, "in_progress");
         assert_eq!(plan[2].status, "pending");
+    }
+
+    #[test]
+    fn agent_calls_carry_their_subagent_type_defaulting_to_general_purpose() {
+        let (_dir, mut tail) = tail_with(&fixture_lines());
+        tail.poll();
+        let agent = tail
+            .session()
+            .subagents
+            .iter()
+            .find(|s| s.task == "Check the parser")
+            .expect("the fixture spawns this agent");
+        assert_eq!(agent.agent_type, Some("Explore".to_string()));
+
+        let inline = r#"{"type":"assistant","requestId":"req_inline","message":{"model":"claude-opus-5","content":[{"type":"tool_use","id":"toolu_inline1","name":"Agent","input":{"description":"No type"}}]},"timestamp":"2026-09-07T21:50:00.000Z"}"#.to_string();
+        let (_dir2, mut tail2) = tail_with(&[inline]);
+        tail2.poll();
+        assert_eq!(
+            tail2.session().subagents[0].agent_type,
+            Some("general-purpose".to_string())
+        );
     }
 
     #[test]
@@ -1681,5 +1788,78 @@ mod tests {
             "workflowProgress": [{"type": "workflow_agent", "agentId": "a1", "state": "progress",
                 "agentType": "general-purpose", "startedAt": 1790079889746_i64}]});
         assert_eq!(workflow_agents(&no_label)[0].1.task, "general-purpose");
+        assert_eq!(
+            workflow_agents(&no_label)[0].1.agent_type,
+            Some("general-purpose".to_string())
+        );
+    }
+
+    // ── Session card summary ─────────────────────────────────────────────────
+
+    #[test]
+    fn prompt_and_reply_follow_the_newest_turn() {
+        let first_ask = r#"{"type":"user","message":{"role":"user","content":"first ask"},"timestamp":"2026-09-07T21:50:00.000Z"}"#.to_string();
+        let reply = r#"{"type":"assistant","requestId":"req_a","message":{"model":"claude-opus-5","content":[{"type":"text","text":"Done the thing.\n\nWant me to push?"}],"stop_reason":"end_turn","usage":{"output_tokens":10}},"timestamp":"2026-09-07T21:50:05.000Z"}"#.to_string();
+        let (dir, mut tail) = tail_with(&[first_ask, reply]);
+        assert!(tail.poll());
+
+        assert_eq!(tail.session().last_prompt.as_deref(), Some("first ask"));
+        assert_eq!(
+            tail.session().last_reply.as_deref(),
+            Some("Done the thing.\n\nWant me to push?")
+        );
+
+        let path = dir.path().join(format!("{}.jsonl", UUID));
+        let second_ask = r#"{"type":"user","message":{"role":"user","content":"second ask"},"timestamp":"2026-09-07T21:50:10.000Z"}"#.to_string();
+        append(&path, &[second_ask]);
+        assert!(tail.poll());
+
+        assert_eq!(tail.session().last_reply, None);
+        assert_eq!(tail.session().last_prompt.as_deref(), Some("second ask"));
+    }
+
+    #[test]
+    fn slash_commands_read_as_prompts_and_notifications_do_not() {
+        let slash = r#"{"type":"user","message":{"role":"user","content":"<command-name>/model</command-name><command-args>opus</command-args>"},"timestamp":"2026-09-07T21:50:00.000Z"}"#.to_string();
+        let (dir, mut tail) = tail_with(&[slash]);
+        assert!(tail.poll());
+        assert_eq!(tail.session().last_prompt.as_deref(), Some("/model opus"));
+
+        let path = dir.path().join(format!("{}.jsonl", UUID));
+        let notification = r#"{"type":"user","message":{"role":"user","content":"<task-notification>\n<tool-use-id>toolu_1</tool-use-id>\n<status>completed</status>\n</task-notification>"},"timestamp":"2026-09-07T21:50:05.000Z"}"#.to_string();
+        let meta = r#"{"type":"user","isMeta":true,"message":{"role":"user","content":"reminder text"},"timestamp":"2026-09-07T21:50:06.000Z"}"#.to_string();
+        append(&path, &[notification, meta]);
+        tail.poll();
+
+        assert_eq!(tail.session().last_prompt.as_deref(), Some("/model opus"));
+    }
+
+    #[test]
+    fn turn_duration_records_when_the_turn_ended_and_how_long_it_ran() {
+        let line = r#"{"type":"system","subtype":"turn_duration","durationMs":77000,"timestamp":"2026-09-07T21:51:02.000Z"}"#.to_string();
+        let (_dir, mut tail) = tail_with(&[line]);
+        assert!(tail.poll());
+
+        assert_eq!(
+            tail.session().turn_ended_at.as_deref(),
+            Some("2026-09-07T21:51:02.000Z")
+        );
+        assert_eq!(tail.session().turn_duration_ms, Some(77000));
+    }
+
+    #[test]
+    fn a_long_prompt_is_collapsed_and_capped() {
+        let long = format!("{}\n\n{}", "a".repeat(240), "b".repeat(260));
+        let line = format!(
+            r#"{{"type":"user","message":{{"role":"user","content":{}}},"timestamp":"2026-09-07T21:50:00.000Z"}}"#,
+            serde_json::to_string(&long).unwrap()
+        );
+        let (_dir, mut tail) = tail_with(&[line]);
+        assert!(tail.poll());
+
+        let prompt = tail.session().last_prompt.clone().expect("prompt captured");
+        assert!(!prompt.contains('\n'));
+        assert_eq!(prompt.chars().count(), 401);
+        assert!(prompt.ends_with('…'));
     }
 }

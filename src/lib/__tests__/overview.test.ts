@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { LiveSession, SessionState } from "../../types/session";
 import {
+  activity,
   buildTiles,
   classifyRows,
   compareByAttention,
@@ -12,9 +13,10 @@ import {
   handleGridKey,
   pinKey,
   planSegments,
-  previewLines,
   type SessionTile,
   screenPreview,
+  shortToolName,
+  splitReply,
   tileComparator,
 } from "../overview";
 import type { DiffStats, Workspace } from "../stores/workspace";
@@ -39,6 +41,10 @@ function live(sessionUuid: string, overrides: Partial<LiveSession> = {}): LiveSe
     contextTokens: 0,
     peakContext: 0,
     contextPct: 0,
+    lastPrompt: null,
+    lastReply: null,
+    turnEndedAt: null,
+    turnDurationMs: null,
     ...overrides,
   };
 }
@@ -368,6 +374,116 @@ describe("buildTiles", () => {
     expect(count("running")).toBe(0);
     expect(count("idle")).toBe(1);
   });
+
+  it("treats an idle reply ending on a question as needs-you, unflagged", () => {
+    const [tile] = buildTiles(
+      [live("uuid-a", { state: "idle", lastReply: "Done.\n\nPush it?" })],
+      workspaceList,
+      new Map(),
+      new Set(),
+    );
+    expect(tile.state).toBe("needsYou");
+  });
+
+  it("leaves a running session with the same reply alone", () => {
+    const [tile] = buildTiles(
+      [live("uuid-a", { state: "running", lastReply: "Done.\n\nPush it?" })],
+      workspaceList,
+      new Map(),
+      new Set(),
+    );
+    expect(tile.state).toBe("running");
+  });
+
+  it("leaves an idle session with no question idle", () => {
+    const [tile] = buildTiles(
+      [live("uuid-a", { state: "idle", lastReply: "Done." })],
+      workspaceList,
+      new Map(),
+      new Set(),
+    );
+    expect(tile.state).toBe("idle");
+  });
+});
+
+describe("shortToolName", () => {
+  it("shortens an MCP tool to its server and tool name", () => {
+    expect(shortToolName("mcp__claude_ai_Linear__list_issues")).toBe("Linear · list_issues");
+  });
+
+  it("leaves an ordinary tool name alone", () => {
+    expect(shortToolName("Bash")).toBe("Bash");
+  });
+
+  it("reads null as no pending tool", () => {
+    expect(shortToolName(null)).toBe("—");
+  });
+});
+
+describe("splitReply", () => {
+  it("splits a closing question off from the body", () => {
+    expect(splitReply("Done the thing.\n\nWant me to push?")).toEqual({
+      body: "Done the thing.",
+      question: "Want me to push?",
+    });
+  });
+
+  it("counts a question wrapped in markdown emphasis", () => {
+    expect(splitReply("Done.\n\n**Push it?**")).toEqual({
+      body: "Done.",
+      question: "**Push it?**",
+    });
+  });
+
+  it("does not split a question in the middle of the reply", () => {
+    expect(splitReply("Should I push?\n\nDoing it now.")).toEqual({
+      body: "Should I push?\n\nDoing it now.",
+      question: null,
+    });
+  });
+
+  it("is empty for null", () => {
+    expect(splitReply(null)).toEqual({ body: "", question: null });
+  });
+});
+
+describe("activity", () => {
+  const clock = () => "11:04";
+
+  it("names the pending tool and its input for a running session", () => {
+    const session = live("uuid-a", {
+      state: "running",
+      pendingTool: { name: "Bash", inputSummary: "git push" },
+    });
+    expect(activity(session, clock)).toEqual({ running: true, text: "Bash · git push" });
+  });
+
+  it("shows Working… for a running session with nothing pending", () => {
+    const session = live("uuid-a", { state: "running", pendingTool: null });
+    expect(activity(session, clock)).toEqual({ running: true, text: "Working…" });
+  });
+
+  it("shows when the turn ended and how long it took", () => {
+    const session = live("uuid-a", {
+      state: "idle",
+      turnEndedAt: "2026-01-01T00:00:00.000Z",
+      turnDurationMs: 77_000,
+    });
+    expect(activity(session, clock)).toEqual({
+      running: false,
+      text: "Finished 11:04 · worked 1m 17s",
+    });
+  });
+
+  it("falls back to lastActivity with no turn duration to report", () => {
+    const session = live("uuid-a", {
+      state: "idle",
+      turnEndedAt: null,
+      turnDurationMs: null,
+      lastActivity: "2026-01-01T00:00:00.000Z",
+    });
+    expect(activity(session, clock)).toEqual({ running: false, text: "Finished 11:04" });
+  });
 });
 
 describe("planSegments", () => {
@@ -475,26 +591,6 @@ describe("handleGridKey", () => {
   it("survives an empty grid and an index that outran the tiles", () => {
     expect(press("ArrowDown", 0, 0)).toEqual({ index: 0, effect: null, handled: false });
     expect(press("ArrowLeft", 99).index).toBe(6);
-  });
-});
-
-function line(text: string) {
-  return { role: "step" as const, text, timestamp: null };
-}
-
-describe("previewLines", () => {
-  /* The tile preview was `lines.slice(-6)`, a fixed six regardless of how tall
-     the tile was. `grid-auto-rows: minmax(300px, 1fr)` stretches a single row
-     to the full window, so with three sessions open each tile stood about
-     880px tall and showed six lines over roughly 700px of empty pane. That is
-     the "transcript is not showing properly on the sessions page — it captures
-     the beginning but I cannot see it as it is outputting" report: the pane had
-     the room and was not using it. */
-  it("keeps the newest lines, which is what a tail shows", () => {
-    const lines = Array.from({ length: 60 }, (_, i) => line(`l${i}`));
-    const out = previewLines(lines);
-    expect(out[out.length - 1].text).toBe("l59");
-    expect(out.length).toBeGreaterThan(6);
   });
 });
 

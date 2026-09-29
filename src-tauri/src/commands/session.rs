@@ -1,10 +1,12 @@
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
-use crate::session::manager::LiveSessionManager;
+use crate::pty::manager::PtyManager;
+use crate::session::manager::{LiveSessionManager, SessionUpdateEvent};
+use crate::session::omp;
 use crate::session::transcript::await_transcript;
 
 /// How long `start_session_tail` waits for a transcript that already exists
@@ -47,6 +49,37 @@ pub fn stop_session_tail(
     manager: State<'_, LiveSessionManager>,
 ) -> Result<(), String> {
     manager.stop(&session_uuid)
+}
+
+/// Start tailing an OMP session through its terminal's breadcrumb file.
+/// Further changes arrive as `session-update` events until `stop_session_tail`.
+///
+/// OMP has no transcript uuid to await the way Claude Code does — the tty its
+/// shell runs on is the only handle Atlas has, and OMP's own breadcrumb file
+/// maps that tty to the transcript path.
+#[tauri::command(async)]
+pub async fn start_omp_tail(
+    session_uuid: String,
+    pty_id: u32,
+    app: AppHandle,
+    manager: State<'_, LiveSessionManager>,
+    ptys: State<'_, PtyManager>,
+) -> Result<(), String> {
+    let tty = ptys.tty_name(pty_id).ok_or_else(|| format!("no tty for pty {pty_id}"))?;
+    let agent_dir = omp::agent_dir().ok_or_else(|| "could not determine home directory".to_string())?;
+    let breadcrumb = omp::breadcrumb_path(&agent_dir, &tty);
+    let since = SystemTime::now() - Duration::from_secs(2);
+
+    let manager = manager.inner().clone();
+    let uuid = session_uuid.clone();
+    let session = tokio::task::spawn_blocking(move || manager.watch_omp(&uuid, breadcrumb, since))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if let Some(session) = session {
+        let _ = app.emit("session-update", SessionUpdateEvent { session_uuid, session });
+    }
+    Ok(())
 }
 
 /// What Settings › Claude Code reports. Every field degrades to `None`/`false`

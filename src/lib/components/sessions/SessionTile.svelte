@@ -2,41 +2,27 @@
   import type { SessionState } from "../../../types/session";
   import { formatTokens } from "../../format";
   import {
-    classifyRows,
+    activity,
     formatElapsed,
     pinKey,
-    previewLines,
+    plainText,
+    shortToolName,
+    splitReply,
     type SessionTile,
-    screenPreview,
   } from "../../overview";
   import { allowPendingTool, closeSession, denyPendingTool } from "../../session-actions";
   import { togglePinnedSession } from "../../stores/settings";
   import { activeTabId } from "../../stores/terminal";
-  import { terminalScreens, type TerminalRow } from "../../stores/terminal-screen";
   import { focusedSessionId, showView } from "../../stores/view";
-  import { activeXtermTheme, themeMode } from "../../theme";
   import StatePill, { type PillState } from "../ui/StatePill.svelte";
-
-  const ANSI_NAMES = [
-    "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
-    "brightBlack", "brightRed", "brightGreen", "brightYellow",
-    "brightBlue", "brightMagenta", "brightCyan", "brightWhite",
-  ] as const;
-
-  /** Reactive so a mid-session theme switch re-colours the preview too. */
-  let palette = $derived(activeXtermTheme($themeMode));
-
-  function segColor(index: number | undefined): string | undefined {
-    return index === undefined ? undefined : palette[ANSI_NAMES[index]];
-  }
 
   interface Props {
     tile: SessionTile;
     /** `Date.now()` ticked once a second by the view, for the elapsed clock. */
     now: number;
     /** Settings › Claude Code › Tail transcripts. Off means a closed session
-        with no live PTY has nothing to preview, so its tile says so instead
-        of showing a transcript tail. */
+        with no live PTY has no transcript to read a prompt or reply off, so
+        the card says so instead of showing them. */
     tailing: boolean;
     /** Pinned tiles sort to the top of the Sessions grid. */
     pinned: boolean;
@@ -61,27 +47,14 @@
 
   let live = $derived(tile.live);
   let needsYou = $derived(tile.state === "needsYou");
-
-  /**
-   * The terminal's screen as text, published by `TerminalSession` after every
-   * parsed write (`stores/terminal-screen.ts`). Live through a long tool call,
-   * which the transcript never was. `screenPreview` takes the TUI's prompt box
-   * and trailing blank rows off the bottom.
-   *
-   * `tile.terminalTabId` unset means a closed-but-resumable session with no
-   * live PTY, and the transcript-tail `preview` below is the fallback for it.
-   */
-  let screenData = $derived($terminalScreens.get(tile.terminalTabId ?? ""));
-  let plainRows = $derived(screenPreview(screenData?.plain ?? []));
-  /* `screenPreview` only ever trims rows off the bottom (blank tail, prompt
-     box), so its length is how many of the styled rows — same order, same
-     colour and weight the TUI painted them with — to keep. */
-  let screen: TerminalRow[] = $derived((screenData?.styled ?? []).slice(0, plainRows.length));
-  let kinds = $derived(classifyRows(plainRows));
-
-  /** Blank lines render as a non-breaking space so row height stays stable. */
-  let preview = $derived(previewLines(live.lines));
   let elapsed = $derived(formatElapsed(live.startedAt, now));
+
+  /** A permission prompt, as opposed to needs-you off a closing question. */
+  let permission = $derived(needsYou && live.pendingTool !== null);
+  let split = $derived(splitReply(live.lastReply));
+  let hasMessages = $derived(!!(live.lastPrompt || live.lastReply));
+  let act = $derived(activity(live));
+  let emptyMeta = $derived([live.model, tile.workspacePath].filter(Boolean).join(" · "));
 
   function open() {
     focusedSessionId.set(tile.atlasSessionId);
@@ -103,7 +76,7 @@
     }
     // Answering a permission prompt is the most valuable keystroke here, so it
     // gets the prompt's own y/n rather than a chord.
-    if (!needsYou) return;
+    if (!permission) return;
     if (e.key === "y" || e.key === "Y") allow(e);
     else if (e.key === "n" || e.key === "N") deny(e);
   }
@@ -144,92 +117,100 @@
   <!-- Same fields as the Session view's header, so the two screens read
        alike: which session, which project, which branch, how long. -->
   <div class="head">
-    <StatePill state={PILL[tile.state]} />
-    <span class="label">{tile.label}</span>
-    <span class="ws" title={tile.workspacePath}>
-      <span class="ws-chip" style="--tc: {tile.workspaceColour}">{tile.workspaceName}</span>
-      {#if tile.branch}<span class="branch">· {tile.branch}</span>{/if}
-    </span>
-    <span class="elapsed">{elapsed}</span>
-    <span class="diff">
-      <span class="added">+{tile.diff?.linesAdded ?? 0}</span>
-      <span class="removed">−{tile.diff?.linesRemoved ?? 0}</span>
-    </span>
-    <button
-      type="button"
-      class="pin"
-      class:on={pinned}
-      title={pinned ? "Unpin from the top" : "Pin to the top"}
-      aria-label="{pinned ? 'Unpin' : 'Pin'} session {tile.label}"
-      aria-pressed={pinned}
-      onclick={togglePin}
-    >
-      <span class="material-symbols-outlined">keep</span>
-    </button>
-    <button
-      type="button"
-      class="close"
-      title="Close session"
-      aria-label="Close session {tile.label}"
-      onclick={close}
-    >
-      ✕
-    </button>
+    <div class="row1">
+      <span class="label">{tile.label}</span>
+      <button
+        type="button"
+        class="pin"
+        class:on={pinned}
+        title={pinned ? "Unpin from the top" : "Pin to the top"}
+        aria-label="{pinned ? 'Unpin' : 'Pin'} session {tile.label}"
+        aria-pressed={pinned}
+        onclick={togglePin}
+      >
+        <span class="material-symbols-outlined">keep</span>
+      </button>
+      <button
+        type="button"
+        class="close"
+        title="Close session"
+        aria-label="Close session {tile.label}"
+        onclick={close}
+      >
+        ✕
+      </button>
+    </div>
+    <div class="row2">
+      <StatePill state={PILL[tile.state]} />
+      <span class="ws-chip" style="--tc: {tile.workspaceColour}" title={tile.workspacePath}
+        >{tile.workspaceName}</span
+      >
+      {#if tile.branch}<span class="branch">{tile.branch}</span>{/if}
+      <span class="elapsed">{elapsed}</span>
+      <span class="diff">
+        <span class="added">+{tile.diff?.linesAdded ?? 0}</span>
+        <span class="removed">−{tile.diff?.linesRemoved ?? 0}</span>
+      </span>
+    </div>
   </div>
 
-  <!-- The live screen first. It is not gated on `tailing`, because it does
-       not come from the transcript — a session with tailing off still shows
-       what its terminal is doing. The transcript tail is the fallback for a
-       session whose PTY is gone, which is the only case with nothing to read. -->
-  {#if tile.terminalTabId}
-    <div class="preview">
-      {#each screen as row, i (i)}
-        <div class="line" class:user={kinds[i] === "user"} class:tool={kinds[i] === "tool"}>
-          {#if row.length === 0}
-            {" "}
-          {:else}
-            {#each row as seg, j (j)}
-              <span
-                class:bold={seg.bold}
-                class:dim={seg.dim}
-                class:italic={seg.italic}
-                class:underline={seg.underline}
-                class:strikethrough={seg.strikethrough}
-                style:color={seg.inverse ? segColor(seg.bg) : segColor(seg.fg)}
-                style:background={seg.inverse ? segColor(seg.fg) : segColor(seg.bg)}
-              >{seg.text}</span>
-            {/each}
-          {/if}
+  <!-- The transcript's last prompt and reply, in place of a terminal preview:
+       the card reads as a conversation, not a mirrored PTY. -->
+  <div class="sum">
+    {#if !hasMessages}
+      {#if !tailing}
+        <div class="empty">Transcript tailing is off.</div>
+      {:else}
+        <div class="empty">
+          <strong>No messages yet</strong>
+          {#if emptyMeta}<span>{emptyMeta}</span>{/if}
         </div>
-      {/each}
-    </div>
-  {:else if tailing}
-    <div class="preview">
-      {#each preview as line, i (i)}
-        <div class="line">{line.text || " "}</div>
-      {/each}
-    </div>
-  {:else}
-    <div class="preview paused">Transcript tailing is off.</div>
-  {/if}
+      {/if}
+    {:else}
+      {#if live.lastPrompt}
+        <div class="blk">
+          <span class="lbl">You</span>
+          <div class="you">{plainText(live.lastPrompt)}</div>
+        </div>
+      {/if}
+      {#if split.body}
+        <div class="blk">
+          <span class="lbl">Claude</span>
+          <div class="reply">{plainText(split.body)}</div>
+        </div>
+      {/if}
+    {/if}
+  </div>
 
-  {#if needsYou}
-    <div class="permission">
+  {#if permission && live.pendingTool}
+    <div class="ask permission">
       <span class="wants">
-        Wants to run <span class="tool">{live.pendingTool?.name ?? live.lastTool ?? "a tool"}</span>
+        Wants to run <span class="tool">{shortToolName(live.pendingTool.name)}</span>{#if live.pendingTool.inputSummary} · {live.pendingTool.inputSummary}{/if}
       </span>
       <button type="button" class="deny" onclick={deny}>Deny <kbd>n</kbd></button>
       <button type="button" class="allow" onclick={allow}>Allow <kbd>y</kbd></button>
+    </div>
+  {:else if split.question}
+    <div class="ask">{plainText(split.question)}</div>
+  {:else if needsYou}
+    <div class="ask">Waiting for your input</div>
+  {/if}
+
+  {#if act && !permission}
+    <div class="now" class:done={!act.running}>
+      {#if act.running}<i class="spin" aria-hidden="true"></i>{/if}
+      <span>{act.text}</span>
     </div>
   {/if}
 
   <!-- The Session view's footer, field for field. -->
   <div class="foot">
-    <span class="last-tool">{live.lastTool ?? "—"}</span>
-    <div class="spacer"></div>
-    <span>{live.toolCalls} tools</span>
-    <span>{formatTokens(live.contextTokens)} ctx</span>
-    <span>${live.costEstimate.toFixed(2)}</span>
+    <span class="last-tool">{shortToolName(live.pendingTool?.name ?? live.lastTool)}</span>
+    <span class="stats"
+      >{live.toolCalls} tools · {formatTokens(live.contextTokens)} ctx · ${live.costEstimate.toFixed(
+        2,
+      )}</span
+    >
   </div>
 </div>
 
@@ -250,16 +231,17 @@
     cursor: pointer;
   }
 
-  .tile.needs {
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--warn) 60%, transparent),
-      0 1px 2px rgba(0, 0, 0, 0.04);
-  }
-
   .tile:hover {
     box-shadow:
       0 0 0 1px var(--border2),
       0 8px 24px rgba(0, 0, 0, 0.08);
+  }
+
+  .tile.needs,
+  .tile.needs:hover {
+    box-shadow:
+      0 0 0 1px var(--warn),
+      0 1px 2px rgba(0, 0, 0, 0.04);
   }
 
   /* Its own ring rather than the hover lift: with the arrow keys moving focus
@@ -275,45 +257,48 @@
 
   /* ── Header ──────────────────────────────────────────────────────────── */
   .head {
+    display: grid;
+    gap: 6px;
+    padding: 12px 14px 10px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .row1,
+  .row2 {
     display: flex;
     align-items: center;
-    flex-shrink: 0;
-    gap: 10px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
+    gap: 8px;
+    min-width: 0;
+    white-space: nowrap;
   }
 
   .label {
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    font-size: var(--fs-sm);
+    font-size: var(--fs-md);
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .ws {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    max-width: 45%;
+  .branch {
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--muted);
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
-    white-space: nowrap;
-  }
-
-  .branch {
-    overflow: hidden;
-    color: var(--muted);
-    text-overflow: ellipsis;
   }
 
   .ws-chip {
     display: inline-block;
+    flex-shrink: 0;
+    max-width: 40%;
     font-weight: 700;
-    padding: 3px 9px;
+    padding: 1px 8px;
     border-radius: 20px;
     background: color-mix(in srgb, var(--tc) 34%, transparent);
     border: 1px solid color-mix(in srgb, var(--tc) 55%, transparent);
@@ -321,7 +306,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%;
   }
 
   .elapsed,
@@ -330,6 +314,7 @@
     color: var(--muted);
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
+    font-variant-numeric: tabular-nums;
   }
 
   .added {
@@ -393,97 +378,82 @@
     color: var(--danger);
   }
 
-  /* ── Terminal preview ────────────────────────────────────────────────── */
-  /* A bottom-aligned column that clips what does not fit, so the newest row
-     sits against the tile's footer and the pane fills with as much of the
-     screen as the tile is tall. `flex-end` is what makes the overflow fall
-     off the top, which is the end a tail should lose. */
-  .preview {
+  /* ── Card body ───────────────────────────────────────────────────────── */
+  .sum {
     display: flex;
     flex-direction: column;
-    justify-content: flex-end;
+    gap: 12px;
     flex: 1;
     min-height: 0;
-    padding: 10px 14px;
     overflow: hidden;
-    background: var(--term-bg);
-    color: var(--term-text);
-    font: var(--fs-xs)/1.6 var(--font-mono);
+    padding: 14px;
+    font-size: var(--fs-sm);
   }
 
-  .preview.paused {
+  .blk {
     display: grid;
-    place-items: center;
+    gap: 3px;
+  }
+
+  .lbl {
+    font-size: var(--fs-2xs);
+    font-weight: var(--fw-semi);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     color: var(--muted);
   }
 
-  /* `flex-shrink: 0` because the preview is a flex column: without it the
-     rows would compress instead of overflowing off the top. `pre-wrap`
-     rather than an ellipsis because a screen row is as wide as the Session
-     pane — clipping it would drop most of every line of prose — and `pre`
-     keeps the TUI's own indentation. */
-  .line {
-    flex-shrink: 0;
+  .you {
+    background: var(--surface2);
+    border-radius: var(--r-md);
+    padding: 8px 10px;
+    color: var(--text);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
     overflow-wrap: anywhere;
-    white-space: pre-wrap;
   }
 
-  .line .bold {
-    font-weight: 700;
+  .reply {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    color: var(--muted);
   }
 
-  .line .dim {
-    opacity: 0.65;
+  .empty {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 4px;
+    text-align: center;
+    color: var(--muted);
   }
 
-  .line .italic {
-    font-style: italic;
+  .empty strong {
+    color: var(--text);
+    font-weight: var(--fw-medium);
   }
 
-  .line .underline {
-    text-decoration: underline;
+  /* ── Callout ─────────────────────────────────────────────────────────── */
+  .ask {
+    border-left: 2px solid var(--warn);
+    background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+    border-radius: 0 var(--r-md) var(--r-md) 0;
+    padding: 6px 10px;
+    color: var(--text);
   }
 
-  .line .strikethrough {
-    text-decoration: line-through;
-  }
-
-  .line .underline.strikethrough {
-    text-decoration: underline line-through;
-  }
-
-  .line.user {
-    background: var(--term-tint-user);
-  }
-
-  .line.tool {
-    background: var(--term-tint-tool);
-  }
-
-  /* Bleed the tint through the pane's 14px gutter so a block reads as a band
-     rather than an inset stripe. The padding gives back exactly what the
-     margin takes, so no row's text width changes. */
-  .line.user,
-  .line.tool {
-    margin-inline: -14px;
-    padding-inline: 14px;
-  }
-
-  /* Tool blocks are told apart by form, not hue: a rule down the left edge
-     survives the desaturated palette where a blue fill did not. */
-  .line.tool {
-    border-left: 2px solid var(--border2);
-    padding-inline-start: 12px;
-  }
-
-  /* ── Permission bar ──────────────────────────────────────────────────── */
-  .permission {
+  .ask.permission {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 9px 14px;
-    border-top: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
-    background: color-mix(in srgb, var(--warn) 12%, var(--surface));
   }
 
   .wants {
@@ -537,20 +507,67 @@
     font-weight: 600;
   }
 
+  /* ── Now line ────────────────────────────────────────────────────────── */
+  .now {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--text);
+  }
+
+  .now span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .now.done {
+    color: var(--muted);
+    font-family: var(--font-ui);
+  }
+
+  .spin {
+    flex-shrink: 0;
+    width: 10px;
+    height: 10px;
+    border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: tileSpin 0.9s linear infinite;
+  }
+
+  @keyframes tileSpin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spin {
+      animation: none;
+    }
+  }
+
   /* ── Footer ──────────────────────────────────────────────────────────── */
   .foot {
     display: flex;
     align-items: center;
     flex-shrink: 0;
-    gap: 14px;
+    gap: 10px;
     padding: 8px 14px;
     border-top: 1px solid var(--border);
+    white-space: nowrap;
+    min-width: 0;
     color: var(--muted);
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
   }
 
   .last-tool {
+    flex: 1;
     min-width: 0;
     overflow: hidden;
     color: var(--text);
@@ -558,7 +575,8 @@
     white-space: nowrap;
   }
 
-  .spacer {
-    flex: 1;
+  .stats {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
   }
 </style>

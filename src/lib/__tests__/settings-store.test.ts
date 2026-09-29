@@ -10,6 +10,7 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
 }));
 
 vi.mock("../ipc", () => ({
+  startOmpTail: vi.fn(),
   startSessionTail: vi.fn(),
   stopSessionTail: vi.fn(),
 }));
@@ -43,15 +44,17 @@ import {
   soundOnNeedsYou,
   tailTranscripts,
   terminalFontSize,
+  transcriptKind,
   watchedRepos,
   type HarnessConfig,
 } from "../stores/settings";
 import { openFiles, sources } from "../stores/files";
 import { liveSessions } from "../stores/liveSessions";
+import { tabs } from "../stores/terminal";
 import { themeMode } from "../theme";
 import { workspaces } from "../stores/workspace";
 import { exists, readTextFile, writeTextFile, mkdir } from "@tauri-apps/plugin-fs";
-import { startSessionTail, stopSessionTail } from "../ipc";
+import { startOmpTail, startSessionTail, stopSessionTail } from "../ipc";
 
 /** The persisted object the last `writeTextFile` call wrote. */
 function lastWritten() {
@@ -81,6 +84,7 @@ describe("settings store", () => {
     lastHarnessId.set("claude-code");
     liveSessions.set(new Map());
     workspaces.set([]);
+    tabs.set([]);
     openFiles.set([]);
     sources.set([]);
     keymap.set({ ...DEFAULT_KEYMAP });
@@ -260,6 +264,26 @@ describe("settings store", () => {
       expect(get(lastHarnessId)).toBe("omp");
       expect(lastWritten().harnesses).toEqual([...DEFAULT_HARNESSES, customHarness]);
       expect(lastWritten().lastHarnessId).toBe("omp");
+    });
+  });
+
+  describe("transcriptKind", () => {
+    it("classifies each default harness", () => {
+      expect(transcriptKind(DEFAULT_HARNESSES[0])).toBe("claude"); // claude-code
+      expect(transcriptKind(DEFAULT_HARNESSES[1])).toBe("omp"); // omp
+      expect(transcriptKind(DEFAULT_HARNESSES[2])).toBeNull(); // terminal
+    });
+
+    it("classifies a custom omp-shaped harness by command, not id", () => {
+      const custom: HarnessConfig = {
+        id: "my-omp",
+        label: "My OMP",
+        command: "omp",
+        args: [],
+        resumable: false,
+        readyMode: "immediate",
+      };
+      expect(transcriptKind(custom)).toBe("omp");
     });
   });
 
@@ -464,6 +488,33 @@ describe("settings store", () => {
 
       expect(startSessionTail).toHaveBeenCalledTimes(1);
       expect(startSessionTail).toHaveBeenCalledWith("uuid-a");
+    });
+
+    it("re-arms an omp session with its tab's pty id", async () => {
+      allowWrites();
+      workspaces.set([
+        {
+          path: "/a",
+          name: "a",
+          sessions: [
+            {
+              id: "s1",
+              label: "S1",
+              status: "running",
+              terminalTabId: "tab-1",
+              createdAt: "",
+              claudeSessionId: "uuid-a",
+              harnessId: "omp",
+            },
+          ],
+        },
+      ]);
+      tabs.set([{ id: "tab-1", ptyId: 7 }] as never);
+
+      await setTailTranscripts(true);
+
+      expect(startOmpTail).toHaveBeenCalledWith("uuid-a", 7);
+      expect(startSessionTail).not.toHaveBeenCalled();
     });
   });
 });
