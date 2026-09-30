@@ -120,7 +120,21 @@ import { toasts } from "../stores/toast";
 import { addTab, tabs } from "../stores/terminal";
 import { updateSessionLabelByTabId } from "../stores/workspace";
 
-type SpawnOnData = (data: Uint8Array) => void;
+type SpawnHandlers = Parameters<typeof ptySpawn>[2];
+
+/** Spawn resolves to pty 7; the test drives the channel through `handlers`. */
+function spawnCapturingHandlers() {
+  const captured: { handlers: SpawnHandlers } = {
+    handlers: { onData: () => {}, onExit: () => {} },
+  };
+  vi.mocked(ptySpawn).mockImplementation(async (_c, _r, handlers) => {
+    captured.handlers = handlers;
+    return 7;
+  });
+  return captured;
+}
+
+const EXIT = { code: 0, signal: null };
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -144,19 +158,21 @@ function container(size = { w: 800, h: 600 }) {
 function makeSession(overrides: Partial<ConstructorParameters<typeof TerminalSession>[0]> = {}) {
   const onPtyReady = vi.fn();
   const onSpawnError = vi.fn();
+  const onExit = vi.fn();
   const session = new TerminalSession({
     tabId: "tab-1",
     container: container(),
     visible: true,
     onPtyReady,
     onSpawnError,
+    onExit,
     cwd: "/work",
     ...overrides,
   });
   // The private xterm is what the handlers under test are attached to.
   const terminal = (session as unknown as { terminal: InstanceType<typeof fakes.FakeTerminal> })
     .terminal;
-  return { session, terminal, onPtyReady, onSpawnError };
+  return { session, terminal, onPtyReady, onSpawnError, onExit };
 }
 
 /**
@@ -232,18 +248,49 @@ describe("TerminalSession PTY lifecycle", () => {
   });
 
   it("ignores output that arrives after the terminal was disposed", async () => {
-    let channel: SpawnOnData = () => {};
-    vi.mocked(ptySpawn).mockImplementation(async (_c, _r, onData) => {
-      channel = onData;
-      return 7;
-    });
-    const { session, terminal } = makeSession();
+    const channel = spawnCapturingHandlers();
+    const { session, terminal, onExit } = makeSession();
     await vi.advanceTimersByTimeAsync(0);
 
     session.destroy();
 
-    expect(() => channel(new Uint8Array([104, 105]))).not.toThrow();
+    expect(() => channel.handlers.onData(new Uint8Array([104, 105]))).not.toThrow();
+    expect(() => channel.handlers.onExit(EXIT)).not.toThrow();
     expect(terminal.written).toHaveLength(0);
+    expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it("says the process exited after its last output, once, and tells the owner", async () => {
+    const channel = spawnCapturingHandlers();
+    const { terminal, onExit } = makeSession();
+    await vi.advanceTimersByTimeAsync(0);
+
+    channel.handlers.onData(new Uint8Array([98, 121, 101]));
+    channel.handlers.onExit(EXIT);
+    channel.handlers.onExit(EXIT);
+
+    expect(terminal.written).toHaveLength(2);
+    expect(terminal.written[0]).toEqual(new Uint8Array([98, 121, 101]));
+    expect(String(terminal.written[1])).toContain("[process exited]");
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops keystrokes and resizes after the process exited instead of hitting the dead PTY", async () => {
+    const channel = spawnCapturingHandlers();
+    const { session, terminal } = makeSession();
+    await vi.advanceTimersByTimeAsync(0);
+    channel.handlers.onExit(EXIT);
+    vi.mocked(ptyResize).mockClear();
+    const write = rejectUnobserved(vi.mocked(ptyWrite), new Error("Session 7 not found"));
+
+    for (const handler of terminal.dataHandlers) handler("a");
+    (session as unknown as { refit: () => void }).refit();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(ptyWrite).not.toHaveBeenCalled();
+    expect(write.wasHandled()).toBe(false);
+    expect(ptyResize).not.toHaveBeenCalled();
+    expect(get(toasts)).toHaveLength(0);
   });
 
   it("reports a failed spawn so the tab can leave 'Starting…'", async () => {

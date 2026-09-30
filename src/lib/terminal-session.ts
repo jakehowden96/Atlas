@@ -30,6 +30,9 @@ export interface TerminalSessionOptions {
   cwd?: string;
   /** The PTY could not be spawned; the tab has nothing to wait on. */
   onSpawnError: (message: string) => void;
+  /** The shell exited. Called once; the terminal has already printed the
+   *  notice and stopped writing to the PTY. */
+  onExit: () => void;
 }
 
 /** How long a terminal waits for its container to be laid out before spawning
@@ -74,6 +77,10 @@ export class TerminalSession {
   private _visible: boolean;
   private initialCwd?: string;
   private onSpawnError: (message: string) => void;
+  private onExit: () => void;
+  /** The shell behind the PTY has exited, so the PTY is gone: writes and
+   *  resizes would only be refused. */
+  private exited = false;
   /** Set by `destroy()`. Every callback that can fire later — a pending spawn,
    *  PTY output, timers — checks it before touching the disposed xterm. */
   private destroyed = false;
@@ -149,7 +156,7 @@ export class TerminalSession {
   private refit() {
     if (!this.hasSize()) return;
     this.fitAddon.fit();
-    if (this.ptyId !== null) {
+    if (this.ptyId !== null && !this.exited) {
       ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows).catch((e) =>
         log.warn("terminal", `ptyResize failed for tab=${this.tabId}: ${e}`),
       );
@@ -162,6 +169,7 @@ export class TerminalSession {
     this._visible = opts.visible;
     this.initialCwd = opts.cwd;
     this.onSpawnError = opts.onSpawnError;
+    this.onExit = opts.onExit;
 
     this.terminal = new Terminal({
       cursorBlink: true,
@@ -504,10 +512,13 @@ export class TerminalSession {
       ptyId = await ptySpawn(
         this.terminal.cols,
         this.terminal.rows,
-        (data) => {
-          // Output can trail the kill; the xterm it would land in is gone.
-          if (this.destroyed) return;
-          this.terminal.write(data);
+        {
+          onData: (data) => {
+            // Output can trail the kill; the xterm it would land in is gone.
+            if (this.destroyed) return;
+            this.terminal.write(data);
+          },
+          onExit: () => this.handleExit(),
         },
         this.initialCwd ?? undefined,
         { ATLAS_SESSION_ID: this.tabId },
@@ -544,10 +555,25 @@ export class TerminalSession {
     });
   }
 
+  /**
+   * The shell exited (`exit`, Ctrl-D, a crash). Say so in the terminal, stop
+   * talking to the PTY, and let the owner mark the session ended.
+   *
+   * Writing to `terminal` is ordered after every byte of output: the backend
+   * sends this message last, on the same channel.
+   */
+  private handleExit() {
+    if (this.destroyed || this.exited) return;
+    this.exited = true;
+    this.terminal.write("\r\n\x1b[2m[process exited]\x1b[0m\r\n");
+    this.onExit();
+  }
+
   /** Send keystrokes to the shell. A dead PTY rejects every write, so the
-   *  first failure is toasted and the rest only logged. */
+   *  first failure is toasted and the rest only logged. Once the shell has
+   *  exited there is nothing to write to, and typing is silently dropped. */
   private writeToPty(data: string) {
-    if (this.ptyId === null) return;
+    if (this.ptyId === null || this.exited) return;
     ptyWrite(this.ptyId, data).catch((e) => {
       log.warn("terminal", `ptyWrite failed for tab=${this.tabId}: ${e}`);
       if (this.ptyWriteFailureShown) return;

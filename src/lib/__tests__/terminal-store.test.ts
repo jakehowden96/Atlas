@@ -21,6 +21,9 @@ import {
   setTabReady,
   setTabNeedsInput,
   awaitTabPty,
+  canAnswerPermission,
+  hasLivePty,
+  markTabExited,
 } from "../stores/terminal";
 import { activeWorkspacePath } from "../stores/workspace";
 import { panelData } from "../stores/panel";
@@ -187,5 +190,27 @@ describe("terminal store", () => {
       setTabNeedsInput("t1", true);
       expect(spy.mock.calls.length).toBe(callCount);
     });
+  });
+});
+
+describe("a tab whose shell exited", () => {
+  beforeEach(() => {
+    tabs.set([]);
+    vi.clearAllMocks();
+  });
+
+  it("stays in the list but can no longer be written to or answered", () => {
+    addTab(makeTerminalTab({ id: "t1", ptyId: 7, ready: false }));
+    setTabNeedsInput("t1", true, "permission_prompt");
+    const live = get(tabs)[0];
+    expect(hasLivePty(live)).toBe(true);
+    expect(canAnswerPermission(live, new Set(["t1"]))).toBe(true);
+
+    markTabExited("t1");
+
+    const ended = get(tabs)[0];
+    expect(ended).toMatchObject({ id: "t1", exited: true, ready: true, needsInput: false });
+    expect(hasLivePty(ended)).toBe(false);
+    expect(canAnswerPermission(ended, new Set(["t1"]))).toBe(false);
   });
 });

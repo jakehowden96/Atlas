@@ -28,12 +28,26 @@ describe("ptySpawn output", () => {
 
   it("hands raw channel bytes to the terminal unchanged and in order", async () => {
     const received: number[][] = [];
-    await ptySpawn(80, 24, (data) => received.push([...data]));
+    await ptySpawn(80, 24, { onData: (data) => received.push([...data]), onExit: () => {} });
 
     const channel = tauri.FakeChannel.last;
     channel?.onmessage(bytes(0x1b, 0x5b, 0x00, 0xff));
     channel?.onmessage(bytes(0x0a));
 
     expect(received).toEqual([[0x1b, 0x5b, 0x00, 0xff], [0x0a]]);
+  });
+
+  it("reports the exit after the output that preceded it", async () => {
+    const events: string[] = [];
+    await ptySpawn(80, 24, {
+      onData: (data) => events.push(`data:${data.length}`),
+      onExit: (exit) => events.push(`exit:${exit.code}`),
+    });
+
+    const channel = tauri.FakeChannel.last;
+    channel?.onmessage(bytes(1, 2, 3));
+    channel?.onmessage({ exit: { code: 3, signal: null } });
+
+    expect(events).toEqual(["data:3", "exit:3"]);
   });
 });

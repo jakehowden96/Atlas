@@ -1,6 +1,13 @@
 /** The `notification_type`s that flag a tab as waiting on the user. */
 export type NeedsInputKind = "permission_prompt" | "elicitation_dialog";
 
+/** How a PTY's shell ended; the last message on its output channel. */
+export interface PtyExit {
+  /** Null when the status could not be collected (the shell was killed). */
+  code: number | null;
+  signal: string | null;
+}
+
 export interface TerminalTab {
   type: "terminal";
   id: string;
@@ -10,6 +17,9 @@ export interface TerminalTab {
   /** Which Notification raised `needsInput`. Only a `permission_prompt` may be
    *  answered from a tile; an elicitation dialog is a different dialog. */
   needsInputKind?: NeedsInputKind;
+  /** The shell behind this tab has exited. Its PTY is gone: nothing may be
+   *  written to it, and the tab only shows what was left on screen. */
+  exited?: boolean;
   /** Why the PTY could not be spawned; the tab shows it instead of waiting
    *  on a shell that is never coming. */
   spawnError?: string;

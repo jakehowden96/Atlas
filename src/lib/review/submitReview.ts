@@ -1,7 +1,7 @@
 import { get } from "svelte/store";
 import { ptyWrite } from "../ipc";
 import { clearForSession, reviewComments } from "../stores/reviewComments";
-import { tabs } from "../stores/terminal";
+import { hasLivePty, tabs } from "../stores/terminal";
 import { showToast } from "../stores/toast";
 import { formatReviewPrompt } from "./formatPrompt";
 
@@ -23,7 +23,7 @@ export async function submitReview(sessionId: string): Promise<void> {
   if (comments.length === 0) return;
 
   const tab = get(tabs).find((t) => t.id === sessionId);
-  if (!tab || tab.ptyId < 0) {
+  if (!hasLivePty(tab)) {
     showToast("Nothing to send", {
       body: "No active Claude terminal to send the review to.",
     });

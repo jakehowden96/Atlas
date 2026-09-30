@@ -77,6 +77,31 @@ const INHERITED_CLAUDE_MARKERS: &[&str] = &[
     "CLAUDE_PID",
 ];
 
+/// How a shell ended, as the last message on its output channel.
+#[derive(serde::Serialize)]
+struct PtyExit {
+    /// `None` when the status could not be collected (the shell was killed by
+    /// the app, or had not finished winding down).
+    code: Option<u32>,
+    signal: Option<String>,
+}
+
+/// The final message of a PTY's output channel: `{"exit":{"code":…,"signal":…}}`
+/// as JSON, where every earlier message is a raw byte body. It follows the last
+/// byte of output and is sent exactly once per session.
+fn exit_message(status: Option<&portable_pty::ExitStatus>) -> InvokeResponseBody {
+    #[derive(serde::Serialize)]
+    struct Message {
+        exit: PtyExit,
+    }
+    let exit = PtyExit {
+        code: status.map(|s| s.exit_code()),
+        signal: status.and_then(|s| s.signal()).map(str::to_owned),
+    };
+    // A struct of an integer and strings always serialises.
+    InvokeResponseBody::Json(serde_json::to_string(&Message { exit }).unwrap_or_default())
+}
+
 /// Bytes read from one PTY per `read` call.
 const READ_CHUNK: usize = 8192;
 
@@ -198,6 +223,9 @@ impl PtyManager {
         }
     }
 
+    /// Start the user's shell in a new PTY. `on_data` receives its output as
+    /// raw byte messages, then one JSON `{"exit": …}` message when it is gone
+    /// (see `exit_message`).
     pub fn spawn(
         &self,
         cols: u16,
@@ -206,22 +234,33 @@ impl PtyManager {
         env_vars: Option<HashMap<String, String>>,
         on_data: Channel<InvokeResponseBody>,
     ) -> Result<u32, String> {
-        let pty_system = native_pty_system();
-
+        let (shell, shell_args) = default_shell();
         let size = PtySize {
             rows,
             cols,
             pixel_width: 0,
             pixel_height: 0,
         };
+        self.spawn_program(&shell, &shell_args, size, cwd, env_vars, on_data)
+    }
 
-        let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
+    fn spawn_program(
+        &self,
+        program: &str,
+        args: &[String],
+        size: PtySize,
+        cwd: Option<String>,
+        env_vars: Option<HashMap<String, String>>,
+        on_data: Channel<InvokeResponseBody>,
+    ) -> Result<u32, String> {
+        let pair = native_pty_system()
+            .openpty(size)
+            .map_err(|e| e.to_string())?;
 
-        let (shell, shell_args) = default_shell();
         // `CommandBuilder::new` seeds the child's environment from this process,
         // so the shell inherits everything Atlas was launched with.
-        let mut cmd = CommandBuilder::new(&shell);
-        for arg in &shell_args {
+        let mut cmd = CommandBuilder::new(program);
+        for arg in args {
             cmd.arg(arg);
         }
 
@@ -283,13 +322,18 @@ impl PtyManager {
             });
             // Clean up the session when the reader exits, and reap a shell that
             // exited on its own so it does not stay a zombie until Atlas quits.
+            // The session is gone from the table before the exit message goes
+            // out, so a write the webview makes in reaction to it is refused.
             let removed = sessions
                 .write()
                 .ok()
                 .and_then(|mut sessions| sessions.remove(&session_id));
-            if let (true, Some(session)) = (reached_eof, removed) {
-                session.reap(Duration::from_secs(2));
-            }
+            let status = match (reached_eof, removed) {
+                (true, Some(session)) => session.reap(Duration::from_secs(2)),
+                _ => None,
+            };
+            // The webview may be gone too; nobody is left to tell then.
+            let _ = on_data.send(exit_message(status.as_ref()));
         });
 
         Ok(id)
@@ -548,6 +592,124 @@ mod tests {
 
         assert!(!reached_eof);
         assert_eq!(sent, 1, "kept sending after the sink refused a batch");
+    }
+
+    /// What a spawned session's output channel has received, oldest first.
+    #[cfg(unix)]
+    type Received = std::sync::Arc<std::sync::Mutex<Vec<tauri::ipc::InvokeResponseBody>>>;
+
+    /// Spawn `sh -c script` on a PTY whose channel records every message.
+    #[cfg(unix)]
+    fn spawn_script(manager: &PtyManager, script: &str) -> (u32, Received) {
+        use portable_pty::PtySize;
+        use std::sync::{Arc, Mutex};
+        use tauri::ipc::{Channel, InvokeResponseBody};
+
+        let received: Received = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&received);
+        let channel = Channel::<InvokeResponseBody>::new(move |body| {
+            sink.lock().unwrap().push(body);
+            Ok(())
+        });
+        let id = manager
+            .spawn_program(
+                "sh",
+                &["-c".to_string(), script.to_string()],
+                PtySize::default(),
+                None,
+                None,
+                channel,
+            )
+            .unwrap();
+        (id, received)
+    }
+
+    /// The JSON messages received so far; every other message is raw output.
+    #[cfg(unix)]
+    fn exit_messages(received: &Received) -> Vec<serde_json::Value> {
+        use tauri::ipc::InvokeResponseBody;
+        received
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|body| match body {
+                InvokeResponseBody::Json(json) => Some(serde_json::from_str(json).unwrap()),
+                InvokeResponseBody::Raw(_) => None,
+            })
+            .collect()
+    }
+
+    /// Wait for the exit message, then long enough for a duplicate to show up.
+    #[cfg(unix)]
+    fn wait_for_exit(received: &Received) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while exit_messages(received).is_empty() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "no exit message arrived"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_shell_that_exits_reports_its_status_once_after_its_output() {
+        use tauri::ipc::InvokeResponseBody;
+
+        let manager = PtyManager::new();
+        let (_, received) = spawn_script(&manager, "printf hello; exit 3");
+        wait_for_exit(&received);
+
+        let received = received.lock().unwrap();
+        let exits: Vec<_> = received
+            .iter()
+            .filter_map(|body| match body {
+                InvokeResponseBody::Json(json) => Some(json.as_str()),
+                InvokeResponseBody::Raw(_) => None,
+            })
+            .collect();
+        assert_eq!(exits, [r#"{"exit":{"code":3,"signal":null}}"#]);
+        assert!(
+            matches!(received.last(), Some(InvokeResponseBody::Json(_))),
+            "the exit message must follow the last byte of output"
+        );
+        let output: Vec<u8> = received
+            .iter()
+            .filter_map(|body| match body {
+                InvokeResponseBody::Raw(bytes) => Some(bytes.clone()),
+                InvokeResponseBody::Json(_) => None,
+            })
+            .flatten()
+            .collect();
+        assert!(String::from_utf8_lossy(&output).contains("hello"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn writing_to_a_shell_that_exited_is_refused_not_lost() {
+        let manager = PtyManager::new();
+        let (id, received) = spawn_script(&manager, "exit 0");
+        wait_for_exit(&received);
+
+        assert!(manager.write(id, b"ls\r".to_vec()).is_err());
+        assert!(manager.resize(id, 100, 30).is_err());
+        // Closing the tab afterwards is still fine.
+        manager.kill(id).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_killed_shell_also_ends_with_exactly_one_exit_message() {
+        let manager = PtyManager::new();
+        let (id, received) = spawn_script(&manager, "sleep 60");
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
+        manager.kill(id).unwrap();
+        wait_for_exit(&received);
+
+        assert_eq!(exit_messages(&received).len(), 1);
     }
 
     #[test]

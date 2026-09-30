@@ -82,6 +82,27 @@ export function setTabSpawnError(id: string, spawnError: string) {
   tabs.update((t) => t.map((tab) => (tab.id === id ? { ...tab, spawnError } : tab)));
 }
 
+/**
+ * The tab's shell exited on its own. The tab stays, showing what was left on
+ * screen, but it no longer has a PTY to write to, and nothing it was waiting
+ * on (the "Starting…" overlay, a permission prompt) is coming any more.
+ */
+export function markTabExited(id: string) {
+  setPermissionPromptVisible(id, false);
+  tabs.update((t) =>
+    t.map((tab) =>
+      tab.id === id
+        ? { ...tab, exited: true, ready: true, needsInput: false, needsInputKind: undefined }
+        : tab,
+    ),
+  );
+}
+
+/** Whether there is a running shell to write to: the PTY exists and has not exited. */
+export function hasLivePty(tab: TabItem | undefined): tab is TabItem {
+  return tab !== undefined && tab.ptyId >= 0 && !tab.exited;
+}
+
 export function setTabReady(id: string) {
   tabs.update((t) => t.map((tab) => (tab.id === id ? { ...tab, ready: true } : tab)));
 }
@@ -121,8 +142,7 @@ export function canAnswerPermission(
   promptTabs: ReadonlySet<string>,
 ): tab is TabItem {
   return (
-    tab !== undefined &&
-    tab.ptyId >= 0 &&
+    hasLivePty(tab) &&
     tab.needsInput === true &&
     tab.needsInputKind === "permission_prompt" &&
     promptTabs.has(tab.id)

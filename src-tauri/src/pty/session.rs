@@ -1,4 +1,4 @@
-use portable_pty::{Child, MasterPty};
+use portable_pty::{Child, ExitStatus, MasterPty};
 use std::io::Write;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Mutex;
@@ -64,16 +64,18 @@ impl PtySession {
 
     /// Collect the shell's exit status so it does not linger as a zombie
     /// (dropping a child never waits). Polls for at most `timeout`, because the
-    /// shell may still be winding down when the PTY reaches EOF.
-    pub fn reap(&self, timeout: Duration) {
+    /// shell may still be winding down when the PTY reaches EOF. `None` if it
+    /// had not exited by then.
+    pub fn reap(&self, timeout: Duration) -> Option<ExitStatus> {
         let deadline = Instant::now() + timeout;
         loop {
             let Ok(mut child) = self.child.lock() else {
-                return;
+                return None;
             };
             match child.try_wait() {
+                Ok(Some(status)) => return Some(status),
                 Ok(None) if Instant::now() < deadline => {}
-                _ => return,
+                _ => return None,
             }
             drop(child);
             std::thread::sleep(Duration::from_millis(20));
