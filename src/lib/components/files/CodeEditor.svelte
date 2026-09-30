@@ -18,7 +18,7 @@
   import { pathToFileUri } from "../../files";
   import { clientFor } from "../../lsp-client";
   import { Compartment, EditorState } from "@codemirror/state";
-  import { EditorView, keymap } from "@codemirror/view";
+  import { EditorView } from "@codemirror/view";
   import {
     hoverTooltips,
     languageServerSupport,
@@ -144,7 +144,6 @@
           languageServerSupport(client, uri, languageId),
           hoverTooltips(),
           autocompletion({ override: [serverCompletionSource] }),
-          keymap.of([]),
         ]),
       });
       log.info("lsp", `attached ${languageId} to ${forPath}`);
@@ -165,10 +164,6 @@
     view?.destroy();
     view = null;
   });
-
-  export function focus() {
-    view?.focus();
-  }
 
   /** Put the caret on a line, for the outline rail's jumps. */
   export function goToLine(line: number) {

@@ -262,12 +262,6 @@ export async function addWorkspace(path: string): Promise<boolean> {
   return true;
 }
 
-export async function removeWorkspace(path: string) {
-  log.info("workspace", `removeWorkspace: ${path}`);
-  workspaces.update((ws) => ws.filter((w) => w.path !== path));
-  await persist();
-}
-
 /**
  * Take a workspace out of the UI without deleting anything. Its sessions stay
  * in the store and keep running; only the listings stop showing it.
