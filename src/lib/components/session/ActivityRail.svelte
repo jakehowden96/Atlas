@@ -35,14 +35,18 @@
   // keyframes finish painting before the node leaves the DOM.
   let visible = $state(false);
   let closing = $state(false);
+  /** The pending unmount. A reopen inside the exit window must cancel it, or it
+   *  would fire later and hide a panel that is meant to be open. */
+  let exitTimer: ReturnType<typeof setTimeout> | undefined;
 
   $effect(() => {
     if (open) {
+      clearTimeout(exitTimer);
       visible = true;
       closing = false;
     } else if (visible && !closing) {
       closing = true;
-      closeWith(() => {
+      exitTimer = closeWith(() => {
         visible = false;
         closing = false;
       }, EXIT_MS);
