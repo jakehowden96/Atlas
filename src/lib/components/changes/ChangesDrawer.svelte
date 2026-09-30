@@ -1,5 +1,6 @@
 <script lang="ts">
   import { get } from "svelte/store";
+  import { toggled } from "../../sets";
   import { parseDiff, type DiffFile } from "../../diff-parser";
   import {
     cssEscape,
@@ -194,11 +195,7 @@
   });
 
   function toggleViewed(key: string) {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
-    const next = new Set(viewedFiles);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    viewedFiles = next;
+    viewedFiles = toggled(viewedFiles, key);
   }
 
   let viewedCount = $derived(flatFiles.filter((f) => viewedFiles.has(f.key)).length);
@@ -211,19 +208,11 @@
   let expandedFiles: Set<string> = $state(new Set());
 
   function toggleUserCollapsed(key: string) {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
-    const next = new Set(userCollapsed);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    userCollapsed = next;
+    userCollapsed = toggled(userCollapsed, key);
   }
 
   function toggleExpand(key: string) {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
-    const next = new Set(expandedFiles);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    expandedFiles = next;
+    expandedFiles = toggled(expandedFiles, key);
   }
 
   function scrollToFile(key: string) {
@@ -238,7 +227,6 @@
   let composerKey = $state<string | null>(null);
 
   let commentsByAnchorKey = $derived.by(() => {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const m = new Map<string, ReviewComment[]>();
     for (const c of $activeSessionComments) {
       const k = anchorDomKey(c.anchor);

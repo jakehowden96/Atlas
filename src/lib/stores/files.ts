@@ -26,6 +26,7 @@ import { setFileSources, setOpenFiles } from "./settings";
 import { showToast } from "./toast";
 import { showView } from "./view";
 import { errorMessage } from "../ipc-error";
+import { toggled } from "../sets";
 
 /** Workspace path whose documents the tree column is showing. */
 export const fileWs = writable<string>("");
@@ -414,12 +415,7 @@ export function keepMine(key: string): void {
 }
 
 export function toggleExpanded(key: string): void {
-  expanded.update((current) => {
-    const next = new Set(current);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    return next;
-  });
+  expanded.update((current) => toggled(current, key));
 }
 
 /**

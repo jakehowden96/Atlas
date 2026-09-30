@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { toggled } from "../../sets";
   import {
     buildTree,
     matchesFilter,
@@ -26,11 +27,7 @@
 
   let collapsedDirs: Set<string> = $state(new Set());
   function toggleDir(path: string) {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
-    const next = new Set(collapsedDirs);
-    if (next.has(path)) next.delete(path);
-    else next.add(path);
-    collapsedDirs = next;
+    collapsedDirs = toggled(collapsedDirs, path);
   }
 </script>
 
