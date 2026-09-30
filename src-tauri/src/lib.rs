@@ -500,6 +500,7 @@ pub fn run() -> std::process::ExitCode {
             commands::git::list_workspace_repos,
             commands::prs::list_repo_prs,
             commands::prs::gh_viewer,
+            commands::prs::gh_pr_checkout,
             commands::prs::open_url,
             commands::stats::get_claude_stats,
             commands::stats::list_resumable_sessions,

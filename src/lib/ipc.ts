@@ -99,6 +99,14 @@ export async function ghViewer(): Promise<GhViewerResult> {
   return invoke("gh_viewer");
 }
 
+/**
+ * Check a pull request out into the repo at `cwd` with `gh pr checkout`, which
+ * fetches the PR's own commits — the only way to reach a fork's branch.
+ */
+export async function ghPrCheckout(cwd: string, number: number, repo: string): Promise<void> {
+  return invoke("gh_pr_checkout", { cwd, number, repo });
+}
+
 export async function openUrl(url: string): Promise<void> {
   return invoke("open_url", { url });
 }

@@ -10,6 +10,8 @@ export interface Pr {
   createdAt: string;
   updatedAt: string;
   isDraft: boolean;
+  /** The head branch is in a fork, so its name says nothing about local branches. */
+  isCrossRepository: boolean;
   headRefName: string;
   ciState: CiState;
   reviewState: ReviewState;

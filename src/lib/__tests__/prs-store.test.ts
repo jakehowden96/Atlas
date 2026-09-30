@@ -47,6 +47,7 @@ function pr(overrides: Partial<Pr> = {}): Pr {
     createdAt: "2026-09-01T00:00:00Z",
     updatedAt: "2026-09-01T00:00:00Z",
     isDraft: false,
+    isCrossRepository: false,
     headRefName: "feat/thing",
     ciState: "passed",
     reviewState: "none",

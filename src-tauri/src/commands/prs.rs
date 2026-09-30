@@ -20,6 +20,9 @@ pub struct Pr {
     pub created_at: String,
     pub updated_at: String,
     pub is_draft: bool,
+    /// The head branch lives in a fork. Its name is the fork's, so it says
+    /// nothing about which commit a local branch of that name points at.
+    pub is_cross_repository: bool,
     pub head_ref_name: String,
     /// "passed" | "failed" | "pending" | "none"
     pub ci_state: String,
@@ -43,6 +46,8 @@ struct RawPr {
     updated_at: String,
     #[serde(rename = "isDraft", default)]
     is_draft: bool,
+    #[serde(rename = "isCrossRepository", default)]
+    is_cross_repository: bool,
     #[serde(rename = "headRefName", default)]
     head_ref_name: String,
     #[serde(rename = "reviewDecision", default)]
@@ -136,6 +141,7 @@ fn flatten(raw: RawPr) -> Pr {
         created_at: raw.created_at,
         updated_at: raw.updated_at,
         is_draft: raw.is_draft,
+        is_cross_repository: raw.is_cross_repository,
         head_ref_name: raw.head_ref_name,
         ci_state: rollup_ci_state(&raw.status_check_rollup).to_string(),
         review_state: map_review(&raw.review_decision).to_string(),
@@ -285,17 +291,26 @@ fn classify_failure(status: &ExitStatus, stderr: &str) -> GhError {
     }
 }
 
-/// Run `program` (`gh`) with `args`; success returns its stdout.
-fn run_gh(program: &str, args: &[&str]) -> Result<String, GhError> {
+/// Run `program` (`gh`) with `args`, in `cwd` when given; success returns its
+/// stdout.
+fn run_gh(
+    program: &str,
+    cwd: Option<&str>,
+    timeout: Duration,
+    args: &[&str],
+) -> Result<String, GhError> {
     let mut cmd = Command::new(program);
     cmd.args(args);
+    if let Some(cwd) = cwd {
+        cmd.current_dir(cwd);
+    }
     no_window(&mut cmd);
-    let output = match run_with_timeout(&mut cmd, GH_TIMEOUT) {
+    let output = match run_with_timeout(&mut cmd, timeout) {
         Ok(Some(output)) => output,
         Ok(None) => {
             return Err(GhError {
                 kind: GhErrorKind::TimedOut,
-                message: format!("gh did not answer within {}s", GH_TIMEOUT.as_secs()),
+                message: format!("gh did not answer within {}s", timeout.as_secs()),
             })
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -317,6 +332,8 @@ fn fetch_one(program: &str, repo: &str) -> RepoPrs {
     let result = validate_repo_slug(repo).map_err(GhError::failed).and_then(|()| {
         let stdout = run_gh(
             program,
+            None,
+            GH_TIMEOUT,
             &[
                 "pr",
                 "list",
@@ -325,7 +342,7 @@ fn fetch_one(program: &str, repo: &str) -> RepoPrs {
                 "--state",
                 "open",
                 "--json",
-                "number,title,author,createdAt,updatedAt,url,isDraft,headRefName,reviewDecision,reviewRequests,statusCheckRollup,comments",
+                "number,title,author,createdAt,updatedAt,url,isDraft,isCrossRepository,headRefName,reviewDecision,reviewRequests,statusCheckRollup,comments",
                 "--limit",
                 "50",
             ],
@@ -412,7 +429,12 @@ impl GhViewerResult {
 static VIEWER: OnceCell<GhViewer> = OnceCell::const_new();
 
 fn fetch_viewer_login(program: &str) -> Result<String, GhError> {
-    let stdout = run_gh(program, &["api", "user", "--jq", ".login"])?;
+    let stdout = run_gh(
+        program,
+        None,
+        GH_TIMEOUT,
+        &["api", "user", "--jq", ".login"],
+    )?;
     let login = stdout.trim().to_string();
     if login.is_empty() {
         Err(GhError::failed("gh returned no login"))
@@ -444,6 +466,49 @@ pub async fn gh_viewer() -> Result<GhViewerResult, String> {
             error: Some(error),
         },
     })
+}
+
+/// A checkout fetches the PR's commits, which a large repo can take a while over.
+const GH_CHECKOUT_TIMEOUT: Duration = Duration::from_secs(120);
+
+fn checkout_pr(program: &str, cwd: &str, number: u64, repo: &str) -> Result<(), GhError> {
+    validate_repo_slug(repo).map_err(GhError::failed)?;
+    if number == 0 {
+        return Err(GhError::failed("Pull request numbers start at 1"));
+    }
+    // A branch of our own naming: the default is the PR's head branch name,
+    // which for a fork is whatever the fork called it (`main` is common) and
+    // must not land on a local branch that already means something else.
+    let branch = format!("pr-{number}");
+    run_gh(
+        program,
+        Some(cwd),
+        GH_CHECKOUT_TIMEOUT,
+        &[
+            "pr",
+            "checkout",
+            &number.to_string(),
+            "--repo",
+            repo,
+            "--branch",
+            &branch,
+        ],
+    )
+    .map(|_| ())
+}
+
+/// Check a pull request out into the repo at `cwd` with `gh pr checkout`.
+///
+/// Unlike checking out `headRefName`, this fetches the PR's own commits, so it
+/// works for fork PRs whose branch name only exists in the fork (or collides
+/// with a local branch that is something else).
+#[tauri::command(async)]
+pub async fn gh_pr_checkout(cwd: String, number: u64, repo: String) -> Result<(), String> {
+    super::validate::validate_cwd(&cwd)?;
+    tokio::task::spawn_blocking(move || checkout_pr("gh", &cwd, number, &repo))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+        .map_err(|e| e.message)
 }
 
 /// The platform's "open this in the default handler" launcher.
@@ -727,5 +792,82 @@ mod tests {
             .expect("finishes in time");
         assert_eq!(output.stdout.len(), 300_000);
         assert_eq!(String::from_utf8_lossy(&output.stderr).trim(), "err");
+    }
+
+    // --- gh pr checkout ---
+
+    /// A stand-in `gh` that records where it ran and what it was given.
+    #[cfg(unix)]
+    fn fake_gh(dir: &std::path::Path, exit_code: i32) -> String {
+        use std::os::unix::fs::PermissionsExt;
+        let script = dir.join("gh");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\npwd > \"{d}/cwd\"\nprintf '%s\\n' \"$@\" > \"{d}/args\"\nexit {exit_code}\n",
+                d = dir.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        script.to_string_lossy().into_owned()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_pr_is_checked_out_by_number_from_the_named_repo_into_its_own_branch() {
+        let bin = tempfile::tempdir().unwrap();
+        let work = tempfile::tempdir().unwrap();
+        let gh = fake_gh(bin.path(), 0);
+
+        checkout_pr(&gh, work.path().to_str().unwrap(), 42, "octo/fork-target").unwrap();
+
+        let args = std::fs::read_to_string(bin.path().join("args")).unwrap();
+        assert_eq!(
+            args.lines().collect::<Vec<_>>(),
+            [
+                "pr",
+                "checkout",
+                "42",
+                "--repo",
+                "octo/fork-target",
+                "--branch",
+                "pr-42"
+            ]
+        );
+        let ran_in = std::fs::read_to_string(bin.path().join("cwd")).unwrap();
+        assert_eq!(
+            std::fs::canonicalize(ran_in.trim()).unwrap(),
+            std::fs::canonicalize(work.path()).unwrap()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_checkout_carries_gh_s_verdict() {
+        let bin = tempfile::tempdir().unwrap();
+        let gh = fake_gh(bin.path(), 4);
+        let error = checkout_pr(&gh, bin.path().to_str().unwrap(), 1, "o/r").unwrap_err();
+        assert_eq!(error.kind, GhErrorKind::NotAuthenticated);
+    }
+
+    #[test]
+    fn a_checkout_rejects_a_bad_slug_or_number_before_running_gh() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().to_str().unwrap();
+        assert_eq!(
+            checkout_pr(NO_SUCH_GH, cwd, 1, "--upload-pack=x/y")
+                .unwrap_err()
+                .kind,
+            GhErrorKind::Failed
+        );
+        assert_eq!(
+            checkout_pr(NO_SUCH_GH, cwd, 0, "o/r").unwrap_err().kind,
+            GhErrorKind::Failed
+        );
+        assert_eq!(
+            checkout_pr(NO_SUCH_GH, cwd, 1, "o/r").unwrap_err().kind,
+            GhErrorKind::NotInstalled
+        );
     }
 }

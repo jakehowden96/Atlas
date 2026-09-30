@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { getGitStatus, gitCheckoutBranch, openUrl } from "../../ipc";
+  import { getGitStatus, openUrl } from "../../ipc";
   import { setupHint } from "../../gh-setup";
   import { log } from "../../logger";
   import { isMacPlatform } from "../../platform";
+  import { checkoutPullRequest } from "../../pr-checkout";
   import { spawnHarnessSession } from "../../session-actions";
   import {
     effectiveWatchedRepos,
@@ -160,15 +161,15 @@
       const status = await getGitStatus(path);
       if (status.has_unstaged || status.has_staged) {
         showToast(`${basename(path)} has uncommitted changes`, {
-          body: `Commit or stash them before switching to ${pr.headRefName}.`,
+          body: `Commit or stash them before switching to #${pr.number}.`,
           type: "warning",
         });
         return;
       }
-      await gitCheckoutBranch(path, pr.headRefName);
+      await checkoutPullRequest(path, repo, pr);
     } catch (e) {
-      log.error("prs", `checkout ${pr.headRefName} in ${path} failed`, e);
-      showToast(`Could not check out ${pr.headRefName}`, { body: String(e) });
+      log.error("prs", `checkout of #${pr.number} in ${path} failed`, e);
+      showToast(`Could not check out #${pr.number}`, { body: String(e) });
       return;
     }
     try {
