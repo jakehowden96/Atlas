@@ -530,6 +530,9 @@ fn line_key(tag: u8, key: &str) -> u64 {
     hash
 }
 
+/// `parse_session_skipping` with nothing skipped: one file on its own, as the
+/// tests and the live-vs-stats parity check read it.
+#[cfg(test)]
 pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
     parse_session_skipping(path, &|_| false)
 }
