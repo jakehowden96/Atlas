@@ -1,12 +1,5 @@
 <script lang="ts">
-  import type { UnlistenFn } from "@tauri-apps/api/event";
-  import {
-    isPermissionGranted,
-    requestPermission,
-    sendNotification,
-  } from "@tauri-apps/plugin-notification";
   import { onDestroy, onMount } from "svelte";
-  import { get } from "svelte/store";
   import Toast from "./lib/components/Toast.svelte";
   import FilesView from "./lib/components/files/FilesView.svelte";
   import SessionsView from "./lib/components/sessions/SessionsView.svelte";
@@ -18,42 +11,24 @@
   import StatsView from "./lib/components/stats/StatsView.svelte";
   import SessionView from "./lib/components/session/SessionView.svelte";
   import SegmentedControl, { type Segment } from "./lib/components/ui/SegmentedControl.svelte";
-  import {
-    onBackToSessions,
-    onClaudeNotification,
-    onClaudeSessionStart,
-    onPanelUpdate,
-    onSessionUpdate,
-  } from "./lib/ipc";
+  import { bootApp } from "./lib/app-boot";
   import { log } from "./lib/logger";
-  import { buildTiles, shouldClearNeedsInput } from "./lib/overview";
-  import { handleClaudeSessionStart } from "./lib/session-actions";
-  import { filesTouched } from "./lib/session-view";
+  import { shouldClearNeedsInput } from "./lib/overview";
+  import { isMacPlatform } from "./lib/platform";
   import { handleGlobalKeydown } from "./lib/shortcuts";
   import { todayCost } from "./lib/stats-derive";
   import { dirtyFiles } from "./lib/stores/files";
-  import { liveSessionList, upsertLiveSession } from "./lib/stores/liveSessions";
-  import { panelData, setSessionTouchedFiles } from "./lib/stores/panel";
-  import { prsAttentionCount, startPrPolling } from "./lib/stores/prs";
-  import { chords, enableNotifications, loadSettings, settingsOpen } from "./lib/stores/settings";
-  import { startStatsFeed, statsSummary } from "./lib/stores/stats";
-  import { activeTabId, setTabNeedsInput, tabs } from "./lib/stores/terminal";
+  import { liveTiles } from "./lib/stores/liveTiles";
+  import { prsAttentionCount } from "./lib/stores/prs";
+  import { chords, settingsOpen } from "./lib/stores/settings";
+  import { statsSummary } from "./lib/stores/stats";
+  import { activeTabId, setTabNeedsInput } from "./lib/stores/terminal";
   import { activeView, jumpOpen, openNewSession, showView, type View } from "./lib/stores/view";
-  import {
-    activeWorkspacePath,
-    loadWorkspaces,
-    sessionDiffStats,
-    setSessionDiffStats,
-    visibleWorkspaces,
-  } from "./lib/stores/workspace";
 
-  let unlisten: UnlistenFn | null = null;
-  let unlistenNotification: UnlistenFn | null = null;
-  let unlistenSessionStart: UnlistenFn | null = null;
-  let unlistenSession: UnlistenFn | null = null;
-  let unlistenBackToSessions: UnlistenFn | null = null;
-  let stopPrPolling: (() => void) | null = null;
-  let stopStatsFeed: (() => void) | null = null;
+  // `titleBarStyle: "Overlay"` only exists on macOS, where the window's title
+  // bar is transparent and this strip stands in for it. Elsewhere the native
+  // title bar is drawn, and a second one here would only cost 28px.
+  const overlayTitleBar = isMacPlatform();
 
   // ── Top-bar status, off the same tiles the Sessions grid builds ───────────
   // Not off `$liveSessionList`: Claude Code's tail never reports `needsYou` —
@@ -62,13 +37,9 @@
   // "running" while its tile correctly said needs-you. The Notification hook's
   // flag is its only needs-you signal and `buildTiles` is where it is folded
   // in, so counting anywhere else is counting the wrong thing.
-  let needsInputTabs = $derived(new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)));
-  let statusTiles = $derived(
-    buildTiles($liveSessionList, $visibleWorkspaces, $sessionDiffStats, needsInputTabs),
-  );
-  let needsYou = $derived(statusTiles.filter((t) => t.state === "needsYou").length);
-  let running = $derived(statusTiles.filter((t) => t.state === "running").length);
-  let idle = $derived(statusTiles.filter((t) => t.state === "idle").length);
+  let needsYou = $derived($liveTiles.filter((t) => t.state === "needsYou").length);
+  let running = $derived($liveTiles.filter((t) => t.state === "running").length);
+  let idle = $derived($liveTiles.filter((t) => t.state === "idle").length);
   /* Today's spend comes off the persisted stats, not off `liveSessionList`:
      that list holds only the sessions Atlas is tailing, so a day's work done
      in Claude Code outside Atlas — or before this launch — read as $0. The
@@ -82,9 +53,11 @@
   let spendToday = $derived(todayCost($statsSummary, new Date(costClock)));
 
   // The Pull requests badge counts PRs asking for action; at zero it is left
-  // off entirely rather than shown as a "0" alert pill.
+  // off entirely rather than shown as a "0" alert pill. The Sessions count is
+  // the tile count the chips and the status line use, which also covers a
+  // session whose transcript is not being tailed.
   let viewOptions = $derived<Segment[]>([
-    { id: "sessions", label: "Sessions", count: $liveSessionList.length },
+    { id: "sessions", label: "Sessions", count: $liveTiles.length },
     { id: "files", label: "Files", dot: $dirtyFiles.size > 0 },
     {
       id: "prs",
@@ -106,100 +79,31 @@
     }
   });
 
-  onMount(async () => {
-    await log.init();
-    log.info("app", "onMount started");
-    await loadWorkspaces();
-    const ws = get(visibleWorkspaces);
-    log.info("app", `workspaces loaded: ${ws.length}`);
-    if (ws.length > 0 && !get(activeWorkspacePath)) {
-      activeWorkspacePath.set(ws[0].path);
-      log.info("app", `active workspace set: ${ws[0].path}`);
-    }
-    await loadSettings();
-    // Poll from the shell, not from PrsView: the top-bar badge has to stay
-    // current while the Pull requests screen is unmounted.
-    stopPrPolling = startPrPolling();
-    // Owned here rather than by the Stats screen: the top bar's spend figure
-    // has to stay current while that screen is unmounted.
-    stopStatsFeed = await startStatsFeed();
-    unlisten = await onPanelUpdate((sessionId, data) => {
-      if (sessionId === get(activeTabId)) {
-        panelData.set(data);
-      }
-      // The Files rail asks which sessions have touched the document it is
-      // showing, so the per-file counts are kept for every session too.
-      setSessionTouchedFiles(sessionId, filesTouched(data));
-      // Update diff badge for any session, not just the active one
-      if (
-        data.diff &&
-        (data.diff.files_changed > 0 || data.diff.lines_added > 0 || data.diff.lines_removed > 0)
-      ) {
-        setSessionDiffStats(sessionId, {
-          filesChanged: data.diff.files_changed,
-          linesAdded: data.diff.lines_added,
-          linesRemoved: data.diff.lines_removed,
-        });
-      } else {
-        setSessionDiffStats(sessionId, null);
-      }
-    });
-    unlistenSession = await onSessionUpdate((_sessionUuid, session) => {
-      upsertLiveSession(session);
-    });
-    unlistenSessionStart = await onClaudeSessionStart((event) => {
-      void handleClaudeSessionStart(event.session_id, event.session_start.claude_session_id);
-    });
-    unlistenBackToSessions = await onBackToSessions(() => showView("sessions"));
-    unlistenNotification = await onClaudeNotification(async (event) => {
-      const { session_id, notification } = event;
-      // Only mark as needing input for notification types that require user action.
-      // Excludes idle_prompt — that fires when Claude finishes work and returns to
-      // its prompt, which doesn't require user input.
-      const inputTypes = ["permission_prompt", "elicitation_dialog"] as const;
-      const kind = inputTypes.find((t) => t === notification.notification_type);
-      if (!kind) return;
-
-      setTabNeedsInput(session_id, true, kind);
-
-      // Send OS notification if enabled and tab is not active
-      if (get(activeTabId) !== session_id && get(enableNotifications)) {
-        try {
-          let granted = await isPermissionGranted();
-          if (!granted) {
-            const permission = await requestPermission();
-            granted = permission === "granted";
-          }
-          if (granted) {
-            sendNotification({
-              title: notification.title || "Claude needs input",
-              body: notification.message || "A Claude session is waiting for your response",
-            });
-          }
-        } catch (e) {
-          log.warn("app", `notification failed: ${e}`);
-          console.warn("Failed to send notification:", e);
-        }
-      }
-    });
+  // `bootApp` is async and the component can be torn down before it settles.
+  let stopBoot: (() => void) | null = null;
+  let destroyed = false;
+  onMount(() => {
+    bootApp()
+      .then((stop) => {
+        if (destroyed) stop();
+        else stopBoot = stop;
+      })
+      .catch((e) => log.error("app", "boot failed", e));
   });
 
   onDestroy(() => {
-    unlisten?.();
-    unlistenNotification?.();
-    unlistenSessionStart?.();
-    unlistenSession?.();
-    unlistenBackToSessions?.();
-    stopPrPolling?.();
-    stopStatsFeed?.();
+    destroyed = true;
+    stopBoot?.();
   });
 </script>
 
 <svelte:window onkeydown={handleGlobalKeydown} />
 
-<div class="titlebar" data-tauri-drag-region></div>
+{#if overlayTitleBar}
+  <div class="titlebar" data-tauri-drag-region></div>
+{/if}
 
-<div class="app">
+<div class="app" class:overlay={overlayTitleBar}>
   <header class="topbar">
     <span class="wordmark">Atlas</span>
     <!-- Session is a detail view Sessions opens in place, not a tab of its own,
@@ -302,10 +206,14 @@
   .app {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 28px);
+    height: 100vh;
     width: 100vw;
-    margin-top: 28px;
     background: var(--bg);
+  }
+
+  .app.overlay {
+    height: calc(100vh - 28px);
+    margin-top: 28px;
   }
 
   /* ── Top bar ───────────────────────────────────────────────────────────── */

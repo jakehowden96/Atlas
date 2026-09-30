@@ -18,6 +18,7 @@ import {
   planSegments,
   type SessionTile,
   screenPreview,
+  shouldNotify,
   shortToolName,
   splitReply,
   tileComparator,
@@ -797,5 +798,24 @@ describe("detectPermissionPrompt", () => {
 
   it("needs the No option below Yes, not just the question and Yes", () => {
     expect(detectPermissionPrompt(bash.slice(0, 9))).toBe(false);
+  });
+});
+
+describe("shouldNotify", () => {
+  it("is quiet only when that very prompt is on screen in the focused window", () => {
+    expect(shouldNotify("t1", "t1", "session", true)).toBe(false);
+  });
+
+  it("notifies for a session that is not the active tab", () => {
+    expect(shouldNotify("t2", "t1", "session", true)).toBe(true);
+  });
+
+  it("notifies when the active tab's terminal is not the screen being shown", () => {
+    expect(shouldNotify("t1", "t1", "sessions", true)).toBe(true);
+    expect(shouldNotify("t1", "t1", "prs", true)).toBe(true);
+  });
+
+  it("notifies when another application has focus, even for the active tab", () => {
+    expect(shouldNotify("t1", "t1", "session", false)).toBe(true);
   });
 });

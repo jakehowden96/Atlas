@@ -179,6 +179,25 @@ export function shouldClearNeedsInput(view: View, activeTabId: string): boolean 
   return view === "session" && activeTabId !== "";
 }
 
+/**
+ * Whether a needs-input event deserves an OS notification.
+ *
+ * Not when the user is already looking at that very prompt: its tab is the
+ * active one, the Session view is showing it, and the window has focus. Any
+ * other combination — a different tab, another screen, or another app in
+ * front — is exactly when the event would otherwise go unseen. Gating on the
+ * active tab alone stayed silent for a lone session even with Atlas in the
+ * background.
+ */
+export function shouldNotify(
+  sessionId: string,
+  activeTabId: string,
+  view: View,
+  windowFocused: boolean,
+): boolean {
+  return sessionId !== activeTabId || view !== "session" || !windowFocused;
+}
+
 /** Attention order. `Array.sort` is stable, so ties keep their arrival order. */
 export function compareByAttention(a: { state: SessionState }, b: { state: SessionState }): number {
   return ATTENTION_RANK[a.state] - ATTENTION_RANK[b.state];
