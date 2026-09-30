@@ -51,13 +51,18 @@ import {
 /** Guards against double-spawning while a session is still starting. */
 const spawningSessionIds = new Set<string>();
 
-/** Drop a session's transcript tail and its live state once its PTY is gone. */
-function endSessionTail(claudeSessionId: string | null | undefined) {
+/** Drop a session's transcript tail and its live state once its PTY is gone.
+ *  The live entry goes after the tail has stopped: an update already computed
+ *  when the stop was requested still lands first, and removing before it would
+ *  let it re-insert a session nothing will ever remove. */
+async function endSessionTail(claudeSessionId: string | null | undefined) {
   if (!claudeSessionId) return;
+  try {
+    await stopSessionTail(claudeSessionId);
+  } catch (e) {
+    log.warn("session", `stopSessionTail failed for ${claudeSessionId}: ${e}`);
+  }
   removeLiveSession(claudeSessionId);
-  stopSessionTail(claudeSessionId).catch((e) =>
-    log.warn("session", `stopSessionTail failed for ${claudeSessionId}: ${e}`),
-  );
 }
 
 /** Kill a terminal tab's PTY, if it has one, and drop the tab. */
@@ -94,6 +99,16 @@ function resolveArgs(args: string[], claudeSessionId: string): string[] {
   return args.map((a) => (a === "{sessionId}" || a === "{resumeId}" ? claudeSessionId : a));
 }
 
+const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Session ids are spliced into a command line typed into the user's shell
+ *  (`{sessionId}` / `{resumeId}`), and they arrive from places Atlas does not
+ *  control — transcript file names, the SessionStart hook. Only a UUID is
+ *  safe to type; anything else could carry shell syntax or a leading `--`. */
+export function isSessionUuid(id: string): boolean {
+  return SESSION_UUID.test(id);
+}
+
 /**
  * Spawn a terminal tab in the given workspace directory and launch a harness
  * in it — Claude Code, `omp`, or a bare Terminal with nothing typed.
@@ -108,11 +123,33 @@ export async function spawnHarnessSession(
   workspacePath: string,
   opts?: { existingSessionId?: string; resumeSessionId?: string; harnessId?: string },
 ) {
-  const tabId = crypto.randomUUID();
-  let session: { id: string };
-
   const harness = resolveHarness(opts?.harnessId ?? get(lastHarnessId));
   const resumeSessionId = opts?.resumeSessionId;
+  if (resumeSessionId !== undefined && !isSessionUuid(resumeSessionId)) {
+    throw new Error("The session id is not a valid UUID, so it cannot be resumed.");
+  }
+
+  // Resuming a conversation that already has a live tab would start a second
+  // claude on the same transcript and orphan the first PTY (no row would point
+  // at it any more). Show the open one instead.
+  if (opts?.existingSessionId) {
+    const owned = get(workspaces)
+      .flatMap((w) => w.sessions)
+      .find((s) => s.id === opts.existingSessionId);
+    const openTab = owned?.terminalTabId
+      ? get(tabs).find((t) => t.id === owned.terminalTabId)
+      : undefined;
+    if (owned && openTab && !openTab.spawnError) {
+      activeTabId.set(openTab.id);
+      focusedSessionId.set(owned.id);
+      return { id: owned.id };
+    }
+    // A tab left on its spawn-error card is dead; replace it.
+    if (openTab) await closeSessionTab(openTab.id);
+  }
+
+  const tabId = crypto.randomUUID();
+  let session: { id: string };
   const claudeSessionId = resumeSessionId ?? crypto.randomUUID();
 
   if (opts?.existingSessionId) {
@@ -225,6 +262,10 @@ export async function spawnHarnessSession(
  * one Claude Code walked away from.
  */
 export async function handleClaudeSessionStart(tabId: string, claudeSessionId: string) {
+  if (!isSessionUuid(claudeSessionId)) {
+    log.warn("session", `ignoring SessionStart with a malformed session id for tab ${tabId}`);
+    return;
+  }
   const session = get(workspaces)
     .flatMap((w) => w.sessions)
     .find((s) => s.terminalTabId === tabId);
@@ -234,7 +275,7 @@ export async function handleClaudeSessionStart(tabId: string, claudeSessionId: s
   const rebound = await rebindSessionClaudeId(tabId, claudeSessionId);
   if (!rebound) return;
 
-  endSessionTail(previous);
+  await endSessionTail(previous);
   if (get(tailTranscripts)) {
     startSessionTail(claudeSessionId).catch((e) =>
       log.warn("session", `startSessionTail failed for ${claudeSessionId}: ${e}`),
@@ -290,7 +331,7 @@ export async function closeSession(sessionId: string) {
   if (!session) return;
 
   if (session.terminalTabId) await closeSessionTab(session.terminalTabId);
-  endSessionTail(session.claudeSessionId);
+  await endSessionTail(session.claudeSessionId);
   await detachSession(sessionId);
 
   // Unconditional, matching `backToSessions`: gating this on `focusedSessionId`
