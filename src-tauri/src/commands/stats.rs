@@ -511,7 +511,7 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
             "user" => {
                 let is_meta = obj.get("isMeta").and_then(|v| v.as_bool()).unwrap_or(false);
                 if let Some(s) = user_text(&obj) {
-                    if !is_meta && is_human_authored(&obj, s) {
+                    if !is_meta && is_human_authored(&obj, &s) {
                         user_messages += 1;
                         let chars = s.chars().count() as u64;
                         user_chars += chars;
@@ -1322,16 +1322,22 @@ mod tests {
     }
 
     #[test]
-    fn counts_user_messages_only_string_content() {
+    fn counts_typed_prompts_including_ones_with_an_image() {
         let f = write_lines(&[
             r#"{"type":"user","message":{"role":"user","content":"hello"},"timestamp":"2026-01-01T00:00:00Z","cwd":"/tmp"}"#,
             r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"x","is_error":false}]},"timestamp":"2026-01-01T00:01:00Z","cwd":"/tmp"}"#,
             r#"{"type":"user","isMeta":true,"message":{"role":"user","content":"sys"},"timestamp":"2026-01-01T00:02:00Z","cwd":"/tmp"}"#,
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Image #1] see"},{"type":"image","source":{}}]},"timestamp":"2026-01-01T00:03:00Z","cwd":"/tmp"}"#,
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]},"timestamp":"2026-01-01T00:04:00Z","cwd":"/tmp"}"#,
         ]);
         let rec = parse_session(f.path()).unwrap();
         assert_eq!(
-            rec.user_messages, 1,
-            "only the plain-string non-meta line counts"
+            rec.user_messages, 2,
+            "the string prompt and the image prompt"
+        );
+        assert_eq!(
+            rec.user_chars,
+            "hello".len() as u64 + "[Image #1] see".len() as u64
         );
     }
 

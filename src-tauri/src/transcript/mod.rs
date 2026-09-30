@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::BufRead;
 
@@ -331,13 +332,47 @@ pub(crate) fn tool_results(obj: &Value) -> Vec<ToolResult<'_>> {
         .collect()
 }
 
-/// `message.content` of a `user` line when it is a plain string — a real typed
-/// message rather than an array of `tool_result` blocks.
-pub(crate) fn user_text(obj: &Value) -> Option<&str> {
-    obj.get("message")
-        .and_then(|m| m.get("content"))
-        .and_then(|v| v.as_str())
+/// What a human typed on a `user` line, or `None` for a line that is not a
+/// prompt.
+///
+/// Claude Code writes a plain prompt as a string, but a prompt with a pasted
+/// image or attachment as an array of `text` and `image`/`document` blocks. The
+/// array form is joined from its `text` blocks. An array holding a
+/// `tool_result` is a tool's answer, not a prompt, and `[Request interrupted by
+/// user…]` is Claude Code's marker for an interrupt, not something the human
+/// said.
+pub(crate) fn user_text(obj: &Value) -> Option<Cow<'_, str>> {
+    let text = match obj.get("message")?.get("content")? {
+        Value::String(s) => Cow::Borrowed(s.as_str()),
+        Value::Array(blocks) => {
+            let is_type = |b: &Value, ty: &str| b.get("type").and_then(|t| t.as_str()) == Some(ty);
+            if blocks.iter().any(|b| is_type(b, "tool_result")) {
+                return None;
+            }
+            let mut texts = blocks
+                .iter()
+                .filter(|b| is_type(b, "text"))
+                .filter_map(|b| b.get("text").and_then(|t| t.as_str()));
+            let first = texts.next()?;
+            match texts.next() {
+                None => Cow::Borrowed(first),
+                Some(second) => {
+                    let mut joined = format!("{first}\n{second}");
+                    for rest in texts {
+                        joined.push('\n');
+                        joined.push_str(rest);
+                    }
+                    Cow::Owned(joined)
+                }
+            }
+        }
+        _ => return None,
+    };
+    (!text.starts_with(INTERRUPT_MARKER)).then_some(text)
 }
+
+/// Start of the text Claude Code writes when the user interrupts a turn.
+const INTERRUPT_MARKER: &str = "[Request interrupted by user";
 
 #[cfg(test)]
 mod tests {

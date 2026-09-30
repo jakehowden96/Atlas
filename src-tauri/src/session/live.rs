@@ -464,6 +464,7 @@ impl SessionTail {
         // `isMeta` marks content injected by a hook or skill, not typed by the human.
         let is_meta = obj.get("isMeta").and_then(|v| v.as_bool()).unwrap_or(false);
         if let Some(text) = user_text(obj) {
+            let text: &str = &text;
             // How a background subagent reports that it stopped. Read before the
             // early return, because a notification arrives as plain user text
             // rather than as the `tool_result` of the call that spawned it.
@@ -487,6 +488,17 @@ impl SessionTail {
                 // A notification or local command is plumbing, not something
                 // said — the card's feed shows the prompt the user typed.
                 if let Some(prompt) = prompt_text(text) {
+                    // A typed prompt (image-bearing ones included) starts a turn
+                    // the model has not answered yet, so the previous turn's
+                    // `end_turn` no longer describes the session, and a tool call
+                    // still unanswered from before it never will be: Claude Code
+                    // does not always write a result for a call killed mid-run.
+                    // A slash command may be handled locally with no reply at all,
+                    // so it leaves the state alone.
+                    if tagged(text, "command-name").is_none() {
+                        self.last_stop_reason = None;
+                        self.outstanding.clear();
+                    }
                     self.push_line(LineRole::User, format!("> {}", prompt), timestamp);
                     self.session.last_prompt = Some(prompt);
                     self.session.last_reply = None;
@@ -528,6 +540,10 @@ impl SessionTail {
         let msg = obj.get("message").unwrap_or(&Value::Null);
         if let Some(stop) = msg.get("stop_reason").and_then(|v| v.as_str()) {
             self.last_stop_reason = Some(stop.to_string());
+            // The turn is over, so no call it made can still be running.
+            if stop == "end_turn" {
+                self.outstanding.clear();
+            }
         }
 
         if let Some(content) = msg.get("content").and_then(|v| v.as_array()) {
@@ -2001,5 +2017,64 @@ mod tests {
         assert!(!prompt.contains('\n'));
         assert_eq!(prompt.chars().count(), 401);
         assert!(prompt.ends_with('…'));
+    }
+
+    fn prompt_line(content: &str) -> String {
+        format!(
+            r#"{{"type":"user","message":{{"role":"user","content":{content}}},"timestamp":"2026-09-07T21:52:00.000Z"}}"#
+        )
+    }
+
+    /// A prompt with a pasted image is written as an array of blocks, not a
+    /// string. It is still the human's turn: it becomes the card's prompt and
+    /// clears the previous reply.
+    #[test]
+    fn a_prompt_with_an_image_starts_a_new_turn() {
+        let image_prompt = prompt_line(
+            r#"[{"type":"text","text":"[Image #1] look at this"},{"type":"image","source":{}}]"#,
+        );
+        let (_dir, mut tail) = tail_with(&[usage_line("req_a", 1000, 10), image_prompt]);
+        assert!(tail.poll());
+        let session = tail.session();
+        assert_eq!(
+            session.last_prompt.as_deref(),
+            Some("[Image #1] look at this")
+        );
+        assert_eq!(session.last_reply, None);
+        assert_eq!(session.state, SessionState::Running);
+    }
+
+    #[test]
+    fn an_interrupt_marker_is_not_a_prompt() {
+        let interrupt = prompt_line(r#"[{"type":"text","text":"[Request interrupted by user]"}]"#);
+        let (_dir, mut tail) = tail_with(&[interrupt]);
+        tail.poll();
+        assert_eq!(tail.session().last_prompt, None);
+        assert!(tail.session().lines.is_empty());
+    }
+
+    /// Between the prompt landing and the first reply line the model is
+    /// working, whatever the previous turn ended with.
+    #[test]
+    fn a_new_prompt_after_end_turn_is_running_not_idle() {
+        let (_dir, mut tail) =
+            tail_with(&[usage_line("req_a", 1000, 10), prompt_line(r#""next task""#)]);
+        tail.poll();
+        assert_eq!(tail.session().state, SessionState::Running);
+    }
+
+    /// Claude killed mid-tool leaves a `tool_use` with no `tool_result`. A
+    /// later prompt and a finished turn must not keep the session blocked on it.
+    #[test]
+    fn a_tool_call_that_never_got_a_result_does_not_block_a_later_turn() {
+        let orphan = r#"{"type":"assistant","requestId":"req_t","timestamp":"2026-09-07T21:50:00.000Z","message":{"role":"assistant","model":"claude-opus-5","stop_reason":"tool_use","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"sleep 99"}}],"usage":{"output_tokens":5}}}"#.to_string();
+        let (_dir, mut tail) = tail_with(&[
+            orphan,
+            prompt_line(r#""continue""#),
+            usage_line("req_b", 1000, 10),
+        ]);
+        tail.poll();
+        assert!(tail.session().pending_tool.is_none());
+        assert_eq!(tail.session().state, SessionState::Idle);
     }
 }
