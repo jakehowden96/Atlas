@@ -2,6 +2,7 @@
 mod atomic_write;
 mod claude_hook;
 mod commands;
+pub mod error;
 pub mod hook;
 mod lsp;
 mod panel;
