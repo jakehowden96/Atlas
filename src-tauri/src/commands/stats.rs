@@ -1,10 +1,10 @@
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Mutex};
+use std::sync::{mpsc, Mutex, PoisonError};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
 
@@ -35,10 +35,16 @@ fn is_human_authored(obj: &Value, content: &str) -> bool {
 
 // ── Directory helpers ─────────────────────────────────────────────────────────
 
+/// `~/.claude/projects`, resolved through symlinks when it exists. notify's
+/// macOS backend reports real paths, so with `~/.claude` symlinked (common with
+/// dotfile managers) the watchers would never match a transcript path built
+/// from the unresolved name.
 pub fn claude_projects_dir() -> Result<PathBuf, String> {
-    dirs::home_dir()
-        .ok_or_else(|| "Could not determine home directory".to_string())
-        .map(|h| h.join(".claude").join("projects"))
+    let dir = dirs::home_dir()
+        .ok_or_else(|| "Could not determine home directory".to_string())?
+        .join(".claude")
+        .join("projects");
+    Ok(crate::transcript::resolve_symlinks(dir))
 }
 
 fn stats_path() -> Result<PathBuf, String> {
@@ -425,6 +431,28 @@ fn file_mtime_size(path: &Path) -> (u64, u64) {
         .unwrap_or((0, 0))
 }
 
+/// The regular `*.jsonl` files in a session's `<dir>/<session id>/subagents/`
+/// directory, by name. A directory that only looks like a transcript is not one.
+fn subagent_files(transcript: &Path, session_id: &str) -> Vec<PathBuf> {
+    let Some(dir) = transcript
+        .parent()
+        .map(|p| p.join(session_id).join("subagents"))
+    else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut files: Vec<PathBuf> = entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("jsonl"))
+        .collect();
+    files.sort();
+    files
+}
+
 pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
     let (mtime, size) = file_mtime_size(path);
     let session_id = path
@@ -433,22 +461,9 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
         .unwrap_or("")
         .to_string();
 
-    // Count subagents in the sibling <session_id>/subagents/ directory
-    let subagents = path
-        .parent()
-        .map(|p| p.join(&session_id).join("subagents"))
-        .filter(|p| p.is_dir())
-        .map(|d| {
-            std::fs::read_dir(d)
-                .map(|entries| {
-                    entries
-                        .flatten()
-                        .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
-                        .count() as u32
-                })
-                .unwrap_or(0)
-        })
-        .unwrap_or(0);
+    // Subagent transcripts live in the sibling <session_id>/subagents/ directory
+    let subagent_paths = subagent_files(path, &session_id);
+    let subagents = subagent_paths.len() as u32;
 
     let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let reader = BufReader::new(file);
@@ -622,35 +637,24 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
     let mut by_model_subagents: HashMap<String, ModelSessionData> = HashMap::new();
     let mut subagent_invocations: HashMap<String, u32> = HashMap::new();
 
-    if let Some(subagents_dir) = path
-        .parent()
-        .map(|p| p.join(&session_id).join("subagents"))
-        .filter(|p| p.is_dir())
-    {
-        if let Ok(entries) = std::fs::read_dir(&subagents_dir) {
-            for entry in entries.flatten() {
-                let sub_path = entry.path();
-                if sub_path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                    let sub_usage = parse_model_usage(&sub_path);
-                    // Attribute this invocation to the family with the most output tokens.
-                    if let Some(dominant) = sub_usage
-                        .iter()
-                        .max_by_key(|(_, d)| d.output_tokens)
-                        .map(|(f, _)| f.clone())
-                    {
-                        *subagent_invocations.entry(dominant).or_insert(0) += 1;
-                    }
-                    // Add subagent cost/tokens to session-level totals so the headline numbers
-                    // reflect all work done, not just the primary context.
-                    for sub_data in sub_usage.values() {
-                        output_tokens += sub_data.output_tokens;
-                        cache_creation_tokens += sub_data.cache_creation_tokens;
-                        cost_estimate += sub_data.cost_estimate;
-                    }
-                    merge_model_data(&mut by_model_subagents, sub_usage);
-                }
-            }
+    for sub_path in &subagent_paths {
+        let sub_usage = parse_model_usage(sub_path);
+        // Attribute this invocation to the family with the most output tokens.
+        if let Some(dominant) = sub_usage
+            .iter()
+            .max_by_key(|(_, d)| d.output_tokens)
+            .map(|(f, _)| f.clone())
+        {
+            *subagent_invocations.entry(dominant).or_insert(0) += 1;
         }
+        // Add subagent cost/tokens to session-level totals so the headline numbers
+        // reflect all work done, not just the primary context.
+        for sub_data in sub_usage.values() {
+            output_tokens += sub_data.output_tokens;
+            cache_creation_tokens += sub_data.cache_creation_tokens;
+            cost_estimate += sub_data.cost_estimate;
+        }
+        merge_model_data(&mut by_model_subagents, sub_usage);
     }
 
     let duration_secs = {
@@ -1004,100 +1008,232 @@ fn aggregate(records: &[SessionRecord]) -> StatsSummary {
 
 // ── Recompute ─────────────────────────────────────────────────────────────────
 
+/// Serializes the sequence "read stats.json, scan the transcripts, write
+/// stats.json". It guards no data, so a poisoned lock (a panic while it was
+/// held) carries no meaning and is recovered from; treating it as an error
+/// would fail every later recompute for the life of the process.
 static RECOMPUTE_LOCK: Mutex<()> = Mutex::new(());
 
-/// The reusable half of an on-disk stats.json, keyed by transcript path.
+/// The reusable half of an on-disk stats.json, keyed by transcript path, and
+/// whether the file was usable at all.
+struct LoadedCache {
+    records: HashMap<String, SessionRecord>,
+    /// A file at the current version was read. False when the file is missing,
+    /// from another version or unparseable, in which case it must be rewritten.
+    current: bool,
+}
+
+/// Just enough of stats.json to name a file of another version.
+#[derive(Deserialize)]
+struct FileHeader {
+    version: u32,
+}
+
+/// `path` with `suffix` appended to its file name: `stats.json` + `.bak`.
+fn sibling(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(suffix);
+    path.with_file_name(name)
+}
+
+/// Keep a copy of a stats.json that is about to be replaced. Claude Code prunes
+/// old transcripts, so this file can be the only record of the sessions they
+/// held, and the caller is about to overwrite it with what a rescan finds.
+fn back_up(path: &Path, suffix: &str) {
+    let backup = sibling(path, suffix);
+    match std::fs::copy(path, &backup) {
+        Ok(_) => log::warn!(
+            "{} cannot be reused; a copy was kept as {}",
+            path.display(),
+            backup.display()
+        ),
+        Err(e) => log::warn!(
+            "{} cannot be reused and could not be copied to {}: {}",
+            path.display(),
+            backup.display(),
+            e
+        ),
+    }
+}
+
+/// Read stats.json for reuse.
 ///
 /// Only a file written by *this* `STATS_FILE_VERSION` is reused. An older file
 /// would deserialize with `Default`s for every field added since, so the numbers
 /// would be silently wrong rather than merely missing — an unrecognised version
-/// must force a full re-parse instead.
-fn cache_from_json(json: &str) -> HashMap<String, SessionRecord> {
-    serde_json::from_str::<StatsFile>(json)
-        .ok()
-        .filter(|f| f.version == STATS_FILE_VERSION)
-        .map(|f| {
-            f.sessions
-                .into_iter()
-                .map(|s| (s.path.clone(), s))
-                .collect()
-        })
-        .unwrap_or_default()
+/// must force a full re-parse instead. Such a file, and a corrupt one, is copied
+/// to `stats.json.v<N>.bak` / `stats.json.bak` first, because the re-parse cannot
+/// bring back sessions whose transcripts are gone.
+fn load_cache(stats_path: &Path) -> LoadedCache {
+    let unusable = || LoadedCache {
+        records: HashMap::new(),
+        current: false,
+    };
+    let json = match std::fs::read_to_string(stats_path) {
+        Ok(json) => json,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return unusable(),
+        Err(_) => {
+            back_up(stats_path, ".bak");
+            return unusable();
+        }
+    };
+    if let Ok(file) = serde_json::from_str::<StatsFile>(&json) {
+        if file.version == STATS_FILE_VERSION {
+            return LoadedCache {
+                records: file
+                    .sessions
+                    .into_iter()
+                    .map(|s| (s.path.clone(), s))
+                    .collect(),
+                current: true,
+            };
+        }
+    }
+    let suffix = match serde_json::from_str::<FileHeader>(&json) {
+        Ok(header) if header.version != STATS_FILE_VERSION => format!(".v{}.bak", header.version),
+        _ => ".bak".to_string(),
+    };
+    back_up(stats_path, &suffix);
+    unusable()
+}
+
+/// Create `path` readable by its owner alone: stats.json holds absolute
+/// transcript paths, project directories, branch names and session titles.
+fn create_private(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)
+}
+
+/// Replace `path` with `contents` so a reader (or a crash) sees the old file or
+/// the new one, never a truncated half: write a sibling, flush it to disk, then
+/// rename over the target.
+fn write_atomically(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let tmp = sibling(path, ".tmp");
+    let result = create_private(&tmp).and_then(|mut file| {
+        file.write_all(contents)?;
+        file.sync_all()
+    });
+    let result = result.and_then(|()| std::fs::rename(&tmp, path));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
 }
 
 /// Walk all session files, re-parse changed ones, aggregate, write stats.json.
 pub fn recompute() -> Result<StatsSummary, String> {
-    let _guard = RECOMPUTE_LOCK.lock().map_err(|e| e.to_string())?;
+    let _guard = RECOMPUTE_LOCK
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    recompute_in(
+        &claude_projects_dir()?,
+        omp_sessions_dir().as_deref(),
+        &stats_path()?,
+    )
+}
 
-    let projects_dir = claude_projects_dir()?;
+/// `recompute` over explicit locations, so the cache logic can be exercised
+/// against a temp directory.
+fn recompute_in(
+    projects_dir: &Path,
+    omp_dir: Option<&Path>,
+    stats_path: &Path,
+) -> Result<StatsSummary, String> {
     if !projects_dir.exists() {
         return Ok(StatsSummary::default());
     }
 
-    let stats_path = stats_path()?;
+    let LoadedCache {
+        records: mut cache,
+        current: cache_was_current,
+    } = load_cache(stats_path);
 
-    let cache = std::fs::read_to_string(&stats_path)
-        .map(|s| cache_from_json(&s))
-        .unwrap_or_default();
-
-    let mut session_files = collect_session_files(&projects_dir);
-    if let Some(omp_dir) = omp_sessions_dir() {
-        if omp_dir.exists() {
-            session_files.extend(collect_omp_session_files(&omp_dir));
-        }
+    let mut session_files = collect_session_files(projects_dir);
+    if let Some(omp_dir) = omp_dir.filter(|dir| dir.exists()) {
+        session_files.extend(collect_omp_session_files(omp_dir));
     }
-    let mut seen_paths: std::collections::HashSet<String> =
-        std::collections::HashSet::with_capacity(session_files.len());
     let mut records: Vec<SessionRecord> = Vec::with_capacity(session_files.len());
+    // Whether anything differs from what stats.json already holds.
+    let mut changed = false;
 
     for path in &session_files {
         let path_str = path.to_string_lossy().to_string();
         let (mtime, size) = file_mtime_size(path);
-        seen_paths.insert(path_str.clone());
 
-        if let Some(cached) = cache.get(&path_str) {
-            if cached.mtime == mtime && cached.size == size {
-                records.push(cached.clone());
+        // Moved out of the cache rather than cloned: whatever is left in it
+        // afterwards is a record whose file is gone.
+        let stale = match cache.remove(&path_str) {
+            Some(cached) if cached.mtime == mtime && cached.size == size => {
+                records.push(cached);
                 continue;
             }
-        }
+            stale => stale,
+        };
 
-        let parsed = if path.starts_with(&projects_dir) {
+        let parsed = if path.starts_with(projects_dir) {
             parse_session(path)
         } else {
             omp::parse_omp_session(path)
         };
         match parsed {
-            Ok(rec) => records.push(rec),
-            Err(e) => log::warn!("Failed to parse session {}: {}", path.display(), e),
+            Ok(rec) => {
+                changed = true;
+                records.push(rec);
+            }
+            Err(e) => {
+                log::warn!("Failed to parse session {}: {}", path.display(), e);
+                // A file that vanished or turned unreadable between the listing
+                // and the read still has its earlier numbers; dropping them
+                // would lose the session from the history for good.
+                records.extend(stale);
+            }
         }
     }
 
     // Keep cached records whose source .jsonl has since been deleted (e.g. by the
     // CLI's own transcript retention cleanup) — otherwise historical stats vanish
-    // from Atlas's cache the moment the underlying file is pruned.
-    for (path_str, cached) in &cache {
-        if !seen_paths.contains(path_str) {
-            records.push(cached.clone());
-        }
-    }
+    // from Atlas's cache the moment the underlying file is pruned. Not when the
+    // same session is present under another path (a moved or renamed project
+    // directory), which would count it twice.
+    let live: HashSet<(bool, &str)> = records
+        .iter()
+        .map(|r| (r.harness.is_some(), r.session_id.as_str()))
+        .collect();
+    let kept: Vec<SessionRecord> = cache
+        .into_values()
+        .filter(|cached| {
+            let duplicate = live.contains(&(cached.harness.is_some(), cached.session_id.as_str()));
+            changed |= duplicate;
+            !duplicate
+        })
+        .collect();
+    records.extend(kept);
+    records.sort_by(|a, b| a.path.cmp(&b.path));
 
     let summary = aggregate(&records);
 
-    // Write updated stats.json
-    let file = StatsFile {
-        version: STATS_FILE_VERSION,
-        generated_at: summary.generated_at.clone(),
-        summary: summary.clone(),
-        sessions: records,
-    };
-    match serde_json::to_string_pretty(&file) {
-        Ok(json) => {
-            if let Err(e) = std::fs::write(&stats_path, json) {
-                log::warn!("Failed to write stats.json: {}", e);
+    if changed || !cache_was_current {
+        let file = StatsFile {
+            version: STATS_FILE_VERSION,
+            generated_at: summary.generated_at.clone(),
+            summary: summary.clone(),
+            sessions: records,
+        };
+        match serde_json::to_vec(&file) {
+            Ok(json) => {
+                if let Err(e) = write_atomically(stats_path, &json) {
+                    log::warn!("Failed to write stats.json: {}", e);
+                }
             }
+            Err(e) => log::warn!("Failed to serialize stats: {}", e),
         }
-        Err(e) => log::warn!("Failed to serialize stats: {}", e),
     }
 
     Ok(summary)
@@ -1105,7 +1241,7 @@ pub fn recompute() -> Result<StatsSummary, String> {
 
 // ── Tauri command ─────────────────────────────────────────────────────────────
 
-#[tauri::command(async)]
+#[tauri::command]
 pub async fn get_claude_stats() -> Result<StatsSummary, String> {
     tokio::task::spawn_blocking(recompute)
         .await
@@ -1172,7 +1308,7 @@ fn resumable_for_cwd(records: &[SessionRecord], cwd: &str) -> Vec<ResumableSessi
 }
 
 /// Parsed sessions straight off stats.json. Empty when the file is missing or
-/// was written by an older `STATS_FILE_VERSION`.
+/// was written by another `STATS_FILE_VERSION`.
 fn cached_sessions() -> Vec<SessionRecord> {
     let Ok(path) = stats_path() else {
         return Vec::new();
@@ -1190,7 +1326,7 @@ fn cached_sessions() -> Vec<SessionRecord> {
 /// Sourced from the transcript cache the stats watcher already maintains.
 /// `claude --resume` itself is never shelled out to: it opens an interactive
 /// picker and prints nothing machine-readable.
-#[tauri::command(async)]
+#[tauri::command]
 pub async fn list_resumable_sessions(cwd: String) -> Result<Vec<ResumableSession>, String> {
     tokio::task::spawn_blocking(move || {
         let mut records = cached_sessions();
@@ -1209,15 +1345,58 @@ pub async fn list_resumable_sessions(cwd: String) -> Result<Vec<ResumableSession
 
 // ── Watcher ───────────────────────────────────────────────────────────────────
 
+/// A transcript write worth a recompute. That includes a subagent's own file,
+/// which is part of its session's totals; the watched roots already limit this
+/// to Claude Code and OMP transcripts.
 fn is_session_jsonl(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()) == Some("jsonl")
-        && !path.components().any(|c| c.as_os_str() == "subagents")
 }
 
 /// Holds the stats watcher alive for the life of the app. `Manager::manage` is
 /// keyed by type, so a bare `RecommendedWatcher` here would collide with the
 /// panel watcher's and be dropped on registration — taking `stats-update` with it.
-pub struct StatsWatcher(#[allow(dead_code)] RecommendedWatcher);
+pub struct StatsWatcher(
+    // Held only so the watcher is dropped with app state, never read through this handle.
+    #[allow(dead_code)] RecommendedWatcher,
+);
+
+/// Groups a burst of transcript writes into one recompute that runs after the
+/// burst, so the last writes of a turn (its final assistant line, the title,
+/// the closing tool result) are in the numbers instead of being dropped by a
+/// window that only ever looked at the first.
+///
+/// A recompute runs once `QUIET` has passed with no further write, or `MAX_WAIT`
+/// after the first unhandled one if writes never stop (a long tool loop), so the
+/// dashboard keeps moving during continuous activity.
+#[derive(Default)]
+struct Coalesce {
+    first: Option<Instant>,
+    last: Option<Instant>,
+}
+
+impl Coalesce {
+    const QUIET: Duration = Duration::from_millis(400);
+    const MAX_WAIT: Duration = Duration::from_millis(2000);
+
+    fn write(&mut self, now: Instant) {
+        self.first.get_or_insert(now);
+        self.last = Some(now);
+    }
+
+    /// When the pending writes are due to be handled; `None` with none pending.
+    fn due_at(&self) -> Option<Instant> {
+        Some((self.last? + Self::QUIET).min(self.first? + Self::MAX_WAIT))
+    }
+
+    /// True (and the pending writes are consumed) once they are due.
+    fn take_if_due(&mut self, now: Instant) -> bool {
+        if self.due_at().is_some_and(|at| at <= now) {
+            *self = Coalesce::default();
+            return true;
+        }
+        false
+    }
+}
 
 pub fn start_stats_watcher(app_handle: AppHandle) -> Result<StatsWatcher, String> {
     let projects_dir = claude_projects_dir()?;
@@ -1226,10 +1405,11 @@ pub fn start_stats_watcher(app_handle: AppHandle) -> Result<StatsWatcher, String
     let (tx, rx) = mpsc::channel();
 
     let mut watcher = RecommendedWatcher::new(
-        move |res: Result<Event, notify::Error>| {
-            if let Ok(event) = res {
+        move |res: Result<Event, notify::Error>| match res {
+            Ok(event) => {
                 let _ = tx.send(event);
             }
+            Err(e) => log::warn!("stats watcher error: {}", e),
         },
         notify::Config::default().with_poll_interval(Duration::from_millis(500)),
     )
@@ -1239,36 +1419,42 @@ pub fn start_stats_watcher(app_handle: AppHandle) -> Result<StatsWatcher, String
         .watch(&projects_dir, RecursiveMode::Recursive)
         .map_err(|e| e.to_string())?;
 
-    if let Some(omp_dir) = omp_sessions_dir() {
-        if omp_dir.exists() {
-            watcher
-                .watch(&omp_dir, RecursiveMode::Recursive)
-                .map_err(|e| e.to_string())?;
+    // OMP is optional: failing to watch its directory must not disable the
+    // Claude Code stats.
+    if let Some(omp_dir) = omp_sessions_dir().filter(|dir| dir.exists()) {
+        if let Err(e) = watcher.watch(&omp_dir, RecursiveMode::Recursive) {
+            log::warn!("Failed to watch {}: {}", omp_dir.display(), e);
         }
     }
 
     let handle = app_handle.clone();
     std::thread::spawn(move || {
-        let debounce = Duration::from_millis(1000);
-        let mut last_recompute = Instant::now() - debounce;
+        let mut pending = Coalesce::default();
 
-        for event in rx {
-            if !matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) {
-                continue;
-            }
-            let has_session_file = event.paths.iter().any(|p| is_session_jsonl(p));
-            if !has_session_file {
-                continue;
-            }
-            if last_recompute.elapsed() < debounce {
-                continue;
-            }
-            last_recompute = Instant::now();
-            match recompute() {
-                Ok(summary) => {
-                    let _ = handle.emit("stats-update", &summary);
+        loop {
+            let received = match pending.due_at() {
+                None => rx.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected),
+                Some(at) => rx.recv_timeout(at.saturating_duration_since(Instant::now())),
+            };
+            match received {
+                Ok(event) => {
+                    let is_write =
+                        matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_));
+                    if is_write && event.paths.iter().any(|p| is_session_jsonl(p)) {
+                        pending.write(Instant::now());
+                    }
                 }
-                Err(e) => log::warn!("Stats recompute failed: {}", e),
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+
+            if pending.take_if_due(Instant::now()) {
+                match recompute() {
+                    Ok(summary) => {
+                        let _ = handle.emit("stats-update", &summary);
+                    }
+                    Err(e) => log::warn!("Stats recompute failed: {}", e),
+                }
             }
         }
     });
@@ -1681,38 +1867,219 @@ mod tests {
         assert!(!json.contains("/fake/"), "no transcript path crosses IPC");
     }
 
+    /// A stats.json tree in a temp dir: `projects/`, `stats.json`.
+    struct Tree {
+        dir: tempfile::TempDir,
+    }
+
+    impl Tree {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::create_dir_all(dir.path().join("projects")).unwrap();
+            Tree { dir }
+        }
+
+        fn projects(&self) -> PathBuf {
+            self.dir.path().join("projects")
+        }
+
+        fn stats(&self) -> PathBuf {
+            self.dir.path().join("stats.json")
+        }
+
+        fn session(&self, project: &str, id: &str, lines: &[&str]) -> PathBuf {
+            let dir = self.projects().join(project);
+            std::fs::create_dir_all(&dir).unwrap();
+            let path = dir.join(format!("{id}.jsonl"));
+            std::fs::write(&path, lines.join("\n") + "\n").unwrap();
+            path
+        }
+
+        fn recompute(&self) -> StatsSummary {
+            recompute_in(&self.projects(), None, &self.stats()).unwrap()
+        }
+
+        fn saved(&self) -> StatsFile {
+            serde_json::from_str(&std::fs::read_to_string(self.stats()).unwrap()).unwrap()
+        }
+    }
+
+    const PROMPT: &str = r#"{"type":"user","message":{"role":"user","content":"hello"},"timestamp":"2026-01-01T00:00:00Z","cwd":"/tmp"}"#;
+
     #[test]
-    fn a_stale_cache_version_forces_a_full_reparse() {
-        let current = StatsFile {
-            version: STATS_FILE_VERSION,
+    fn a_truncated_stats_file_is_kept_as_a_backup_before_it_is_replaced() {
+        let tree = Tree::new();
+        tree.session("p", "a", &[PROMPT]);
+        tree.recompute();
+        let good = std::fs::read_to_string(tree.stats()).unwrap();
+
+        // An interrupted write of the old, non-atomic kind.
+        std::fs::write(tree.stats(), &good[..good.len() / 2]).unwrap();
+        tree.recompute();
+
+        assert_eq!(
+            std::fs::read_to_string(sibling(&tree.stats(), ".bak")).unwrap(),
+            &good[..good.len() / 2],
+            "the unreadable file survives"
+        );
+        assert_eq!(tree.saved().sessions.len(), 1, "a fresh file replaced it");
+    }
+
+    #[test]
+    fn a_file_from_another_version_is_kept_under_its_version() {
+        let tree = Tree::new();
+        tree.session("p", "a", &[PROMPT]);
+        let old = StatsFile {
+            version: STATS_FILE_VERSION - 1,
             generated_at: "2026-01-01T00:00:00Z".to_string(),
             summary: StatsSummary::default(),
-            sessions: vec![rec("cached", "2026-01-01T00:00:00Z")],
+            sessions: vec![rec("pruned", "2026-01-01T00:00:00Z")],
         };
-        let json = serde_json::to_string(&current).unwrap();
-        assert_eq!(
-            cache_from_json(&json).len(),
-            1,
-            "a file at the current version is reused"
-        );
+        let old_json = serde_json::to_string(&old).unwrap();
+        std::fs::write(tree.stats(), &old_json).unwrap();
 
-        // A v3 file - the shape shipped before this phase - must be discarded
-        // whole rather than deserializing its missing fields to defaults.
-        let stale = json.replacen(
-            &format!("\"version\":{STATS_FILE_VERSION}"),
-            "\"version\":3",
-            1,
-        );
-        assert!(
-            stale.contains("\"version\":3"),
-            "the fixture was actually downgraded"
-        );
-        assert!(
-            cache_from_json(&stale).is_empty(),
-            "a v3 stats.json is dropped, forcing every session to be re-parsed"
-        );
+        tree.recompute();
 
-        assert!(cache_from_json("not json at all").is_empty());
+        let backup = sibling(&tree.stats(), &format!(".v{}.bak", STATS_FILE_VERSION - 1));
+        assert_eq!(std::fs::read_to_string(backup).unwrap(), old_json);
+        assert_eq!(tree.saved().version, STATS_FILE_VERSION);
+    }
+
+    #[test]
+    fn a_current_file_is_reused_not_backed_up() {
+        let tree = Tree::new();
+        tree.session("p", "a", &[PROMPT]);
+        tree.recompute();
+        tree.recompute();
+        assert!(!sibling(&tree.stats(), ".bak").exists());
+    }
+
+    #[test]
+    fn a_pruned_transcript_keeps_its_record() {
+        let tree = Tree::new();
+        let path = tree.session("p", "a", &[PROMPT]);
+        tree.session("p", "b", &[PROMPT]);
+        tree.recompute();
+
+        std::fs::remove_file(path).unwrap();
+        let summary = tree.recompute();
+
+        assert_eq!(summary.total_sessions, 2);
+        assert_eq!(tree.saved().sessions.len(), 2);
+    }
+
+    /// A session moved to another project directory is the same session, not
+    /// a second one next to the record of its old path.
+    #[test]
+    fn a_moved_transcript_is_not_counted_twice() {
+        let tree = Tree::new();
+        let path = tree.session("old", "a", &[PROMPT]);
+        tree.recompute();
+
+        std::fs::remove_file(&path).unwrap();
+        tree.session("new", "a", &[PROMPT]);
+        let summary = tree.recompute();
+
+        assert_eq!(summary.total_sessions, 1);
+        assert_eq!(tree.saved().sessions.len(), 1);
+    }
+
+    /// A transcript that cannot be read on this pass must not erase the
+    /// numbers it had.
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_changed_transcript_keeps_its_earlier_record() {
+        use std::os::unix::fs::PermissionsExt;
+        let tree = Tree::new();
+        let path = tree.session("p", "a", &[PROMPT]);
+        tree.recompute();
+
+        std::fs::write(&path, format!("{PROMPT}\n{PROMPT}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::File::open(&path).is_ok() {
+            return; // running as root: permissions do not apply
+        }
+        let summary = tree.recompute();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        assert_eq!(summary.total_sessions, 1);
+        assert_eq!(summary.total_user_messages, 1, "the record from before");
+    }
+
+    #[test]
+    fn an_unchanged_tree_does_not_rewrite_stats_json() {
+        let tree = Tree::new();
+        tree.session("p", "a", &[PROMPT]);
+        tree.recompute();
+
+        let marker = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
+        std::fs::File::options()
+            .write(true)
+            .open(tree.stats())
+            .unwrap()
+            .set_modified(marker)
+            .unwrap();
+        tree.recompute();
+
+        let modified = std::fs::metadata(tree.stats()).unwrap().modified().unwrap();
+        assert_eq!(modified, marker);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stats_json_is_private_and_leaves_no_temp_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let tree = Tree::new();
+        tree.session("p", "a", &[PROMPT]);
+        tree.recompute();
+
+        let mode = std::fs::metadata(tree.stats())
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+        assert!(!sibling(&tree.stats(), ".tmp").exists());
+    }
+
+    /// A directory that merely looks like a subagent transcript is not one.
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_named_like_a_subagent_transcript_is_not_counted() {
+        let tree = Tree::new();
+        tree.session("p", "a", &[PROMPT]);
+        std::fs::create_dir_all(tree.projects().join("p/a/subagents/x.jsonl")).unwrap();
+        let summary = tree.recompute();
+        assert_eq!(summary.total_subagents, 0);
+    }
+
+    /// The final write of a burst is the one users look at. It must produce a
+    /// recompute after the burst, not be dropped because it landed soon after
+    /// an earlier one.
+    #[test]
+    fn the_last_write_of_a_burst_is_handled_after_the_burst() {
+        let t0 = Instant::now();
+        let mut pending = Coalesce::default();
+        assert_eq!(pending.due_at(), None);
+
+        pending.write(t0);
+        pending.write(t0 + Duration::from_millis(300));
+        let last = t0 + Duration::from_millis(300);
+        assert!(!pending.take_if_due(last), "still inside the quiet period");
+        assert_eq!(pending.due_at(), Some(last + Coalesce::QUIET));
+
+        assert!(pending.take_if_due(last + Coalesce::QUIET));
+        assert_eq!(pending.due_at(), None, "consumed");
+        assert!(!pending.take_if_due(last + Coalesce::QUIET));
+    }
+
+    #[test]
+    fn continuous_writes_still_recompute_within_the_max_wait() {
+        let t0 = Instant::now();
+        let mut pending = Coalesce::default();
+        for ms in (0..3000).step_by(100) {
+            pending.write(t0 + Duration::from_millis(ms));
+        }
+        assert_eq!(pending.due_at(), Some(t0 + Coalesce::MAX_WAIT));
     }
 
     #[test]

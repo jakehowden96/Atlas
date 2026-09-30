@@ -18,14 +18,12 @@ use crate::transcript::{context_pct, jsonl_lines, model_family, ModelSessionData
 
 // ── Paths ────────────────────────────────────────────────────────────────────
 
-/// `~/.omp/agent`, resolved through symlinks when it exists: notify's macOS
-/// backend reports real paths, so a symlinked `~/.omp` (common with dotfile
-/// managers) would otherwise never match a path built from the unresolved
-/// name. `PI_CODING_AGENT_DIR`/`XDG_STATE_HOME` overrides are not read — this
-/// is where a default install writes.
+/// `~/.omp/agent`, resolved through symlinks when it exists (see
+/// `resolve_symlinks`). `PI_CODING_AGENT_DIR`/`XDG_STATE_HOME` overrides are
+/// not read — this is where a default install writes.
 pub fn agent_dir() -> Option<PathBuf> {
     let dir = dirs::home_dir().map(|h| h.join(".omp").join("agent"))?;
-    Some(dir.canonicalize().unwrap_or(dir))
+    Some(crate::transcript::resolve_symlinks(dir))
 }
 
 /// The breadcrumb file OMP writes for one terminal, keyed by its tty:

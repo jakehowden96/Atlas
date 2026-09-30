@@ -26,6 +26,19 @@ pub(crate) fn jsonl_lines<R: BufRead>(reader: R) -> impl Iterator<Item = String>
         .flatten()
 }
 
+/// `dir` with symlinks resolved when it exists, `dir` itself otherwise.
+///
+/// notify's macOS backend reports real paths, so a watched root reached through
+/// a symlink (a dotfile-managed `~/.claude`) must be compared as its real path
+/// or none of its events match. Not done on Windows, where `canonicalize`
+/// returns `\\?\` verbatim paths that nothing else in the app expects.
+pub(crate) fn resolve_symlinks(dir: std::path::PathBuf) -> std::path::PathBuf {
+    if cfg!(windows) {
+        return dir;
+    }
+    dir.canonicalize().unwrap_or(dir)
+}
+
 // ── Pricing ───────────────────────────────────────────────────────────────────
 
 pub(crate) struct Pricing {

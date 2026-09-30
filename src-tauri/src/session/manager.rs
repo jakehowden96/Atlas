@@ -39,8 +39,8 @@ pub struct SessionUpdateEvent {
 
 /// One session's tail, from whichever harness is running it.
 enum Tail {
-    Claude(SessionTail),
-    Omp(OmpTail),
+    Claude(Box<SessionTail>),
+    Omp(Box<OmpTail>),
 }
 
 impl Tail {
@@ -88,10 +88,10 @@ impl Tracked {
     fn claude(session_uuid: &str, path: PathBuf) -> Arc<Self> {
         Arc::new(Tracked {
             harness: Harness::Claude,
-            tail: Mutex::new(Tail::Claude(SessionTail::new(
+            tail: Mutex::new(Tail::Claude(Box::new(SessionTail::new(
                 session_uuid.to_string(),
                 path.clone(),
-            ))),
+            )))),
             transcript: path,
         })
     }
@@ -229,7 +229,7 @@ impl LiveSessionManager {
         let tracked = Arc::new(Tracked {
             harness: Harness::Omp,
             transcript: target,
-            tail: Mutex::new(Tail::Omp(tail)),
+            tail: Mutex::new(Tail::Omp(Box::new(tail))),
         });
 
         let mut tails = self.tails.lock().ok()?;
