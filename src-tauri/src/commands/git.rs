@@ -1,6 +1,7 @@
 use super::proc::no_window;
 use super::prs::validate_repo_slug;
 use super::validate::{validate_branch_name, validate_cwd};
+use crate::error::AtlasError;
 use crate::panel::types::GitStatus;
 use std::io::Read;
 use std::process::{Command, Stdio};
@@ -10,17 +11,17 @@ use std::process::{Command, Stdio};
 /// `GIT_OPTIONAL_LOCKS=0` stops read-only commands from opportunistically
 /// refreshing the index: Atlas polls constantly and would otherwise collide
 /// with Claude's or the user's own `git add`/`commit` on `.git/index.lock`.
-/// What a failed `git` spawn says when there is no git to spawn. The UI shows
-/// this text as is, so it carries the fix.
-pub(crate) const GIT_NOT_FOUND: &str = "git was not found on PATH. Install it (macOS: xcode-select --install, Windows: winget install --id Git.Git)";
+/// What a `git` spawn says when there is no git to spawn. The UI shows this
+/// text as is, so it carries the fix.
+const GIT_NOT_FOUND: &str = "git was not found on PATH. Install it (macOS: xcode-select --install, Windows: winget install --id Git.Git)";
 
-/// A failed `git` spawn as the message callers see: a missing binary is
-/// `GIT_NOT_FOUND`, not the OS's 'No such file or directory (os error 2)'.
-fn spawn_error(e: &std::io::Error) -> String {
+/// A failed `git` spawn: a missing binary is `ToolMissing`, not the OS's 'No
+/// such file or directory (os error 2)'.
+fn spawn_error(e: &std::io::Error) -> AtlasError {
     if e.kind() == std::io::ErrorKind::NotFound {
-        GIT_NOT_FOUND.to_string()
+        AtlasError::tool_missing("git", GIT_NOT_FOUND)
     } else {
-        e.to_string()
+        AtlasError::tool_failed("git", e.to_string())
     }
 }
 
@@ -36,20 +37,23 @@ fn git_command(cwd: &str, args: &[&str]) -> Command {
 /// Run git and return stdout verbatim. Diff and `-z` output is whitespace
 /// significant (a trailing blank context line, NUL separators), so callers
 /// that parse it must not go through the trimming `git_cmd`.
-pub(crate) fn git_raw(cwd: &str, args: &[&str]) -> Result<String, String> {
+pub(crate) fn git_raw(cwd: &str, args: &[&str]) -> Result<String, AtlasError> {
     let output = git_command(cwd, args)
         .output()
         .map_err(|e| spawn_error(&e))?;
 
     if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+        return Err(AtlasError::tool_failed(
+            "git",
+            String::from_utf8_lossy(&output.stderr),
+        ));
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// Run git and return stdout trimmed, for commands that print a single token.
-pub(crate) fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
+pub(crate) fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, AtlasError> {
     git_raw(cwd, args).map(|s| s.trim().to_string())
 }
 
@@ -61,7 +65,7 @@ pub(crate) fn git_raw_capped(
     cwd: &str,
     args: &[&str],
     cap: usize,
-) -> Result<(String, bool), String> {
+) -> Result<(String, bool), AtlasError> {
     let mut child = git_command(cwd, args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -71,7 +75,7 @@ pub(crate) fn git_raw_capped(
     let Some(stdout) = child.stdout.take() else {
         let _ = child.kill();
         let _ = child.wait();
-        return Err("git stdout was not captured".to_string());
+        return Err(AtlasError::internal("git stdout was not captured"));
     };
 
     let mut buf = Vec::new();
@@ -82,11 +86,14 @@ pub(crate) fn git_raw_capped(
         // Closing the pipe would only stop git on its next write; kill it now.
         let _ = child.kill();
     }
-    let status = child.wait().map_err(|e| e.to_string())?;
-    read.map_err(|e| e.to_string())?;
+    let status = child.wait()?;
+    read?;
 
     if !truncated && !status.success() {
-        return Err(format!("git exited with {status}"));
+        return Err(AtlasError::tool_failed(
+            "git",
+            format!("git exited with {status}"),
+        ));
     }
     Ok((String::from_utf8_lossy(&buf).into_owned(), truncated))
 }
@@ -102,7 +109,7 @@ pub(crate) fn should_skip_dir(name: &str) -> bool {
 ///
 /// One `git status` instead of seven spawns, and a git failure (lock, corrupt
 /// repo) is an error rather than being read as "dirty".
-fn git_status(cwd: &str) -> Result<GitStatus, String> {
+fn git_status(cwd: &str) -> Result<GitStatus, AtlasError> {
     let porcelain = git_raw(cwd, &["status", "--porcelain=v1", "-z"])?;
     Ok(parse_porcelain(&porcelain))
 }
@@ -140,11 +147,9 @@ fn parse_porcelain(porcelain: &str) -> GitStatus {
 
 /// Whether the tree has staged or unstaged changes, for the PR checkout guard.
 #[tauri::command(async)]
-pub async fn get_git_status(cwd: String) -> Result<GitStatus, String> {
+pub async fn get_git_status(cwd: String) -> Result<GitStatus, AtlasError> {
     validate_cwd(&cwd)?;
-    tokio::task::spawn_blocking(move || git_status(&cwd))
-        .await
-        .map_err(|e| format!("Task join error: {}", e))?
+    tokio::task::spawn_blocking(move || git_status(&cwd)).await?
 }
 
 /// Parse a git remote URL into an `owner/repo` slug.
@@ -229,7 +234,9 @@ fn repo_at(path: &std::path::Path) -> WorkspaceRepo {
 /// One level deep, like the panel's scan: deeper nesting is a monorepo's
 /// business, not a checkout layout.
 #[tauri::command(async)]
-pub async fn list_workspace_repos(workspace_path: String) -> Result<Vec<WorkspaceRepo>, String> {
+pub async fn list_workspace_repos(
+    workspace_path: String,
+) -> Result<Vec<WorkspaceRepo>, AtlasError> {
     validate_cwd(&workspace_path)?;
     tokio::task::spawn_blocking(move || {
         if is_git_root(&workspace_path) {
@@ -256,8 +263,7 @@ pub async fn list_workspace_repos(workspace_path: String) -> Result<Vec<Workspac
         repos.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(repos)
     })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+    .await?
 }
 
 /// Check out an existing local branch.
@@ -267,20 +273,23 @@ pub async fn list_workspace_repos(workspace_path: String) -> Result<Vec<Workspac
 /// Requiring `refs/heads/<branch>` to exist and passing `--no-guess` and a
 /// trailing `--` pins the meaning to "that local branch", even when a worktree
 /// file shares its name.
-fn checkout_local_branch(cwd: &str, branch: &str) -> Result<(), String> {
+fn checkout_local_branch(cwd: &str, branch: &str) -> Result<(), AtlasError> {
     let full_ref = format!("refs/heads/{branch}");
-    git_cmd(cwd, &["rev-parse", "--verify", "--quiet", &full_ref])
-        .map_err(|_| format!("No local branch named '{branch}'"))?;
+    git_cmd(cwd, &["rev-parse", "--verify", "--quiet", &full_ref]).map_err(|e| match e {
+        // `--verify --quiet` exits non-zero without a word when the ref is absent.
+        AtlasError::ToolFailed { .. } => {
+            AtlasError::not_found(format!("No local branch named '{branch}'"))
+        }
+        other => other,
+    })?;
     git_cmd(cwd, &["checkout", "--no-guess", branch, "--"]).map(|_| ())
 }
 
 #[tauri::command(async)]
-pub async fn git_checkout_branch(cwd: String, branch: String) -> Result<(), String> {
+pub async fn git_checkout_branch(cwd: String, branch: String) -> Result<(), AtlasError> {
     validate_cwd(&cwd)?;
     validate_branch_name(&branch)?;
-    tokio::task::spawn_blocking(move || checkout_local_branch(&cwd, &branch))
-        .await
-        .map_err(|e| format!("Task join error: {}", e))?
+    tokio::task::spawn_blocking(move || checkout_local_branch(&cwd, &branch)).await?
 }
 
 /// Real-repo fixtures shared by the git, diff and panel tests.
@@ -421,11 +430,17 @@ mod tests {
     // --- git_cmd error handling ---
 
     #[test]
-    fn a_missing_git_binary_has_its_own_message() {
+    fn a_missing_git_binary_is_tool_missing_and_other_spawn_failures_are_not() {
         let missing = std::io::Error::from(std::io::ErrorKind::NotFound);
-        assert_eq!(spawn_error(&missing), GIT_NOT_FOUND);
+        assert!(matches!(
+            spawn_error(&missing),
+            AtlasError::ToolMissing { tool, message } if tool == "git" && message == GIT_NOT_FOUND
+        ));
         let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
-        assert_ne!(spawn_error(&denied), GIT_NOT_FOUND);
+        assert!(matches!(
+            spawn_error(&denied),
+            AtlasError::ToolFailed { .. }
+        ));
     }
 
     #[test]

@@ -8,6 +8,7 @@ use std::sync::{mpsc, Mutex, PoisonError};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
 
+use crate::error::AtlasError;
 use crate::session::omp;
 use crate::session::transcript::is_valid_session_uuid;
 use crate::transcript::{
@@ -41,19 +42,19 @@ fn is_human_authored(obj: &Value, content: &str) -> bool {
 /// macOS backend reports real paths, so with `~/.claude` symlinked (common with
 /// dotfile managers) the watchers would never match a transcript path built
 /// from the unresolved name.
-pub fn claude_projects_dir() -> Result<PathBuf, String> {
+pub fn claude_projects_dir() -> Result<PathBuf, AtlasError> {
     let dir = dirs::home_dir()
-        .ok_or_else(|| "Could not determine home directory".to_string())?
+        .ok_or_else(|| AtlasError::internal("Could not determine home directory"))?
         .join(".claude")
         .join("projects");
     Ok(crate::transcript::resolve_symlinks(dir))
 }
 
-fn stats_path() -> Result<PathBuf, String> {
+fn stats_path() -> Result<PathBuf, AtlasError> {
     let dir = dirs::home_dir()
-        .ok_or_else(|| "Could not determine home directory".to_string())?
+        .ok_or_else(|| AtlasError::internal("Could not determine home directory"))?
         .join(".atlas");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| AtlasError::io_at(&dir, &e))?;
     Ok(dir.join("stats.json"))
 }
 
@@ -533,7 +534,7 @@ fn line_key(tag: u8, key: &str) -> u64 {
 /// `parse_session_skipping` with nothing skipped: one file on its own, as the
 /// tests and the live-vs-stats parity check read it.
 #[cfg(test)]
-pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
+pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, AtlasError> {
     parse_session_skipping(path, &|_| false)
 }
 
@@ -542,7 +543,7 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
 fn parse_session_skipping(
     path: &Path,
     is_foreign: &dyn Fn(u64) -> bool,
-) -> Result<SessionRecord, String> {
+) -> Result<SessionRecord, AtlasError> {
     let (mtime, size) = file_mtime_size(path);
     let session_id = path
         .file_stem()
@@ -554,7 +555,7 @@ fn parse_session_skipping(
     let subagent_paths = subagent_files(path, &session_id);
     let subagents = subagent_paths.len() as u32;
 
-    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let file = std::fs::File::open(path).map_err(|e| AtlasError::io_at(path, &e))?;
     let reader = BufReader::new(file);
 
     let mut title: Option<String> = None;
@@ -1320,7 +1321,7 @@ fn write_atomically(path: &Path, contents: &[u8]) -> std::io::Result<()> {
 }
 
 /// Walk all session files, re-parse changed ones, aggregate, write stats.json.
-pub fn recompute() -> Result<StatsSummary, String> {
+pub fn recompute() -> Result<StatsSummary, AtlasError> {
     let _guard = RECOMPUTE_LOCK
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
@@ -1337,7 +1338,7 @@ fn recompute_in(
     projects_dir: &Path,
     omp_dir: Option<&Path>,
     stats_path: &Path,
-) -> Result<StatsSummary, String> {
+) -> Result<StatsSummary, AtlasError> {
     if !projects_dir.exists() {
         return Ok(StatsSummary::default());
     }
@@ -1456,10 +1457,8 @@ fn recompute_in(
 // ── Tauri command ─────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn get_claude_stats() -> Result<StatsSummary, String> {
-    tokio::task::spawn_blocking(recompute)
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn get_claude_stats() -> Result<StatsSummary, AtlasError> {
+    tokio::task::spawn_blocking(recompute).await?
 }
 
 // ── Resumable sessions ────────────────────────────────────────────────────────
@@ -1546,7 +1545,7 @@ fn cached_sessions() -> Vec<SessionRecord> {
 /// `claude --resume` itself is never shelled out to: it opens an interactive
 /// picker and prints nothing machine-readable.
 #[tauri::command]
-pub async fn list_resumable_sessions(cwd: String) -> Result<Vec<ResumableSession>, String> {
+pub async fn list_resumable_sessions(cwd: String) -> Result<Vec<ResumableSession>, AtlasError> {
     tokio::task::spawn_blocking(move || {
         let mut records = cached_sessions();
         // A first launch can reach the modal before the startup recompute has
@@ -1558,8 +1557,7 @@ pub async fn list_resumable_sessions(cwd: String) -> Result<Vec<ResumableSession
         }
         Ok(resumable_for_cwd(&records, &cwd))
     })
-    .await
-    .map_err(|e| e.to_string())?
+    .await?
 }
 
 // ── Watcher ───────────────────────────────────────────────────────────────────
@@ -1617,9 +1615,9 @@ impl Coalesce {
     }
 }
 
-pub fn start_stats_watcher(app_handle: AppHandle) -> Result<StatsWatcher, String> {
+pub fn start_stats_watcher(app_handle: AppHandle) -> Result<StatsWatcher, AtlasError> {
     let projects_dir = claude_projects_dir()?;
-    std::fs::create_dir_all(&projects_dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&projects_dir).map_err(|e| AtlasError::io_at(&projects_dir, &e))?;
 
     let (tx, rx) = mpsc::channel();
 
@@ -1631,12 +1629,9 @@ pub fn start_stats_watcher(app_handle: AppHandle) -> Result<StatsWatcher, String
             Err(e) => log::warn!("stats watcher error: {}", e),
         },
         notify::Config::default().with_poll_interval(Duration::from_millis(500)),
-    )
-    .map_err(|e| e.to_string())?;
+    )?;
 
-    watcher
-        .watch(&projects_dir, RecursiveMode::Recursive)
-        .map_err(|e| e.to_string())?;
+    watcher.watch(&projects_dir, RecursiveMode::Recursive)?;
 
     // OMP is optional: failing to watch its directory must not disable the
     // Claude Code stats.

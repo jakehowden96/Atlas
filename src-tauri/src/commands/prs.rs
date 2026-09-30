@@ -1,4 +1,5 @@
 use super::proc::no_window;
+use crate::error::AtlasError;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::process::{Command, ExitStatus, Output, Stdio};
@@ -181,6 +182,19 @@ impl GhError {
     }
 }
 
+/// A `gh` failure that a command (unlike the PR list) has to reject with.
+impl From<GhError> for AtlasError {
+    fn from(error: GhError) -> Self {
+        match error.kind {
+            GhErrorKind::NotInstalled => AtlasError::tool_missing("gh", error.message),
+            GhErrorKind::TimedOut => AtlasError::timeout("gh", error.message),
+            GhErrorKind::NotAuthenticated | GhErrorKind::Failed => {
+                AtlasError::tool_failed("gh", error.message)
+            }
+        }
+    }
+}
+
 /// Per-repo result. `error` describes a failed `gh` call so the UI can show
 /// "this one repo broke" without poisoning the whole snapshot.
 #[derive(Debug, Serialize, Clone)]
@@ -194,26 +208,34 @@ pub struct RepoPrs {
 /// constraints (letters, digits, dot, underscore, hyphen) — keeps stray shell
 /// metacharacters out of the `--repo` argument even though we never go through
 /// a shell.
-pub(crate) fn validate_repo_slug(slug: &str) -> Result<(), String> {
+pub(crate) fn validate_repo_slug(slug: &str) -> Result<(), AtlasError> {
     if slug.is_empty() {
-        return Err("Repo slug cannot be empty".to_string());
+        return Err(AtlasError::invalid_input("Repo slug cannot be empty"));
     }
     let parts: Vec<&str> = slug.split('/').collect();
     if parts.len() != 2 {
-        return Err(format!("Expected owner/repo, got '{}'", slug));
+        return Err(AtlasError::invalid_input(format!(
+            "Expected owner/repo, got '{slug}'"
+        )));
     }
     for part in &parts {
         if *part == "." || *part == ".." {
-            return Err(format!("Invalid path segment in '{}'", slug));
+            return Err(AtlasError::invalid_input(format!(
+                "Invalid path segment in '{slug}'"
+            )));
         }
         if part.is_empty() {
-            return Err(format!("Empty owner or repo in '{}'", slug));
+            return Err(AtlasError::invalid_input(format!(
+                "Empty owner or repo in '{slug}'"
+            )));
         }
         if !part
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
         {
-            return Err(format!("Invalid characters in '{}'", slug));
+            return Err(AtlasError::invalid_input(format!(
+                "Invalid characters in '{slug}'"
+            )));
         }
     }
     Ok(())
@@ -329,7 +351,9 @@ fn run_gh(
 }
 
 fn fetch_one(program: &str, repo: &str) -> RepoPrs {
-    let result = validate_repo_slug(repo).map_err(GhError::failed).and_then(|()| {
+    let result = validate_repo_slug(repo)
+        .map_err(|e| GhError::failed(e.message()))
+        .and_then(|()| {
         let stdout = run_gh(
             program,
             None,
@@ -368,7 +392,7 @@ fn fetch_one(program: &str, repo: &str) -> RepoPrs {
 /// failures land in `error` rather than propagating, so the UI can render the
 /// partial snapshot. Order of the returned vec matches the input order.
 #[tauri::command(async)]
-pub async fn list_repo_prs(repos: Vec<String>) -> Result<Vec<RepoPrs>, String> {
+pub async fn list_repo_prs(repos: Vec<String>) -> Result<Vec<RepoPrs>, AtlasError> {
     if repos.is_empty() {
         return Ok(vec![]);
     }
@@ -381,8 +405,8 @@ pub async fn list_repo_prs(repos: Vec<String>) -> Result<Vec<RepoPrs>, String> {
             let result = match permits.acquire_owned().await {
                 Ok(_permit) => tokio::task::spawn_blocking(move || fetch_one("gh", &repo))
                     .await
-                    .map_err(|e| format!("Task join error: {}", e)),
-                Err(e) => Err(format!("Task join error: {}", e)),
+                    .map_err(AtlasError::from),
+                Err(e) => Err(AtlasError::internal(format!("gh semaphore closed: {e}"))),
             };
             (index, result)
         });
@@ -390,7 +414,7 @@ pub async fn list_repo_prs(repos: Vec<String>) -> Result<Vec<RepoPrs>, String> {
 
     let mut results: Vec<Option<RepoPrs>> = Vec::new();
     while let Some(joined) = set.join_next().await {
-        let (index, result) = joined.map_err(|e| format!("Task join error: {}", e))?;
+        let (index, result) = joined?;
         let repo_prs = result?;
         if results.len() <= index {
             results.resize_with(index + 1, || None);
@@ -448,13 +472,11 @@ fn fetch_viewer_login(program: &str) -> Result<String, GhError> {
 /// `gh` missing or signed out is not an error: the result says which, so the
 /// screen can show the fix and degrade to All-only meanwhile.
 #[tauri::command(async)]
-pub async fn gh_viewer() -> Result<GhViewerResult, String> {
+pub async fn gh_viewer() -> Result<GhViewerResult, AtlasError> {
     if let Some(viewer) = VIEWER.get() {
         return Ok(GhViewerResult::signed_in(viewer));
     }
-    let login = tokio::task::spawn_blocking(|| fetch_viewer_login("gh"))
-        .await
-        .map_err(|e| format!("Task join error: {}", e))?;
+    let login = tokio::task::spawn_blocking(|| fetch_viewer_login("gh")).await?;
     Ok(match login {
         Ok(login) => {
             let viewer = GhViewer { login };
@@ -471,10 +493,10 @@ pub async fn gh_viewer() -> Result<GhViewerResult, String> {
 /// A checkout fetches the PR's commits, which a large repo can take a while over.
 const GH_CHECKOUT_TIMEOUT: Duration = Duration::from_secs(120);
 
-fn checkout_pr(program: &str, cwd: &str, number: u64, repo: &str) -> Result<(), GhError> {
-    validate_repo_slug(repo).map_err(GhError::failed)?;
+fn checkout_pr(program: &str, cwd: &str, number: u64, repo: &str) -> Result<(), AtlasError> {
+    validate_repo_slug(repo)?;
     if number == 0 {
-        return Err(GhError::failed("Pull request numbers start at 1"));
+        return Err(AtlasError::invalid_input("Pull request numbers start at 1"));
     }
     // A branch of our own naming: the default is the PR's head branch name,
     // which for a fork is whatever the fork called it (`main` is common) and
@@ -493,8 +515,8 @@ fn checkout_pr(program: &str, cwd: &str, number: u64, repo: &str) -> Result<(), 
             "--branch",
             &branch,
         ],
-    )
-    .map(|_| ())
+    )?;
+    Ok(())
 }
 
 /// Check a pull request out into the repo at `cwd` with `gh pr checkout`.
@@ -503,12 +525,9 @@ fn checkout_pr(program: &str, cwd: &str, number: u64, repo: &str) -> Result<(), 
 /// works for fork PRs whose branch name only exists in the fork (or collides
 /// with a local branch that is something else).
 #[tauri::command(async)]
-pub async fn gh_pr_checkout(cwd: String, number: u64, repo: String) -> Result<(), String> {
+pub async fn gh_pr_checkout(cwd: String, number: u64, repo: String) -> Result<(), AtlasError> {
     super::validate::validate_cwd(&cwd)?;
-    tokio::task::spawn_blocking(move || checkout_pr("gh", &cwd, number, &repo))
-        .await
-        .map_err(|e| format!("Task join error: {}", e))?
-        .map_err(|e| e.message)
+    tokio::task::spawn_blocking(move || checkout_pr("gh", &cwd, number, &repo)).await?
 }
 
 /// The platform's "open this in the default handler" launcher.
@@ -540,9 +559,9 @@ fn browser_launcher(url: &str) -> Command {
 
 /// The scheme check is the guard against launching arbitrary handlers: only
 /// `https://` URLs may be opened.
-fn check_open_url(url: &str) -> Result<(), String> {
+fn check_open_url(url: &str) -> Result<(), AtlasError> {
     if !url.starts_with("https://") {
-        return Err("Only https:// URLs are allowed".to_string());
+        return Err(AtlasError::invalid_input("Only https:// URLs are allowed"));
     }
     // `cmd /C start` re-parses its command line, so a shell metacharacter in
     // the URL would escape argument quoting on Windows. The other launchers
@@ -551,7 +570,9 @@ fn check_open_url(url: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
         if url.contains(['&', '|', '^', '<', '>', '"', '%']) {
-            return Err("URL contains characters that cannot be passed to the shell".to_string());
+            return Err(AtlasError::invalid_input(
+                "URL contains characters that cannot be passed to the shell",
+            ));
         }
     }
     Ok(())
@@ -559,22 +580,24 @@ fn check_open_url(url: &str) -> Result<(), String> {
 
 /// Open an external URL in the user's default browser.
 #[tauri::command(async)]
-pub async fn open_url(url: String) -> Result<(), String> {
+pub async fn open_url(url: String) -> Result<(), AtlasError> {
     check_open_url(&url)?;
     tokio::task::spawn_blocking(move || {
-        browser_launcher(&url)
+        let mut launcher = browser_launcher(&url);
+        let tool = launcher.get_program().to_string_lossy().into_owned();
+        let status = launcher
             .status()
-            .map_err(|e| format!("Failed to open URL: {}", e))
-            .and_then(|status| {
-                if status.success() {
-                    Ok(())
-                } else {
-                    Err(format!("URL launcher exited with status {}", status))
-                }
-            })
+            .map_err(|e| AtlasError::tool_failed(&tool, format!("Failed to open URL: {e}")))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(AtlasError::tool_failed(
+                &tool,
+                format!("URL launcher exited with status {status}"),
+            ))
+        }
     })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+    .await?
 }
 
 #[cfg(test)]
@@ -848,26 +871,27 @@ mod tests {
         let bin = tempfile::tempdir().unwrap();
         let gh = fake_gh(bin.path(), 4);
         let error = checkout_pr(&gh, bin.path().to_str().unwrap(), 1, "o/r").unwrap_err();
-        assert_eq!(error.kind, GhErrorKind::NotAuthenticated);
+        assert!(
+            matches!(&error, AtlasError::ToolFailed { tool, .. } if tool == "gh"),
+            "{error:?}"
+        );
     }
 
     #[test]
     fn a_checkout_rejects_a_bad_slug_or_number_before_running_gh() {
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().to_str().unwrap();
-        assert_eq!(
-            checkout_pr(NO_SUCH_GH, cwd, 1, "--upload-pack=x/y")
-                .unwrap_err()
-                .kind,
-            GhErrorKind::Failed
-        );
-        assert_eq!(
-            checkout_pr(NO_SUCH_GH, cwd, 0, "o/r").unwrap_err().kind,
-            GhErrorKind::Failed
-        );
-        assert_eq!(
-            checkout_pr(NO_SUCH_GH, cwd, 1, "o/r").unwrap_err().kind,
-            GhErrorKind::NotInstalled
-        );
+        assert!(matches!(
+            checkout_pr(NO_SUCH_GH, cwd, 1, "--upload-pack=x/y"),
+            Err(AtlasError::InvalidInput { .. })
+        ));
+        assert!(matches!(
+            checkout_pr(NO_SUCH_GH, cwd, 0, "o/r"),
+            Err(AtlasError::InvalidInput { .. })
+        ));
+        assert!(matches!(
+            checkout_pr(NO_SUCH_GH, cwd, 1, "o/r"),
+            Err(AtlasError::ToolMissing { .. })
+        ));
     }
 }

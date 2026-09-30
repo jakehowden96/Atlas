@@ -1,3 +1,4 @@
+use crate::error::AtlasError;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -126,7 +127,8 @@ pub struct ClaudeSessionStartEvent {
     pub session_start: ClaudeSessionStart,
 }
 
-pub fn sessions_dir() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "Could not determine home directory".to_string())?;
+pub fn sessions_dir() -> Result<PathBuf, AtlasError> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| AtlasError::internal("Could not determine home directory"))?;
     Ok(home.join(".atlas").join("sessions"))
 }

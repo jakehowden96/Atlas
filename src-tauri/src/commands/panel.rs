@@ -1,7 +1,8 @@
 use super::diff::{count_diff_stats, discover_diff, fit_to_budget, MAX_PANEL_DIFF_SIZE};
-use super::git::{git_cmd, should_skip_dir, GIT_NOT_FOUND};
+use super::git::{git_cmd, should_skip_dir};
 use super::validate::{validate_cwd, validate_session_id};
 use crate::atomic_write::write_atomic;
+use crate::error::AtlasError;
 use crate::panel::types::{sessions_dir, DiffData, PanelData, PanelIssue, ProjectDiff};
 use std::collections::HashMap;
 use std::fs;
@@ -33,7 +34,7 @@ fn panel_stamp(data: &PanelData) -> String {
 }
 
 #[tauri::command(async)]
-pub fn get_panel_data(session_id: String) -> Result<Option<PanelData>, String> {
+pub fn get_panel_data(session_id: String) -> Result<Option<PanelData>, AtlasError> {
     validate_session_id(&session_id)?;
     let path = sessions_dir()?.join(&session_id).join("panel.json");
     // Same lock as the writer, and a missing file is "no data yet", not an error.
@@ -42,9 +43,9 @@ pub fn get_panel_data(session_id: String) -> Result<Option<PanelData>, String> {
     let contents = match fs::read_to_string(&path) {
         Ok(contents) => contents,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e.to_string()),
+        Err(e) => return Err(AtlasError::io_at(&path, &e)),
     };
-    let data: PanelData = serde_json::from_str(&contents).map_err(|e| e.to_string())?;
+    let data: PanelData = serde_json::from_str(&contents)?;
     Ok(Some(data))
 }
 
@@ -54,7 +55,10 @@ pub fn get_panel_data(session_id: String) -> Result<Option<PanelData>, String> {
 /// If CWD is NOT a git repo → scan child directories for git repos,
 /// collect diffs from all repos with changes (like sift's scanForRepos).
 #[tauri::command(async)]
-pub async fn refresh_panel(session_id: String, cwd: String) -> Result<Option<PanelData>, String> {
+pub async fn refresh_panel(
+    session_id: String,
+    cwd: String,
+) -> Result<Option<PanelData>, AtlasError> {
     validate_session_id(&session_id)?;
     validate_cwd(&cwd)?;
     let panel_path = sessions_dir()?.join(&session_id).join("panel.json");
@@ -69,12 +73,11 @@ pub async fn refresh_panel(session_id: String, cwd: String) -> Result<Option<Pan
             Ok(git_root) if !git_root.is_empty() => {
                 build_panel_single(&sid_clone, &git_root, &path_clone)
             }
-            Err(e) if e == GIT_NOT_FOUND => Ok(Some(git_missing_panel(&cwd_clone))),
+            Err(AtlasError::ToolMissing { .. }) => Ok(Some(git_missing_panel(&cwd_clone))),
             _ => build_panel_multi(&sid_clone, &cwd_clone, &path_clone),
         }
     })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+    .await?
 }
 
 /// The panel for a machine with no git: nothing can be diffed, and the drawer
@@ -94,7 +97,7 @@ fn build_panel_single(
     session_id: &str,
     git_root: &str,
     panel_path: &std::path::Path,
-) -> Result<Option<PanelData>, String> {
+) -> Result<Option<PanelData>, AtlasError> {
     let bundle = discover_diff(git_root);
 
     if bundle.full.text.is_empty() {
@@ -153,7 +156,7 @@ fn build_panel_multi(
     session_id: &str,
     root: &str,
     panel_path: &std::path::Path,
-) -> Result<Option<PanelData>, String> {
+) -> Result<Option<PanelData>, AtlasError> {
     let mut dir_entries: Vec<_> = match fs::read_dir(root) {
         Ok(e) => e.flatten().collect(),
         Err(_) => return Ok(None),
