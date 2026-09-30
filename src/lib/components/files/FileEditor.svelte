@@ -250,7 +250,7 @@
 
     {#if conflicted}
       <div class="conflict" role="alert">
-        <span>This file changed on disk while you had unsaved edits.</span>
+        <span>This file changed on disk (or was removed) while you had unsaved edits.</span>
         <button type="button" onclick={() => void reloadFromDisk(key)}>Reload from disk</button>
         <button type="button" onclick={() => keepMine(key)}>Keep mine</button>
       </div>

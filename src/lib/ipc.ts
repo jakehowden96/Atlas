@@ -1,6 +1,13 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { DirEntry, DocEntry, DocsChangedEvent, PlanEntry } from "../types/files";
+import type {
+  DirEntry,
+  DocEntry,
+  DocsChangedEvent,
+  PlanEntry,
+  TextFile,
+  WriteOutcome,
+} from "../types/files";
 import type { GitStatus, PanelData } from "../types/panel";
 import type { GhViewer, RepoPrs, WorkspaceRepo } from "../types/prs";
 import type { LiveSession, SessionUpdateEvent } from "../types/session";
@@ -267,13 +274,25 @@ export async function validateDirectory(path: string): Promise<void> {
  *
  * Rejects anything whose extension the Files screen cannot open.
  */
-export async function readTextFileAt(path: string): Promise<string> {
+export async function readTextFileAt(path: string): Promise<TextFile> {
   return invoke("read_text_file_at", { path });
 }
 
-/** Creates parent directories for a new file. Same extension gate as above. */
-export async function writeTextFileAt(path: string, contents: string): Promise<void> {
-  return invoke("write_text_file_at", { path, contents });
+/**
+ * Creates parent directories for a new file. Same extension gate and scope as
+ * above.
+ *
+ * `expectedMtime` is the `mtime` the file had when it was read. If the file's
+ * time is no longer that, nothing is written and the result is a `conflict`;
+ * pass null to write unconditionally (a new file, or the user chose to keep
+ * their version).
+ */
+export async function writeTextFileAt(
+  path: string,
+  contents: string,
+  expectedMtime: number | null,
+): Promise<WriteOutcome> {
+  return invoke("write_text_file_at", { path, contents, expectedMtime });
 }
 
 /**

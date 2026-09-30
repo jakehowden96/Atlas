@@ -5,8 +5,8 @@ vi.mock("../ipc", () => ({
   listClaudePlans: vi.fn(async () => []),
   listDir: vi.fn(async () => []),
   listWorkspaceDocs: vi.fn(async () => []),
-  readTextFileAt: vi.fn(async () => ""),
-  writeTextFileAt: vi.fn(async () => {}),
+  readTextFileAt: vi.fn(async () => ({ contents: "", mtime: 1 })),
+  writeTextFileAt: vi.fn(async () => ({ kind: "saved", mtime: 1 })),
   startSessionTail: vi.fn(),
   stopSessionTail: vi.fn(),
 }));

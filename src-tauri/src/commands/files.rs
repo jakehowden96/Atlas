@@ -58,6 +58,32 @@ pub struct DocEntry {
     pub modified: Option<String>,
 }
 
+/// A document's text and the modification time it had when it was read, in
+/// milliseconds since the Unix epoch. The editor hands that time back on save
+/// (`write_text_file_at`'s `expected_mtime`) so an edit made by someone else in
+/// between is noticed instead of overwritten.
+#[derive(Debug, serde::Serialize)]
+pub struct TextFile {
+    pub contents: String,
+    pub mtime: u64,
+}
+
+/// How a save ended. A file that changed on disk since it was read is a normal
+/// outcome the editor resolves with the user, not an error.
+#[derive(Debug, PartialEq, serde::Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum WriteOutcome {
+    /// Written; `mtime` is the new modification time.
+    Saved { mtime: u64 },
+    /// Nothing was written. `disk_mtime` is the file's current modification
+    /// time, or `None` when it no longer exists.
+    Conflict { disk_mtime: Option<u64> },
+}
+
 #[derive(serde::Serialize)]
 pub struct PlanEntry {
     pub path: String,
@@ -74,6 +100,17 @@ pub struct DirEntry {
     pub is_dir: bool,
     /// A document the editor can open. Never true for a directory.
     pub is_text: bool,
+}
+
+/// Modification time in milliseconds since the epoch; 0 when the platform does
+/// not report one, which makes the conflict check a no-op for that file.
+fn mtime_ms(metadata: &std::fs::Metadata) -> u64 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 fn rfc3339(time: std::time::SystemTime) -> String {
@@ -319,7 +356,7 @@ fn resolve_doc(scope: &FilesScope, path: &str) -> Result<PathBuf, String> {
     Ok(resolved)
 }
 
-fn read_file(scope: &FilesScope, path: &str) -> Result<String, String> {
+fn read_file(scope: &FilesScope, path: &str) -> Result<TextFile, String> {
     let path = resolve_doc(scope, path)?;
     let file = std::fs::File::open(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
     // A `.md` symlink to `/dev/zero` reports length 0, so check the handle is
@@ -341,11 +378,16 @@ fn read_file(scope: &FilesScope, path: &str) -> Result<String, String> {
             path.display()
         ));
     }
-    String::from_utf8(bytes).map_err(|_| format!("{} is not a UTF-8 text file", path.display()))
+    let contents = String::from_utf8(bytes)
+        .map_err(|_| format!("{} is not a UTF-8 text file", path.display()))?;
+    Ok(TextFile {
+        contents,
+        mtime: mtime_ms(&metadata),
+    })
 }
 
 #[tauri::command(async)]
-pub fn read_text_file_at(path: String, scope: State<'_, FilesScope>) -> Result<String, String> {
+pub fn read_text_file_at(path: String, scope: State<'_, FilesScope>) -> Result<TextFile, String> {
     read_file(&scope, &path)
 }
 
@@ -402,7 +444,16 @@ fn write_atomically(target: &Path, contents: &str) -> std::io::Result<()> {
     written
 }
 
-fn write_file(scope: &FilesScope, path: &str, contents: &str) -> Result<(), String> {
+/// Save `contents`. With `expected_mtime`, refuse (without writing) when the
+/// file's modification time is no longer that — someone else saved it since it
+/// was read, or it was deleted. `None` writes unconditionally, which is what a
+/// brand-new note and an explicit "keep mine" want.
+fn write_file(
+    scope: &FilesScope,
+    path: &str,
+    contents: &str,
+    expected_mtime: Option<u64>,
+) -> Result<WriteOutcome, String> {
     // Already canonical: a symlinked file is written through to its target
     // rather than replaced by a regular file.
     let target = resolve_doc(scope, path)?;
@@ -410,19 +461,39 @@ fn write_file(scope: &FilesScope, path: &str, contents: &str) -> Result<(), Stri
         .parent()
         .ok_or_else(|| format!("Path has no parent directory: {}", target.display()))?;
 
+    if let Some(expected) = expected_mtime {
+        match std::fs::metadata(&target) {
+            Ok(meta) if mtime_ms(&meta) != expected => {
+                return Ok(WriteOutcome::Conflict {
+                    disk_mtime: Some(mtime_ms(&meta)),
+                })
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(WriteOutcome::Conflict { disk_mtime: None })
+            }
+            Err(e) => return Err(format!("{}: {}", target.display(), e)),
+        }
+    }
+
     // New notes land in directories that may not exist yet.
     std::fs::create_dir_all(parent).map_err(|e| format!("{}: {}", parent.display(), e))?;
 
-    write_atomically(&target, contents).map_err(|e| format!("{}: {}", target.display(), e))
+    write_atomically(&target, contents).map_err(|e| format!("{}: {}", target.display(), e))?;
+    let meta = std::fs::metadata(&target).map_err(|e| format!("{}: {}", target.display(), e))?;
+    Ok(WriteOutcome::Saved {
+        mtime: mtime_ms(&meta),
+    })
 }
 
 #[tauri::command(async)]
 pub fn write_text_file_at(
     path: String,
     contents: String,
+    expected_mtime: Option<u64>,
     scope: State<'_, FilesScope>,
-) -> Result<(), String> {
-    write_file(&scope, &path, &contents)
+) -> Result<WriteOutcome, String> {
+    write_file(&scope, &path, &contents, expected_mtime)
 }
 
 /// Whether `path` is an existing absolute directory. A typed-in workspace path
@@ -716,7 +787,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let scope = scoped(&tmp);
         let path = tmp.path().join("icon.png");
-        assert!(write_file(&scope, &path.to_string_lossy(), "not an image").is_err());
+        assert!(write_file(&scope, &path.to_string_lossy(), "not an image", None).is_err());
         assert!(!path.exists());
     }
 
@@ -726,7 +797,7 @@ mod tests {
         let scope = scoped(&tmp);
         let path = tmp.path().join("note.md");
         std::fs::write(&path, "old").unwrap();
-        write_file(&scope, &path.to_string_lossy(), "new").unwrap();
+        write_file(&scope, &path.to_string_lossy(), "new", None).unwrap();
 
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
         let names: Vec<_> = std::fs::read_dir(tmp.path())
@@ -745,7 +816,7 @@ mod tests {
         let path = tmp.path().join("private.md");
         std::fs::write(&path, "old").unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
-        write_file(&scope, &path.to_string_lossy(), "new").unwrap();
+        write_file(&scope, &path.to_string_lossy(), "new", None).unwrap();
 
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
@@ -761,7 +832,7 @@ mod tests {
         std::fs::write(&path, "old").unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
 
-        assert!(write_file(&scope, &path.to_string_lossy(), "new").is_err());
+        assert!(write_file(&scope, &path.to_string_lossy(), "new", None).is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "old");
     }
 
@@ -775,7 +846,7 @@ mod tests {
         let link = tmp.path().join("note.md");
         std::os::unix::fs::symlink(&real, &link).unwrap();
 
-        write_file(&scope, &link.to_string_lossy(), "new").unwrap();
+        write_file(&scope, &link.to_string_lossy(), "new", None).unwrap();
 
         assert!(std::fs::symlink_metadata(&link)
             .unwrap()
@@ -816,7 +887,7 @@ mod tests {
         let scope = scoped(&ws);
 
         assert!(read_file(&scope, &link.to_string_lossy()).is_err());
-        assert!(write_file(&scope, &link.to_string_lossy(), "pwned").is_err());
+        assert!(write_file(&scope, &link.to_string_lossy(), "pwned", None).is_err());
         assert_eq!(std::fs::read_to_string(&secret).unwrap(), "outside");
     }
 
@@ -827,7 +898,7 @@ mod tests {
         let scope = scoped(&ws);
         let target = outside.path().join("new/dir/evil.sh");
 
-        assert!(write_file(&scope, &target.to_string_lossy(), "evil").is_err());
+        assert!(write_file(&scope, &target.to_string_lossy(), "evil", None).is_err());
         assert!(!outside.path().join("new").exists());
     }
 
@@ -844,7 +915,7 @@ mod tests {
         );
 
         assert!(read_file(&scope, &sneaky).is_err());
-        assert!(write_file(&scope, &sneaky, "pwned").is_err());
+        assert!(write_file(&scope, &sneaky, "pwned", None).is_err());
         assert_eq!(
             std::fs::read_to_string(outside.path().join("x.md")).unwrap(),
             "x"
@@ -865,7 +936,7 @@ mod tests {
             let path = home.path().join(denied).to_string_lossy().to_string();
             assert!(read_file(&scope, &path).is_err(), "{denied}");
             assert!(
-                write_file(&scope, &path, "{\"hooks\":1}").is_err(),
+                write_file(&scope, &path, "{\"hooks\":1}", None).is_err(),
                 "{denied}"
             );
             assert_eq!(
@@ -915,9 +986,9 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let scope = scoped(&tmp);
         let path = tmp.path().join("src/main.rs");
-        write_file(&scope, &path.to_string_lossy(), "fn main() {}").unwrap();
+        write_file(&scope, &path.to_string_lossy(), "fn main() {}", None).unwrap();
         assert_eq!(
-            read_file(&scope, &path.to_string_lossy()).unwrap(),
+            read_file(&scope, &path.to_string_lossy()).unwrap().contents,
             "fn main() {}"
         );
     }
@@ -927,8 +998,11 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let scope = scoped(&tmp);
         let path = tmp.path().join("notes/new/note.md");
-        write_file(&scope, &path.to_string_lossy(), "hello").unwrap();
-        assert_eq!(read_file(&scope, &path.to_string_lossy()).unwrap(), "hello");
+        write_file(&scope, &path.to_string_lossy(), "hello", None).unwrap();
+        assert_eq!(
+            read_file(&scope, &path.to_string_lossy()).unwrap().contents,
+            "hello"
+        );
     }
 
     #[test]
@@ -1008,5 +1082,100 @@ mod tests {
             watched_rel_path(&roots, &canonical.join("notes.md")),
             Some("notes.md".to_string())
         );
+    }
+
+    /// Backdate a file's mtime, standing in for someone else saving it later.
+    fn set_mtime_ms(path: &Path, ms: u64) {
+        let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+        file.set_modified(std::time::UNIX_EPOCH + Duration::from_millis(ms))
+            .unwrap();
+    }
+
+    #[test]
+    fn read_reports_the_files_mtime_in_milliseconds() {
+        let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
+        let path = tmp.path().join("a.md");
+        std::fs::write(&path, "x").unwrap();
+        set_mtime_ms(&path, 1_700_000_123_456);
+
+        let file = read_file(&scope, &path.to_string_lossy()).unwrap();
+
+        assert_eq!(file.mtime, 1_700_000_123_456);
+    }
+
+    #[test]
+    fn a_save_with_the_mtime_it_read_succeeds_and_reports_the_new_one() {
+        let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
+        let path = tmp.path().join("a.md");
+        std::fs::write(&path, "old").unwrap();
+        set_mtime_ms(&path, 1_700_000_000_000);
+        let path = path.to_string_lossy().to_string();
+
+        let outcome = write_file(&scope, &path, "new", Some(1_700_000_000_000)).unwrap();
+
+        let WriteOutcome::Saved { mtime } = outcome else {
+            panic!("expected a save, got {outcome:?}");
+        };
+        assert_eq!(read_file(&scope, &path).unwrap().mtime, mtime);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+    }
+
+    #[test]
+    fn a_save_over_a_file_someone_else_changed_is_a_conflict_and_writes_nothing() {
+        let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
+        let path = tmp.path().join("a.md");
+        std::fs::write(&path, "theirs").unwrap();
+        set_mtime_ms(&path, 1_700_000_999_000);
+
+        let outcome = write_file(
+            &scope,
+            &path.to_string_lossy(),
+            "mine",
+            Some(1_700_000_000_000),
+        )
+        .unwrap();
+
+        assert_eq!(
+            outcome,
+            WriteOutcome::Conflict {
+                disk_mtime: Some(1_700_000_999_000)
+            }
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "theirs");
+    }
+
+    #[test]
+    fn a_save_over_a_file_deleted_since_it_was_read_is_a_conflict_and_does_not_recreate_it() {
+        let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
+        let path = tmp.path().join("gone.md");
+
+        let outcome = write_file(
+            &scope,
+            &path.to_string_lossy(),
+            "mine",
+            Some(1_700_000_000_000),
+        )
+        .unwrap();
+
+        assert_eq!(outcome, WriteOutcome::Conflict { disk_mtime: None });
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_save_with_no_expected_mtime_overwrites_whatever_is_there() {
+        let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
+        let path = tmp.path().join("a.md");
+        std::fs::write(&path, "theirs").unwrap();
+        set_mtime_ms(&path, 1_700_000_999_000);
+
+        let outcome = write_file(&scope, &path.to_string_lossy(), "mine", None).unwrap();
+
+        assert!(matches!(outcome, WriteOutcome::Saved { .. }));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "mine");
     }
 }

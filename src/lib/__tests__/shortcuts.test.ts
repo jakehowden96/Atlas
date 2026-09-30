@@ -65,7 +65,9 @@ describe("handleGlobalKeydown", () => {
     const e = makeKeyEvent({ metaKey: true, key: "s" });
     expect(handleGlobalKeydown(e)).toBe(true);
     expect(e.preventDefault).toHaveBeenCalled();
-    await vi.waitFor(() => expect(writeTextFileAt).toHaveBeenCalledWith("/ws/notes.md", "edited"));
+    await vi.waitFor(() =>
+      expect(writeTextFileAt).toHaveBeenCalledWith("/ws/notes.md", "edited", null),
+    );
   });
 
   it("⌘S is left unhandled on Sessions", () => {

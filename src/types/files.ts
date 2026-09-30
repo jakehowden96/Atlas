@@ -44,3 +44,18 @@ export interface DocsChangedEvent {
   workspacePath: string;
   relPath: string;
 }
+
+/** A document's text and its modification time (ms since the epoch) at read. */
+export interface TextFile {
+  contents: string;
+  mtime: number;
+}
+
+/**
+ * How a save ended. A file that changed on disk since it was read is reported
+ * as `conflict`, not as an error, and nothing is written. `diskMtime` is the
+ * file's current time, or null when it no longer exists.
+ */
+export type WriteOutcome =
+  | { kind: "saved"; mtime: number }
+  | { kind: "conflict"; diskMtime: number | null };
