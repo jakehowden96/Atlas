@@ -20,11 +20,17 @@ function panel(
     version: 1,
     timestamp: "",
     cwd: "/repo",
-    is_git: true,
     diff:
       raw === undefined
-        ? undefined
-        : { raw, files_changed: 0, lines_added: 0, lines_removed: 0, projects },
+        ? null
+        : {
+            raw,
+            files_changed: 0,
+            lines_added: 0,
+            lines_removed: 0,
+            fingerprint: "f",
+            projects,
+          },
   };
 }
 
@@ -101,9 +107,9 @@ describe("filesTouched", () => {
   });
 
   it("names the repo each file is in when the workspace holds several", () => {
-    // `raw` is every project's diff concatenated, so reading it alone loses
-    // which repo a file came from — and both repos here have a `src/a.ts`.
-    const multi = panel(TWO_FILE_DIFF + TWO_FILE_DIFF, [
+    // A multi-repo panel carries each diff only in its project, and both
+    // repos here have a `src/a.ts`.
+    const multi = panel("", [
       { name: "api", raw: TWO_FILE_DIFF, files_changed: 2, lines_added: 2, lines_removed: 3 },
       { name: "web", raw: TWO_FILE_DIFF, files_changed: 2, lines_added: 2, lines_removed: 3 },
     ]);
@@ -132,7 +138,7 @@ describe("groupFilesByRepo", () => {
   });
 
   it("splits a multi-repo session into one group per repo, first-seen order", () => {
-    const multi = panel(TWO_FILE_DIFF + TWO_FILE_DIFF, [
+    const multi = panel("", [
       { name: "api", raw: TWO_FILE_DIFF, files_changed: 2, lines_added: 2, lines_removed: 3 },
       { name: "web", raw: TWO_FILE_DIFF, files_changed: 2, lines_added: 2, lines_removed: 3 },
     ]);

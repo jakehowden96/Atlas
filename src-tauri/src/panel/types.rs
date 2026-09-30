@@ -6,37 +6,69 @@ pub struct PanelData {
     pub version: u32,
     pub timestamp: String,
     pub cwd: String,
-    /// Whether the CWD is inside (or a parent of) a git repository.
-    #[serde(default)]
-    pub is_git: bool,
+    /// `null` when the tree is clean (or the directory holds no repo).
     pub diff: Option<DiffData>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DiffData {
-    pub raw: String,
-    pub files_changed: u32,
-    pub lines_added: u32,
-    pub lines_removed: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub projects: Option<Vec<ProjectDiff>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub local_raw: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub local_files_changed: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub local_lines_added: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub local_lines_removed: Option<u32>,
+/// What a size cap left out of a diff.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Truncation {
+    /// Files present in the shown text (the last may be cut part-way).
+    pub shown_files: u32,
+    /// Files changed in all, as far as git could be asked.
+    pub total_files: u32,
+    pub shown_bytes: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash)]
+pub struct DiffData {
+    /// A single repo's diff. Empty when `projects` is set: the per-repo diffs
+    /// live only there, so a multi-repo panel does not carry them twice.
+    pub raw: String,
+    /// Files changed, counting files a cap left out of `raw`/`projects`.
+    pub files_changed: u32,
+    /// Lines added and removed in the text that is present.
+    pub lines_added: u32,
+    pub lines_removed: u32,
+    /// Identity of the diff content. Two payloads with the same fingerprint
+    /// hold the same diff, so a consumer that already parsed one has nothing
+    /// new to parse.
+    #[serde(default)]
+    pub fingerprint: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<Truncation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projects: Option<Vec<ProjectDiff>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_raw: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_truncated: Option<Truncation>,
+}
+
+impl DiffData {
+    /// Stamp `fingerprint` from everything else in the payload.
+    ///
+    /// `DefaultHasher::new()` uses fixed keys, so the value is stable within
+    /// and across runs of one build; it is only ever compared for equality.
+    pub fn sealed(mut self) -> Self {
+        use std::hash::{Hash, Hasher};
+        self.fingerprint.clear();
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.hash(&mut hasher);
+        self.fingerprint = format!("{:016x}", hasher.finish());
+        self
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct ProjectDiff {
     pub name: String,
     pub raw: String,
     pub files_changed: u32,
     pub lines_added: u32,
     pub lines_removed: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<Truncation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

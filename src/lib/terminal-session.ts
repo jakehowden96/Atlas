@@ -579,18 +579,18 @@ export class TerminalSession {
   }
 
   private lastPanelVersion = -1;
-  private lastPanelDiffRaw: string | null = null;
+  private lastPanelDiff: string | null = null;
 
-  /** Cheap identity check: compare version + diff raw string instead of full JSON. */
+  /** Cheap identity check: version plus the backend's diff fingerprint. */
   private panelChanged(data: PanelData | null): boolean {
     if (!data) return this.lastPanelVersion !== -1;
     if (data.version !== this.lastPanelVersion) return true;
-    return (data.diff?.raw ?? null) !== this.lastPanelDiffRaw;
+    return (data.diff?.fingerprint ?? null) !== this.lastPanelDiff;
   }
 
   private updatePanelFingerprint(data: PanelData | null) {
     this.lastPanelVersion = data?.version ?? -1;
-    this.lastPanelDiffRaw = data?.diff?.raw ?? null;
+    this.lastPanelDiff = data?.diff?.fingerprint ?? null;
   }
 
   private scheduleRefresh(cwd: string) {
