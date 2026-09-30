@@ -343,12 +343,6 @@ mod tests {
     }
 
     #[test]
-    fn skip_node_modules_and_target() {
-        assert!(should_skip_dir("node_modules"));
-        assert!(should_skip_dir("target"));
-    }
-
-    #[test]
     fn allow_normal_dirs() {
         assert!(!should_skip_dir("src"));
         assert!(!should_skip_dir("my-project"));

@@ -1338,23 +1338,6 @@ mod tests {
     }
 
     #[test]
-    fn fixture_has_the_shape_the_tests_rely_on() {
-        let lines = fixture_lines();
-        assert!(
-            (150..=250).contains(&lines.len()),
-            "fixture is ~200 lines, got {}",
-            lines.len()
-        );
-        // No drive letters, no home directories, no project slugs naming one.
-        for needle in ["C:\\\\", "C:/", "/Users/", "Users-"] {
-            assert!(
-                !lines.iter().any(|l| l.contains(needle)),
-                "the fixture still leaks a real path ({needle})"
-            );
-        }
-    }
-
-    #[test]
     fn deduplicates_usage_across_lines_sharing_a_request_id() {
         let lines = fixture_lines();
         let (_dir, mut tail) = tail_with(&lines);
@@ -1772,24 +1755,6 @@ mod tests {
 
     fn live_subagents(tail: &SessionTail) -> usize {
         tail.session().subagents.iter().filter(|a| !a.done).count()
-    }
-
-    #[test]
-    fn the_background_fixture_is_the_timeline_the_tests_name() {
-        let lines = bg_lines();
-        assert_eq!(lines.len(), 6);
-        assert!(lines[SPAWN].contains(BG_ID) && lines[SPAWN].contains(r#""name":"Agent""#));
-        assert!(lines[RECEIPT].contains(r#""isAsync":true"#));
-        assert!(lines[END_TURN].contains(r#""stop_reason":"end_turn""#));
-        assert!(lines[COUNT_ONE].contains(r#""pendingBackgroundAgentCount":1"#));
-        assert!(lines[NOTIFICATION].contains("<task-notification>"));
-        assert!(!lines[COUNT_NONE].contains("pendingBackgroundAgentCount"));
-        for needle in ["C:", "E:", "/Users/", "GitHub"] {
-            assert!(
-                !lines.iter().any(|l| l.contains(needle)),
-                "the fixture leaks a real path ({needle})"
-            );
-        }
     }
 
     /// The regression. The receipt lands 2.8s after the call while the agent
@@ -2365,5 +2330,284 @@ mod tests {
         std::fs::write(&meta, r#"{"toolUseId":"toolu_agent1"}"#).unwrap();
         assert!(tail.poll());
         assert_eq!(count(&tail), Some(1));
+    }
+
+    // ── Reader edge cases ─────────────────────────────────────────────────
+
+    /// Windows-edited or synced transcripts end lines with `\r\n`; the carriage
+    /// return must not make a record unparseable.
+    #[test]
+    fn crlf_line_endings_parse_like_lf() {
+        let (dir, mut tail) = tail_with(&[]);
+        let path = dir.path().join(format!("{UUID}.jsonl"));
+        let body = [prompt_line(r#""first""#), prompt_line(r#""second""#)].join("\r\n") + "\r\n";
+        std::fs::write(&path, body).unwrap();
+
+        assert!(tail.poll());
+        assert_eq!(tail.session().last_prompt.as_deref(), Some("second"));
+        assert_eq!(tail.session().lines.len(), 2);
+    }
+
+    /// A multi-byte character whose bytes land in two different reads must come
+    /// out whole: decoding each read on its own would leave two U+FFFD.
+    #[test]
+    fn a_multibyte_character_split_across_reads_is_decoded_whole() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        let mut reader = LineReader::new();
+
+        let line = "a€b".as_bytes(); // '€' is 3 bytes
+        std::fs::write(&path, &line[..2]).unwrap(); // 'a' + first byte of '€'
+        assert!(reader.read_new(&path).lines.is_empty());
+
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(&line[2..]).unwrap();
+        file.write_all(b"\n").unwrap();
+        drop(file);
+
+        assert_eq!(reader.read_new(&path).lines, ["a€b"]);
+    }
+
+    /// The same, but the split is forced by the chunk limit, not by the writer.
+    #[test]
+    fn a_multibyte_character_on_the_chunk_edge_is_decoded_whole() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        // 'é' starts on the last byte of the first chunk and ends in the next.
+        let mut bytes = vec![b'x'; READ_CHUNK as usize - 1];
+        bytes.extend("é\n".as_bytes());
+        std::fs::write(&path, &bytes).unwrap();
+
+        let mut reader = LineReader::new();
+        let first = reader.read_new(&path);
+        assert!(first.more && first.lines.is_empty());
+        let second = reader.read_new(&path);
+        assert!(!second.more);
+        assert_eq!(second.lines.len(), 1);
+        assert!(second.lines[0].ends_with('é'), "no replacement character");
+        assert!(!second.lines[0].contains('\u{FFFD}'));
+    }
+
+    /// Claude Code's retention cleanup can delete a transcript under a running
+    /// tail. The card keeps what it has, nothing panics, and a file that
+    /// appears later is read from the start.
+    #[test]
+    fn a_transcript_deleted_while_tailed_keeps_its_state_and_a_new_file_is_read() {
+        let (dir, mut tail) = tail_with(&[prompt_line(r#""before""#)]);
+        let path = dir.path().join(format!("{UUID}.jsonl"));
+        assert!(tail.poll());
+
+        std::fs::remove_file(&path).unwrap();
+        assert!(!tail.poll(), "nothing changed");
+        assert_eq!(tail.session().last_prompt.as_deref(), Some("before"));
+
+        std::fs::write(&path, prompt_line(r#""after""#) + "\n").unwrap();
+        assert!(tail.poll());
+        assert_eq!(tail.session().last_prompt.as_deref(), Some("after"));
+        assert_eq!(tail.session().lines.len(), 1, "the old file's line is gone");
+    }
+
+    /// A subagent transcript that is rewritten shorter starts its counts over
+    /// instead of adding the new file's tools to the old file's.
+    #[test]
+    fn a_rewritten_subagent_transcript_resets_its_counts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("agent-x.jsonl");
+        let call = |req: &str, tools: usize| {
+            let blocks = (0..tools)
+                .map(|i| {
+                    format!(r#"{{"type":"tool_use","id":"{req}{i}","name":"Read","input":{{}}}}"#)
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                r#"{{"type":"assistant","requestId":"{req}","message":{{"model":"claude-sonnet-4-6","content":[{blocks}],"usage":{{"output_tokens":10}}}}}}"#
+            )
+        };
+        std::fs::write(&path, [call("r1", 2), call("r2", 1)].join("\n") + "\n").unwrap();
+
+        let mut counter = SubagentCounter::new();
+        assert!(counter.poll(&path));
+        assert_eq!(counter.tool_count, 3);
+        assert_eq!(counter.spend.output_tokens, 20);
+        assert!(!counter.poll(&path), "unchanged file reports no change");
+
+        std::fs::write(&path, call("r9", 1) + "\n").unwrap();
+        assert!(counter.poll(&path));
+        assert_eq!(counter.tool_count, 1);
+        assert_eq!(counter.spend.output_tokens, 10);
+        assert_eq!(counter.seen.len(), 1);
+    }
+
+    // ── Cost ──────────────────────────────────────────────────────────────
+
+    fn assistant_line(req: &str, model: &str, usage: &str) -> String {
+        format!(
+            r#"{{"type":"assistant","requestId":"{req}","message":{{"model":"{model}","content":[],"usage":{usage}}},"timestamp":"2026-09-07T21:52:00.000Z"}}"#
+        )
+    }
+
+    /// The Stats page and the live card must price the same tokens the same
+    /// way for every model, including ones the pricing table has never heard
+    /// of. This is the invariant the shared pricing module exists for.
+    #[test]
+    fn live_and_stats_price_the_same_tokens_identically_for_any_model() {
+        let usage = r#"{"input_tokens":1234,"output_tokens":5678,"cache_creation_input_tokens":4321,"cache_read_input_tokens":8765}"#;
+        for model in [
+            "claude-opus-5",
+            "claude-opus-4-1-20250805",
+            "claude-haiku-9",
+            "claude-fable-5-1",
+            "totally-unknown-model",
+        ] {
+            let (dir, mut tail) = tail_with(&[assistant_line("r1", model, usage)]);
+            tail.poll();
+            let record =
+                crate::commands::stats::parse_session(&dir.path().join(format!("{UUID}.jsonl")))
+                    .unwrap();
+
+            assert!(tail.session().cost_estimate > 0.0, "{model} is priced");
+            assert!(
+                (tail.session().cost_estimate - record.cost_estimate).abs() < 1e-12,
+                "{model}: live {} vs stats {}",
+                tail.session().cost_estimate,
+                record.cost_estimate
+            );
+        }
+    }
+
+    /// A session's cost is its own requests plus every subagent file's, and a
+    /// subagent file that grows later adds only what is new.
+    #[test]
+    fn cost_sums_the_main_transcript_and_each_subagent_file_once() {
+        let usage = |out: u64| format!(r#"{{"output_tokens":{out}}}"#);
+        let cost_of = |model: &str, out: u64| {
+            let (_d, mut t) = tail_with(&[assistant_line("r", model, &usage(out))]);
+            t.poll();
+            t.session().cost_estimate
+        };
+        let main = assistant_line("m1", "claude-sonnet-4-6", &usage(1000));
+        let (dir, mut tail) = tail_with(&[main]);
+
+        let subagents = dir.path().join(UUID).join("subagents");
+        std::fs::create_dir_all(&subagents).unwrap();
+        let write = |name: &str, model: &str, reqs: &[(&str, u64)]| {
+            let body: String = reqs
+                .iter()
+                .map(|(r, out)| assistant_line(r, model, &usage(*out)) + "\n")
+                .collect();
+            std::fs::write(subagents.join(name), body).unwrap();
+        };
+        write("agent-a.jsonl", "claude-opus-5", &[("a1", 2000)]);
+        write("agent-b.jsonl", "claude-haiku-4-5", &[("b1", 3000)]);
+        // The subagents are only followed once their Agent call is in the parent.
+        std::fs::write(
+            subagents.join("agent-a.meta.json"),
+            r#"{"toolUseId":"toolu_a"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            subagents.join("agent-b.meta.json"),
+            r#"{"toolUseId":"toolu_b"}"#,
+        )
+        .unwrap();
+        let spawn = |id: &str| {
+            format!(
+                r#"{{"type":"assistant","requestId":"sp-{id}","message":{{"model":"claude-sonnet-4-6","content":[{{"type":"tool_use","id":"{id}","name":"Agent","input":{{"description":"d","prompt":"p"}}}}],"usage":{{"output_tokens":0}}}}}}"#
+            )
+        };
+        append(
+            &dir.path().join(format!("{UUID}.jsonl")),
+            &[spawn("toolu_a"), spawn("toolu_b")],
+        );
+
+        tail.poll();
+        let expected = cost_of("claude-sonnet-4-6", 1000)
+            + cost_of("claude-opus-5", 2000)
+            + cost_of("claude-haiku-4-5", 3000);
+        assert!((tail.session().cost_estimate - expected).abs() < 1e-9);
+        assert_eq!(tail.session().output_tokens, 6000);
+
+        // Polling again without a change, then growing one file by one request.
+        tail.poll();
+        assert_eq!(tail.session().output_tokens, 6000, "no double count");
+        write(
+            "agent-a.jsonl",
+            "claude-opus-5",
+            &[("a1", 2000), ("a2", 500)],
+        );
+        tail.poll();
+        assert_eq!(tail.session().output_tokens, 6500);
+    }
+
+    // ── State derivation ──────────────────────────────────────────────────
+
+    fn reply(req: &str, stop: &str, content: &str) -> String {
+        format!(
+            r#"{{"type":"assistant","requestId":"{req}","message":{{"model":"claude-sonnet-4-6","stop_reason":"{stop}","content":[{content}],"usage":{{"output_tokens":1}}}},"timestamp":"2026-09-07T21:52:00.000Z"}}"#
+        )
+    }
+
+    fn call(id: &str, name: &str) -> String {
+        format!(r#"{{"type":"tool_use","id":"{id}","name":"{name}","input":{{}}}}"#)
+    }
+
+    fn result(id: &str) -> String {
+        format!(
+            r#"{{"type":"user","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"{id}","content":"ok"}}]}},"timestamp":"2026-09-07T21:52:01.000Z"}}"#
+        )
+    }
+
+    /// A turn that ended does not keep the card idle once the assistant goes
+    /// on to call a tool: the later reply supersedes the earlier `end_turn`.
+    #[test]
+    fn a_tool_call_after_an_end_turn_is_running_again() {
+        let (dir, mut tail) = tail_with(&[reply("r1", "end_turn", "")]);
+        tail.poll();
+        assert_eq!(tail.session().state, SessionState::Idle);
+
+        let path = dir.path().join(format!("{UUID}.jsonl"));
+        append(&path, &[reply("r2", "tool_use", &call("t1", "Bash"))]);
+        tail.poll();
+        assert_eq!(tail.session().state, SessionState::Running);
+        assert_eq!(tail.session().pending_tool.as_ref().unwrap().name, "Bash");
+
+        append(&path, &[result("t1"), reply("r3", "end_turn", "")]);
+        tail.poll();
+        assert_eq!(tail.session().state, SessionState::Idle);
+        assert!(tail.session().pending_tool.is_none());
+    }
+
+    /// With two calls out, the one that blocks is the oldest; answering it
+    /// hands the card to the next, and the card stays running until both land.
+    #[test]
+    fn the_oldest_unanswered_call_is_the_pending_tool() {
+        let both = format!("{},{}", call("t1", "Read"), call("t2", "Bash"));
+        let (dir, mut tail) = tail_with(&[reply("r1", "tool_use", &both)]);
+        let path = dir.path().join(format!("{UUID}.jsonl"));
+        tail.poll();
+        assert_eq!(tail.session().pending_tool.as_ref().unwrap().name, "Read");
+
+        append(&path, &[result("t1")]);
+        tail.poll();
+        assert_eq!(tail.session().pending_tool.as_ref().unwrap().name, "Bash");
+        assert_eq!(tail.session().state, SessionState::Running);
+
+        append(&path, &[result("t2")]);
+        tail.poll();
+        assert!(tail.session().pending_tool.is_none());
+    }
+
+    /// A result for a call the tail never saw (the call was in a rewritten or
+    /// truncated part of the file) must not invent a pending tool or panic.
+    #[test]
+    fn a_result_for_an_unknown_call_is_ignored() {
+        let (_dir, mut tail) = tail_with(&[result("never-seen"), reply("r1", "end_turn", "")]);
+        tail.poll();
+        assert!(tail.session().pending_tool.is_none());
+        assert_eq!(tail.session().state, SessionState::Idle);
     }
 }

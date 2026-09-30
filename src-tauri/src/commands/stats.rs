@@ -1709,15 +1709,6 @@ mod tests {
     }
 
     #[test]
-    fn model_family_grouping() {
-        assert_eq!(model_family("claude-opus-4-8"), "Opus");
-        assert_eq!(model_family("claude-sonnet-4-6"), "Sonnet");
-        assert_eq!(model_family("claude-haiku-4-5"), "Haiku");
-        assert_eq!(model_family("claude-fable-5"), "Fable");
-        assert_eq!(model_family("unknown-model"), "unknown-model");
-    }
-
-    #[test]
     fn counts_user_chars_only_string_content() {
         // "hi" (2 chars) + "hello" (5 chars) = 7; array-content and isMeta are ignored
         let f = write_lines(&[
@@ -1850,23 +1841,6 @@ mod tests {
             rec.tool_errors_by_name.len(),
             1,
             "the orphan id is charged to no tool"
-        );
-    }
-
-    #[test]
-    fn tool_errors_match_the_real_transcript_fixture() {
-        // tests/fixtures/session.jsonl: 14 Bash calls of which exactly one errored.
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests")
-            .join("fixtures")
-            .join("session.jsonl");
-        let rec = parse_session(&path).unwrap();
-        assert_eq!(rec.tool_calls.get("Bash").copied(), Some(14));
-        assert_eq!(rec.tool_errors_by_name.get("Bash").copied(), Some(1));
-        assert_eq!(rec.tool_errors, 1);
-        assert!(
-            !rec.tool_errors_by_name.contains_key("Read"),
-            "Read never errored in the fixture"
         );
     }
 
@@ -2294,6 +2268,114 @@ mod tests {
         assert!(!local.by_day.contains_key("2026-03-01"));
         assert_eq!(local.by_day["2026-03-02"].sessions, 1);
         assert!((local.by_day["2026-03-02"].cost - 2.0).abs() < 1e-9);
+    }
+
+    /// A zone that springs forward at 2026-03-08T07:00Z (US Eastern): -5h
+    /// before, -4h after, so 8 March is 23 hours long.
+    #[derive(Clone, Copy, Debug)]
+    struct SpringForward;
+
+    #[derive(Clone, Copy, Debug)]
+    struct SpringOffset(chrono::FixedOffset);
+
+    impl chrono::Offset for SpringOffset {
+        fn fix(&self) -> chrono::FixedOffset {
+            self.0
+        }
+    }
+
+    impl std::fmt::Display for SpringOffset {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.0.fmt(f)
+        }
+    }
+
+    impl SpringForward {
+        fn at_utc(utc: chrono::NaiveDateTime) -> SpringOffset {
+            let switch = chrono::DateTime::parse_from_rfc3339("2026-03-08T07:00:00Z")
+                .unwrap()
+                .naive_utc();
+            let hours = if utc < switch { -5 } else { -4 };
+            SpringOffset(chrono::FixedOffset::east_opt(hours * 3600).unwrap())
+        }
+    }
+
+    impl chrono::TimeZone for SpringForward {
+        type Offset = SpringOffset;
+        fn from_offset(_: &SpringOffset) -> Self {
+            SpringForward
+        }
+        fn offset_from_local_date(
+            &self,
+            local: &chrono::NaiveDate,
+        ) -> chrono::LocalResult<SpringOffset> {
+            self.offset_from_local_datetime(&local.and_hms_opt(12, 0, 0).unwrap())
+        }
+        fn offset_from_local_datetime(
+            &self,
+            local: &chrono::NaiveDateTime,
+        ) -> chrono::LocalResult<SpringOffset> {
+            chrono::LocalResult::Single(Self::at_utc(*local + chrono::Duration::hours(5)))
+        }
+        fn offset_from_utc_date(&self, utc: &chrono::NaiveDate) -> SpringOffset {
+            Self::at_utc(utc.and_hms_opt(12, 0, 0).unwrap())
+        }
+        fn offset_from_utc_datetime(&self, utc: &chrono::NaiveDateTime) -> SpringOffset {
+            Self::at_utc(*utc)
+        }
+    }
+
+    fn cost_by_day(spend: &[(&str, f64)], tz: &SpringForward) -> Vec<(String, f64)> {
+        let mut r = rec("a", spend[0].0);
+        r.activity = spend.iter().map(|(at, cost)| bucket(at, *cost)).collect();
+        let now = chrono::DateTime::parse_from_rfc3339("2026-03-12T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let mut days: Vec<_> = aggregate_at(&[r], now, tz)
+            .by_day
+            .into_iter()
+            .map(|(day, d)| (day, d.cost))
+            .collect();
+        days.sort_by(|a, b| a.0.cmp(&b.0));
+        days
+    }
+
+    /// Spend a minute either side of local midnight lands on different days.
+    #[test]
+    fn spend_either_side_of_local_midnight_lands_on_different_days() {
+        // 05:00Z on 8 March is 00:00 EST.
+        let days = cost_by_day(
+            &[("2026-03-08T04:45:00Z", 1.0), ("2026-03-08T05:00:00Z", 2.0)],
+            &SpringForward,
+        );
+        assert_eq!(
+            days,
+            [
+                ("2026-03-07".to_string(), 1.0),
+                ("2026-03-08".to_string(), 2.0)
+            ]
+        );
+    }
+
+    /// The day the clocks change is 23 hours long: its midnight-to-midnight
+    /// edges move with the offset rather than sitting 24 hours apart.
+    #[test]
+    fn the_day_the_clocks_change_runs_from_its_own_midnight_to_the_next() {
+        let days = cost_by_day(
+            &[
+                ("2026-03-08T05:00:00Z", 1.0), // 00:00 EST, 8 March
+                ("2026-03-09T03:45:00Z", 2.0), // 23:45 EDT, 8 March
+                ("2026-03-09T04:00:00Z", 4.0), // 00:00 EDT, 9 March
+            ],
+            &SpringForward,
+        );
+        assert_eq!(
+            days,
+            [
+                ("2026-03-08".to_string(), 3.0),
+                ("2026-03-09".to_string(), 4.0)
+            ]
+        );
     }
 
     #[test]

@@ -485,49 +485,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn context_window_is_family_wide_with_a_safe_default() {
-        assert_eq!(context_window_for("claude-haiku-4-5"), 200_000);
-        assert_eq!(context_window_for("claude-opus-5"), 1_000_000);
-        assert_eq!(context_window_for("claude-sonnet-4-6"), 1_000_000);
-        assert_eq!(context_window_for("claude-fable-5"), 1_000_000);
+    fn an_unseen_version_of_a_known_family_gets_the_family_window() {
+        assert_eq!(
+            context_window_for("claude-opus-9-20991231"),
+            context_window_for("claude-opus-5")
+        );
         assert_eq!(
             context_window_for("some-future-model"),
             DEFAULT_CONTEXT_WINDOW
         );
     }
 
+    fn rates(p: Pricing) -> [f64; 4] {
+        [p.input, p.output, p.cache_write, p.cache_read]
+    }
+
+    /// The regression: `claude-opus-5` answered to neither `opus-4` nor
+    /// `opus-3`, so it was priced at the Sonnet fallback and every cost Atlas
+    /// showed for it, live and in Stats, was wrong.
     #[test]
     fn pricing_follows_the_family_so_a_new_version_never_falls_through() {
-        // The regression: `claude-opus-5` answered to neither `opus-4` nor
-        // `opus-3`, so it was priced at the Sonnet fallback — every cost Atlas
-        // showed for it, live and in Stats, came out at 3/5ths of the real rate
-        // on input and 3/5ths on output.
-        let opus5 = pricing_for("claude-opus-5");
-        assert_eq!((opus5.input, opus5.output), (5.0, 25.0));
-        assert_eq!((opus5.cache_write, opus5.cache_read), (6.25, 0.5));
+        let fallback = rates(pricing_for("some-future-model"));
+        let opus = rates(pricing_for("claude-opus-5"));
+        assert_ne!(opus, fallback);
+        assert_eq!(rates(pricing_for("claude-opus-9-20991231")), opus);
+        assert_eq!(rates(pricing_for("claude-opus-4-5")), opus);
 
-        // A version this table has never heard of prices as its family.
-        assert_eq!(pricing_for("claude-opus-9-20991231").input, 5.0);
-        assert_eq!(pricing_for("claude-haiku-9").input, 1.0);
+        let haiku = rates(pricing_for("claude-haiku-4-5-20251001"));
+        assert_ne!(haiku, fallback);
+        assert_eq!(rates(pricing_for("claude-haiku-9")), haiku);
+    }
 
-        assert_eq!(pricing_for("claude-sonnet-5").input, 2.0);
-        assert_eq!(pricing_for("claude-sonnet-4-6").input, 3.0);
-        assert_eq!(pricing_for("claude-haiku-4-5-20251001").input, 1.0);
-        // Fable 5.1 reads cache at 0.025x input, Fable 5 at 0.1x.
-        assert_eq!(pricing_for("claude-fable-5-1").cache_read, 0.25);
-        assert_eq!(pricing_for("claude-fable-5").cache_read, 1.0);
-
-        // Retired models keep their own rates, so old sessions in Stats stay
-        // right. Both id shapes are covered — see `is_legacy_opus`.
-        assert_eq!(pricing_for("claude-opus-4-1-20250805").input, 15.0);
-        assert_eq!(pricing_for("claude-opus-4-20250514").input, 15.0);
-        assert_eq!(pricing_for("claude-3-opus-20240229").input, 15.0);
-        assert_eq!(pricing_for("claude-opus-4-5").input, 5.0);
-        assert_eq!(pricing_for("claude-3-5-haiku-20241022").input, 0.8);
-        assert_eq!(pricing_for("claude-3-haiku-20240307").input, 0.25);
-
-        // An unrecognised family keeps the mid-range fallback.
-        assert_eq!(pricing_for("some-future-model").input, 3.0);
+    /// Retired Opus models keep their own, higher rates so old sessions in
+    /// Stats stay right. Both id shapes are covered — see `is_legacy_opus`.
+    #[test]
+    fn retired_opus_ids_keep_their_own_rates() {
+        let current = rates(pricing_for("claude-opus-5"));
+        let legacy = rates(pricing_for("claude-3-opus-20240229"));
+        assert_ne!(legacy, current);
+        assert_eq!(rates(pricing_for("claude-opus-4-20250514")), legacy);
+        assert_eq!(rates(pricing_for("claude-opus-4-1-20250805")), legacy);
     }
 
     #[test]

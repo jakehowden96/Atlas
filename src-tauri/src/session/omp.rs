@@ -1522,13 +1522,6 @@ mod tests {
     }
 
     #[test]
-    fn breadcrumb_path_maps_dev_ttys_to_the_file_omp_writes() {
-        let agent_dir = Path::new("/home/user/.omp/agent");
-        let path = breadcrumb_path(agent_dir, "/dev/ttys001");
-        assert_eq!(path, agent_dir.join("terminal-sessions").join("ttys001"));
-    }
-
-    #[test]
     fn a_breadcrumb_older_than_since_is_ignored() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("ttys001");

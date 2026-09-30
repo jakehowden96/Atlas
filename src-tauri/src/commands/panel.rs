@@ -172,7 +172,8 @@ fn build_panel_multi(
     let mut budget = MAX_PANEL_DIFF_SIZE;
 
     for entry in dir_entries {
-        if !entry.file_type().is_ok_and(|t| t.is_dir()) {
+        // `Path::is_dir` follows symlinks, like `list_workspace_repos`.
+        if !entry.path().is_dir() {
             continue;
         }
 
@@ -550,6 +551,29 @@ mod tests {
         );
         assert!(projects.iter().all(|p| p.raw.contains("+new")));
         assert_eq!(diff.files_changed, 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_multi_repo_panel_includes_a_symlinked_checkout() {
+        let workspace = workspace_with_repos(&["api"], 10);
+        let elsewhere = workspace_with_repos(&["real"], 10);
+        std::os::unix::fs::symlink(
+            elsewhere.path().join("real"),
+            workspace.path().join("linked"),
+        )
+        .unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let panel = panel_file(state.path());
+
+        let data = build_panel_multi("multi-symlink", workspace.path().to_str().unwrap(), &panel)
+            .unwrap()
+            .unwrap();
+        let projects = data.diff.unwrap().projects.unwrap();
+        assert_eq!(
+            projects.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+            ["api", "linked"]
+        );
     }
 
     #[test]
