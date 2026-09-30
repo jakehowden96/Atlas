@@ -14,16 +14,11 @@ use tauri::{Emitter, Manager};
 
 const BACK_TO_SESSIONS_MENU_ID: &str = "back-to-sessions";
 
+/// Log to stderr and, when `~/.atlas/logs` is usable, to a dated file there.
+/// A missing home directory or an unwritable log directory degrades to
+/// stderr-only rather than aborting before the window opens.
 fn setup_logging() {
-    let log_dir = dirs::home_dir()
-        .map(|h| h.join(".atlas").join("logs"))
-        .expect("could not resolve home directory");
-
-    std::fs::create_dir_all(&log_dir).ok();
-
-    let file_config = fern::DateBased::new(log_dir.join("atlas-backend-"), "%Y-%m-%d.log");
-
-    fern::Dispatch::new()
+    let mut dispatch = fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
                 "[{}] [{}] [{}] {}",
@@ -34,14 +29,39 @@ fn setup_logging() {
             ))
         })
         .level(log::LevelFilter::Info)
-        .chain(std::io::stderr())
-        .chain(file_config)
-        .apply()
-        .ok();
+        .chain(std::io::stderr());
 
-    clean_old_logs(&log_dir, 7);
+    let log_dir = dirs::home_dir().map(|h| h.join(".atlas").join("logs"));
+    match &log_dir {
+        Some(dir) => match std::fs::create_dir_all(dir) {
+            Ok(()) => {
+                dispatch = dispatch.chain(fern::DateBased::new(
+                    dir.join("atlas-backend-"),
+                    "%Y-%m-%d.log",
+                ));
+            }
+            Err(e) => eprintln!(
+                "could not create {}: {e} — logging to stderr only",
+                dir.display()
+            ),
+        },
+        None => eprintln!("could not resolve the home directory — logging to stderr only"),
+    }
+
+    if let Err(e) = dispatch.apply() {
+        eprintln!("could not start logging: {e}");
+    }
+
+    if let Some(dir) = log_dir {
+        clean_old_logs(&dir, LOG_RETENTION_DAYS);
+    }
 }
 
+/// How long dated backend logs are kept.
+const LOG_RETENTION_DAYS: u64 = 14;
+
+/// Delete Atlas's own dated logs (`atlas-*.log`) not modified for
+/// `max_age_days`. Other files in the directory are none of our business.
 fn clean_old_logs(log_dir: &std::path::Path, max_age_days: u64) {
     let cutoff =
         std::time::SystemTime::now() - std::time::Duration::from_secs(max_age_days * 24 * 60 * 60);
@@ -49,7 +69,9 @@ fn clean_old_logs(log_dir: &std::path::Path, max_age_days: u64) {
         return;
     };
     for entry in entries.flatten() {
-        if !entry.file_name().to_string_lossy().ends_with(".log") {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !(name.starts_with("atlas-") && name.ends_with(".log")) {
             continue;
         }
         if let Ok(meta) = entry.metadata() {
@@ -60,6 +82,33 @@ fn clean_old_logs(log_dir: &std::path::Path, max_age_days: u64) {
             }
         }
     }
+}
+
+/// Route panics to the log. A Finder-launched macOS app and the Windows
+/// `windows_subsystem = "windows"` build have no visible stderr, so without
+/// this a panic in a background thread (watcher, PTY or LSP reader) kills the
+/// feature with no trace in `~/.atlas/logs`.
+fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_else(|| "unknown location".to_string());
+        let payload = info.payload();
+        let message = payload
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+            .unwrap_or("non-string panic payload");
+        let thread = std::thread::current();
+        log::error!(
+            "panic in thread '{}' at {}: {}\n{}",
+            thread.name().unwrap_or("<unnamed>"),
+            location,
+            message,
+            std::backtrace::Backtrace::force_capture()
+        );
+    }));
 }
 
 /// Identifies Atlas's own entry in `hooks.Notification`. The command is
@@ -328,6 +377,7 @@ fn extend_path_for_gui_launch() {
 
 pub fn run() -> std::process::ExitCode {
     setup_logging();
+    install_panic_hook();
     extend_path_for_gui_launch();
 
     let pty_manager = PtyManager::new();
@@ -789,5 +839,71 @@ mod tests {
             "session-start",
         );
         assert_eq!(std::fs::read_to_string(&backup).unwrap(), original);
+    }
+
+    fn age(path: &std::path::Path, days: u64) {
+        let when = std::time::SystemTime::now() - std::time::Duration::from_secs(days * 86_400);
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(when)
+            .unwrap();
+    }
+
+    #[test]
+    fn log_retention_prunes_only_old_atlas_logs() {
+        let dir = tempfile::tempdir().unwrap();
+        let old_log = dir.path().join("atlas-backend-2020-01-01.log");
+        let recent_log = dir.path().join("atlas-backend-2099-01-01.log");
+        let foreign = dir.path().join("notes.log");
+        for f in [&old_log, &recent_log, &foreign] {
+            std::fs::write(f, "x").unwrap();
+        }
+        age(&old_log, 20);
+        age(&recent_log, 3);
+        age(&foreign, 400);
+
+        clean_old_logs(dir.path(), LOG_RETENTION_DAYS);
+
+        assert!(!old_log.exists());
+        assert!(recent_log.exists());
+        assert!(foreign.exists(), "only atlas-*.log belongs to us");
+    }
+
+    struct CaptureLogger(std::sync::Mutex<Vec<String>>);
+    impl log::Log for CaptureLogger {
+        fn enabled(&self, _: &log::Metadata) -> bool {
+            true
+        }
+        fn log(&self, record: &log::Record) {
+            if record.level() == log::Level::Error {
+                self.0.lock().unwrap().push(record.args().to_string());
+            }
+        }
+        fn flush(&self) {}
+    }
+
+    #[test]
+    fn a_panic_in_a_background_thread_is_logged_as_an_error() {
+        static LOGGER: CaptureLogger = CaptureLogger(std::sync::Mutex::new(Vec::new()));
+        log::set_logger(&LOGGER).unwrap();
+        log::set_max_level(log::LevelFilter::Error);
+        install_panic_hook();
+
+        let _ = std::thread::Builder::new()
+            .name("watcher-test".to_string())
+            .spawn(|| panic!("boom 1234"))
+            .unwrap()
+            .join();
+        let _ = std::panic::take_hook();
+
+        let lines = LOGGER.0.lock().unwrap();
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("watcher-test") && l.contains("boom 1234")),
+            "{lines:?}"
+        );
     }
 }
