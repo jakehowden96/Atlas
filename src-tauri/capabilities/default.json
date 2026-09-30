@@ -1,37 +1,12 @@
 {
   "identifier": "default",
-  "description": "Capability for the main window. $HOME/** scope is required for file open/save features (user-chosen arbitrary paths via dialog). $HOME/.atlas/** is used for workspace, settings, and log storage.",
+  "description": "Capability for the main window. The webview has no filesystem access of its own: settings, workspaces, logs and the Files view all go through Rust commands that validate their arguments. core:window:allow-destroy is what the unsaved-changes quit guard uses to close the window after it has intercepted the close request.",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
+    "core:window:allow-destroy",
     "dialog:allow-open",
-    "dialog:allow-save",
-    {
-      "identifier": "fs:allow-read-text-file",
-      "allow": [{ "path": "$HOME/.atlas/**" }, { "path": "$HOME/**" }]
-    },
-    {
-      "identifier": "fs:allow-write-text-file",
-      "allow": [{ "path": "$HOME/.atlas/**" }, { "path": "$HOME/**" }]
-    },
-    {
-      "identifier": "fs:allow-exists",
-      "allow": [{ "path": "$HOME/.atlas" }, { "path": "$HOME/.atlas/**" }]
-    },
-    {
-      "identifier": "fs:allow-mkdir",
-      "allow": [{ "path": "$HOME/.atlas" }, { "path": "$HOME/.atlas/**" }]
-    },
-    "fs:default",
-    {
-      "identifier": "fs:allow-read-dir",
-      "allow": [{ "path": "$HOME/.atlas/logs" }]
-    },
-    {
-      "identifier": "fs:allow-remove",
-      "allow": [{ "path": "$HOME/.atlas/logs/**" }]
-    },
     "notification:default",
     "clipboard-manager:allow-write-text"
   ]

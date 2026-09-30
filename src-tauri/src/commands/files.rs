@@ -1,9 +1,9 @@
 //! Files screen backend: the workspace document tree, `~/.claude/plans`,
 //! reading and writing documents, and watching for external edits.
 //!
-//! The frontend cannot do this with `@tauri-apps/plugin-fs` alone: workspaces
-//! routinely live outside `$HOME`, and a recursive walk from the frontend would
-//! cost one IPC round trip per directory.
+//! This lives in Rust rather than the webview: workspaces routinely live
+//! outside `$HOME`, a recursive walk from the frontend would cost one IPC round
+//! trip per directory, and the webview has no filesystem access of its own.
 
 use super::validate::validate_cwd;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
