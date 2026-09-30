@@ -1,16 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { get } from "svelte/store";
 
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  exists: vi.fn(async () => true),
-  readTextFile: vi.fn(async () => "{}"),
-  writeTextFile: vi.fn(async () => {}),
-  mkdir: vi.fn(async () => {}),
-  readDir: vi.fn(async () => []),
-  remove: vi.fn(async () => {}),
-  BaseDirectory: { Home: 0 },
-}));
-
 vi.mock("../ipc", () => ({
   listClaudePlans: vi.fn(async () => []),
   listDir: vi.fn(async () => []),

@@ -79,13 +79,6 @@ vi.mock("@xterm/addon-fit", () => ({ FitAddon: fakes.FakeFit }));
 vi.mock("@xterm/addon-web-links", () => ({ WebLinksAddon: fakes.FakeLinks }));
 vi.mock("@xterm/addon-webgl", () => ({ WebglAddon: fakes.FakeWebgl }));
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ writeText: vi.fn() }));
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  BaseDirectory: { Home: 1 },
-  readTextFile: vi.fn(),
-  writeTextFile: vi.fn(),
-  mkdir: vi.fn(),
-  exists: vi.fn(),
-}));
 vi.mock("../ipc", () => ({
   ptySpawn: vi.fn(),
   ptyWrite: vi.fn(),

@@ -284,6 +284,28 @@ export async function onDocsChanged(
   });
 }
 
+// ── Atlas state files ───────────────────────────────────────────────────────
+
+/** The two files under `~/.atlas` the backend loads and saves on the webview's
+ *  behalf. A closed set: the webview never supplies a path. */
+export type StateFileName = "settings" | "workspaces";
+
+export interface StateLoad {
+  /** The file's JSON text; null when it is missing or was unusable. */
+  contents: string | null;
+  /** The file did not parse and was copied to `<name>.json.bak`. */
+  recovered: boolean;
+}
+
+export async function stateLoad(name: StateFileName): Promise<StateLoad> {
+  return invoke("state_load", { name });
+}
+
+/** Atomic and serialised in Rust. Rejects contents that are not JSON. */
+export async function stateSave(name: StateFileName, contents: string): Promise<void> {
+  return invoke("state_save", { name, contents });
+}
+
 // ── Language servers ────────────────────────────────────────────────────────
 
 /**

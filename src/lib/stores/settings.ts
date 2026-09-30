@@ -1,6 +1,5 @@
 import { derived, writable, get } from "svelte/store";
-import { BaseDirectory, readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs";
-import { startOmpTail, startSessionTail, stopSessionTail } from "../ipc";
+import { startOmpTail, startSessionTail, stopSessionTail, stateLoad } from "../ipc";
 import {
   ACTIONS,
   DEFAULT_KEYMAP,
@@ -11,7 +10,8 @@ import {
   type Keymap,
 } from "../keymap";
 import { log } from "../logger";
-import { reportStorageFailure } from "../storage-failure";
+import { createStatePersister } from "../state-persist";
+import { reportNewerState, reportStateRecovered, reportStorageFailure } from "../storage-failure";
 import { themeMode, type ThemeMode } from "../theme";
 import { openFiles, sources } from "./file-tabs";
 import { liveSessions } from "./liveSessions";
@@ -98,10 +98,12 @@ export const chords = derived(keymap, (km) => {
   return labels;
 });
 
-const SETTINGS_DIR = ".atlas";
-const SETTINGS_FILE = ".atlas/settings.json";
+/** The schema version `persistSettings` writes. Bump it with a step in
+ *  `migrateSettings` whenever a persisted key changes meaning. */
+export const SETTINGS_VERSION = 1;
 
 interface PersistedSettings {
+  version?: number;
   enableNotifications?: boolean;
   watchedRepos?: string[];
   theme?: ThemeMode;
@@ -156,28 +158,42 @@ function isValidHarness(v: unknown): v is HarnessConfig {
 export const MIN_TERMINAL_FONT_SIZE = 8;
 export const MAX_TERMINAL_FONT_SIZE = 24;
 
-let dirEnsured = false;
-async function ensureDir() {
-  if (dirEnsured) return;
-  const dirExists = await exists(SETTINGS_DIR, { baseDir: BaseDirectory.Home });
-  if (!dirExists) {
-    await mkdir(SETTINGS_DIR, { baseDir: BaseDirectory.Home });
+/**
+ * Bring a parsed settings file up to `SETTINGS_VERSION`.
+ *
+ * Version 0 is a file with no `version` key — everything written before
+ * versioning — and has the same shape as version 1: every key optional, every
+ * absent key keeping the store's default. `newerThanKnown` is true for a file
+ * written by a later Atlas; its keys that this build understands still load,
+ * and the backend keeps the original as `settings.json.v<N>.bak` before this
+ * build's older-shaped save replaces it.
+ */
+export function migrateSettings(raw: unknown): {
+  data: PersistedSettings;
+  newerThanKnown: boolean;
+} {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { data: {}, newerThanKnown: false };
   }
-  dirEnsured = true;
+  const data = raw as PersistedSettings;
+  const version = typeof data.version === "number" ? data.version : 0;
+  return { data, newerThanKnown: version > SETTINGS_VERSION };
 }
 
 /**
  * Every key is optional and every absent key keeps the store's default, so a
- * settings file written by any earlier Atlas still loads.
+ * settings file written by any earlier Atlas still loads. Writes are held until
+ * this has settled, so a setter that runs first can never replace the file with
+ * defaults.
  */
 export async function loadSettings() {
   log.info("settings", "loadSettings started");
   try {
-    const fileExists = await exists(SETTINGS_FILE, { baseDir: BaseDirectory.Home });
-    log.info("settings", `exists check: ${fileExists}`);
-    if (!fileExists) return;
-    const raw = await readTextFile(SETTINGS_FILE, { baseDir: BaseDirectory.Home });
-    const data = JSON.parse(raw) as PersistedSettings;
+    const loaded = await stateLoad("settings");
+    if (loaded.recovered) reportStateRecovered("settings");
+    if (loaded.contents === null) return;
+    const { data, newerThanKnown } = migrateSettings(JSON.parse(loaded.contents));
+    if (newerThanKnown) reportNewerState("settings");
     if (data.enableNotifications === false) enableNotifications.set(false);
     if (Array.isArray(data.watchedRepos)) {
       watchedRepos.set(data.watchedRepos.filter((repo) => typeof repo === "string"));
@@ -228,36 +244,41 @@ export async function loadSettings() {
   } catch (e) {
     log.error("settings", "failed to load settings", e);
     reportStorageFailure("settings", "load", e);
+  } finally {
+    persister.markLoaded();
   }
 }
 
-async function persistSettings() {
-  try {
-    await ensureDir();
-    const data: PersistedSettings = {
-      enableNotifications: get(enableNotifications),
-      watchedRepos: get(watchedRepos),
-      theme: get(themeMode),
-      soundOnNeedsYou: get(soundOnNeedsYou),
-      terminalFontSize: get(terminalFontSize),
-      overviewOrdering: get(overviewOrdering),
-      prRefreshMinutes: get(prRefreshMinutes),
-      autoAddReposFromWorkspaces: get(autoAddReposFromWorkspaces),
-      tailTranscripts: get(tailTranscripts),
-      pinnedSessions: get(pinnedSessions),
-      harnesses: get(harnesses),
-      lastHarnessId: get(lastHarnessId),
-      openFiles: get(openFiles),
-      fileSources: get(sources),
-      keymap: get(keymap),
-    };
-    await writeTextFile(SETTINGS_FILE, JSON.stringify(data, null, 2), {
-      baseDir: BaseDirectory.Home,
-    });
-  } catch (e) {
+const persister = createStatePersister(
+  "settings",
+  (): PersistedSettings => ({
+    version: SETTINGS_VERSION,
+    enableNotifications: get(enableNotifications),
+    watchedRepos: get(watchedRepos),
+    theme: get(themeMode),
+    soundOnNeedsYou: get(soundOnNeedsYou),
+    terminalFontSize: get(terminalFontSize),
+    overviewOrdering: get(overviewOrdering),
+    prRefreshMinutes: get(prRefreshMinutes),
+    autoAddReposFromWorkspaces: get(autoAddReposFromWorkspaces),
+    tailTranscripts: get(tailTranscripts),
+    pinnedSessions: get(pinnedSessions),
+    harnesses: get(harnesses),
+    lastHarnessId: get(lastHarnessId),
+    openFiles: get(openFiles),
+    fileSources: get(sources),
+    keymap: get(keymap),
+  }),
+  (e) => {
     log.error("settings", "failed to persist settings", e);
     reportStorageFailure("settings", "save", e);
-  }
+  },
+);
+
+/** Write the current settings. Coalesced: overlapping calls share one write of
+ *  the latest state, and nothing is written before `loadSettings` has settled. */
+function persistSettings(): Promise<void> {
+  return persister.request();
 }
 
 export function clampFontSize(size: number): number {

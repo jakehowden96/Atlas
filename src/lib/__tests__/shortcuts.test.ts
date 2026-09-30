@@ -1,14 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { get } from "svelte/store";
 
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  exists: vi.fn(),
-  readTextFile: vi.fn(),
-  writeTextFile: vi.fn(),
-  mkdir: vi.fn(),
-  BaseDirectory: { Home: 0 },
-}));
-
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ onCloseRequested: vi.fn().mockResolvedValue(() => {}) }),
 }));

@@ -6,6 +6,7 @@ mod lsp;
 mod panel;
 mod pty;
 mod session;
+mod state;
 mod transcript;
 
 use pty::manager::PtyManager;
@@ -448,6 +449,7 @@ pub fn run() -> std::process::ExitCode {
     let pty_manager = PtyManager::new();
     let lsp_manager = lsp::LspManager::new();
     let live_sessions = LiveSessionManager::new();
+    let state_store = state::StateStore::new(dirs::home_dir().map(|h| h.join(".atlas")));
 
     let app = tauri::Builder::default()
         // Registered first, as the plugin requires. Two Atlas processes would
@@ -492,10 +494,13 @@ pub fn run() -> std::process::ExitCode {
             }
         })
         .manage(pty_manager)
+        .manage(state_store)
         .manage(lsp_manager)
         .manage(live_sessions.clone())
         .manage(commands::files::DocsWatchers::default())
         .invoke_handler(tauri::generate_handler![
+            state::state_load,
+            state::state_save,
             lsp::lsp_start,
             lsp::lsp_send,
             lsp::lsp_stop,

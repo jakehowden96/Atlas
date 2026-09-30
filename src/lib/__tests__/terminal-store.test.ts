@@ -5,14 +5,6 @@ vi.mock("../stores/panel", () => ({
   panelData: { set: vi.fn(), subscribe: vi.fn(() => () => {}) },
 }));
 
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  exists: vi.fn(),
-  readTextFile: vi.fn(),
-  writeTextFile: vi.fn(),
-  mkdir: vi.fn(),
-  BaseDirectory: { Home: 0 },
-}));
-
 import {
   tabs,
   activeTabId,
