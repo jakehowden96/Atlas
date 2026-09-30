@@ -10,6 +10,20 @@ use std::process::{Command, Stdio};
 /// `GIT_OPTIONAL_LOCKS=0` stops read-only commands from opportunistically
 /// refreshing the index: Atlas polls constantly and would otherwise collide
 /// with Claude's or the user's own `git add`/`commit` on `.git/index.lock`.
+/// What a failed `git` spawn says when there is no git to spawn. The UI shows
+/// this text as is, so it carries the fix.
+pub(crate) const GIT_NOT_FOUND: &str = "git was not found on PATH. Install it (macOS: xcode-select --install, Windows: winget install --id Git.Git)";
+
+/// A failed `git` spawn as the message callers see: a missing binary is
+/// `GIT_NOT_FOUND`, not the OS's 'No such file or directory (os error 2)'.
+fn spawn_error(e: &std::io::Error) -> String {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        GIT_NOT_FOUND.to_string()
+    } else {
+        e.to_string()
+    }
+}
+
 fn git_command(cwd: &str, args: &[&str]) -> Command {
     let mut cmd = Command::new("git");
     cmd.args(["-C", cwd])
@@ -23,7 +37,9 @@ fn git_command(cwd: &str, args: &[&str]) -> Command {
 /// significant (a trailing blank context line, NUL separators), so callers
 /// that parse it must not go through the trimming `git_cmd`.
 pub(crate) fn git_raw(cwd: &str, args: &[&str]) -> Result<String, String> {
-    let output = git_command(cwd, args).output().map_err(|e| e.to_string())?;
+    let output = git_command(cwd, args)
+        .output()
+        .map_err(|e| spawn_error(&e))?;
 
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).to_string());
@@ -51,7 +67,7 @@ pub(crate) fn git_raw_capped(
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| spawn_error(&e))?;
     let Some(stdout) = child.stdout.take() else {
         let _ = child.kill();
         let _ = child.wait();
@@ -82,51 +98,53 @@ pub(crate) fn should_skip_dir(name: &str) -> bool {
     name.starts_with('.') || name == "node_modules" || name == "target"
 }
 
-/// Get the current git status for determining the adaptive button state.
+/// Whether the working tree has changes the "Work on it" checkout would clobber.
+///
+/// One `git status` instead of seven spawns, and a git failure (lock, corrupt
+/// repo) is an error rather than being read as "dirty".
+fn git_status(cwd: &str) -> Result<GitStatus, String> {
+    let porcelain = git_raw(cwd, &["status", "--porcelain=v1", "-z"])?;
+    Ok(parse_porcelain(&porcelain))
+}
+
+/// `XY path` entries, NUL-separated. `X` is the index side, `Y` the worktree
+/// side; `?` marks untracked files, which count as unstaged work. A rename or
+/// copy is followed by a bare second path with no status columns.
+fn parse_porcelain(porcelain: &str) -> GitStatus {
+    let mut status = GitStatus {
+        has_unstaged: false,
+        has_staged: false,
+    };
+    let mut entries = porcelain.split('\0').filter(|e| !e.is_empty());
+    while let Some(entry) = entries.next() {
+        let mut columns = entry.chars();
+        let (Some(index), Some(worktree)) = (columns.next(), columns.next()) else {
+            continue;
+        };
+        if index == '?' {
+            status.has_unstaged = true;
+            continue;
+        }
+        if index != ' ' {
+            status.has_staged = true;
+        }
+        if worktree != ' ' {
+            status.has_unstaged = true;
+        }
+        if matches!(index, 'R' | 'C') || matches!(worktree, 'R' | 'C') {
+            entries.next();
+        }
+    }
+    status
+}
+
+/// Whether the tree has staged or unstaged changes, for the PR checkout guard.
 #[tauri::command(async)]
 pub async fn get_git_status(cwd: String) -> Result<GitStatus, String> {
     validate_cwd(&cwd)?;
-    tokio::task::spawn_blocking(move || {
-        // Verify this is actually a git repository
-        git_cmd(&cwd, &["rev-parse", "--git-dir"])?;
-
-        // Check for unstaged changes (working tree vs index)
-        // git diff --quiet exits 1 when there are changes
-        let has_modified = git_cmd(&cwd, &["diff", "--quiet"]).is_err();
-
-        // Check for untracked files
-        let has_untracked = git_cmd(&cwd, &["ls-files", "--others", "--exclude-standard"])
-            .map(|s| !s.is_empty())
-            .unwrap_or(false);
-
-        let has_unstaged = has_modified || has_untracked;
-
-        // Check for staged changes (index vs HEAD)
-        let has_staged = git_cmd(&cwd, &["diff", "--cached", "--quiet"]).is_err();
-
-        // Check for unpushed commits
-        let has_unpushed = git_cmd(&cwd, &["rev-list", "@{u}..HEAD", "--count"])
-            .map(|s| s.trim().parse::<u32>().unwrap_or(0) > 0)
-            .unwrap_or(false);
-
-        // Check for commits behind upstream
-        let commits_behind = git_cmd(&cwd, &["rev-list", "HEAD..@{u}", "--count"])
-            .map(|s| s.trim().parse::<u32>().unwrap_or(0))
-            .unwrap_or(0);
-
-        // Get current branch
-        let branch = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default();
-
-        Ok(GitStatus {
-            has_unstaged,
-            has_staged,
-            has_unpushed,
-            commits_behind,
-            branch,
-        })
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+    tokio::task::spawn_blocking(move || git_status(&cwd))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Parse a git remote URL into an `owner/repo` slug.
@@ -403,6 +421,14 @@ mod tests {
     // --- git_cmd error handling ---
 
     #[test]
+    fn a_missing_git_binary_has_its_own_message() {
+        let missing = std::io::Error::from(std::io::ErrorKind::NotFound);
+        assert_eq!(spawn_error(&missing), GIT_NOT_FOUND);
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        assert_ne!(spawn_error(&denied), GIT_NOT_FOUND);
+    }
+
+    #[test]
     fn git_cmd_nonexistent_dir() {
         let result = git_cmd("/nonexistent/path/that/should/not/exist", &["status"]);
         assert!(result.is_err());
@@ -449,6 +475,51 @@ mod tests {
                 "{spelling} must not be treated as a local branch"
             );
         }
+    }
+
+    #[test]
+    fn status_tells_staged_from_unstaged_and_untracked() {
+        let repo = init_repo();
+        let dir = repo.path();
+        let cwd = dir.to_str().unwrap();
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+        commit_all(dir, "init");
+
+        let clean = git_status(cwd).unwrap();
+        assert!(!clean.has_staged && !clean.has_unstaged);
+
+        std::fs::write(dir.join("new.txt"), "x\n").unwrap();
+        let untracked = git_status(cwd).unwrap();
+        assert!(!untracked.has_staged && untracked.has_unstaged);
+
+        git(dir, &["add", "new.txt"]);
+        let staged = git_status(cwd).unwrap();
+        assert!(staged.has_staged && !staged.has_unstaged);
+
+        std::fs::write(dir.join("a.txt"), "two\n").unwrap();
+        let both = git_status(cwd).unwrap();
+        assert!(both.has_staged && both.has_unstaged);
+    }
+
+    #[test]
+    fn status_survives_a_staged_rename() {
+        let repo = init_repo();
+        let dir = repo.path();
+        let cwd = dir.to_str().unwrap();
+        std::fs::write(dir.join("old.txt"), "one\n").unwrap();
+        commit_all(dir, "init");
+        git(dir, &["mv", "old.txt", "new.txt"]);
+
+        // The rename's second path (`old.txt`) is not a status entry: read as
+        // one it would look like a file with columns `ol`.
+        let status = git_status(cwd).unwrap();
+        assert!(status.has_staged && !status.has_unstaged);
+    }
+
+    #[test]
+    fn status_outside_a_repo_is_an_error_not_a_dirty_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(git_status(dir.path().to_str().unwrap()).is_err());
     }
 
     #[test]

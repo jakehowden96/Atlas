@@ -2,7 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { DirEntry, DocEntry, DocsChangedEvent, PlanEntry } from "../types/files";
 import type { GitStatus, PanelData } from "../types/panel";
-import type { GhViewer, RepoPrs, WorkspaceRepo } from "../types/prs";
+import type { GhViewerResult, RepoPrs, WorkspaceRepo } from "../types/prs";
 import type { LiveSession, SessionUpdateEvent } from "../types/session";
 import type { ResumableSession, StatsSummary } from "../types/stats";
 import { log } from "./logger";
@@ -51,10 +51,6 @@ export async function ptyKill(id: number, sessionId?: string): Promise<void> {
   return invoke("pty_kill", { id, sessionId: sessionId ?? null });
 }
 
-export async function getSessionDir(sessionId: string): Promise<string> {
-  return invoke("get_session_dir", { sessionId });
-}
-
 export async function getPanelData(sessionId: string): Promise<PanelData | null> {
   try {
     const data = await invoke<PanelData | null>("get_panel_data", { sessionId });
@@ -95,11 +91,20 @@ export async function listRepoPrs(repos: string[]): Promise<RepoPrs[]> {
 }
 
 /**
- * The signed-in GitHub user. Resolves to null — never rejects — when `gh` is
- * missing or logged out, so the PRs screen can degrade to All-only.
+ * The signed-in GitHub user, or why there is none. `gh` missing or logged out
+ * is a result, not a rejection, so the PRs screen can show the fix and degrade
+ * to All-only.
  */
-export async function ghViewer(): Promise<GhViewer | null> {
+export async function ghViewer(): Promise<GhViewerResult> {
   return invoke("gh_viewer");
+}
+
+/**
+ * Check a pull request out into the repo at `cwd` with `gh pr checkout`, which
+ * fetches the PR's own commits — the only way to reach a fork's branch.
+ */
+export async function ghPrCheckout(cwd: string, number: number, repo: string): Promise<void> {
+  return invoke("gh_pr_checkout", { cwd, number, repo });
 }
 
 export async function openUrl(url: string): Promise<void> {

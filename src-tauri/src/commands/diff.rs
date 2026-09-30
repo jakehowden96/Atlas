@@ -1,12 +1,28 @@
 use super::git::{git_cmd, git_raw, git_raw_capped};
+use crate::panel::types::Truncation;
 use std::fs;
 use std::io::Read;
 
+/// A diff as it will be shown: possibly cut to the size cap, with the account
+/// of what was left out.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub(crate) struct DiffPart {
+    pub text: String,
+    pub truncated: Option<Truncation>,
+}
+
 pub(crate) struct DiffBundle {
     /// Local working tree changes (Tier 1 only)
-    pub local: String,
+    pub local: DiffPart,
     /// Best available diff across all tiers (current behavior)
-    pub full: String,
+    pub full: DiffPart,
+}
+
+/// Synthetic diffs of untracked files, and how many were not examined because
+/// a cap was hit first.
+pub(crate) struct UntrackedDiffs {
+    pub text: String,
+    pub omitted: u32,
 }
 
 /// Generate synthetic unified diff output for untracked files.
@@ -18,7 +34,7 @@ pub(crate) struct DiffBundle {
 /// files, build artifacts). Only regular files are read: a symlink would leak
 /// whatever it points at (`~/.ssh/id_rsa`) into the diff, and a FIFO or
 /// `/dev/zero` would hang the read.
-pub(crate) fn generate_untracked_diffs(git_root: &str) -> String {
+pub(crate) fn generate_untracked_diffs(git_root: &str) -> UntrackedDiffs {
     const MAX_FILE_SIZE: u64 = 100 * 1024; // 100 KB per file
     const MAX_TOTAL_SIZE: usize = 1024 * 1024; // 1 MB total output
     const MAX_FILES_EXAMINED: usize = 1000;
@@ -30,17 +46,24 @@ pub(crate) fn generate_untracked_diffs(git_root: &str) -> String {
         &["ls-files", "--others", "--exclude-standard", "-z"],
     ) {
         Ok(list) if !list.is_empty() => list,
-        _ => return String::new(),
+        _ => {
+            return UntrackedDiffs {
+                text: String::new(),
+                omitted: 0,
+            }
+        }
     };
 
     let root = std::path::Path::new(git_root);
     let mut result = String::new();
+    let paths: Vec<&str> = file_list.split('\0').filter(|p| !p.is_empty()).collect();
+    let mut examined = 0;
 
-    for rel_path in file_list
-        .split('\0')
-        .filter(|p| !p.is_empty())
-        .take(MAX_FILES_EXAMINED)
-    {
+    for rel_path in &paths {
+        if examined == MAX_FILES_EXAMINED {
+            break;
+        }
+        examined += 1;
         let abs_path = root.join(rel_path);
 
         let Ok(link_meta) = fs::symlink_metadata(&abs_path) else {
@@ -95,21 +118,38 @@ pub(crate) fn generate_untracked_diffs(git_root: &str) -> String {
         }
     }
 
-    result
+    UntrackedDiffs {
+        text: result,
+        omitted: (paths.len() - examined) as u32,
+    }
 }
 
-/// Cap on tracked diff output. Untracked diffs are already capped at
-/// generation time, but `git diff` output is unbounded — a huge diff would
-/// be buffered, written to panel.json, and shipped to the frontend whole.
+/// Cap on one repo's diff. Untracked diffs are already capped at generation
+/// time, but `git diff` output is unbounded — a huge diff would be buffered,
+/// written to panel.json, and shipped to the frontend whole.
 const MAX_DIFF_SIZE: usize = 2 * 1024 * 1024; // 2 MB
+
+/// Cap on the diffs of every repo in one multi-repo panel together.
+pub(crate) const MAX_PANEL_DIFF_SIZE: usize = 4 * 1024 * 1024; // 4 MB
+
+/// Cap on the `--numstat` read that counts the files behind an oversized diff.
+const MAX_NUMSTAT_SIZE: usize = 4 * 1024 * 1024;
+
+/// Tracked changes as git printed them, read only up to the cap plus one byte
+/// so `truncate_diff` still sees that it overflowed.
+struct TrackedDiff {
+    text: String,
+    /// How many files git reports as changed. Only looked up when `text` is
+    /// over the cap, since only then does it differ from what `text` holds.
+    total_files: Option<u32>,
+}
 
 /// `git diff` in a fixed, machine-readable shape. The user's global config
 /// (`diff.external`, `color.ui=always`, `diff.noprefix`, textconv drivers)
 /// would otherwise change what the parser downstream sees, and repo-level
 /// external/textconv drivers would execute commands from an untrusted
-/// checkout. Output is read only up to the cap plus one byte, so
-/// `truncate_diff` still sees that it overflowed.
-fn git_diff(git_root: &str, extra: &[&str]) -> Result<String, String> {
+/// checkout.
+fn git_diff_args<'a>(extra: &[&'a str]) -> Vec<&'a str> {
     let mut args = vec![
         "diff",
         "--no-ext-diff",
@@ -117,10 +157,52 @@ fn git_diff(git_root: &str, extra: &[&str]) -> Result<String, String> {
         "--no-color",
         "--src-prefix=a/",
         "--dst-prefix=b/",
-        "--unified=3",
     ];
     args.extend_from_slice(extra);
-    git_raw_capped(git_root, &args, MAX_DIFF_SIZE + 1).map(|(diff, _)| diff)
+    args
+}
+
+fn git_diff(git_root: &str, extra: &[&str]) -> Result<TrackedDiff, String> {
+    let mut patch_extra = vec!["--unified=3"];
+    patch_extra.extend_from_slice(extra);
+    let args = git_diff_args(&patch_extra);
+    let (text, _) = git_raw_capped(git_root, &args, MAX_DIFF_SIZE + 1)?;
+    let total_files = if text.len() > MAX_DIFF_SIZE {
+        // No `--unified`: any context option turns the patch back on.
+        let mut numstat_extra = vec!["--numstat"];
+        numstat_extra.extend_from_slice(extra);
+        let numstat_args = git_diff_args(&numstat_extra);
+        git_raw_capped(git_root, &numstat_args, MAX_NUMSTAT_SIZE)
+            .ok()
+            .map(|(out, _)| out.lines().filter(|l| !l.is_empty()).count() as u32)
+    } else {
+        None
+    };
+    Ok(TrackedDiff { text, total_files })
+}
+
+/// Tracked changes plus, when asked, the untracked files, cut to the cap with
+/// the account of what was left out.
+fn assemble(tracked: &TrackedDiff, untracked: Option<&UntrackedDiffs>) -> DiffPart {
+    let mut text = tracked.text.clone();
+    let mut omitted = 0;
+    let mut untracked_files = 0;
+    if let Some(untracked) = untracked.filter(|u| !u.text.is_empty() || u.omitted > 0) {
+        if !text.is_empty() && !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push_str(&untracked.text);
+        omitted = untracked.omitted;
+        untracked_files = count_diff_stats(&untracked.text).0;
+    }
+    let tracked_files = tracked
+        .total_files
+        .unwrap_or_else(|| count_diff_stats(&tracked.text).0);
+    let total_files = tracked_files + untracked_files + omitted;
+
+    let (text, cut) = truncate_diff(text, MAX_DIFF_SIZE);
+    let truncated = (cut || omitted > 0).then(|| truncation_of(&text, total_files));
+    DiffPart { text, truncated }
 }
 
 /// 3-tier diff discovery matching sift's extractBestDiff.
@@ -131,26 +213,24 @@ pub(crate) fn discover_diff(git_root: &str) -> DiffBundle {
     // Tier 1: Working tree changes (staged + unstaged vs HEAD). An empty
     // result is final: with a HEAD, the unstaged and staged-only queries
     // below can only be empty too, so they run only when HEAD is missing.
-    let mut local = match git_diff(git_root, &["HEAD", "--"]) {
+    let local_tracked = match git_diff(git_root, &["HEAD", "--"]) {
         Ok(diff) => diff,
         Err(_) => {
             // Tier 1b: HEAD doesn't exist (initial commit) — unstaged changes
-            let mut diff = git_diff(git_root, &["--"]).unwrap_or_default();
+            let mut diff = git_diff(git_root, &["--"]).unwrap_or_else(|_| TrackedDiff {
+                text: String::new(),
+                total_files: None,
+            });
             // Tier 1c: Staged-only changes
-            if diff.is_empty() {
-                diff = git_diff(git_root, &["--cached", "--"]).unwrap_or_default();
+            if diff.text.is_empty() {
+                if let Ok(staged) = git_diff(git_root, &["--cached", "--"]) {
+                    diff = staged;
+                }
             }
             diff
         }
     };
-
-    // Append untracked file diffs to local
-    if !untracked.is_empty() {
-        if !local.is_empty() && !local.ends_with('\n') {
-            local.push('\n');
-        }
-        local.push_str(&untracked);
-    }
+    let local = assemble(&local_tracked, Some(&untracked));
 
     // Check for upstream/branch base ref to diff working tree against
     let mut base_ref: Option<String> = None;
@@ -189,11 +269,12 @@ pub(crate) fn discover_diff(git_root: &str) -> DiffBundle {
         }
     }
 
-    // Build `full` diff: working tree vs upstream/base (includes both local and committed changes)
-    let mut full = if let Some(base) = &base_ref {
-        // Diff working tree (including uncommitted changes) against the base ref
-        match git_diff(git_root, &[base, "--"]) {
-            Ok(diff) if !diff.is_empty() => diff,
+    // Build `full` diff: working tree vs upstream/base (includes both local and
+    // committed changes). A base-ref diff carries no untracked files, so they
+    // are appended; the fallback to `local` already has them.
+    let full = match &base_ref {
+        Some(base) => match git_diff(git_root, &[base, "--"]) {
+            Ok(diff) if !diff.text.is_empty() => assemble(&diff, Some(&untracked)),
             Ok(_) => {
                 log::debug!("diff against base {base} is empty; falling back to local diff");
                 local.clone()
@@ -202,34 +283,32 @@ pub(crate) fn discover_diff(git_root: &str) -> DiffBundle {
                 log::warn!("diff against base {base} failed ({e}); falling back to local diff");
                 local.clone()
             }
-        }
-    } else {
-        local.clone()
+        },
+        None => local.clone(),
     };
 
-    // Append untracked file diffs to full (if full came from base-ref diff, it won't have them)
-    if base_ref.is_some() && !untracked.is_empty() {
-        if !full.is_empty() && !full.ends_with('\n') {
-            full.push('\n');
-        }
-        full.push_str(&untracked);
-    }
+    DiffBundle { local, full }
+}
 
-    DiffBundle {
-        local: truncate_diff(local),
-        full: truncate_diff(full),
+/// The account for `shown`, cut from a diff that touches `total_files`.
+fn truncation_of(shown: &str, total_files: u32) -> Truncation {
+    Truncation {
+        shown_files: count_diff_stats(shown).0,
+        total_files,
+        shown_bytes: shown.len() as u64,
     }
 }
 
-/// Truncate an oversized diff, cutting at the last file boundary under the
-/// cap so the remaining output stays well-formed. Falls back to a plain cut
-/// if a single file's diff exceeds the cap on its own.
-fn truncate_diff(diff: String) -> String {
-    if diff.len() <= MAX_DIFF_SIZE {
-        return diff;
+/// Cut `diff` to at most `cap` bytes, at the last file boundary under the cap
+/// so the remaining output stays well-formed. Falls back to a plain cut if a
+/// single file's diff exceeds the cap on its own. The flag says whether
+/// anything was cut.
+fn truncate_diff(diff: String, cap: usize) -> (String, bool) {
+    if diff.len() <= cap {
+        return (diff, false);
     }
 
-    let mut end = MAX_DIFF_SIZE;
+    let mut end = cap;
     while !diff.is_char_boundary(end) {
         end -= 1;
     }
@@ -243,9 +322,23 @@ fn truncate_diff(diff: String) -> String {
         "diff output truncated from {} to {} bytes (cap {})",
         diff.len(),
         end,
-        MAX_DIFF_SIZE
+        cap
     );
-    diff[..end].to_string()
+    (diff[..end].to_string(), true)
+}
+
+/// Fit a repo's diff into what is left of a multi-repo panel's budget, keeping
+/// the account of what the cut removed (or what an earlier cut already had).
+pub(crate) fn fit_to_budget(part: DiffPart, budget: usize) -> DiffPart {
+    if part.text.len() <= budget {
+        return part;
+    }
+    let total_files = part
+        .truncated
+        .map_or_else(|| count_diff_stats(&part.text).0, |t| t.total_files);
+    let (text, _) = truncate_diff(part.text, budget);
+    let truncated = Some(truncation_of(&text, total_files));
+    DiffPart { text, truncated }
 }
 
 /// Count files, added lines and removed lines in a unified diff.
@@ -379,7 +472,9 @@ rename to new";
     #[test]
     fn untracked_diffs_non_git_dir() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(generate_untracked_diffs(dir.path().to_str().unwrap()).is_empty());
+        assert!(generate_untracked_diffs(dir.path().to_str().unwrap())
+            .text
+            .is_empty());
     }
 
     #[test]
@@ -387,7 +482,7 @@ rename to new";
         let repo = init_repo();
         std::fs::write(repo.path().join("café.txt"), "hello\n").unwrap();
 
-        let diff = generate_untracked_diffs(repo.path().to_str().unwrap());
+        let diff = generate_untracked_diffs(repo.path().to_str().unwrap()).text;
         assert!(diff.contains("diff --git a/café.txt b/café.txt"), "{diff}");
         assert!(diff.contains("+hello\n"));
     }
@@ -397,7 +492,7 @@ rename to new";
         let repo = init_repo();
         std::fs::write(repo.path().join("__init__.py"), "").unwrap();
 
-        let diff = generate_untracked_diffs(repo.path().to_str().unwrap());
+        let diff = generate_untracked_diffs(repo.path().to_str().unwrap()).text;
         assert!(diff.contains("diff --git a/__init__.py b/__init__.py"));
         assert!(!diff.contains("@@"), "{diff}");
         assert_eq!(count_diff_stats(&diff), (1, 0, 0));
@@ -415,7 +510,7 @@ rename to new";
         std::os::unix::fs::symlink("/dev/zero", repo.path().join("zero")).unwrap();
         std::fs::write(repo.path().join("real.txt"), "real\n").unwrap();
 
-        let diff = generate_untracked_diffs(repo.path().to_str().unwrap());
+        let diff = generate_untracked_diffs(repo.path().to_str().unwrap()).text;
         assert!(!diff.contains("TOP-SECRET"));
         assert!(!diff.contains("leak.txt"));
         assert!(diff.contains("+real\n"));
@@ -435,9 +530,12 @@ rename to new";
         std::fs::write(dir.join("a.txt"), "two\n").unwrap();
 
         let bundle = discover_diff(dir.to_str().unwrap());
-        assert!(bundle.local.starts_with("diff --git a/a.txt b/a.txt\n"));
-        assert!(!bundle.local.contains('\x1b'));
-        assert_eq!(count_diff_stats(&bundle.local), (1, 1, 1));
+        assert!(bundle
+            .local
+            .text
+            .starts_with("diff --git a/a.txt b/a.txt\n"));
+        assert!(!bundle.local.text.contains('\x1b'));
+        assert_eq!(count_diff_stats(&bundle.local.text), (1, 1, 1));
     }
 
     #[test]
@@ -451,7 +549,11 @@ rename to new";
         let bundle = discover_diff(dir.to_str().unwrap());
         // The hunk header promises 2 old / 2 new lines; trimming the final
         // ` \n` context line would leave it one short.
-        assert!(bundle.local.ends_with("\n \n"), "{:?}", bundle.local);
+        assert!(
+            bundle.local.text.ends_with("\n \n"),
+            "{:?}",
+            bundle.local.text
+        );
     }
 
     #[test]
@@ -462,8 +564,25 @@ rename to new";
         commit_all(dir, "init");
 
         let bundle = discover_diff(dir.to_str().unwrap());
-        assert!(bundle.local.is_empty());
-        assert!(bundle.full.is_empty());
+        assert!(bundle.local.text.is_empty());
+        assert!(bundle.full.text.is_empty());
+    }
+
+    #[test]
+    fn untracked_files_appear_once_when_only_untracked_files_changed() {
+        let repo = init_repo();
+        let dir = repo.path();
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+        commit_all(dir, "init");
+        std::fs::write(dir.join("new.txt"), "new\n").unwrap();
+
+        let bundle = discover_diff(dir.to_str().unwrap());
+        assert_eq!(
+            count_diff_stats(&bundle.full.text).0,
+            1,
+            "{}",
+            bundle.full.text
+        );
     }
 
     #[test]
@@ -474,15 +593,15 @@ rename to new";
         git(dir, &["add", "a.txt"]);
 
         let bundle = discover_diff(dir.to_str().unwrap());
-        assert_eq!(count_diff_stats(&bundle.local), (1, 1, 0));
+        assert_eq!(count_diff_stats(&bundle.local.text), (1, 1, 0));
     }
 
-    // --- truncate_diff ---
+    // --- truncation ---
 
     #[test]
     fn truncate_diff_under_cap_unchanged() {
         let diff = "diff --git a/a.rs b/a.rs\n+small\n".to_string();
-        assert_eq!(truncate_diff(diff.clone()), diff);
+        assert_eq!(truncate_diff(diff.clone(), MAX_DIFF_SIZE), (diff, false));
     }
 
     #[test]
@@ -490,7 +609,8 @@ rename to new";
         // First file fits under the cap; second file pushes past it.
         let first = format!("diff --git a/a.rs b/a.rs\n{}", "+x\n".repeat(100));
         let second = format!("diff --git a/b.rs b/b.rs\n+{}\n", "y".repeat(MAX_DIFF_SIZE));
-        let result = truncate_diff(format!("{first}{second}"));
+        let (result, cut) = truncate_diff(format!("{first}{second}"), MAX_DIFF_SIZE);
+        assert!(cut);
         assert_eq!(result, first);
     }
 
@@ -500,8 +620,77 @@ rename to new";
             "diff --git a/a.rs b/a.rs\n+{}\n",
             "x".repeat(MAX_DIFF_SIZE * 2)
         );
-        let result = truncate_diff(diff);
+        let (result, cut) = truncate_diff(diff, MAX_DIFF_SIZE);
+        assert!(cut);
         assert_eq!(result.len(), MAX_DIFF_SIZE);
         assert!(result.starts_with("diff --git a/a.rs"));
+    }
+
+    #[test]
+    fn an_oversized_diff_says_how_much_it_left_out() {
+        let repo = init_repo();
+        let dir = repo.path();
+        for name in ["a.txt", "b.txt", "c.txt"] {
+            std::fs::write(dir.join(name), "old\n".repeat(200_000)).unwrap();
+        }
+        commit_all(dir, "init");
+        for name in ["a.txt", "b.txt", "c.txt"] {
+            std::fs::write(dir.join(name), "new\n".repeat(200_000)).unwrap();
+        }
+
+        let bundle = discover_diff(dir.to_str().unwrap());
+        let truncated = bundle.full.truncated.expect("diff is over the cap");
+        assert_eq!(truncated.total_files, 3);
+        assert!(truncated.shown_files < 3, "{truncated:?}");
+        assert!(bundle.full.text.len() <= MAX_DIFF_SIZE);
+        assert_eq!(truncated.shown_bytes as usize, bundle.full.text.len());
+        assert_eq!(truncated.shown_files, count_diff_stats(&bundle.full.text).0);
+    }
+
+    #[test]
+    fn a_diff_under_the_cap_is_not_marked_truncated() {
+        let repo = init_repo();
+        let dir = repo.path();
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+        commit_all(dir, "init");
+        std::fs::write(dir.join("a.txt"), "two\n").unwrap();
+
+        let bundle = discover_diff(dir.to_str().unwrap());
+        assert_eq!(bundle.full.truncated, None);
+        assert_eq!(bundle.local.truncated, None);
+    }
+
+    #[test]
+    fn untracked_files_left_unexamined_are_counted_as_omitted() {
+        let repo = init_repo();
+        let dir = repo.path();
+        // 1000 examined at most; each file is small, so only the file cap bites.
+        for i in 0..1005 {
+            std::fs::write(dir.join(format!("f{i:04}.txt")), "x\n").unwrap();
+        }
+
+        let untracked = generate_untracked_diffs(dir.to_str().unwrap());
+        assert_eq!(untracked.omitted, 5);
+        assert_eq!(count_diff_stats(&untracked.text).0, 1000);
+    }
+
+    #[test]
+    fn fit_to_budget_keeps_the_earlier_total_and_cuts_the_text() {
+        let first = format!("diff --git a/a.rs b/a.rs\n{}", "+x\n".repeat(100));
+        let second = format!("diff --git a/b.rs b/b.rs\n{}", "+y\n".repeat(100));
+        let part = DiffPart {
+            text: format!("{first}{second}"),
+            truncated: None,
+        };
+
+        let fitted = fit_to_budget(part, first.len() + 20);
+        assert_eq!(fitted.text, first);
+        let truncated = fitted.truncated.unwrap();
+        assert_eq!((truncated.shown_files, truncated.total_files), (1, 2));
+
+        let empty = fit_to_budget(fitted, 0);
+        assert_eq!(empty.text, "");
+        // Still 2 files changed, as the first cut already said.
+        assert_eq!(empty.truncated.unwrap().total_files, 2);
     }
 }

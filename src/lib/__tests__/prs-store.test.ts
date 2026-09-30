@@ -26,6 +26,7 @@ import {
   needsAttention,
   needsMyReview,
   prRepos,
+  prSetupProblem,
   prViewer,
   refreshPrs,
   reposByWorkspace,
@@ -34,6 +35,8 @@ import {
 import { toasts } from "../stores/toast";
 import { prRefreshMinutes, watchedRepos } from "../stores/settings";
 import type { Pr, RepoPrs } from "../../types/prs";
+
+const NO_VIEWER = { viewer: null, error: null };
 
 function pr(overrides: Partial<Pr> = {}): Pr {
   return {
@@ -44,6 +47,7 @@ function pr(overrides: Partial<Pr> = {}): Pr {
     createdAt: "2026-09-01T00:00:00Z",
     updatedAt: "2026-09-01T00:00:00Z",
     isDraft: false,
+    isCrossRepository: false,
     headRefName: "feat/thing",
     ciState: "passed",
     reviewState: "none",
@@ -151,7 +155,7 @@ describe("pr polling", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.mocked(ghViewer).mockResolvedValue(null);
+    vi.mocked(ghViewer).mockResolvedValue(NO_VIEWER);
     vi.mocked(listRepoPrs).mockResolvedValue([]);
     vi.mocked(listRepoPrs).mockClear();
     watchedRepos.set([]);
@@ -246,7 +250,7 @@ describe("pr refresh", () => {
   beforeEach(async () => {
     vi.useFakeTimers();
     vi.mocked(ghViewer).mockReset();
-    vi.mocked(ghViewer).mockResolvedValue(null);
+    vi.mocked(ghViewer).mockResolvedValue(NO_VIEWER);
     vi.mocked(listRepoPrs).mockReset();
     vi.mocked(listRepoPrs).mockResolvedValue([]);
     vi.mocked(listWorkspaceRepos).mockReset();
@@ -354,10 +358,31 @@ describe("pr refresh", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(get(prViewer)).toBeNull();
 
-    vi.mocked(ghViewer).mockResolvedValue({ login: "octocat" });
+    vi.mocked(ghViewer).mockResolvedValue({ viewer: { login: "octocat" }, error: null });
     await vi.advanceTimersByTimeAsync(3 * 60_000);
 
     expect(get(prViewer)?.login).toBe("octocat");
+  });
+
+  it("reports a missing gh from the viewer lookup and clears it once gh answers", async () => {
+    const missing = { kind: "not_installed", message: "no gh" } as const;
+    vi.mocked(ghViewer).mockResolvedValue({ viewer: null, error: missing });
+    stop = startPrPolling();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(get(prSetupProblem)).toEqual(missing);
+    expect(get(prViewer)).toBeNull();
+
+    vi.mocked(ghViewer).mockResolvedValue({ viewer: { login: "octocat" }, error: null });
+    await vi.advanceTimersByTimeAsync(3 * 60_000);
+    expect(get(prSetupProblem)).toBeNull();
+  });
+
+  it("reports a signed-out gh from a repo's answer even when the viewer lookup said nothing", async () => {
+    const signedOut = { kind: "not_authenticated", message: "run gh auth login" } as const;
+    watchedRepos.set(["owner/repo"]);
+    vi.mocked(listRepoPrs).mockResolvedValue([{ repo: "owner/repo", prs: [], error: signedOut }]);
+    await refreshPrs();
+    expect(get(prSetupProblem)).toEqual(signedOut);
   });
 
   it("asks git for a workspace's remotes once when two callers race", async () => {

@@ -65,7 +65,7 @@ const LISTENERS = [
 beforeEach(() => {
   vi.clearAllMocks();
   for (const on of LISTENERS) vi.mocked(on).mockResolvedValue(vi.fn());
-  vi.mocked(ghViewer).mockResolvedValue(null);
+  vi.mocked(ghViewer).mockResolvedValue({ viewer: null, error: null });
   vi.mocked(listRepoPrs).mockResolvedValue([]);
   tabs.set([]);
   activeTabId.set("");

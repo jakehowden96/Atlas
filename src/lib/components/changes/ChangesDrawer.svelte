@@ -9,9 +9,10 @@
     TOTAL_LINE_BUDGET,
     type FlatFile,
   } from "../../diff-view";
+  import { emptyDiffMessage, truncationNotice, type BaseView } from "../../diff-truncation";
   import { refreshPanel } from "../../ipc";
   import { log } from "../../logger";
-  import { enterLabel } from "../../platform";
+  import { enterLabel, isMacPlatform } from "../../platform";
   import { submitReview } from "../../review/submitReview";
   import { panelData } from "../../stores/panel";
   import {
@@ -94,7 +95,6 @@
   // base (upstream merge-base, else merge-base with main/master). It only fills
   // `local_raw` in when the two differ, so with nothing committed on top of the
   // base both segments resolve to the same diff — which is the truth.
-  type BaseView = "working" | "main";
   const BASE_OPTIONS: Segment[] = [
     { id: "working", label: "Working tree" },
     { id: "main", label: "vs main" },
@@ -136,7 +136,9 @@
   let projectFiles = $derived.by(() => {
     const projects = data?.projects;
     if (!projects) return [];
-    const key = projects.map((p) => p.raw).join("\0");
+    // The backend's fingerprint stands for every project's text, so the
+    // memo needs no copy of them to compare against.
+    const key = data?.fingerprint ?? "";
     if (key === lastProjectsKey) return lastProjectFiles;
     lastProjectsKey = key;
     lastProjectFiles = projects.map((p) => ({ ...p, files: parseDiff(p.raw) }));
@@ -160,6 +162,8 @@
       : dedupeKeys(files.map((f) => toFlat(f, f.newName))),
   );
 
+  let truncation = $derived(truncationNotice(data, base));
+
   // Header counts come from what is actually rendered, so they stay honest
   // across the Working tree / vs main toggle.
   let addedTotal = $derived(flatFiles.reduce((n, f) => n + f.addedCount, 0));
@@ -175,13 +179,13 @@
   // allocates nothing.
   let viewedFiles: Set<string> = $state(new Set());
   let resetCwd = "";
-  let resetRaw = "";
+  let resetFingerprint = "";
 
   $effect(() => {
-    const raw = data?.raw ?? "";
-    if (cwd !== resetCwd || raw !== resetRaw) {
+    const fingerprint = data?.fingerprint ?? "";
+    if (cwd !== resetCwd || fingerprint !== resetFingerprint) {
       resetCwd = cwd;
-      resetRaw = raw;
+      resetFingerprint = fingerprint;
       viewedFiles = new Set();
       userCollapsed = new Set();
       expandedFiles = new Set();
@@ -304,9 +308,13 @@
       >
     </header>
 
+    {#if truncation}
+      <div class="notice" role="status">{truncation}</div>
+    {/if}
+
     <div class="body">
       {#if flatFiles.length === 0}
-        <div class="clean">Working tree clean</div>
+        <div class="clean">{emptyDiffMessage($panelData, isMacPlatform())}</div>
       {:else}
         <DiffFileTree
           {flatFiles}
@@ -496,6 +504,16 @@
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
     font-weight: 600;
+  }
+
+  .notice {
+    flex-shrink: 0;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
   }
 
   .clean {

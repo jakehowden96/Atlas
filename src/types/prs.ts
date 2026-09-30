@@ -10,6 +10,8 @@ export interface Pr {
   createdAt: string;
   updatedAt: string;
   isDraft: boolean;
+  /** The head branch is in a fork, so its name says nothing about local branches. */
+  isCrossRepository: boolean;
   headRefName: string;
   ciState: CiState;
   reviewState: ReviewState;
@@ -18,16 +20,34 @@ export interface Pr {
   commentsCount: number;
 }
 
-/** The signed-in GitHub user, or null when `gh` is missing or logged out. */
+/** The signed-in GitHub user. */
 export interface GhViewer {
   login: string;
 }
 
-/** Per-repo result. `error` carries gh's stderr when the call failed. */
+/**
+ * Why a `gh` call produced nothing. `not_installed` and `not_authenticated`
+ * are fixed outside Atlas, so the UI shows the command that fixes them;
+ * `message` is gh's own stderr (or Atlas's description) for the other two.
+ */
+export type GhErrorKind = "not_installed" | "not_authenticated" | "timed_out" | "failed";
+
+export interface GhError {
+  kind: GhErrorKind;
+  message: string;
+}
+
+/** The answer to "who is signed in": the user, or why there is none. */
+export interface GhViewerResult {
+  viewer: GhViewer | null;
+  error: GhError | null;
+}
+
+/** Per-repo result. `error` describes the failed `gh` call for that repo alone. */
 export interface RepoPrs {
   repo: string;
   prs: Pr[];
-  error: string | null;
+  error: GhError | null;
 }
 
 /**

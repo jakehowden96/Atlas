@@ -1,7 +1,10 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { getGitStatus, gitCheckoutBranch, openUrl } from "../../ipc";
+  import { getGitStatus, openUrl } from "../../ipc";
+  import { setupHint } from "../../gh-setup";
   import { log } from "../../logger";
+  import { isMacPlatform } from "../../platform";
+  import { checkoutPullRequest } from "../../pr-checkout";
   import { spawnHarnessSession } from "../../session-actions";
   import {
     effectiveWatchedRepos,
@@ -11,6 +14,7 @@
     prRepos,
     prsLastUpdated,
     prsLoading,
+    prSetupProblem,
     prViewer,
     refreshPrs,
     reposByWorkspace,
@@ -37,6 +41,10 @@
   onDestroy(() => {
     if (tick) clearInterval(tick);
   });
+
+  // gh missing or signed out fails every repo the same way, so it gets one
+  // explanation with the fix in place of a wall of identical card errors.
+  const setup = $derived($prSetupProblem ? setupHint($prSetupProblem, isMacPlatform()) : null);
 
   const viewerLogin = $derived($prViewer?.login ?? null);
   // Without a viewer there is nothing to match Mine / Needs my review against,
@@ -153,15 +161,15 @@
       const status = await getGitStatus(path);
       if (status.has_unstaged || status.has_staged) {
         showToast(`${basename(path)} has uncommitted changes`, {
-          body: `Commit or stash them before switching to ${pr.headRefName}.`,
+          body: `Commit or stash them before switching to #${pr.number}.`,
           type: "warning",
         });
         return;
       }
-      await gitCheckoutBranch(path, pr.headRefName);
+      await checkoutPullRequest(path, repo, pr);
     } catch (e) {
-      log.error("prs", `checkout ${pr.headRefName} in ${path} failed`, e);
-      showToast(`Could not check out ${pr.headRefName}`, { body: String(e) });
+      log.error("prs", `checkout of #${pr.number} in ${path} failed`, e);
+      showToast(`Could not check out #${pr.number}`, { body: String(e) });
       return;
     }
     try {
@@ -201,6 +209,14 @@
         </button>
         to see open PRs here.
       </p>
+    {:else if setup}
+      <div class="setup" role="status">
+        <p class="setup-title">{setup.title}</p>
+        <p class="setup-detail">{setup.detail}</p>
+        {#each setup.commands as command (command)}
+          <code class="setup-command">{command}</code>
+        {/each}
+      </div>
     {:else if $prRepos === null}
       <p class="empty">Loading…</p>
     {:else if cards.length === 0}
@@ -226,7 +242,7 @@
           </header>
 
           {#if card.error}
-            <p class="card-error">{card.error}</p>
+            <p class="card-error">{card.error.message}</p>
           {/if}
 
           {#each card.prs as pr (pr.number)}
@@ -339,6 +355,37 @@
     color: var(--muted);
     font-size: var(--fs-sm);
     text-align: center;
+  }
+
+  .setup {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin: 24px 0;
+    color: var(--muted);
+    font-size: var(--fs-sm);
+    text-align: center;
+  }
+
+  .setup p {
+    margin: 0;
+  }
+
+  .setup-title {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .setup-command {
+    padding: 4px 10px;
+    border: 1px solid var(--border2);
+    border-radius: var(--r-md);
+    background: var(--surface2);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    user-select: all;
   }
 
   .link {

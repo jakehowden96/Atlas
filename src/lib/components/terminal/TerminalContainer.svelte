@@ -1,9 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { chords } from "../../stores/settings";
-  import { getSessionDir } from "../../ipc";
   import { setTabSpawnError, tabs } from "../../stores/terminal";
-  import { showToast } from "../../stores/toast";
   import { activeView } from "../../stores/view";
   import {
     destroyTerminalTab,
@@ -36,13 +34,8 @@
    */
   let showing = $derived($activeView === "session");
 
-  async function handlePtyReady(tabId: string, ptyId: number) {
+  function handlePtyReady(tabId: string, ptyId: number) {
     tabs.update((t) => t.map((tab) => (tab.id === tabId ? { ...tab, ptyId } : tab)));
-    try {
-      await getSessionDir(tabId);
-    } catch (e) {
-      showToast("Failed to create session directory", { body: String(e) });
-    }
   }
 
   let paneEl: HTMLDivElement;

@@ -1,7 +1,10 @@
 use super::proc::no_window;
 use serde::{Deserialize, Serialize};
-use std::process::Command;
-use tokio::sync::OnceCell;
+use std::io::Read;
+use std::process::{Command, ExitStatus, Output, Stdio};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::{OnceCell, Semaphore};
 use tokio::task::JoinSet;
 
 /// One open pull request. We over-fetch from gh and then collapse the noisy
@@ -17,6 +20,9 @@ pub struct Pr {
     pub created_at: String,
     pub updated_at: String,
     pub is_draft: bool,
+    /// The head branch lives in a fork. Its name is the fork's, so it says
+    /// nothing about which commit a local branch of that name points at.
+    pub is_cross_repository: bool,
     pub head_ref_name: String,
     /// "passed" | "failed" | "pending" | "none"
     pub ci_state: String,
@@ -40,6 +46,8 @@ struct RawPr {
     updated_at: String,
     #[serde(rename = "isDraft", default)]
     is_draft: bool,
+    #[serde(rename = "isCrossRepository", default)]
+    is_cross_repository: bool,
     #[serde(rename = "headRefName", default)]
     head_ref_name: String,
     #[serde(rename = "reviewDecision", default)]
@@ -133,6 +141,7 @@ fn flatten(raw: RawPr) -> Pr {
         created_at: raw.created_at,
         updated_at: raw.updated_at,
         is_draft: raw.is_draft,
+        is_cross_repository: raw.is_cross_repository,
         head_ref_name: raw.head_ref_name,
         ci_state: rollup_ci_state(&raw.status_check_rollup).to_string(),
         review_state: map_review(&raw.review_decision).to_string(),
@@ -141,13 +150,44 @@ fn flatten(raw: RawPr) -> Pr {
     }
 }
 
-/// Per-repo result. `error` carries the stderr of a failed `gh` call so the UI
-/// can show "this one repo broke" without poisoning the whole snapshot.
+/// Why a `gh` call produced nothing. The first two are things the user fixes
+/// outside Atlas (install, sign in), so the UI shows the fix rather than gh's
+/// raw output.
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GhErrorKind {
+    /// No `gh` on PATH.
+    NotInstalled,
+    /// `gh` ran and said it has no credentials.
+    NotAuthenticated,
+    /// `gh` did not answer within `GH_TIMEOUT` and was killed.
+    TimedOut,
+    /// Anything else; `message` carries gh's stderr.
+    Failed,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct GhError {
+    pub kind: GhErrorKind,
+    pub message: String,
+}
+
+impl GhError {
+    fn failed(message: impl Into<String>) -> Self {
+        Self {
+            kind: GhErrorKind::Failed,
+            message: message.into(),
+        }
+    }
+}
+
+/// Per-repo result. `error` describes a failed `gh` call so the UI can show
+/// "this one repo broke" without poisoning the whole snapshot.
 #[derive(Debug, Serialize, Clone)]
 pub struct RepoPrs {
     pub repo: String,
     pub prs: Vec<Pr>,
-    pub error: Option<String>,
+    pub error: Option<GhError>,
 }
 
 /// Reject anything that isn't a plain `owner/repo` slug. Mirrors GitHub's own
@@ -179,91 +219,171 @@ pub(crate) fn validate_repo_slug(slug: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// `gh` without a console window flashing up on Windows.
-fn gh_command() -> Command {
-    let mut cmd = Command::new("gh");
-    no_window(&mut cmd);
-    cmd
+/// How long one `gh` call may run before it is killed. A hung network call
+/// would otherwise pin a blocking-pool thread and leave the screen loading.
+const GH_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// `gh pr list` calls running at once. Watching many repos would otherwise fan
+/// out one process each and trip GitHub's secondary rate limits.
+const GH_CONCURRENCY: usize = 4;
+
+/// Run `cmd` to completion, or kill it after `timeout`. `Ok(None)` means it was
+/// killed. stdout and stderr are drained on their own threads: a child that
+/// fills a pipe would otherwise block forever and look like a hang.
+fn run_with_timeout(cmd: &mut Command, timeout: Duration) -> std::io::Result<Option<Output>> {
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut buf);
+            }
+            buf
+        })
+    };
+    let stdout = drain(child.stdout.take().map(|p| Box::new(p) as _));
+    let stderr = drain(child.stderr.take().map(|p| Box::new(p) as _));
+
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break Some(status);
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    // The pipes close with the process, so these joins return promptly.
+    let stdout = stdout.join().unwrap_or_default();
+    let stderr = stderr.join().unwrap_or_default();
+    Ok(status.map(|status| Output {
+        status,
+        stdout,
+        stderr,
+    }))
 }
 
-fn fetch_one(repo: &str) -> RepoPrs {
-    if let Err(e) = validate_repo_slug(repo) {
-        return RepoPrs {
-            repo: repo.to_string(),
-            prs: vec![],
-            error: Some(e),
-        };
-    }
-
-    let output = gh_command()
-        .args([
-            "pr",
-            "list",
-            "--repo",
-            repo,
-            "--state",
-            "open",
-            "--json",
-            "number,title,author,createdAt,updatedAt,url,isDraft,headRefName,reviewDecision,reviewRequests,statusCheckRollup,comments",
-            "--limit",
-            "50",
-        ])
-        .output();
-
-    let output = match output {
-        Ok(o) => o,
-        Err(e) => {
-            return RepoPrs {
-                repo: repo.to_string(),
-                prs: vec![],
-                error: Some(format!("Failed to run gh: {}", e)),
-            };
-        }
+/// Sort a finished `gh` call that did not succeed. gh exits 4 when it needs
+/// authentication; the stderr wording covers versions and paths that do not.
+fn classify_failure(status: &ExitStatus, stderr: &str) -> GhError {
+    let message = if stderr.is_empty() {
+        format!("gh exited with status {status}")
+    } else {
+        stderr.to_string()
     };
+    let unauthenticated = status.code() == Some(4)
+        || stderr.contains("gh auth login")
+        || stderr.contains("not logged in");
+    GhError {
+        kind: if unauthenticated {
+            GhErrorKind::NotAuthenticated
+        } else {
+            GhErrorKind::Failed
+        },
+        message,
+    }
+}
 
+/// Run `program` (`gh`) with `args`, in `cwd` when given; success returns its
+/// stdout.
+fn run_gh(
+    program: &str,
+    cwd: Option<&str>,
+    timeout: Duration,
+    args: &[&str],
+) -> Result<String, GhError> {
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    if let Some(cwd) = cwd {
+        cmd.current_dir(cwd);
+    }
+    no_window(&mut cmd);
+    let output = match run_with_timeout(&mut cmd, timeout) {
+        Ok(Some(output)) => output,
+        Ok(None) => {
+            return Err(GhError {
+                kind: GhErrorKind::TimedOut,
+                message: format!("gh did not answer within {}s", timeout.as_secs()),
+            })
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(GhError {
+                kind: GhErrorKind::NotInstalled,
+                message: "The GitHub CLI (gh) was not found on PATH".to_string(),
+            })
+        }
+        Err(e) => return Err(GhError::failed(format!("Failed to run gh: {e}"))),
+    };
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return RepoPrs {
-            repo: repo.to_string(),
-            prs: vec![],
-            error: Some(if stderr.is_empty() {
-                format!("gh exited with status {}", output.status)
-            } else {
-                stderr
-            }),
-        };
+        return Err(classify_failure(&output.status, &stderr));
     }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    match serde_json::from_str::<Vec<RawPr>>(&stdout) {
+fn fetch_one(program: &str, repo: &str) -> RepoPrs {
+    let result = validate_repo_slug(repo).map_err(GhError::failed).and_then(|()| {
+        let stdout = run_gh(
+            program,
+            None,
+            GH_TIMEOUT,
+            &[
+                "pr",
+                "list",
+                "--repo",
+                repo,
+                "--state",
+                "open",
+                "--json",
+                "number,title,author,createdAt,updatedAt,url,isDraft,isCrossRepository,headRefName,reviewDecision,reviewRequests,statusCheckRollup,comments",
+                "--limit",
+                "50",
+            ],
+        )?;
+        serde_json::from_str::<Vec<RawPr>>(&stdout)
+            .map_err(|e| GhError::failed(format!("Could not parse gh output: {e}")))
+    });
+    match result {
         Ok(raws) => RepoPrs {
             repo: repo.to_string(),
             prs: raws.into_iter().map(flatten).collect(),
             error: None,
         },
-        Err(e) => RepoPrs {
+        Err(error) => RepoPrs {
             repo: repo.to_string(),
             prs: vec![],
-            error: Some(format!("Could not parse gh output: {}", e)),
+            error: Some(error),
         },
     }
 }
 
-/// Fan out `gh pr list` across every watched repo in parallel. Per-repo failures
-/// land in `error` rather than propagating, so the UI can render the partial
-/// snapshot. Order of the returned vec matches the input order.
+/// Fan out `gh pr list` across every watched repo, a few at a time. Per-repo
+/// failures land in `error` rather than propagating, so the UI can render the
+/// partial snapshot. Order of the returned vec matches the input order.
 #[tauri::command(async)]
 pub async fn list_repo_prs(repos: Vec<String>) -> Result<Vec<RepoPrs>, String> {
     if repos.is_empty() {
         return Ok(vec![]);
     }
 
+    let permits = Arc::new(Semaphore::new(GH_CONCURRENCY));
     let mut set = JoinSet::new();
     for (index, repo) in repos.into_iter().enumerate() {
+        let permits = permits.clone();
         set.spawn(async move {
-            let result = tokio::task::spawn_blocking(move || fetch_one(&repo))
-                .await
-                .map_err(|e| format!("Task join error: {}", e));
+            let result = match permits.acquire_owned().await {
+                Ok(_permit) => tokio::task::spawn_blocking(move || fetch_one("gh", &repo))
+                    .await
+                    .map_err(|e| format!("Task join error: {}", e)),
+                Err(e) => Err(format!("Task join error: {}", e)),
+            };
             (index, result)
         });
     }
@@ -282,9 +402,25 @@ pub async fn list_repo_prs(repos: Vec<String>) -> Result<Vec<RepoPrs>, String> {
 }
 
 /// The signed-in GitHub user, as reported by `gh`.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
 pub struct GhViewer {
     pub login: String,
+}
+
+/// The answer to "who is signed in": the user, or why there is none.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct GhViewerResult {
+    pub viewer: Option<GhViewer>,
+    pub error: Option<GhError>,
+}
+
+impl GhViewerResult {
+    fn signed_in(viewer: &GhViewer) -> Self {
+        Self {
+            viewer: Some(viewer.clone()),
+            error: None,
+        }
+    }
 }
 
 /// Cached for the life of the process: the login cannot change without a new
@@ -292,40 +428,87 @@ pub struct GhViewer {
 /// successful lookups are cached, so signing in mid-session still resolves.
 static VIEWER: OnceCell<GhViewer> = OnceCell::const_new();
 
-fn fetch_viewer_login() -> Option<String> {
-    let output = gh_command()
-        .args(["api", "user", "--jq", ".login"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let login = String::from_utf8_lossy(&output.stdout).trim().to_string();
+fn fetch_viewer_login(program: &str) -> Result<String, GhError> {
+    let stdout = run_gh(
+        program,
+        None,
+        GH_TIMEOUT,
+        &["api", "user", "--jq", ".login"],
+    )?;
+    let login = stdout.trim().to_string();
     if login.is_empty() {
-        None
+        Err(GhError::failed("gh returned no login"))
     } else {
-        Some(login)
+        Ok(login)
     }
 }
 
 /// Who "me" is, for the Mine / Needs-my-review filters.
 ///
-/// `gh` missing or signed out yields `Ok(None)`, never an error: the screen
-/// degrades to All-only rather than breaking. `None` doubles as the auth state
-/// Settings shows for "gh not authenticated".
+/// `gh` missing or signed out is not an error: the result says which, so the
+/// screen can show the fix and degrade to All-only meanwhile.
 #[tauri::command(async)]
-pub async fn gh_viewer() -> Result<Option<GhViewer>, String> {
+pub async fn gh_viewer() -> Result<GhViewerResult, String> {
     if let Some(viewer) = VIEWER.get() {
-        return Ok(Some(viewer.clone()));
+        return Ok(GhViewerResult::signed_in(viewer));
     }
-    let login = tokio::task::spawn_blocking(fetch_viewer_login)
+    let login = tokio::task::spawn_blocking(|| fetch_viewer_login("gh"))
         .await
         .map_err(|e| format!("Task join error: {}", e))?;
-    Ok(login.map(|login| {
-        let viewer = GhViewer { login };
-        let _ = VIEWER.set(viewer.clone());
-        viewer
-    }))
+    Ok(match login {
+        Ok(login) => {
+            let viewer = GhViewer { login };
+            let _ = VIEWER.set(viewer.clone());
+            GhViewerResult::signed_in(&viewer)
+        }
+        Err(error) => GhViewerResult {
+            viewer: None,
+            error: Some(error),
+        },
+    })
+}
+
+/// A checkout fetches the PR's commits, which a large repo can take a while over.
+const GH_CHECKOUT_TIMEOUT: Duration = Duration::from_secs(120);
+
+fn checkout_pr(program: &str, cwd: &str, number: u64, repo: &str) -> Result<(), GhError> {
+    validate_repo_slug(repo).map_err(GhError::failed)?;
+    if number == 0 {
+        return Err(GhError::failed("Pull request numbers start at 1"));
+    }
+    // A branch of our own naming: the default is the PR's head branch name,
+    // which for a fork is whatever the fork called it (`main` is common) and
+    // must not land on a local branch that already means something else.
+    let branch = format!("pr-{number}");
+    run_gh(
+        program,
+        Some(cwd),
+        GH_CHECKOUT_TIMEOUT,
+        &[
+            "pr",
+            "checkout",
+            &number.to_string(),
+            "--repo",
+            repo,
+            "--branch",
+            &branch,
+        ],
+    )
+    .map(|_| ())
+}
+
+/// Check a pull request out into the repo at `cwd` with `gh pr checkout`.
+///
+/// Unlike checking out `headRefName`, this fetches the PR's own commits, so it
+/// works for fork PRs whose branch name only exists in the fork (or collides
+/// with a local branch that is something else).
+#[tauri::command(async)]
+pub async fn gh_pr_checkout(cwd: String, number: u64, repo: String) -> Result<(), String> {
+    super::validate::validate_cwd(&cwd)?;
+    tokio::task::spawn_blocking(move || checkout_pr("gh", &cwd, number, &repo))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+        .map_err(|e| e.message)
 }
 
 /// The platform's "open this in the default handler" launcher.
@@ -526,5 +709,165 @@ mod tests {
     fn slug_rejects_dot_segments() {
         assert!(validate_repo_slug("./repo").is_err());
         assert!(validate_repo_slug("owner/..").is_err());
+    }
+
+    // --- gh states ---
+
+    const NO_SUCH_GH: &str = "atlas-test-no-such-gh-binary";
+
+    #[test]
+    fn a_missing_gh_is_reported_as_not_installed_on_every_repo() {
+        let repo = fetch_one(NO_SUCH_GH, "owner/repo");
+        let error = repo.error.expect("no gh, no PRs");
+        assert_eq!(error.kind, GhErrorKind::NotInstalled);
+        assert!(repo.prs.is_empty());
+    }
+
+    #[test]
+    fn a_missing_gh_is_reported_as_not_installed_for_the_viewer() {
+        let error = fetch_viewer_login(NO_SUCH_GH).unwrap_err();
+        assert_eq!(error.kind, GhErrorKind::NotInstalled);
+    }
+
+    #[test]
+    fn an_invalid_slug_never_reaches_gh() {
+        let repo = fetch_one(NO_SUCH_GH, "not a slug");
+        // A validation failure, not the NotInstalled that spawning would give.
+        assert_eq!(repo.error.unwrap().kind, GhErrorKind::Failed);
+    }
+
+    #[cfg(unix)]
+    fn exit_status(code: i32) -> ExitStatus {
+        use std::os::unix::process::ExitStatusExt;
+        ExitStatus::from_raw(code << 8)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn gh_exit_4_and_login_hints_mean_not_signed_in() {
+        let by_code = classify_failure(&exit_status(4), "");
+        assert_eq!(by_code.kind, GhErrorKind::NotAuthenticated);
+
+        let by_text = classify_failure(
+            &exit_status(1),
+            "To get started with GitHub CLI, please run:  gh auth login",
+        );
+        assert_eq!(by_text.kind, GhErrorKind::NotAuthenticated);
+        assert!(by_text.message.contains("gh auth login"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn other_gh_failures_keep_their_stderr() {
+        let error = classify_failure(
+            &exit_status(1),
+            "GraphQL: Could not resolve to a Repository",
+        );
+        assert_eq!(error.kind, GhErrorKind::Failed);
+        assert_eq!(error.message, "GraphQL: Could not resolve to a Repository");
+        assert!(classify_failure(&exit_status(1), "")
+            .message
+            .contains("exited"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_hung_command_is_killed_at_the_timeout() {
+        let started = Instant::now();
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "sleep 30"]);
+        let output = run_with_timeout(&mut cmd, Duration::from_millis(200)).unwrap();
+        assert!(output.is_none());
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_command_that_finishes_returns_all_of_its_output() {
+        let mut cmd = Command::new("sh");
+        // More than a pipe buffer on stdout, so an undrained pipe would hang.
+        cmd.args(["-c", "head -c 300000 /dev/zero | tr '\\0' x; echo err >&2"]);
+        let output = run_with_timeout(&mut cmd, Duration::from_secs(20))
+            .unwrap()
+            .expect("finishes in time");
+        assert_eq!(output.stdout.len(), 300_000);
+        assert_eq!(String::from_utf8_lossy(&output.stderr).trim(), "err");
+    }
+
+    // --- gh pr checkout ---
+
+    /// A stand-in `gh` that records where it ran and what it was given.
+    #[cfg(unix)]
+    fn fake_gh(dir: &std::path::Path, exit_code: i32) -> String {
+        use std::os::unix::fs::PermissionsExt;
+        let script = dir.join("gh");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\npwd > \"{d}/cwd\"\nprintf '%s\\n' \"$@\" > \"{d}/args\"\nexit {exit_code}\n",
+                d = dir.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        script.to_string_lossy().into_owned()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_pr_is_checked_out_by_number_from_the_named_repo_into_its_own_branch() {
+        let bin = tempfile::tempdir().unwrap();
+        let work = tempfile::tempdir().unwrap();
+        let gh = fake_gh(bin.path(), 0);
+
+        checkout_pr(&gh, work.path().to_str().unwrap(), 42, "octo/fork-target").unwrap();
+
+        let args = std::fs::read_to_string(bin.path().join("args")).unwrap();
+        assert_eq!(
+            args.lines().collect::<Vec<_>>(),
+            [
+                "pr",
+                "checkout",
+                "42",
+                "--repo",
+                "octo/fork-target",
+                "--branch",
+                "pr-42"
+            ]
+        );
+        let ran_in = std::fs::read_to_string(bin.path().join("cwd")).unwrap();
+        assert_eq!(
+            std::fs::canonicalize(ran_in.trim()).unwrap(),
+            std::fs::canonicalize(work.path()).unwrap()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_checkout_carries_gh_s_verdict() {
+        let bin = tempfile::tempdir().unwrap();
+        let gh = fake_gh(bin.path(), 4);
+        let error = checkout_pr(&gh, bin.path().to_str().unwrap(), 1, "o/r").unwrap_err();
+        assert_eq!(error.kind, GhErrorKind::NotAuthenticated);
+    }
+
+    #[test]
+    fn a_checkout_rejects_a_bad_slug_or_number_before_running_gh() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().to_str().unwrap();
+        assert_eq!(
+            checkout_pr(NO_SUCH_GH, cwd, 1, "--upload-pack=x/y")
+                .unwrap_err()
+                .kind,
+            GhErrorKind::Failed
+        );
+        assert_eq!(
+            checkout_pr(NO_SUCH_GH, cwd, 0, "o/r").unwrap_err().kind,
+            GhErrorKind::Failed
+        );
+        assert_eq!(
+            checkout_pr(NO_SUCH_GH, cwd, 1, "o/r").unwrap_err().kind,
+            GhErrorKind::NotInstalled
+        );
     }
 }

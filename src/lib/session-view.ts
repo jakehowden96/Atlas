@@ -31,13 +31,12 @@ export interface TouchedFile {
  * Claude *opened*, and its own "+3 −1" summaries lag behind the working tree.
  *
  * A session whose cwd holds several repos gets a per-repo breakdown in
- * `projects`, and `diff.raw` is those diffs concatenated. Reading `raw` there
- * loses which repo each file came from and lets two repos collide on the same
- * relative path, so the per-project diffs are read whenever they are present.
+ * `projects` and an empty `diff.raw`. Two repos can collide on the same
+ * relative path, so each file keeps the name of the repo it came from.
  */
 export function filesTouched(panel: PanelData | null): TouchedFile[] {
   const diff = panel?.diff;
-  if (!diff?.raw) return [];
+  if (!diff) return [];
   const sources = diff.projects?.length
     ? diff.projects.map((p) => ({ repo: p.name, raw: p.raw }))
     : [{ repo: "", raw: diff.raw }];
