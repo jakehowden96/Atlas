@@ -296,7 +296,6 @@
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     -webkit-app-region: drag;
-    app-region: drag;
   }
 
   .app {
