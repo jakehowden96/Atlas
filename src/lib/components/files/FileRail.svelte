@@ -67,13 +67,24 @@
   let key = $derived($activeFile);
   let file = $derived(parseFileKey(key));
   let text = $derived($docs.get(key) ?? $diskDocs.get(key) ?? "");
-  let headings = $derived(key ? outline(text) : []);
+  /* Outline, links and size are whole-document passes, so they follow typing
+     after a pause rather than on every key. A different file shows at once. */
+  let settled = $state({ key: "", text: "" });
+  let slowText = $derived(settled.key === key ? settled.text : text);
+  $effect(() => {
+    const next = { key, text };
+    const timer = setTimeout(() => (settled = next), 150);
+    return () => clearTimeout(timer);
+  });
+  let headings = $derived(key ? outline(slowText) : []);
   let files = $derived($docEntries.filter((e) => !e.is_dir));
 
   // Every wikilink in the document, paired with the doc it names — an
   // unresolved one is listed greyed rather than hidden, so a typo is visible.
   let links = $derived(
-    key ? wikilinks(text).map((target) => ({ target, rel: resolveWikilink(target, files) })) : [],
+    key
+      ? wikilinks(slowText).map((target) => ({ target, rel: resolveWikilink(target, files) }))
+      : [],
   );
 
   let needsInputTabs = $derived(new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)));
@@ -96,7 +107,7 @@
 
   // The size of what is on screen, unsaved edit included — the listing's own
   // byte count would go stale the moment the document is typed into.
-  let size = $derived(key ? formatBytes(encoder.encode(text).length) : "—");
+  let size = $derived(key ? formatBytes(encoder.encode(slowText).length) : "—");
 
   /**
    * The git line. Plans live in `~/.claude/plans` and a disk file can be

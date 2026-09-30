@@ -57,8 +57,12 @@
 
   /** True while a store update is being applied, so it is not echoed back. */
   let applying = false;
+  /** The document's text as of the last transaction, so the sync effect can
+   *  recognise an echo of its own edit without serialising the document again. */
+  let lastEmitted = "";
 
   function create(container: HTMLDivElement, doc: string) {
+    lastEmitted = doc;
     return new EditorView({
       parent: container,
       state: EditorState.create({
@@ -72,7 +76,8 @@
           EditorView.lineWrapping,
           EditorView.updateListener.of((update) => {
             if (!update.docChanged || applying) return;
-            onChange(update.state.doc.toString());
+            lastEmitted = update.state.doc.toString();
+            onChange(lastEmitted);
           }),
         ],
       }),
@@ -107,7 +112,8 @@
   $effect(() => {
     const next = text;
     const current = view;
-    if (!current || current.state.doc.toString() === next) return;
+    if (!current || lastEmitted === next) return;
+    lastEmitted = next;
     applying = true;
     current.dispatch({
       changes: { from: 0, to: current.state.doc.length, insert: next },

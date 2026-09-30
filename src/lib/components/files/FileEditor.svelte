@@ -57,8 +57,17 @@
   ]);
 
   let files = $derived($docEntries.filter((e) => !e.is_dir));
+  /* The preview and footer counts are whole-document passes, so they follow
+     typing after a pause rather than on every key. A different file shows at once. */
+  let settled = $state({ key: "", text: "" });
+  let slowText = $derived(settled.key === key ? settled.text : text);
+  $effect(() => {
+    const next = { key, text };
+    const timer = setTimeout(() => (settled = next), 150);
+    return () => clearTimeout(timer);
+  });
   let html = $derived(
-    mode === "source" ? "" : renderMarkdown(text, (t) => resolveWikilink(t, files) !== null),
+    mode === "source" ? "" : renderMarkdown(slowText, (t) => resolveWikilink(t, files) !== null),
   );
 
   let target = $derived(editorTarget(file.source, file.path));
@@ -74,8 +83,8 @@
   let kind = $derived(
     markdown ? "Markdown" : ext === "txt" ? "Text" : ext ? ext.toUpperCase() : "Document",
   );
-  let lines = $derived(text ? text.split("\n").length : 0);
-  let words = $derived(text.trim() ? text.trim().split(/\s+/).length : 0);
+  let lines = $derived(slowText ? slowText.split("\n").length : 0);
+  let words = $derived(slowText.trim() ? slowText.trim().split(/\s+/).length : 0);
   let modified = $derived.by(() => {
     const stamp =
       file.source === "plans"
