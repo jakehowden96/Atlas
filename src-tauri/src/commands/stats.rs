@@ -145,7 +145,6 @@ pub struct SessionRecord {
 #[serde(rename_all = "camelCase")]
 pub struct ModelStats {
     pub sessions: u32,
-    pub assistant_msgs: u64,
     pub user_messages: u64,
     pub output_tokens: u64,
     pub cache_creation_tokens: u64,
@@ -155,23 +154,13 @@ pub struct ModelStats {
     pub total_duration_secs: u64,
     pub total_subagents: u64,
     pub peak_context_max: u64,
-    pub msgs_per_session: f64,
     pub tools_per_session: f64,
     pub error_rate: f64,
-    pub cost_per_session: f64,
-    pub output_per_session: f64,
     pub avg_duration_secs: f64,
     pub user_chars: u64,
     pub avg_message_chars: f64,
     pub subagents_per_session: f64,
-    pub avg_output_per_msg: f64,
     pub cost_per_k_output: f64,
-    #[serde(default)]
-    pub subagent_prompt_chars: u64,
-    #[serde(default)]
-    pub subagent_prompt_count: u64,
-    #[serde(default)]
-    pub avg_subagent_prompt_chars: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -324,17 +313,6 @@ impl WindowAcc {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct StatsSummary {
-    pub total_sessions: u32,
-    pub total_user_messages: u64,
-    pub total_assistant_messages: u64,
-    pub peak_context_overall: u64,
-    pub avg_peak_context: u64,
-    pub total_output_tokens: u64,
-    pub total_cache_creation_tokens: u64,
-    pub total_cost_estimate: f64,
-    pub total_tool_errors: u32,
-    pub total_subagents: u32,
-    pub error_rate: f64,
     pub by_model: HashMap<String, ModelStats>,
     /// Same as `by_model` but limited to sessions started in the last 30 days.
     #[serde(default)]
@@ -342,13 +320,6 @@ pub struct StatsSummary {
     /// Same as `by_model` but limited to sessions started in the last 7 days.
     #[serde(default)]
     pub by_model_7d: HashMap<String, ModelStats>,
-    /// Subagent invocation stats, keyed by model family.
-    #[serde(default)]
-    pub by_model_subagents: HashMap<String, ModelStats>,
-    #[serde(default)]
-    pub by_model_subagents_30d: HashMap<String, ModelStats>,
-    #[serde(default)]
-    pub by_model_subagents_7d: HashMap<String, ModelStats>,
     pub tool_usage: HashMap<String, u32>,
     /// Same keys as `tool_usage`, counting errored results per tool name.
     #[serde(default)]
@@ -384,7 +355,6 @@ pub struct StatsSummary {
     pub totals_7d: RangeTotals,
     #[serde(default)]
     pub totals_prev_7d: RangeTotals,
-    pub versions: Vec<String>,
     pub generated_at: String,
 }
 
@@ -910,11 +880,8 @@ fn accumulate_model(model_acc: &mut HashMap<String, ModelStats>, rec: &SessionRe
     for (family, model_data) in &rec.by_model {
         let ms = model_acc.entry(family.clone()).or_default();
         ms.sessions += 1;
-        ms.assistant_msgs += model_data.assistant_msgs as u64;
         ms.user_messages += model_data.user_messages as u64;
         ms.user_chars += model_data.user_chars;
-        ms.subagent_prompt_chars += model_data.subagent_prompt_chars;
-        ms.subagent_prompt_count += model_data.subagent_prompt_count as u64;
         ms.output_tokens += model_data.output_tokens;
         ms.cache_creation_tokens += model_data.cache_creation_tokens;
         ms.cost += model_data.cost_estimate;
@@ -928,41 +895,16 @@ fn accumulate_model(model_acc: &mut HashMap<String, ModelStats>, rec: &SessionRe
     }
 }
 
-fn accumulate_subagent_model(model_acc: &mut HashMap<String, ModelStats>, rec: &SessionRecord) {
-    for (family, model_data) in &rec.by_model_subagents {
-        let ms = model_acc.entry(family.clone()).or_default();
-        ms.sessions += 1;
-        ms.assistant_msgs += model_data.assistant_msgs as u64;
-        ms.output_tokens += model_data.output_tokens;
-        ms.cache_creation_tokens += model_data.cache_creation_tokens;
-        ms.cost += model_data.cost_estimate;
-        ms.tool_calls += model_data.tool_calls as u64;
-        if model_data.peak_context > ms.peak_context_max {
-            ms.peak_context_max = model_data.peak_context;
-        }
-    }
-}
-
 /// Fill in the derived per-session averages once all records have been folded in.
 fn finalize_model(model_acc: &mut HashMap<String, ModelStats>) {
     for ms in model_acc.values_mut() {
         if ms.sessions > 0 {
-            ms.msgs_per_session = ms.user_messages as f64 / ms.sessions as f64;
             ms.tools_per_session = ms.tool_calls as f64 / ms.sessions as f64;
-            ms.cost_per_session = ms.cost / ms.sessions as f64;
-            ms.output_per_session = ms.output_tokens as f64 / ms.sessions as f64;
             ms.avg_duration_secs = ms.total_duration_secs as f64 / ms.sessions as f64;
             ms.subagents_per_session = ms.total_subagents as f64 / ms.sessions as f64;
         }
         if ms.user_messages > 0 {
             ms.avg_message_chars = ms.user_chars as f64 / ms.user_messages as f64;
-        }
-        if ms.subagent_prompt_count > 0 {
-            ms.avg_subagent_prompt_chars =
-                ms.subagent_prompt_chars as f64 / ms.subagent_prompt_count as f64;
-        }
-        if ms.assistant_msgs > 0 {
-            ms.avg_output_per_msg = ms.output_tokens as f64 / ms.assistant_msgs as f64;
         }
         if ms.output_tokens > 0 {
             ms.cost_per_k_output = ms.cost / ms.output_tokens as f64 * 1000.0;
@@ -1028,16 +970,10 @@ where
     let cutoff_prev_30d = now - chrono::Duration::days(60);
     let cutoff_prev_7d = now - chrono::Duration::days(14);
 
-    let mut peak_sum: u64 = 0;
-    let mut versions_set: std::collections::HashSet<String> = std::collections::HashSet::new();
-
     // Intermediate by_model accumulators (without derived fields): all-time + windows
     let mut model_acc: HashMap<String, ModelStats> = HashMap::new();
     let mut model_acc_30d: HashMap<String, ModelStats> = HashMap::new();
     let mut model_acc_7d: HashMap<String, ModelStats> = HashMap::new();
-    let mut subagent_acc: HashMap<String, ModelStats> = HashMap::new();
-    let mut subagent_acc_30d: HashMap<String, ModelStats> = HashMap::new();
-    let mut subagent_acc_7d: HashMap<String, ModelStats> = HashMap::new();
 
     // Window accumulators: all-time, the two live windows, and the two windows
     // immediately before them that the KPI deltas compare against.
@@ -1050,19 +986,6 @@ where
     let mut recent: Vec<&SessionRecord> = Vec::with_capacity(records.len());
 
     for rec in records {
-        summary.total_sessions += 1;
-        summary.total_user_messages += rec.user_messages as u64;
-        summary.total_assistant_messages += rec.assistant_messages as u64;
-        if rec.peak_context > summary.peak_context_overall {
-            summary.peak_context_overall = rec.peak_context;
-        }
-        peak_sum += rec.peak_context;
-        summary.total_output_tokens += rec.output_tokens;
-        summary.total_cache_creation_tokens += rec.cache_creation_tokens;
-        summary.total_cost_estimate += rec.cost_estimate;
-        summary.total_tool_errors += rec.tool_errors;
-        summary.total_subagents += rec.subagents;
-
         win_all.add_session(rec);
         recent.push(rec);
 
@@ -1101,24 +1024,17 @@ where
             }
         }
 
-        if let Some(v) = &rec.version {
-            versions_set.insert(v.clone());
-        }
-
         // Per model family — all-time always; windowed copies keyed off session start time.
         accumulate_model(&mut model_acc, rec);
-        accumulate_subagent_model(&mut subagent_acc, rec);
         if let Some(dt) = started {
             if dt >= cutoff_30d {
                 accumulate_model(&mut model_acc_30d, rec);
-                accumulate_subagent_model(&mut subagent_acc_30d, rec);
                 win_30d.add_session(rec);
             } else if dt >= cutoff_prev_30d {
                 win_prev_30d.add_session(rec);
             }
             if dt >= cutoff_7d {
                 accumulate_model(&mut model_acc_7d, rec);
-                accumulate_subagent_model(&mut subagent_acc_7d, rec);
                 win_7d.add_session(rec);
             } else if dt >= cutoff_prev_7d {
                 win_prev_7d.add_session(rec);
@@ -1166,31 +1082,12 @@ where
         .map(RecentSession::from_record)
         .collect();
 
-    // Derived averages
-    if summary.total_sessions > 0 {
-        summary.avg_peak_context = peak_sum / summary.total_sessions as u64;
-    }
-    let total_tool_calls: u64 = summary.tool_usage.values().map(|v| *v as u64).sum();
-    if total_tool_calls > 0 {
-        summary.error_rate = summary.total_tool_errors as f64 / total_tool_calls as f64;
-    }
-
     finalize_model(&mut model_acc);
     finalize_model(&mut model_acc_30d);
     finalize_model(&mut model_acc_7d);
-    finalize_model(&mut subagent_acc);
-    finalize_model(&mut subagent_acc_30d);
-    finalize_model(&mut subagent_acc_7d);
     summary.by_model = model_acc;
     summary.by_model_30d = model_acc_30d;
     summary.by_model_7d = model_acc_7d;
-    summary.by_model_subagents = subagent_acc;
-    summary.by_model_subagents_30d = subagent_acc_30d;
-    summary.by_model_subagents_7d = subagent_acc_7d;
-
-    let mut versions: Vec<String> = versions_set.into_iter().collect();
-    versions.sort();
-    summary.versions = versions;
 
     summary
 }
@@ -2155,7 +2052,10 @@ mod tests {
 
         let summary = tree.recompute();
 
-        assert_eq!(summary.total_sessions, 2, "the pruned one and the live one");
+        assert_eq!(
+            summary.totals_all.sessions, 2,
+            "the pruned one and the live one"
+        );
         let backup = sibling(&tree.stats(), &format!(".v{}.bak", STATS_FILE_VERSION - 1));
         assert_eq!(std::fs::read_to_string(backup).unwrap(), old_json);
         assert_eq!(tree.saved().version, STATS_FILE_VERSION);
@@ -2171,7 +2071,7 @@ mod tests {
 
         let summary = tree.recompute();
 
-        assert_eq!(summary.total_sessions, 1);
+        assert_eq!(summary.totals_all.sessions, 1);
         assert!(sibling(&tree.stats(), ".v3.bak").exists());
     }
 
@@ -2190,10 +2090,10 @@ mod tests {
             )
         };
         std::fs::write(&agent, line("r1") + "\n").unwrap();
-        let before = tree.recompute().total_output_tokens;
+        let before = tree.recompute().totals_all.output_tokens;
 
         std::fs::write(&agent, line("r1") + "\n" + &line("r2") + "\n").unwrap();
-        let after = tree.recompute().total_output_tokens;
+        let after = tree.recompute().totals_all.output_tokens;
 
         assert_eq!(before, 1000);
         assert_eq!(after, 2000);
@@ -2236,7 +2136,7 @@ mod tests {
         std::fs::remove_file(path).unwrap();
         let summary = tree.recompute();
 
-        assert_eq!(summary.total_sessions, 2);
+        assert_eq!(summary.totals_all.sessions, 2);
         assert_eq!(tree.saved().sessions.len(), 2);
     }
 
@@ -2252,7 +2152,7 @@ mod tests {
         tree.session("new", "a", &[PROMPT]);
         let summary = tree.recompute();
 
-        assert_eq!(summary.total_sessions, 1);
+        assert_eq!(summary.totals_all.sessions, 1);
         assert_eq!(tree.saved().sessions.len(), 1);
     }
 
@@ -2274,8 +2174,11 @@ mod tests {
         let summary = tree.recompute();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
 
-        assert_eq!(summary.total_sessions, 1);
-        assert_eq!(summary.total_user_messages, 1, "the record from before");
+        assert_eq!(summary.totals_all.sessions, 1);
+        assert_eq!(
+            summary.totals_all.user_messages, 1,
+            "the record from before"
+        );
     }
 
     #[test]
@@ -2321,7 +2224,7 @@ mod tests {
         tree.session("p", "a", &[PROMPT]);
         std::fs::create_dir_all(tree.projects().join("p/a/subagents/x.jsonl")).unwrap();
         let summary = tree.recompute();
-        assert_eq!(summary.total_subagents, 0);
+        assert_eq!(summary.totals_all.subagents, 0);
     }
 
     /// The final write of a burst is the one users look at. It must produce a
@@ -2453,11 +2356,14 @@ mod tests {
 
         let summary = tree.recompute();
 
-        assert_eq!(summary.total_output_tokens, 150, "r1 once, r2 once");
-        assert_eq!(summary.total_user_messages, 1, "the copied prompt once");
+        assert_eq!(summary.totals_all.output_tokens, 150, "r1 once, r2 once");
+        assert_eq!(
+            summary.totals_all.user_messages, 1,
+            "the copied prompt once"
+        );
 
         // Stable across a second pass that reuses the cache.
-        assert_eq!(tree.recompute().total_output_tokens, 150);
+        assert_eq!(tree.recompute().totals_all.output_tokens, 150);
     }
 
     #[test]

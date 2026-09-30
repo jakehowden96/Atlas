@@ -20,7 +20,7 @@ import {
 } from "../stores/stats";
 
 function summaryWith(cost: number): StatsSummary {
-  return { totalCostEstimate: cost } as unknown as StatsSummary;
+  return { totalsAll: { cost } } as unknown as StatsSummary;
 }
 
 beforeEach(() => {
@@ -41,7 +41,7 @@ describe("the stats feed", () => {
 
     await startStatsFeed();
 
-    expect(get(statsSummary)?.totalCostEstimate).toBe(12.5);
+    expect(get(statsSummary)?.totalsAll.cost).toBe(12.5);
   });
 
   it("replaces the summary when the backend recomputes", async () => {
@@ -55,7 +55,7 @@ describe("the stats feed", () => {
     await startStatsFeed();
     pushes[0](summaryWith(44));
 
-    expect(get(statsSummary)?.totalCostEstimate).toBe(44);
+    expect(get(statsSummary)?.totalsAll.cost).toBe(44);
   });
 
   /* A missing or unreadable stats.json must not leave the app spinning. */
@@ -80,7 +80,7 @@ describe("the stats feed", () => {
     vi.mocked(getClaudeStats).mockResolvedValue(summaryWith(3));
     await reloadStats();
     expect(get(statsError)).toBeNull();
-    expect(get(statsSummary)?.totalCostEstimate).toBe(3);
+    expect(get(statsSummary)?.totalsAll.cost).toBe(3);
   });
 
   /* The listener must exist before the slow first load, or an update emitted
@@ -104,7 +104,7 @@ describe("the stats feed", () => {
   /* Two recomputes can finish in reverse order; the older must not win. */
   it("ignores a summary older than the one it already has", async () => {
     const at = (generatedAt: string, cost: number) =>
-      ({ generatedAt, totalCostEstimate: cost }) as unknown as StatsSummary;
+      ({ generatedAt, totalsAll: { cost } }) as unknown as StatsSummary;
     vi.mocked(getClaudeStats).mockResolvedValue(at("2026-01-01T00:00:02Z", 2));
     const pushes: ((s: StatsSummary) => void)[] = [];
     vi.mocked(onStatsUpdate).mockImplementation(async (fn) => {
@@ -115,6 +115,6 @@ describe("the stats feed", () => {
     await startStatsFeed();
     pushes[0](at("2026-01-01T00:00:01Z", 1));
 
-    expect(get(statsSummary)?.totalCostEstimate).toBe(2);
+    expect(get(statsSummary)?.totalsAll.cost).toBe(2);
   });
 });

@@ -1,6 +1,5 @@
 export interface ModelStats {
   sessions: number;
-  assistantMsgs: number;
   userMessages: number;
   outputTokens: number;
   cacheCreationTokens: number;
@@ -12,19 +11,12 @@ export interface ModelStats {
   peakContextMax: number;
   userChars: number;
   // Derived averages
-  msgsPerSession: number;
   toolsPerSession: number;
   errorRate: number;
-  costPerSession: number;
-  outputPerSession: number;
   avgDurationSecs: number;
   avgMessageChars: number;
   subagentsPerSession: number;
-  avgOutputPerMsg: number;
   costPerKOutput: number;
-  subagentPromptChars: number;
-  subagentPromptCount: number;
-  avgSubagentPromptChars: number;
 }
 
 export interface ProjectStats {
@@ -93,23 +85,9 @@ export interface RangeTotals {
 }
 
 export interface StatsSummary {
-  totalSessions: number;
-  totalUserMessages: number;
-  totalAssistantMessages: number;
-  peakContextOverall: number;
-  avgPeakContext: number;
-  totalOutputTokens: number;
-  totalCacheCreationTokens: number;
-  totalCostEstimate: number;
-  totalToolErrors: number;
-  totalSubagents: number;
-  errorRate: number;
   byModel: Record<string, ModelStats>;
   byModel30d: Record<string, ModelStats>;
   byModel7d: Record<string, ModelStats>;
-  byModelSubagents: Record<string, ModelStats>;
-  byModelSubagents30d: Record<string, ModelStats>;
-  byModelSubagents7d: Record<string, ModelStats>;
   toolUsage: Record<string, number>;
   toolErrors: Record<string, number>;
   toolUsage30d: Record<string, number>;
@@ -128,6 +106,5 @@ export interface StatsSummary {
   totalsPrev30d: RangeTotals;
   totals7d: RangeTotals;
   totalsPrev7d: RangeTotals;
-  versions: string[];
   generatedAt: string;
 }
