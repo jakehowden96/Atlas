@@ -9,10 +9,35 @@ vulnerability"). Please do not open a public issue for security problems.
 
 Atlas is a local desktop app. It has no server and sends no telemetry. It spawns your shell and
 Claude Code in pseudo-terminals, reads Claude Code transcripts under `~/.claude/`, runs `git` and
-`gh` in your workspaces, and stores its own state under `~/.atlas/`. Anything running in the app's
-webview can call Atlas's IPC commands, so the webview is treated as the trust boundary: the content
-security policy allows scripts only from the app itself, and commands that touch the filesystem or
-spawn processes validate their arguments in Rust rather than trusting the frontend.
+`gh` in your workspaces, and stores its own state under `~/.atlas/`.
+
+Anything running in the app's webview can call Atlas's IPC commands, so the webview is the trust
+boundary, and the backend does not trust it:
+
+- **No webview filesystem access.** The webview has no fs plugin permission. Settings, workspaces and
+  logs go through Rust commands that build the path themselves, validate the content and write
+  atomically.
+- **Files view is scoped.** Reading and writing documents is limited to registered workspaces,
+  folders you added with the native picker, and `~/.claude/plans`. `~/.atlas/**` and
+  `~/.claude/settings*.json` are refused even inside a granted folder; paths are canonicalised, `..`
+  is refused and symlinks cannot escape a root. Limit of this: a compromised webview can still call
+  the commands that register workspaces, so this is defense in depth on top of the CSP, not a
+  sandbox.
+- **Language servers run workspace code**, so they are off per workspace until you enable them in
+  Settings, and the decision is read by the backend from `settings.json`, not passed in by the
+  webview.
+- **Subprocesses** (`git`, `gh`, language servers) are started without a shell and with validated
+  arguments, `--` before user-controlled refs, and no console window on Windows.
+- **Claude Code settings.** Atlas edits only its own two hook entries in `~/.claude/settings.json`
+  (see the README), never when the file does not parse, and you can switch it off.
+- **Content security policy.** `default-src 'self'; script-src 'self'; connect-src 'self' ipc:
+  http://ipc.localhost`. `style-src` keeps `'unsafe-inline'` because CodeMirror (`style-mod`) and
+  xterm.js inject `<style>` elements at runtime; removing it would break both. No remote scripts,
+  frames or fetch targets are allowed.
+- **Windows browser flags.** `additionalBrowserArgs` in `tauri.conf.json` disables three WebView2
+  features (`msWebOOUI`, `msPdfOOUI`, `msSmartScreenProtection`) and LCD text. SmartScreen URL
+  reputation is off inside the webview, which only ever loads the bundled app. `[UNVERIFIED on
+  Windows]`: these flags have not been run on Windows by the author.
 
 ## Secrets
 
