@@ -221,13 +221,14 @@ fn update_claude_settings(
         return;
     }
 
-    let json = match serde_json::to_string_pretty(&settings) {
+    let mut json = match serde_json::to_string_pretty(&settings) {
         Ok(json) => json,
         Err(e) => {
             log::warn!("Failed to serialize Claude settings: {}", e);
             return;
         }
     };
+    json.push('\n');
     if let Some(parent) = claude_settings_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -654,6 +655,22 @@ mod tests {
             serde_json::from_slice(&std::fs::read(&real).unwrap()).unwrap();
         assert_eq!(commands(&settings), vec![NEW]);
         assert_eq!(settings["model"], "opus");
+    }
+
+    #[test]
+    fn the_users_key_order_and_trailing_newline_survive() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, "{\n  \"zeta\": 1,\n  \"alpha\": 2\n}\n").unwrap();
+
+        install(&path);
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(written.ends_with("}\n"), "{written:?}");
+        let zeta = written.find("\"zeta\"").unwrap();
+        let alpha = written.find("\"alpha\"").unwrap();
+        let hooks = written.find("\"hooks\"").unwrap();
+        assert!(zeta < alpha && alpha < hooks, "{written}");
     }
 
     #[test]
