@@ -7,8 +7,11 @@ import {
   filterWorkspaces,
   findWorkspace,
   handleKey,
+  harnessIndexFor,
+  leaveResumeIfUnsupported,
   INITIAL_STATE,
   KEY_HINTS,
+  expandHome,
   looksLikeAbsolutePath,
   moveWithin,
   normalizePath,
@@ -82,6 +85,64 @@ describe("looksLikeAbsolutePath", () => {
   it("rejects a plain filter word", () => {
     expect(looksLikeAbsolutePath("atlas")).toBe(false);
     expect(looksLikeAbsolutePath("")).toBe(false);
+  });
+});
+
+describe("expandHome", () => {
+  it("resolves a typed ~/ path against the home directory", () => {
+    expect(expandHome("~/code/atlas", "/Users/me")).toBe("/Users/me/code/atlas");
+    expect(expandHome("~/code", "/Users/me/")).toBe("/Users/me/code");
+  });
+
+  it("leaves paths that do not start with ~/ alone", () => {
+    expect(expandHome("/repo/atlas", "/Users/me")).toBe("/repo/atlas");
+    expect(expandHome("C:\\repo", "/Users/me")).toBe("C:\\repo");
+  });
+});
+
+describe("harnessIndexFor", () => {
+  const list = [
+    { id: "omp", resumable: false },
+    { id: "claude", resumable: true },
+    { id: "term", resumable: false },
+  ];
+
+  it("prefers the last-used harness for a fresh session", () => {
+    expect(harnessIndexFor(list, "term", false)).toBe(2);
+  });
+
+  it("falls back to the first harness when the last-used one is gone", () => {
+    expect(harnessIndexFor(list, "missing", false)).toBe(0);
+  });
+
+  it("picks a resumable harness when the seed asks to resume, whatever was used last", () => {
+    expect(harnessIndexFor(list, "term", true)).toBe(1);
+  });
+
+  it("keeps the last-used harness for a resume when it can resume", () => {
+    const two = [
+      { id: "a", resumable: true },
+      { id: "b", resumable: true },
+    ];
+    expect(harnessIndexFor(two, "b", true)).toBe(1);
+  });
+
+  it("is -1 when a resume is wanted and no harness can resume", () => {
+    expect(harnessIndexFor([{ id: "t", resumable: false }], "t", true)).toBe(-1);
+  });
+});
+
+describe("leaveResumeIfUnsupported", () => {
+  const resuming: NewSessionState = { ...INITIAL_STATE, mode: "resume", column: "resume" };
+
+  it("drops back to New when the harness cannot resume", () => {
+    const next = leaveResumeIfUnsupported(resuming, false);
+    expect(next.mode).toBe("fresh");
+    expect(next.column).toBe("workspaces");
+  });
+
+  it("leaves Resume alone for a harness that can", () => {
+    expect(leaveResumeIfUnsupported(resuming, true)).toBe(resuming);
   });
 });
 

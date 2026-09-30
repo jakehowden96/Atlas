@@ -10,16 +10,20 @@
    */
   import { get } from "svelte/store";
   import type { ResumableSession } from "../../../types/stats";
-  import { listResumableSessions } from "../../ipc";
+  import { homeDir } from "@tauri-apps/api/path";
+  import { listDir, listResumableSessions } from "../../ipc";
   import { log } from "../../logger";
   import {
     ageLabel,
     clampState,
     filterWorkspaces,
+    expandHome,
     findWorkspace,
     handleKey,
+    harnessIndexFor,
     INITIAL_STATE,
     KEY_HINTS,
+    leaveResumeIfUnsupported,
     looksLikeAbsolutePath,
     normalizePath,
     recencyOf,
@@ -49,6 +53,8 @@
   let nav = $state<NewSessionState>({ ...INITIAL_STATE });
   let resumable = $state<ResumableSession[]>([]);
   let loadingResume = $state(false);
+  /** The last Resume lookup failed — distinct from a workspace with no history. */
+  let resumeError = $state("");
   let inputEl = $state<HTMLInputElement | null>(null);
   let wsColEl = $state<HTMLDivElement | null>(null);
   let resumePaneEl = $state<HTMLDivElement | null>(null);
@@ -143,6 +149,7 @@
     if (path === loadedFor) return;
     loadedFor = path;
     resumable = [];
+    resumeError = "";
     if (!path) return;
     loadingResume = true;
     listResumableSessions(path)
@@ -154,7 +161,10 @@
         pendingResumeId = "";
         if (index >= 0) nav = { ...nav, mode: "resume", column: "resume", resumeIndex: index };
       })
-      .catch((e) => log.warn("session", `listResumableSessions failed for ${path}: ${e}`))
+      .catch((e) => {
+        log.warn("session", `listResumableSessions failed for ${path}: ${e}`);
+        if (loadedFor === path) resumeError = String(e);
+      })
       .finally(() => {
         if (loadedFor === path) loadingResume = false;
       });
@@ -163,10 +173,17 @@
   function applySeed() {
     const seed = get(newSessionSeed);
     query = "";
-    const harnessIndex = Math.max(
-      0,
-      get(harnesses).findIndex((h) => h.id === get(lastHarnessId)),
-    );
+    let wantsResume = !!seed?.workspacePath && !!seed.resumeSessionId;
+    let harnessIndex = harnessIndexFor(get(harnesses), get(lastHarnessId), wantsResume);
+    if (harnessIndex < 0) {
+      // Nothing configured can resume: open on New rather than an empty Resume pane.
+      wantsResume = false;
+      harnessIndex = harnessIndexFor(get(harnesses), get(lastHarnessId), false);
+      showToast("No harness can resume sessions", {
+        body: "Turn on Resumable for one in Settings → Harnesses.",
+        type: "warning",
+      });
+    }
     nav = { ...INITIAL_STATE, harnessIndex };
     resumable = [];
     pendingResumeId = "";
@@ -179,8 +196,8 @@
         (w) => normalizePath(w.path) === want,
       );
       if (index >= 0) {
-        nav = { ...nav, wsIndex: index, mode: seed.resumeSessionId ? "resume" : "fresh" };
-        pendingResumeId = seed.resumeSessionId ?? "";
+        nav = { ...nav, wsIndex: index, mode: wantsResume ? "resume" : "fresh" };
+        pendingResumeId = wantsResume ? (seed.resumeSessionId ?? "") : "";
       } else {
         // Nothing owns that path — show it in the box so the add row offers it.
         query = seed.workspacePath;
@@ -202,7 +219,10 @@
   function chooseHarness(id: string) {
     const harnessIndex = $harnesses.findIndex((h) => h.id === id);
     if (harnessIndex < 0) return;
-    nav = { ...view, harnessIndex };
+    nav = leaveResumeIfUnsupported(
+      { ...view, harnessIndex },
+      $harnesses[harnessIndex]?.resumable ?? false,
+    );
   }
 
   function pickWorkspace(index: number) {
@@ -227,15 +247,19 @@
   async function addRow() {
     try {
       if (addPath) {
-        await addWorkspace(addPath);
-        selectPath(addPath);
+        const path = expandHome(addPath, await homeDir());
+        // Rejects anything that is not an existing directory, so a typo never
+        // becomes a workspace whose every session fails to spawn.
+        await listDir(path);
+        await addWorkspace(path);
+        selectPath(path);
         return;
       }
       const path = await addWorkspaceFolder();
       if (path) selectPath(path);
     } catch (e) {
       log.warn("session", `add workspace failed: ${e}`);
-      showToast("Could not add that folder");
+      showToast("Could not add that folder", { body: String(e) });
     }
   }
 
@@ -260,7 +284,9 @@
       showView("session");
     } catch (e) {
       log.error("session", `failed to start a session in ${ws.path}`, e);
-      showToast("Could not start a session", { body: `Nothing spawned in ${ws.name}.` });
+      showToast("Could not start a session", {
+        body: `Nothing spawned in ${ws.name}. ${String(e)}`,
+      });
     }
   }
 
@@ -270,13 +296,12 @@
     e.preventDefault();
     // Escape and ⌘O are also global chords; the modal answers them first.
     e.stopPropagation();
-    let next = result.state;
     // The Resume UI depends on a resumable harness — omp and Terminal have
-    // nothing to resume — so Tab must not flip into it for one.
-    if (e.key === "Tab" && next.mode === "resume" && !(selectedHarness?.resumable ?? false)) {
-      next = { ...next, mode: "fresh", column: "workspaces" };
-    }
-    nav = next;
+    // nothing to resume — so neither Tab nor ⌥←/→ may land in it for one.
+    nav = leaveResumeIfUnsupported(
+      result.state,
+      $harnesses[result.state.harnessIndex]?.resumable ?? false,
+    );
     if (result.effect === "close") close();
     else if (result.effect === "start") void start();
     else if (result.effect === "addFolder") void addRow();
@@ -414,6 +439,8 @@
             </div>
             {#if loadingResume}
               <p class="resume-empty">Reading transcripts…</p>
+            {:else if resumeError}
+              <p class="resume-empty">Could not read prior sessions: {resumeError}</p>
             {:else if resumable.length === 0}
               <p class="resume-empty">No prior sessions in this workspace yet — start a New one.</p>
             {:else}
