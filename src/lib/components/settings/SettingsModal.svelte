@@ -302,14 +302,14 @@
               <div class="stepper">
                 <button
                   type="button"
-                  onclick={() => stepFont(-0.5)}
+                  onclick={() => stepFont(-1)}
                   disabled={$terminalFontSize <= MIN_TERMINAL_FONT_SIZE}
                   aria-label="Smaller terminal font">−</button
                 >
                 <span class="stepper-value">{$terminalFontSize}</span>
                 <button
                   type="button"
-                  onclick={() => stepFont(0.5)}
+                  onclick={() => stepFont(1)}
                   disabled={$terminalFontSize >= MAX_TERMINAL_FONT_SIZE}
                   aria-label="Larger terminal font">+</button
                 >
