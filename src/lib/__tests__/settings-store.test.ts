@@ -48,7 +48,7 @@ import {
   watchedRepos,
   type HarnessConfig,
 } from "../stores/settings";
-import { openFiles, sources } from "../stores/files";
+import { openFiles, sources } from "../stores/file-tabs";
 import { liveSessions } from "../stores/liveSessions";
 import { tabs } from "../stores/terminal";
 import { themeMode } from "../theme";

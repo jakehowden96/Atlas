@@ -13,7 +13,7 @@ import {
 import { log } from "../logger";
 import { reportStorageFailure } from "../storage-failure";
 import { themeMode, type ThemeMode } from "../theme";
-import { openFiles, sources } from "./files";
+import { openFiles, sources } from "./file-tabs";
 import { liveSessions } from "./liveSessions";
 import { tabs } from "./terminal";
 import { workspaces } from "./workspace";

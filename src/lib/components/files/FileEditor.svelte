@@ -25,7 +25,6 @@
     fileWs,
     loadFileText,
     openFile,
-    openFiles,
     outlineJump,
     plans,
     requestCloseFile,
@@ -35,6 +34,7 @@
     setDoc,
     unreadable,
   } from "../../stores/files";
+  import { openFiles } from "../../stores/file-tabs";
   import { fileRailOpen, openNewSession } from "../../stores/view";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
   import CodeEditor from "./CodeEditor.svelte";

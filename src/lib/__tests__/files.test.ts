@@ -50,9 +50,9 @@ import {
   fileWs,
   loadDocs,
   openFile,
-  openFiles,
   toggleExpanded,
 } from "../stores/files";
+import { openFiles } from "../stores/file-tabs";
 import type { Workspace } from "../stores/workspace";
 
 function doc(rel_path: string, is_dir = false): DocEntry {

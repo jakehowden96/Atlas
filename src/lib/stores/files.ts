@@ -18,14 +18,13 @@ import {
 } from "../ipc";
 import { log } from "../logger";
 import type { OutlineItem } from "../markdown";
+import { openFiles, sources } from "./file-tabs";
 import { setFileSources, setOpenFiles } from "./settings";
 import { showToast } from "./toast";
 import { showView } from "./view";
 
 /** Workspace path whose documents the tree column is showing. */
 export const fileWs = writable<string>("");
-/** Open file keys in tab order. Persisted — see `stores/settings.ts`. */
-export const openFiles = writable<string[]>([]);
 /** The key of the file the editor is showing; `""` when nothing is open. */
 export const activeFile = writable<string>("");
 export const fileMode = writable<"source" | "split" | "preview">("source");
@@ -43,8 +42,6 @@ export const diskDocs = writable<Map<string, string>>(new Map());
  *  too rather than popping open. Nothing here is persisted, so an old settings
  *  file is unaffected. */
 export const expanded = writable<Set<string>>(new Set());
-/** Folders registered from disk. Phase 04 lists them; persisted like `openFiles`. */
-export const sources = writable<string[]>([]);
 /** The text files directly inside each registered source, by folder path.
  *  The browser walks a folder at a time, so the tree lists one level too. */
 export const sourceFiles = writable<Map<string, DirEntry[]>>(new Map());

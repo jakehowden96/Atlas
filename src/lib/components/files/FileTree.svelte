@@ -28,14 +28,13 @@
     loadPlans,
     loadSourceFiles,
     openFile,
-    openFiles,
     plans,
     removeSource,
     setDoc,
     sourceFiles,
-    sources,
     toggleExpanded,
   } from "../../stores/files";
+  import { openFiles, sources } from "../../stores/file-tabs";
   import { openDialogOpen } from "../../stores/view";
   import { activeWorkspacePath, visibleWorkspaces } from "../../stores/workspace";
 

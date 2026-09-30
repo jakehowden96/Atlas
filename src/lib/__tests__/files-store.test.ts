@@ -40,11 +40,11 @@ import {
   diskDocs,
   docs,
   loadFileText,
-  openFiles,
   saveActiveFile,
   setDoc,
   unreadable,
 } from "../stores/files";
+import { openFiles } from "../stores/file-tabs";
 
 const key = fileKey("/ws", "big.md");
 
