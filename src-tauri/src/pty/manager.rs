@@ -2,7 +2,7 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::HashMap;
 use std::io::Read;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 use tauri::ipc::Channel;
@@ -158,11 +158,7 @@ impl PtyManager {
         // Assign ID
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
 
-        let session = PtySession {
-            master: Mutex::new(pair.master),
-            child: Mutex::new(child),
-            writer: Arc::new(Mutex::new(writer)),
-        };
+        let session = PtySession::new(pair.master, child, writer)?;
 
         self.sessions
             .write()
@@ -205,7 +201,7 @@ impl PtyManager {
         Ok(id)
     }
 
-    pub fn write(&self, id: u32, data: &[u8]) -> Result<(), String> {
+    pub fn write(&self, id: u32, data: Vec<u8>) -> Result<(), String> {
         let sessions = self.sessions.read().map_err(|e| e.to_string())?;
         let session = sessions
             .get(&id)
@@ -221,13 +217,19 @@ impl PtyManager {
         session.resize(cols, rows)
     }
 
+    /// Kill a session's shell. The session leaves the table first and is
+    /// killed after the lock is released: `kill` waits out a shell that ignores
+    /// SIGHUP, and every other tab's write and resize would queue behind it.
     pub fn kill(&self, id: u32) -> Result<(), String> {
-        let mut sessions = self.sessions.write().map_err(|e| e.to_string())?;
-        if let Some(session) = sessions.get(&id) {
-            session.kill()?;
+        let removed = self
+            .sessions
+            .write()
+            .map_err(|e| e.to_string())?
+            .remove(&id);
+        match removed {
+            Some(session) => session.kill(),
+            None => Ok(()),
         }
-        sessions.remove(&id);
-        Ok(())
     }
 
     /// Kill every shell, in parallel so that quitting with several tabs open
@@ -265,23 +267,10 @@ mod tests {
     /// A live PTY session running `sleep`, inserted without a frontend channel.
     #[cfg(unix)]
     fn sleeping_session(manager: &PtyManager, id: u32) {
-        use crate::pty::session::PtySession;
-        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-        use std::sync::{Arc, Mutex};
+        use crate::pty::session::testing::session_with_writer;
 
-        let pair = native_pty_system().openpty(PtySize::default()).unwrap();
-        let mut cmd = CommandBuilder::new("sleep");
-        cmd.arg("60");
-        let child = pair.slave.spawn_command(cmd).unwrap();
-        let writer = pair.master.take_writer().unwrap();
-        manager.sessions.write().unwrap().insert(
-            id,
-            PtySession {
-                master: Mutex::new(pair.master),
-                child: Mutex::new(child),
-                writer: Arc::new(Mutex::new(writer)),
-            },
-        );
+        let session = session_with_writer("sleep", &["60"], Box::new(std::io::sink()));
+        manager.sessions.write().unwrap().insert(id, session);
     }
 
     #[cfg(unix)]
@@ -311,6 +300,49 @@ mod tests {
                 .success();
             assert!(!alive, "pid {pid} survived kill_all");
         }
+    }
+
+    /// Closing one tab must not freeze the others: `kill` waits out a shell
+    /// that ignores SIGHUP (portable-pty escalates to SIGKILL only after a
+    /// grace period), and it must do that without holding the session table.
+    #[cfg(unix)]
+    #[test]
+    fn killing_a_slow_shell_does_not_stall_other_sessions() {
+        use crate::pty::session::testing::session_with_writer;
+        use std::sync::Arc;
+        use std::time::{Duration, Instant};
+
+        let manager = Arc::new(PtyManager::new());
+        let stubborn = session_with_writer(
+            "sh",
+            &["-c", "trap '' HUP; while :; do sleep 1; done"],
+            Box::new(std::io::sink()),
+        );
+        let bystander = session_with_writer("sleep", &["60"], Box::new(std::io::sink()));
+        {
+            let mut sessions = manager.sessions.write().unwrap();
+            sessions.insert(1, stubborn);
+            sessions.insert(2, bystander);
+        }
+        // Let the shell install its trap before it is signalled.
+        std::thread::sleep(Duration::from_millis(300));
+
+        let killer = {
+            let manager = Arc::clone(&manager);
+            std::thread::spawn(move || manager.kill(1))
+        };
+        std::thread::sleep(Duration::from_millis(30));
+
+        let started = Instant::now();
+        manager.write(2, b"x".to_vec()).unwrap();
+        let waited = started.elapsed();
+
+        killer.join().unwrap().unwrap();
+        manager.kill(2).unwrap();
+        assert!(
+            waited < Duration::from_millis(100),
+            "a write to another tab waited {waited:?} behind a kill"
+        );
     }
 
     #[test]
