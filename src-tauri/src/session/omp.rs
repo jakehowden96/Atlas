@@ -125,15 +125,23 @@ impl OmpTail {
     /// anything changed, i.e. when a `session-update` is worth emitting.
     pub fn poll(&mut self) -> bool {
         self.clear_working_marker();
-        let (lines, rewound) = self.reader.read_new(&self.path);
-        if rewound {
-            self.rebuild();
-        }
-        for raw in &lines {
-            self.fold(raw);
+        let mut read_anything = false;
+        loop {
+            let batch = self.reader.read_new(&self.path);
+            if batch.rewound {
+                self.rebuild();
+                read_anything = true;
+            }
+            read_anything |= !batch.lines.is_empty();
+            for raw in &batch.lines {
+                self.fold(raw);
+            }
+            if !batch.more {
+                break;
+            }
         }
         let subagents_changed = self.poll_subagent_files();
-        if lines.is_empty() && !rewound && !subagents_changed {
+        if !read_anything && !subagents_changed {
             self.apply_working_marker();
             return false;
         }
@@ -494,75 +502,81 @@ impl OmpTail {
             } else {
                 None
             };
-            let file = self
-                .subagent_files
-                .entry(path.clone())
-                .or_insert_with(SubagentFile::new);
-            let (lines, rewound) = file.reader.read_new(&path);
-            if rewound {
-                self.session.output_tokens -= file.output_tokens;
-                self.session.cost_estimate -= file.cost;
-                file.tool_count = 0;
-                file.output_tokens = 0;
-                file.cost = 0.0;
-            }
-            if lines.is_empty() && !rewound {
-                continue;
-            }
-
-            let mut finishes: Vec<Option<String>> = Vec::new();
-            for raw in &lines {
-                let Ok(obj) = serde_json::from_str::<Value>(raw) else {
-                    continue;
-                };
-                if obj.get("type").and_then(|v| v.as_str()) != Some("message") {
+            let mut more = true;
+            while more {
+                let file = self
+                    .subagent_files
+                    .entry(path.clone())
+                    .or_insert_with(SubagentFile::new);
+                let batch = file.reader.read_new(&path);
+                more = batch.more;
+                let (lines, rewound) = (batch.lines, batch.rewound);
+                if rewound {
+                    self.session.output_tokens -= file.output_tokens;
+                    self.session.cost_estimate -= file.cost;
+                    file.tool_count = 0;
+                    file.output_tokens = 0;
+                    file.cost = 0.0;
+                }
+                if lines.is_empty() && !rewound {
                     continue;
                 }
-                let msg = obj.get("message").unwrap_or(&Value::Null);
-                match msg.get("role").and_then(|v| v.as_str()) {
-                    Some("assistant") => {
-                        if let Some(content) = msg.get("content").and_then(|v| v.as_array()) {
-                            file.tool_count += content
-                                .iter()
-                                .filter(|b| {
-                                    b.get("type").and_then(|v| v.as_str()) == Some("toolCall")
-                                })
-                                .count() as u32;
-                        }
-                        if let Some(usage) = msg.get("usage").map(Usage::from) {
-                            file.output_tokens += usage.output;
-                            file.cost += usage.cost;
-                            self.session.output_tokens += usage.output;
-                            self.session.cost_estimate += usage.cost;
-                        }
-                    }
-                    Some("toolResult") => {
-                        let is_yield =
-                            msg.get("toolName").and_then(|v| v.as_str()) == Some("yield");
-                        let is_error = msg
-                            .get("isError")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        if is_yield && !is_error {
-                            finishes.push(
-                                obj.get("timestamp")
-                                    .and_then(|v| v.as_str())
-                                    .map(str::to_string),
-                            );
-                        }
-                    }
-                    _ => {}
-                }
-            }
 
-            let tool_count = file.tool_count;
-            if let Some(idx) = idx {
-                self.session.subagents[idx].tool_count = tool_count;
-                for ts in finishes {
-                    self.finish_subagent(idx, ts);
+                let mut finishes: Vec<Option<String>> = Vec::new();
+                for raw in &lines {
+                    let Ok(obj) = serde_json::from_str::<Value>(raw) else {
+                        continue;
+                    };
+                    if obj.get("type").and_then(|v| v.as_str()) != Some("message") {
+                        continue;
+                    }
+                    let msg = obj.get("message").unwrap_or(&Value::Null);
+                    match msg.get("role").and_then(|v| v.as_str()) {
+                        Some("assistant") => {
+                            if let Some(content) = msg.get("content").and_then(|v| v.as_array()) {
+                                file.tool_count += content
+                                    .iter()
+                                    .filter(|b| {
+                                        b.get("type").and_then(|v| v.as_str()) == Some("toolCall")
+                                    })
+                                    .count()
+                                    as u32;
+                            }
+                            if let Some(usage) = msg.get("usage").map(Usage::from) {
+                                file.output_tokens += usage.output;
+                                file.cost += usage.cost;
+                                self.session.output_tokens += usage.output;
+                                self.session.cost_estimate += usage.cost;
+                            }
+                        }
+                        Some("toolResult") => {
+                            let is_yield =
+                                msg.get("toolName").and_then(|v| v.as_str()) == Some("yield");
+                            let is_error = msg
+                                .get("isError")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            if is_yield && !is_error {
+                                finishes.push(
+                                    obj.get("timestamp")
+                                        .and_then(|v| v.as_str())
+                                        .map(str::to_string),
+                                );
+                            }
+                        }
+                        _ => {}
+                    }
                 }
+
+                let tool_count = file.tool_count;
+                if let Some(idx) = idx {
+                    self.session.subagents[idx].tool_count = tool_count;
+                    for ts in finishes {
+                        self.finish_subagent(idx, ts);
+                    }
+                }
+                changed = true;
             }
-            changed = true;
         }
         changed
     }

@@ -183,12 +183,48 @@ impl LiveSession {
 
 // ── Incremental line reading ──────────────────────────────────────────────────
 
+/// Most bytes one `read_new` takes from the file. A transcript resumed after a
+/// long session is megabytes; reading it in bounded chunks and folding each
+/// before the next keeps memory at one chunk instead of a few copies of the file.
+const READ_CHUNK: u64 = 1 << 20;
+
+/// Most bytes from the start of the file kept to tell an append from a
+/// replacement: the first line, which carries the session id and a timestamp.
+/// Capped because the first line of a `file-history-snapshot` can be long, and
+/// because the fixed prefix every Claude transcript line begins with (`{"parentUuid":null,…`)
+/// is not enough on its own to tell two files apart.
+const HEAD_LEN: usize = 1024;
+
+/// What one `LineReader::read_new` call produced.
+pub(super) struct ReadBatch {
+    /// Complete lines, in file order.
+    pub lines: Vec<String>,
+    /// The file was replaced or shrank: the reader restarted at byte 0 and the
+    /// caller must drop the state it folded from the old contents first.
+    pub rewound: bool,
+    /// More of the file is waiting; call again before treating the tail as current.
+    pub more: bool,
+}
+
+impl ReadBatch {
+    fn nothing(rewound: bool) -> Self {
+        ReadBatch {
+            lines: Vec::new(),
+            rewound,
+            more: false,
+        }
+    }
+}
+
 /// Remembers where it stopped in a growing file so the file is never re-read
 /// from the start. The trailing bytes of an incomplete line are held back until
 /// the newline arrives, so a line written in two flushes still parses once.
 pub(super) struct LineReader {
     offset: u64,
     partial: Vec<u8>,
+    /// The first line of the file (at most `HEAD_LEN` bytes) as last seen, or
+    /// what there is of it while it is still being written.
+    head: Vec<u8>,
 }
 
 impl LineReader {
@@ -196,41 +232,61 @@ impl LineReader {
         LineReader {
             offset: 0,
             partial: Vec::new(),
+            head: Vec::new(),
         }
     }
 
     fn reset(&mut self) {
         self.offset = 0;
         self.partial.clear();
+        self.head.clear();
     }
 
-    /// Complete lines appended since the last call. The bool is true when the
-    /// file shrank (rotation/rewrite) and the caller must rebuild its state.
-    pub(super) fn read_new(&mut self, path: &Path) -> (Vec<String>, bool) {
+    /// Whether the file still starts with the bytes it started with.
+    fn head_matches(&self, file: &mut std::fs::File) -> bool {
+        let mut now = vec![0; self.head.len()];
+        file.seek(SeekFrom::Start(0)).is_ok()
+            && file.read_exact(&mut now).is_ok()
+            && now == self.head
+    }
+
+    /// Up to `READ_CHUNK` bytes of what was appended since the last call, as
+    /// complete lines. A file that shrank, or grew but no longer begins with
+    /// the bytes it began with, is a rewrite: the reader restarts at 0.
+    pub(super) fn read_new(&mut self, path: &Path) -> ReadBatch {
         let Ok(meta) = std::fs::metadata(path) else {
-            return (Vec::new(), false);
+            return ReadBatch::nothing(false);
         };
         let len = meta.len();
-        let rewound = len < self.offset;
+        let mut rewound = len < self.offset;
         if rewound {
             self.reset();
         }
         if len == self.offset {
-            return (Vec::new(), rewound);
+            return ReadBatch::nothing(rewound);
         }
 
         let Ok(mut file) = std::fs::File::open(path) else {
-            return (Vec::new(), rewound);
+            return ReadBatch::nothing(rewound);
         };
-        if file.seek(SeekFrom::Start(self.offset)).is_err() {
-            return (Vec::new(), rewound);
+        if self.offset > 0 && !self.head_matches(&mut file) {
+            self.reset();
+            rewound = true;
         }
-        let mut buf = Vec::new();
-        let Ok(read) = file.read_to_end(&mut buf) else {
-            return (Vec::new(), rewound);
+        if file.seek(SeekFrom::Start(self.offset)).is_err() {
+            return ReadBatch::nothing(rewound);
+        }
+        let Ok(read) = file
+            .by_ref()
+            .take(READ_CHUNK)
+            .read_to_end(&mut self.partial)
+        else {
+            return ReadBatch::nothing(rewound);
         };
         self.offset += read as u64;
-        self.partial.extend_from_slice(&buf);
+        if self.head.len() < HEAD_LEN && !self.head.contains(&b'\n') {
+            self.remember_head(&mut file);
+        }
 
         let mut lines = Vec::new();
         let mut start = 0;
@@ -240,7 +296,27 @@ impl LineReader {
             start = end + 1;
         }
         self.partial.drain(..start);
-        (lines, rewound)
+        ReadBatch {
+            lines,
+            rewound,
+            more: self.offset < len,
+        }
+    }
+
+    fn remember_head(&mut self, file: &mut std::fs::File) {
+        let mut head = Vec::with_capacity(HEAD_LEN);
+        if file.seek(SeekFrom::Start(0)).is_ok()
+            && file
+                .by_ref()
+                .take(HEAD_LEN as u64)
+                .read_to_end(&mut head)
+                .is_ok()
+        {
+            if let Some(newline) = head.iter().position(|b| *b == b'\n') {
+                head.truncate(newline + 1);
+            }
+            self.head = head;
+        }
     }
 }
 
@@ -271,31 +347,35 @@ impl SubagentCounter {
 
     /// Returns true when the count or the usage changed.
     fn poll(&mut self, path: &Path) -> bool {
-        let (lines, rewound) = self.reader.read_new(path);
-        if rewound {
-            self.tool_count = 0;
-            self.requests.clear();
-        }
-        if lines.is_empty() {
-            return rewound;
-        }
         let before = (self.tool_count, self.requests.len());
-        for raw in &lines {
-            let Ok(obj) = serde_json::from_str::<Value>(raw) else {
-                continue;
-            };
-            if line_type(&obj) != "assistant" {
-                continue;
+        let mut changed = false;
+        loop {
+            let batch = self.reader.read_new(path);
+            if batch.rewound {
+                self.tool_count = 0;
+                self.requests.clear();
+                changed = true;
             }
-            let msg = obj.get("message").unwrap_or(&Value::Null);
-            self.tool_count += tool_uses(msg).len() as u32;
-            if let (Some(model), Some(key)) = (assistant_model(&obj), request_key(&obj)) {
-                self.requests
-                    .entry(key)
-                    .or_insert_with(|| ReqData::from_message(model, msg));
+            for raw in &batch.lines {
+                let Ok(obj) = serde_json::from_str::<Value>(raw) else {
+                    continue;
+                };
+                if line_type(&obj) != "assistant" {
+                    continue;
+                }
+                let msg = obj.get("message").unwrap_or(&Value::Null);
+                self.tool_count += tool_uses(msg).len() as u32;
+                if let (Some(model), Some(key)) = (assistant_model(&obj), request_key(&obj)) {
+                    self.requests
+                        .entry(key)
+                        .or_insert_with(|| ReqData::from_message(model, msg));
+                }
+            }
+            if !batch.more {
+                break;
             }
         }
-        rewound || (self.tool_count, self.requests.len()) != before
+        changed || (self.tool_count, self.requests.len()) != before
     }
 }
 
@@ -339,6 +419,9 @@ pub struct SessionTail {
     last_stop_reason: Option<String>,
     /// Line currently displayed as `Working`, and the role it really has.
     working: Option<(usize, LineRole)>,
+    /// Lines that were not JSON. Counted so a format change is logged once
+    /// instead of every line silently vanishing.
+    skipped_lines: u64,
 }
 
 impl SessionTail {
@@ -368,6 +451,7 @@ impl SessionTail {
             seen_background_count: false,
             last_stop_reason: None,
             working: None,
+            skipped_lines: 0,
         }
     }
 
@@ -391,18 +475,26 @@ impl SessionTail {
     pub fn poll(&mut self) -> bool {
         // Withdrawn first, while the recorded line index is still valid.
         self.clear_working_marker();
-        let (lines, rewound) = self.reader.read_new(&self.path);
-        if rewound {
-            self.rebuild();
-        }
-        for raw in &lines {
-            self.fold(raw);
+        let mut read_anything = false;
+        loop {
+            let batch = self.reader.read_new(&self.path);
+            if batch.rewound {
+                self.rebuild();
+                read_anything = true;
+            }
+            read_anything |= !batch.lines.is_empty();
+            for raw in &batch.lines {
+                self.fold(raw);
+            }
+            if !batch.more {
+                break;
+            }
         }
         // After folding: a subagent is only tracked once its `Agent` call is read.
         let counts_changed = self.poll_subagents();
         let workflow_changed = self.poll_workflow_agents();
         let subagents_changed = counts_changed || workflow_changed;
-        if lines.is_empty() && !rewound && !subagents_changed {
+        if !read_anything && !subagents_changed {
             self.apply_working_marker();
             return false;
         }
@@ -430,6 +522,15 @@ impl SessionTail {
 
     fn fold(&mut self, raw: &str) {
         let Ok(obj) = serde_json::from_str::<Value>(raw) else {
+            if !raw.trim().is_empty() {
+                if self.skipped_lines == 0 {
+                    log::warn!(
+                        "{}: skipping a line that is not JSON (later ones are not logged)",
+                        self.path.display()
+                    );
+                }
+                self.skipped_lines += 1;
+            }
             return;
         };
 
@@ -2101,5 +2202,76 @@ mod tests {
         );
         tail.poll();
         assert_eq!(tail.session().subagents[0].tool_count, u32::MAX);
+    }
+
+    /// A transcript resumed after a long session is read in bounded chunks;
+    /// a line and a multibyte character straddling a chunk edge must survive.
+    #[test]
+    fn a_transcript_larger_than_a_chunk_is_read_in_full() {
+        let filler = "é".repeat(500);
+        let lines: Vec<String> = (0..3000)
+            .map(|i| prompt_line(&format!("\"{i} {filler}\"")))
+            .collect();
+        let (dir, mut tail) = tail_with(&lines);
+
+        let mut reader = LineReader::new();
+        let first = reader.read_new(&dir.path().join(format!("{UUID}.jsonl")));
+        assert!(first.more, "3 MiB is more than one chunk");
+        assert!(first.lines.len() < lines.len());
+
+        assert!(tail.poll());
+        let prompt = tail.session().last_prompt.as_deref().unwrap();
+        assert!(prompt.starts_with("2999 é"), "{prompt}");
+    }
+
+    /// A different file that grew past the old offset is not an append.
+    #[test]
+    fn a_replaced_larger_file_is_rebuilt_not_appended_to() {
+        let shared = r#"{"parentUuid":null,"isSidechain":false,"userType":"external","cwd":"/work/project","#;
+        let first_line = |session: &str| {
+            format!(
+                r#"{shared}"sessionId":"{session}","type":"user","message":{{"role":"user","content":"{session} prompt"}}}}"#
+            )
+        };
+        let (dir, mut tail) = tail_with(&[first_line("aaaaaaaa")]);
+        tail.poll();
+        assert_eq!(
+            tail.session().last_prompt.as_deref(),
+            Some("aaaaaaaa prompt")
+        );
+
+        let replacement: Vec<String> = ["bbbbbbbbbbbbbbbbbbbb"; 3]
+            .iter()
+            .map(|s| first_line(s))
+            .collect();
+        let path = dir.path().join(format!("{UUID}.jsonl"));
+        std::fs::write(&path, replacement.join("\n") + "\n").unwrap();
+
+        assert!(tail.poll());
+        assert_eq!(
+            tail.session().last_prompt.as_deref(),
+            Some("bbbbbbbbbbbbbbbbbbbb prompt")
+        );
+        assert_eq!(tail.session().lines.len(), 3);
+        assert!(
+            tail.session().lines[0]
+                .text
+                .contains("bbbbbbbbbbbbbbbbbbbb"),
+            "the old file's line must be gone: {:?}",
+            tail.session().lines[0].text
+        );
+    }
+
+    /// A writer killed mid-line leaves a fragment; the record written after
+    /// the restart must still be read.
+    #[test]
+    fn a_torn_line_does_not_swallow_the_record_after_it() {
+        let (dir, mut tail) = tail_with(&[]);
+        let path = dir.path().join(format!("{UUID}.jsonl"));
+        std::fs::write(&path, r#"{"type":"user","message":{"content":"a""#).unwrap();
+        tail.poll();
+        append(&path, &["".to_string(), prompt_line(r#""b""#)]);
+        tail.poll();
+        assert_eq!(tail.session().last_prompt.as_deref(), Some("b"));
     }
 }
