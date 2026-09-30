@@ -1,7 +1,7 @@
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::HashMap;
 use std::io::Read;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use tauri::ipc::Channel;
@@ -78,16 +78,14 @@ const INHERITED_CLAUDE_MARKERS: &[&str] = &[
 
 pub struct PtyManager {
     sessions: Arc<RwLock<HashMap<u32, PtySession>>>,
-    shutdown_flags: Arc<RwLock<HashMap<u32, Arc<AtomicBool>>>>,
-    next_id: Arc<Mutex<u32>>,
+    next_id: AtomicU32,
 }
 
 impl PtyManager {
     pub fn new() -> Self {
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
-            shutdown_flags: Arc::new(RwLock::new(HashMap::new())),
-            next_id: Arc::new(Mutex::new(1)),
+            next_id: AtomicU32::new(1),
         }
     }
 
@@ -157,12 +155,7 @@ impl PtyManager {
         let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
 
         // Assign ID
-        let id = {
-            let mut next = self.next_id.lock().map_err(|e| e.to_string())?;
-            let id = *next;
-            *next += 1;
-            id
-        };
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
 
         let session = PtySession {
             master: Mutex::new(pair.master),
@@ -170,28 +163,18 @@ impl PtyManager {
             writer: Arc::new(Mutex::new(writer)),
         };
 
-        let shutdown = Arc::new(AtomicBool::new(false));
-
         self.sessions
             .write()
             .map_err(|e| e.to_string())?
             .insert(id, session);
 
-        self.shutdown_flags
-            .write()
-            .map_err(|e| e.to_string())?
-            .insert(id, Arc::clone(&shutdown));
-
-        // Spawn reader thread with shutdown signal
+        // The reader ends on EOF, which killing the child (or the shell
+        // exiting) produces by closing the slave side.
         let sessions = Arc::clone(&self.sessions);
-        let flags = Arc::clone(&self.shutdown_flags);
         let session_id = id;
         thread::spawn(move || {
             let mut buf = [0u8; 8192];
             loop {
-                if shutdown.load(Ordering::Relaxed) {
-                    break;
-                }
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
@@ -203,12 +186,9 @@ impl PtyManager {
                     Err(_) => break,
                 }
             }
-            // Clean up session and shutdown flag when reader exits
+            // Clean up the session when the reader exits
             if let Ok(mut sessions) = sessions.write() {
                 sessions.remove(&session_id);
-            }
-            if let Ok(mut flags) = flags.write() {
-                flags.remove(&session_id);
             }
         });
 
@@ -232,12 +212,6 @@ impl PtyManager {
     }
 
     pub fn kill(&self, id: u32) -> Result<(), String> {
-        // Signal the reader thread to stop
-        if let Ok(flags) = self.shutdown_flags.read() {
-            if let Some(flag) = flags.get(&id) {
-                flag.store(true, Ordering::Relaxed);
-            }
-        }
         let mut sessions = self.sessions.write().map_err(|e| e.to_string())?;
         if let Some(session) = sessions.get(&id) {
             session.kill()?;
