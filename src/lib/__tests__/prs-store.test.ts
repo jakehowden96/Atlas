@@ -293,7 +293,7 @@ describe("pr refresh", () => {
     answerFirst(repoPrs("old/repo"));
     await first;
 
-    expect(get(prRepos)?.[0].repo).toBe("new/repo");
+    expect(get(prRepos)?.[0]?.repo).toBe("new/repo");
   });
 
   it("does not start another poll while one is still in flight", async () => {

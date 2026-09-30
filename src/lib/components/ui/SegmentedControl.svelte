@@ -1,6 +1,6 @@
 <script module lang="ts">
-  export interface Segment {
-    id: string;
+  export interface Segment<Id extends string = string> {
+    id: Id;
     label: string;
     /** Rendered as a mono numeral after the label. */
     count?: number;
@@ -14,11 +14,11 @@
   }
 </script>
 
-<script lang="ts">
+<script lang="ts" generics="Id extends string">
   interface Props {
-    options: Segment[];
-    value: string;
-    onChange: (id: string) => void;
+    options: Segment<Id>[];
+    value: Id;
+    onChange: (id: Id) => void;
     /** "md" = 12px / 4px 12px. "sm" = 11.5px / 3px 10px. */
     size?: "md" | "sm";
     /** Stretch every segment to equal width (Fresh/Resume, Unified/Split). */

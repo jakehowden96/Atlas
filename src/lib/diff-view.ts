@@ -50,8 +50,7 @@ export function buildTree(items: FlatFile[]): TreeNode {
     const parts = item.key.split("/");
     let node = root;
     let acc = "";
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
+    for (const [i, part] of parts.entries()) {
       acc = acc ? `${acc}/${part}` : part;
       let child = node.children.get(part);
       if (!child) {

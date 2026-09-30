@@ -19,9 +19,10 @@ export async function bootApp(): Promise<() => void> {
   await loadWorkspaces();
   const ws = get(visibleWorkspaces);
   log.info("app", `workspaces loaded: ${ws.length}`);
-  if (ws.length > 0 && !get(activeWorkspacePath)) {
-    activeWorkspacePath.set(ws[0].path);
-    log.info("app", `active workspace set: ${ws[0].path}`);
+  const firstWs = ws[0];
+  if (firstWs && !get(activeWorkspacePath)) {
+    activeWorkspacePath.set(firstWs.path);
+    log.info("app", `active workspace set: ${firstWs.path}`);
   }
   await settingsLoaded;
 

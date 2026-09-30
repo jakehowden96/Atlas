@@ -86,9 +86,9 @@ export function parseDiff(raw: string): DiffFile[] {
     if (lines.length === 0) continue;
 
     // First line: "a/path b/path", or their quoted forms.
-    const headerMatch = lines[0].match(HEADER_NAMES);
-    let oldName = headerMatch ? (diffLineName(headerMatch[1]) ?? "unknown") : "unknown";
-    let newName = headerMatch ? (diffLineName(headerMatch[2]) ?? "unknown") : "unknown";
+    const headerMatch = (lines[0] ?? "").match(HEADER_NAMES);
+    let oldName = headerMatch ? (diffLineName(headerMatch[1] ?? "") ?? "unknown") : "unknown";
+    let newName = headerMatch ? (diffLineName(headerMatch[2] ?? "") ?? "unknown") : "unknown";
 
     // Determine change type from diff metadata lines
     let changeType: DiffFile["changeType"] = "modified";
@@ -121,8 +121,8 @@ export function parseDiff(raw: string): DiffFile[] {
       if (hunkMatch) {
         currentHunk = { header: line, lines: [] };
         hunks.push(currentHunk);
-        oldLine = parseInt(hunkMatch[1], 10);
-        newLine = parseInt(hunkMatch[3], 10);
+        oldLine = parseInt(hunkMatch[1] ?? "0", 10);
+        newLine = parseInt(hunkMatch[3] ?? "0", 10);
         oldRemaining = hunkMatch[2] === undefined ? 1 : parseInt(hunkMatch[2], 10);
         newRemaining = hunkMatch[4] === undefined ? 1 : parseInt(hunkMatch[4], 10);
 

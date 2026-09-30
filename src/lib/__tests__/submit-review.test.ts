@@ -38,7 +38,7 @@ function anchor(fileKey: string, newNum: number): ReviewAnchor {
 /** `ptyWrite` is called with the raw bytes-as-string; decode nothing here. */
 function lastPrompt(): string {
   const calls = vi.mocked(ptyWrite).mock.calls;
-  return calls[calls.length - 1][1];
+  return calls[calls.length - 1]![1];
 }
 
 describe("submitReview", () => {
@@ -59,7 +59,7 @@ describe("submitReview", () => {
     await submitReview("tab-a");
 
     expect(ptyWrite).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(ptyWrite).mock.calls[0][0]).toBe(7);
+    expect(vi.mocked(ptyWrite).mock.calls[0]![0]).toBe(7);
     const prompt = lastPrompt();
     expect(prompt).toContain("src/a.ts:12");
     expect(prompt).toContain("rename this");
@@ -78,7 +78,7 @@ describe("submitReview", () => {
 
     await submitReview("tab-a");
 
-    expect(vi.mocked(ptyWrite).mock.calls[0][0]).toBe(1);
+    expect(vi.mocked(ptyWrite).mock.calls[0]![0]).toBe(1);
     expect(lastPrompt()).toContain("for A");
     expect(lastPrompt()).not.toContain("for B");
     expect(get(reviewComments).get("tab-a")).toBeUndefined();
@@ -111,6 +111,6 @@ describe("submitReview", () => {
     await submitReview("tab-a");
 
     expect(get(reviewComments).get("tab-a")).toHaveLength(1);
-    expect(get(toasts)[0].body).toMatch(/pty gone/);
+    expect(get(toasts)[0]!.body).toMatch(/pty gone/);
   });
 });

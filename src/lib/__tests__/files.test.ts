@@ -153,8 +153,8 @@ describe("buildDocTree", () => {
     const roots = buildDocTree(listed([doc("docs", true), doc("docs/guide.md"), doc("README.md")]));
 
     expect(roots.map((n) => n.name)).toEqual(["docs", "README.md"]);
-    expect(roots[0].isDir).toBe(true);
-    expect(child(roots[0], "guide.md")).toMatchObject({
+    expect(roots[0]!.isDir).toBe(true);
+    expect(child(roots[0]!, "guide.md")).toMatchObject({
       relPath: "docs/guide.md",
       isDir: false,
     });
@@ -181,7 +181,7 @@ describe("buildDocTree", () => {
     const roots = buildDocTree([doc("a/b/c.md")]);
     expect(roots).toHaveLength(1);
     expect(roots[0]).toMatchObject({ name: "a", isDir: true });
-    expect(child(child(roots[0], "b"), "c.md")).toMatchObject({ relPath: "a/b/c.md" });
+    expect(child(child(roots[0]!, "b"), "c.md")).toMatchObject({ relPath: "a/b/c.md" });
   });
 
   it("is empty for an empty listing", () => {
@@ -210,21 +210,21 @@ describe("filterDocTree", () => {
   it("keeps the folders on the way to a match", () => {
     const filtered = filterDocTree(roots, "guide");
     expect(filtered.map((n) => n.name)).toEqual(["docs", "src"]);
-    expect(child(filtered[0], "guide.md")).toBeDefined();
+    expect(child(filtered[0]!, "guide.md")).toBeDefined();
     // `notes.md` shares the folder but not the query.
-    expect(filtered[0].children.map((n) => n.name)).toEqual(["guide.md"]);
-    expect(child(child(filtered[1], "deep"), "guide.test.ts")).toBeDefined();
+    expect(filtered[0]!.children.map((n) => n.name)).toEqual(["guide.md"]);
+    expect(child(child(filtered[1]!, "deep"), "guide.test.ts")).toBeDefined();
   });
 
   it("keeps everything under a folder that matches by its own name", () => {
     const filtered = filterDocTree(roots, "docs");
     expect(filtered).toHaveLength(1);
-    expect(filtered[0].children.map((n) => n.name)).toEqual(["guide.md", "notes.md"]);
+    expect(filtered[0]!.children.map((n) => n.name)).toEqual(["guide.md", "notes.md"]);
   });
 
   it("matches without regard to case", () => {
     expect(filterDocTree(roots, "README")).toHaveLength(1);
-    expect(filterDocTree(roots, "readme")[0].name).toBe("README.md");
+    expect(filterDocTree(roots, "readme")[0]!.name).toBe("README.md");
   });
 
   it("is empty when nothing matches", () => {
@@ -233,7 +233,7 @@ describe("filterDocTree", () => {
 
   it("leaves the tree it was given untouched", () => {
     filterDocTree(roots, "guide");
-    expect(child(roots[0], "notes.md")).toBeDefined();
+    expect(child(roots[0]!, "notes.md")).toBeDefined();
   });
 });
 
@@ -244,13 +244,13 @@ describe("hasUnsavedUnder", () => {
   const docsFolder = roots[0];
 
   it("reports a folder unsaved only when a descendant is", () => {
-    expect(hasUnsavedUnder(docsFolder, new Set())).toBe(false);
-    expect(hasUnsavedUnder(docsFolder, new Set(["README.md"]))).toBe(false);
-    expect(hasUnsavedUnder(docsFolder, new Set(["docs/notes.md"]))).toBe(true);
+    expect(hasUnsavedUnder(docsFolder!, new Set())).toBe(false);
+    expect(hasUnsavedUnder(docsFolder!, new Set(["README.md"]))).toBe(false);
+    expect(hasUnsavedUnder(docsFolder!, new Set(["docs/notes.md"]))).toBe(true);
   });
 
   it("reports a file by its own path", () => {
-    const guide = child(docsFolder, "guide.md");
+    const guide = child(docsFolder!, "guide.md");
     expect(hasUnsavedUnder(guide, new Set(["docs/guide.md"]))).toBe(true);
     expect(hasUnsavedUnder(guide, new Set(["docs/notes.md"]))).toBe(false);
   });
@@ -372,7 +372,7 @@ describe("tree expansion", () => {
     fileWs.set(ws);
     const roots = buildDocTree(listed([doc("docs", true), doc("docs/guide.md")]));
     expect(get(expanded).has(fileKey(ws, "docs"))).toBe(false);
-    expect(hasUnsavedUnder(roots[0], new Set(["docs/guide.md"]))).toBe(true);
+    expect(hasUnsavedUnder(roots[0]!, new Set(["docs/guide.md"]))).toBe(true);
   });
 });
 
@@ -438,7 +438,7 @@ describe("resolveWikilink", () => {
 });
 
 describe("breadcrumbs", () => {
-  const last = <T>(items: T[]): T => items[items.length - 1];
+  const last = <T>(items: T[]): T => items[items.length - 1]!;
 
   it("walks a windows path from its drive root", () => {
     expect(breadcrumbs("C:\\Users\\me\\Notes")).toEqual([

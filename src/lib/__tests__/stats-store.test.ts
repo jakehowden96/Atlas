@@ -20,6 +20,7 @@ import {
 } from "../stores/stats";
 
 function summaryWith(cost: number): StatsSummary {
+  // Only the fields the store reads; a full StatsSummary is hundreds of lines of noise.
   return { totalsAll: { cost } } as unknown as StatsSummary;
 }
 
@@ -53,7 +54,7 @@ describe("the stats feed", () => {
     });
 
     await startStatsFeed();
-    pushes[0](summaryWith(44));
+    pushes[0]!(summaryWith(44));
 
     expect(get(statsSummary)?.totalsAll.cost).toBe(44);
   });
@@ -104,6 +105,7 @@ describe("the stats feed", () => {
   /* Two recomputes can finish in reverse order; the older must not win. */
   it("ignores a summary older than the one it already has", async () => {
     const at = (generatedAt: string, cost: number) =>
+      // Only the fields the store reads.
       ({ generatedAt, totalsAll: { cost } }) as unknown as StatsSummary;
     vi.mocked(getClaudeStats).mockResolvedValue(at("2026-01-01T00:00:02Z", 2));
     const pushes: ((s: StatsSummary) => void)[] = [];
@@ -113,7 +115,7 @@ describe("the stats feed", () => {
     });
 
     await startStatsFeed();
-    pushes[0](at("2026-01-01T00:00:01Z", 1));
+    pushes[0]!(at("2026-01-01T00:00:01Z", 1));
 
     expect(get(statsSummary)?.totalsAll.cost).toBe(2);
   });

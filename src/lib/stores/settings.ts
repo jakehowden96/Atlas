@@ -38,7 +38,7 @@ export function transcriptKind(h: HarnessConfig): "claude" | "omp" | null {
   return h.resumable ? "claude" : h.command === "omp" ? "omp" : null;
 }
 
-export const DEFAULT_HARNESSES: HarnessConfig[] = [
+export const DEFAULT_HARNESSES: readonly [HarnessConfig, ...HarnessConfig[]] = [
   {
     id: "claude-code",
     label: "Claude Code",
@@ -102,6 +102,7 @@ export const keymap = writable<Keymap>({ ...DEFAULT_KEYMAP });
 
 /** Chord labels for the UI, so every hint renders the current binding. */
 export const chords = derived(keymap, (km) => {
+  // `ACTIONS` lists every `Action`, so the loop fills every key the cast claims.
   const labels = {} as Record<Action, string>;
   for (const action of ACTIONS) labels[action] = formatChord(km[action]);
   return labels;
@@ -111,6 +112,7 @@ export const chords = derived(keymap, (km) => {
  *  `migrateSettings` whenever a persisted key changes meaning. */
 export const SETTINGS_VERSION = 1;
 
+/** What `persistSettings` writes, and what `loadSettings` reads back. */
 interface PersistedSettings {
   version?: number;
   enableNotifications?: boolean;
@@ -137,12 +139,21 @@ interface PersistedSettings {
   keymap?: Partial<Record<Action, Binding | Binding[]>>;
 }
 
+/** The settings file as parsed: every key present in `PersistedSettings`, but
+ *  nothing about its value trusted until `loadSettings` has checked it. */
+type StoredSettings = { [K in keyof PersistedSettings]?: unknown };
+
 /** The three intervals the Pull requests screen offers. */
 export const PR_REFRESH_CHOICES: PrRefreshMinutes[] = [1, 3, 10];
 
 const ORDERING_CHOICES: OverviewOrdering[] = ["attention", "workspace", "manual", "opened"];
 
 const READY_MODES = ["altscreen", "immediate"];
+
+/** The strings in a stored list, or null when the value is not a list. */
+function storedStrings(v: unknown): string[] | null {
+  return Array.isArray(v) ? v.filter((item): item is string => typeof item === "string") : null;
+}
 
 /** Defensive check for a harness loaded from disk — a hand-edited or corrupted
  *  file costs the user that one harness rather than the whole settings load. */
@@ -180,13 +191,13 @@ export const MAX_TERMINAL_FONT_SIZE = 24;
  * build's older-shaped save replaces it.
  */
 export function migrateSettings(raw: unknown): {
-  data: PersistedSettings;
+  data: StoredSettings;
   newerThanKnown: boolean;
 } {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return { data: {}, newerThanKnown: false };
   }
-  const data = raw as PersistedSettings;
+  const data: StoredSettings = raw;
   const version = typeof data.version === "number" ? data.version : 0;
   return { data, newerThanKnown: version > SETTINGS_VERSION };
 }
@@ -206,9 +217,8 @@ export async function loadSettings() {
     const { data, newerThanKnown } = migrateSettings(JSON.parse(loaded.contents));
     if (newerThanKnown) reportNewerState("settings");
     if (data.enableNotifications === false) enableNotifications.set(false);
-    if (Array.isArray(data.watchedRepos)) {
-      watchedRepos.set(data.watchedRepos.filter((repo) => typeof repo === "string"));
-    }
+    const repos = storedStrings(data.watchedRepos);
+    if (repos) watchedRepos.set(repos);
     if (data.theme === "system" || data.theme === "light" || data.theme === "dark") {
       themeMode.set(data.theme);
     }
@@ -216,26 +226,23 @@ export async function loadSettings() {
     if (typeof data.terminalFontSize === "number" && data.terminalFontSize > 0) {
       terminalFontSize.set(clampFontSize(data.terminalFontSize));
     }
-    if (data.overviewOrdering && ORDERING_CHOICES.includes(data.overviewOrdering)) {
-      overviewOrdering.set(data.overviewOrdering);
-    }
-    if (data.prRefreshMinutes && PR_REFRESH_CHOICES.includes(data.prRefreshMinutes)) {
-      prRefreshMinutes.set(data.prRefreshMinutes);
-    }
+    const ordering = ORDERING_CHOICES.find((choice) => choice === data.overviewOrdering);
+    if (ordering) overviewOrdering.set(ordering);
+    const refresh = PR_REFRESH_CHOICES.find((choice) => choice === data.prRefreshMinutes);
+    if (refresh) prRefreshMinutes.set(refresh);
     if (typeof data.autoAddReposFromWorkspaces === "boolean") {
       autoAddReposFromWorkspaces.set(data.autoAddReposFromWorkspaces);
     }
     if (typeof data.tailTranscripts === "boolean") tailTranscripts.set(data.tailTranscripts);
     if (typeof data.claudeHook === "boolean") claudeHook.set(data.claudeHook);
-    if (Array.isArray(data.pinnedSessions)) {
-      pinnedSessions.set(data.pinnedSessions.filter((id) => typeof id === "string"));
-    }
+    const pinned = storedStrings(data.pinnedSessions);
+    if (pinned) pinnedSessions.set(pinned);
     // Only overwrite the defaults when the file has a valid, non-empty list —
     // an old settings.json with no `harnesses` key keeps the three defaults,
     // and a corrupted file can't leave the picker empty.
     if (Array.isArray(data.harnesses)) {
       const seenIds = new Set<string>();
-      const valid = data.harnesses.filter((h) => {
+      const valid = data.harnesses.filter((h): h is HarnessConfig => {
         if (!isValidHarness(h) || seenIds.has(h.id)) return false;
         seenIds.add(h.id);
         return true;
@@ -243,17 +250,12 @@ export async function loadSettings() {
       if (valid.length > 0) harnesses.set(valid);
     }
     if (typeof data.lastHarnessId === "string") lastHarnessId.set(data.lastHarnessId);
-    if (Array.isArray(data.openFiles)) {
-      openFiles.set(data.openFiles.filter((key) => typeof key === "string"));
-    }
-    if (Array.isArray(data.fileSources)) {
-      sources.set(data.fileSources.filter((path) => typeof path === "string"));
-    }
-    if (Array.isArray(data.lspTrustedWorkspaces)) {
-      lspTrustedWorkspaces.set(
-        data.lspTrustedWorkspaces.filter((path) => typeof path === "string"),
-      );
-    }
+    const open = storedStrings(data.openFiles);
+    if (open) openFiles.set(open);
+    const fileSources = storedStrings(data.fileSources);
+    if (fileSources) sources.set(fileSources);
+    const trusted = storedStrings(data.lspTrustedWorkspaces);
+    if (trusted) lspTrustedWorkspaces.set(trusted);
     // Malformed entries are dropped inside `mergeKeymap`, so a hand-edited file
     // costs the user one binding rather than the whole settings load.
     keymap.set(mergeKeymap(data.keymap));

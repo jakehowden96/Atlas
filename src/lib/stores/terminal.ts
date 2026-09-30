@@ -23,11 +23,11 @@ export function removeTab(id: string) {
   if (wasActive) {
     const remaining = get(tabs);
     // Prefer falling back to another tab in the same workspace
-    const sameWsTabs = remaining.filter((t) => (t.cwd ?? "") === removedWs);
-    if (sameWsTabs.length > 0) {
-      activeTabId.set(sameWsTabs[sameWsTabs.length - 1].id);
-    } else if (remaining.length > 0) {
-      const fallback = remaining[remaining.length - 1];
+    const sameWsTab = [...remaining].reverse().find((t) => (t.cwd ?? "") === removedWs);
+    const fallback = remaining[remaining.length - 1];
+    if (sameWsTab) {
+      activeTabId.set(sameWsTab.id);
+    } else if (fallback) {
       activeTabId.set(fallback.id);
       // Sync workspace to match the cross-workspace fallback tab
       const fallbackWs = fallback.cwd ?? "";

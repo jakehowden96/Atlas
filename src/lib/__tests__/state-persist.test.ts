@@ -40,7 +40,7 @@ describe("createStatePersister", () => {
     await p.request();
 
     expect(stateSave).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(vi.mocked(stateSave).mock.calls[0][1])).toEqual({ value: 3 });
+    expect(JSON.parse(vi.mocked(stateSave).mock.calls[0]![1])).toEqual({ value: 3 });
   });
 
   it("keeps one save in flight and folds requests made meanwhile into one latest-wins write", async () => {
@@ -78,7 +78,7 @@ describe("createStatePersister", () => {
 
     value = 2;
     await p.request();
-    expect(JSON.parse(vi.mocked(stateSave).mock.calls[1][1])).toEqual({ value: 2 });
+    expect(JSON.parse(vi.mocked(stateSave).mock.calls[1]![1])).toEqual({ value: 2 });
   });
 
   it("survives a snapshot that throws", async () => {

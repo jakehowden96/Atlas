@@ -79,7 +79,7 @@
   let crumbs = $derived(file.path.split(/[\\/]/).filter(Boolean).slice(-3));
 
   /** `src/lib/ipc.ts` → `TS`. Anything with no extension keeps the generic name. */
-  let ext = $derived(/\.([a-z0-9]+)$/i.exec(file.path)?.[1].toLowerCase() ?? "");
+  let ext = $derived(/\.([a-z0-9]+)$/i.exec(file.path)?.[1]?.toLowerCase() ?? "");
   let kind = $derived(
     markdown ? "Markdown" : ext === "txt" ? "Text" : ext ? ext.toUpperCase() : "Document",
   );
@@ -102,7 +102,8 @@
       if ($activeFile) activeFile.set("");
       return;
     }
-    if (!open.includes($activeFile)) activeFile.set(open[0]);
+    const first = open[0];
+    if (first !== undefined && !open.includes($activeFile)) activeFile.set(first);
   });
 
   // Pull the file off disk the first time it is shown. `loadFileText` is a

@@ -61,7 +61,7 @@ describe("terminal store", () => {
       addTab(makeTerminalTab({ id: "t2" }));
       removeTab("t1");
       expect(get(tabs)).toHaveLength(1);
-      expect(get(tabs)[0].id).toBe("t2");
+      expect(get(tabs)[0]!.id).toBe("t2");
     });
 
     it("sets the last remaining tab as active", () => {
@@ -124,7 +124,7 @@ describe("terminal store", () => {
     it("sets ready flag on terminal tab", () => {
       addTab(makeTerminalTab({ id: "t1" }));
       setTabReady("t1");
-      expect(get(tabs)[0].ready).toBe(true);
+      expect(get(tabs)[0]!.ready).toBe(true);
     });
   });
 
@@ -170,7 +170,7 @@ describe("terminal store", () => {
     it("sets needsInput flag", () => {
       addTab(makeTerminalTab({ id: "t1" }));
       setTabNeedsInput("t1", true);
-      expect(get(tabs)[0].needsInput).toBe(true);
+      expect(get(tabs)[0]!.needsInput).toBe(true);
     });
 
     it("no-op if value unchanged", () => {

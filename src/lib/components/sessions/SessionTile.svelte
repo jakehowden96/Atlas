@@ -89,10 +89,17 @@
     feed.forEach((item, i) => {
       if (item.kind === "you") found.push(i);
     });
-    return found.length > 1 ? [found[0], found[found.length - 1]] : found;
+    const first = found[0];
+    const last = found[found.length - 1];
+    return first !== undefined && last !== undefined && found.length > 1 ? [first, last] : found;
   });
   let clipped: number[] = $state([]);
-  let keptPrompts = $derived(clipped.map((i) => feed[i]).filter((item) => item?.kind === "you"));
+  let keptPrompts = $derived(
+    clipped.flatMap((i) => {
+      const item = feed[i];
+      return item?.kind === "you" ? [item] : [];
+    }),
+  );
 
   $effect(() => {
     const el = sumEl;
@@ -243,7 +250,7 @@
             <div class="you"><span>{item.text}</span></div>
           </div>
         {:else}
-          {#if i === 0 || feed[i - 1].kind === "you"}<span class="lbl">Claude</span>{/if}
+          {#if i === 0 || feed[i - 1]?.kind === "you"}<span class="lbl">Claude</span>{/if}
           {#if item.kind === "note"}
             <div class="reply" class:latest={i === feed.length - 1}>{item.text}</div>
           {:else if item.kind === "step"}

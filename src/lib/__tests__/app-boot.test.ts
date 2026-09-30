@@ -115,7 +115,7 @@ describe("claude-notification", () => {
     vi.mocked(isPermissionGranted).mockResolvedValue(true);
     startStatsFeed.mockResolvedValue(() => {});
     const stop = await bootApp();
-    const handler = vi.mocked(onClaudeNotification).mock.calls[0][0];
+    const handler = vi.mocked(onClaudeNotification).mock.calls[0]![0];
     await handler(event);
     stop();
   }
@@ -155,8 +155,8 @@ describe("claude-notification", () => {
 
     await deliver(permissionPrompt("t1"), true);
 
-    expect(get(tabs)[0].needsInput).toBe(true);
-    expect(get(tabs)[0].needsInputKind).toBe("permission_prompt");
+    expect(get(tabs)[0]!.needsInput).toBe(true);
+    expect(get(tabs)[0]!.needsInputKind).toBe("permission_prompt");
   });
 
   it("ignores the idle prompt, which needs nothing from the user", async () => {
@@ -167,7 +167,7 @@ describe("claude-notification", () => {
     await deliver(idle, false);
 
     expect(sendNotification).not.toHaveBeenCalled();
-    expect(get(tabs)[0].needsInput).toBeUndefined();
+    expect(get(tabs)[0]!.needsInput).toBeUndefined();
   });
 
   it("pings when a session needs the user and the sound setting is on, even with notifications off", async () => {
@@ -199,6 +199,6 @@ describe("claude-notification", () => {
     await deliver(permissionPrompt("t1"), false);
 
     expect(sendNotification).not.toHaveBeenCalled();
-    expect(get(tabs)[0].needsInput).toBe(true);
+    expect(get(tabs)[0]!.needsInput).toBe(true);
   });
 });

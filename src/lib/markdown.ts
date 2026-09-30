@@ -32,17 +32,23 @@ const HEADING = /^ {0,3}(#{1,3})\s+(.*)$/;
 /** A heading line's level and title, or null. The optional closing `#` run is
  *  stripped by hand: a regex for it backtracks quadratically on a long run of
  *  spaces, and this runs on every keystroke via `outline`. */
+/** Capture group `n` of a match, or "" if it did not participate. Every regex
+ *  here makes its groups unconditional, so the fallback is never taken. */
+function group(m: RegExpMatchArray, n: number): string {
+  return m[n] ?? "";
+}
+
 function parseHeading(line: string): { level: number; title: string } | null {
   const m = HEADING.exec(line);
   if (!m) return null;
-  let title = m[2].trim();
+  let title = group(m, 2).trim();
   const closing = /#+$/.exec(title);
   if (closing) {
     const before = title.slice(0, closing.index);
     // A closing sequence must follow a space; `C#` keeps its hash.
     if (before === "" || /\s$/.test(before)) title = before.trimEnd();
   }
-  return { level: m[1].length, title };
+  return { level: group(m, 1).length, title };
 }
 const QUOTE = /^ {0,3}> ?(.*)$/;
 const ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
@@ -64,8 +70,7 @@ export function outline(src: string): OutlineItem[] {
   const items: OutlineItem[] = [];
   let fenced = false;
   const lines = clean(src).split("\n");
-  for (let at = 0; at < lines.length; at++) {
-    const line = lines[at];
+  for (const [at, line] of lines.entries()) {
     if (FENCE.test(line)) {
       fenced = !fenced;
       continue;
@@ -98,7 +103,7 @@ export function wikilinks(src: string): string[] {
     }
     if (fenced) continue;
     for (const m of line.matchAll(/\[\[([^[\]\n]+)\]\]/g)) {
-      const target = m[1].trim();
+      const target = group(m, 1).trim();
       const key = target.toLowerCase();
       if (!target || seen.has(key)) continue;
       seen.add(key);
@@ -119,7 +124,7 @@ function renderBlocks(lines: string[], ctx: Ctx): string {
   let i = 0;
 
   while (i < lines.length) {
-    const line = lines[i];
+    const line = lineAt(lines, i);
     if (!line.trim()) {
       i++;
       continue;
@@ -127,10 +132,12 @@ function renderBlocks(lines: string[], ctx: Ctx): string {
 
     const fence = FENCE.exec(line);
     if (fence) {
-      const lang = fence[1].trim().replace(/[^\w+-]/g, "");
+      const lang = group(fence, 1)
+        .trim()
+        .replace(/[^\w+-]/g, "");
       const body: string[] = [];
       i++;
-      while (i < lines.length && !FENCE.test(lines[i])) body.push(lines[i++]);
+      while (i < lines.length && !FENCE.test(lineAt(lines, i))) body.push(lineAt(lines, i++));
       // Either the closing fence or one past the end: an unterminated block
       // runs to the end of the document rather than derailing the parse.
       i++;
@@ -150,8 +157,8 @@ function renderBlocks(lines: string[], ctx: Ctx): string {
 
     if (QUOTE.test(line)) {
       const body: string[] = [];
-      while (i < lines.length && QUOTE.test(lines[i])) {
-        body.push((QUOTE.exec(lines[i]) as RegExpExecArray)[1]);
+      for (let quoted = QUOTE.exec(line); quoted; quoted = QUOTE.exec(lineAt(lines, i))) {
+        body.push(group(quoted, 1));
         i++;
       }
       out.push(`<blockquote>${renderBlocks(body, ctx)}</blockquote>`);
@@ -160,18 +167,25 @@ function renderBlocks(lines: string[], ctx: Ctx): string {
 
     const item = ITEM.exec(line);
     if (item) {
-      const [html, next] = renderList(lines, i, indentOf(item[1]), ctx);
+      const [html, next] = renderList(lines, i, indentOf(group(item, 1)), ctx);
       out.push(html);
       i = next;
       continue;
     }
 
     const para: string[] = [];
-    while (i < lines.length && lines[i].trim() && !startsBlock(lines[i])) para.push(lines[i++]);
+    while (i < lines.length && lineAt(lines, i).trim() && !startsBlock(lineAt(lines, i))) {
+      para.push(lineAt(lines, i++));
+    }
     out.push(`<p>${inline(para.join("\n"), ctx)}</p>`);
   }
 
   return out.join("\n");
+}
+
+/** The line at `i`. Callers bound `i` by `lines.length`, so "" never occurs. */
+function lineAt(lines: string[], i: number): string {
+  return lines[i] ?? "";
 }
 
 function startsBlock(line: string): boolean {
@@ -195,30 +209,30 @@ interface Item {
 /** One list at `indent`, returning its html and the line after it. A deeper
  *  item recurses and lands inside the `<li>` above it. */
 function renderList(lines: string[], start: number, indent: number, ctx: Ctx): [string, number] {
-  const first = ITEM.exec(lines[start]) as RegExpExecArray;
-  const tag = tagFor(first[2]);
+  const first = ITEM.exec(lineAt(lines, start));
+  const tag = tagFor(first ? group(first, 2) : "-");
   const items: Item[] = [];
   let i = start;
 
   while (i < lines.length) {
-    if (!lines[i].trim()) {
+    if (!lineAt(lines, i).trim()) {
       // A blank line ends the list unless another item follows at this level
       // or deeper — a loose list is still one list.
       let peek = i;
-      while (peek < lines.length && !lines[peek].trim()) peek++;
-      const next = peek < lines.length ? ITEM.exec(lines[peek]) : null;
-      if (!next || indentOf(next[1]) < indent) break;
-      if (indentOf(next[1]) === indent && tagFor(next[2]) !== tag) break;
+      while (peek < lines.length && !lineAt(lines, peek).trim()) peek++;
+      const next = peek < lines.length ? ITEM.exec(lineAt(lines, peek)) : null;
+      if (!next || indentOf(group(next, 1)) < indent) break;
+      if (indentOf(group(next, 1)) === indent && tagFor(group(next, 2)) !== tag) break;
       i = peek;
       continue;
     }
 
-    const m = ITEM.exec(lines[i]);
+    const m = ITEM.exec(lineAt(lines, i));
     if (!m) break;
-    const at = indentOf(m[1]);
+    const at = indentOf(group(m, 1));
     if (at < indent) break;
     // Switching marker starts a new list rather than a mixed one.
-    if (at === indent && tagFor(m[2]) !== tag) break;
+    if (at === indent && tagFor(group(m, 2)) !== tag) break;
 
     if (at > indent) {
       const [nested, after] = renderList(lines, i, at, ctx);
@@ -229,7 +243,7 @@ function renderList(lines: string[], start: number, indent: number, ctx: Ctx): [
       continue;
     }
 
-    items.push(renderItem(m[3], ctx));
+    items.push(renderItem(group(m, 3), ctx));
     i++;
   }
 
@@ -240,10 +254,10 @@ function renderList(lines: string[], start: number, indent: number, ctx: Ctx): [
 function renderItem(content: string, ctx: Ctx): Item {
   const task = TASK.exec(content);
   if (!task) return { attrs: "", body: inline(content, ctx) };
-  const done = task[1].toLowerCase() === "x";
+  const done = group(task, 1).toLowerCase() === "x";
   return {
     attrs: ` class="task${done ? " done" : ""}"`,
-    body: `<input type="checkbox" disabled${done ? " checked" : ""} /> ${inline(task[2], ctx)}`,
+    body: `<input type="checkbox" disabled${done ? " checked" : ""} /> ${inline(group(task, 2), ctx)}`,
   };
 }
 

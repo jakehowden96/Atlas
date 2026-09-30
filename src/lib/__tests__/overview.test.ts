@@ -202,7 +202,7 @@ describe("compareByAttention", () => {
       { id: "b", state: "idle" },
       { id: "c", state: "running" },
     ];
-    tiles[2].state = "needsYou";
+    tiles[2]!.state = "needsYou";
     expect([...tiles].sort(compareByAttention).map((t) => t.id)).toEqual(["c", "a", "b"]);
   });
 });
@@ -222,7 +222,7 @@ describe("compareByOpened", () => {
       { id: "a", createdAt: "2026-01-01T00:00:00.000Z", state: "idle" as SessionState },
       { id: "b", createdAt: "2026-01-02T00:00:00.000Z", state: "idle" as SessionState },
     ];
-    tiles[0].state = "needsYou";
+    tiles[0]!.state = "needsYou";
     expect([...tiles].sort(compareByOpened).map((t) => t.id)).toEqual(["a", "b"]);
   });
 });
@@ -264,8 +264,8 @@ describe("buildTiles", () => {
       ["uuid-a", diff(1, 1)],
     ]);
     const [a, b] = buildTiles([live("uuid-a"), live("uuid-b")], workspaceList, stats, new Set());
-    expect(a.diff).toEqual(diff(10, 2));
-    expect(b.diff).toEqual(diff(99, 99));
+    expect(a!.diff).toEqual(diff(10, 2));
+    expect(b!.diff).toEqual(diff(99, 99));
   });
 
   it("carries workspace identity across from the owning row", () => {
@@ -358,7 +358,7 @@ describe("buildTiles", () => {
   });
 
   it("promotes a session to needsYou when its tab was flagged by the hook", () => {
-    const [tile] = buildTiles([live("uuid-a")], workspaceList, new Map(), new Set(["tab-a"]));
+    const tile = buildTiles([live("uuid-a")], workspaceList, new Map(), new Set(["tab-a"]))[0]!;
     expect(tile.state).toBe("needsYou");
   });
 
@@ -369,7 +369,7 @@ describe("buildTiles", () => {
       new Map(),
       new Set(["tab-a"]),
     );
-    expect(b.state).toBe("idle");
+    expect(b!.state).toBe("idle");
   });
 
   /* The top-bar counts used to be filtered off `liveSessionList` directly,
@@ -389,32 +389,32 @@ describe("buildTiles", () => {
   });
 
   it("treats an idle reply ending on a question as needs-you, unflagged", () => {
-    const [tile] = buildTiles(
+    const tile = buildTiles(
       [live("uuid-a", { state: "idle", lastReply: "Done.\n\nPush it?" })],
       workspaceList,
       new Map(),
       new Set(),
-    );
+    )[0]!;
     expect(tile.state).toBe("needsYou");
   });
 
   it("leaves a running session with the same reply alone", () => {
-    const [tile] = buildTiles(
+    const tile = buildTiles(
       [live("uuid-a", { state: "running", lastReply: "Done.\n\nPush it?" })],
       workspaceList,
       new Map(),
       new Set(),
-    );
+    )[0]!;
     expect(tile.state).toBe("running");
   });
 
   it("leaves an idle session with no question idle", () => {
-    const [tile] = buildTiles(
+    const tile = buildTiles(
       [live("uuid-a", { state: "idle", lastReply: "Done." })],
       workspaceList,
       new Map(),
       new Set(),
-    );
+    )[0]!;
     expect(tile.state).toBe("idle");
   });
 
@@ -423,7 +423,7 @@ describe("buildTiles", () => {
       state: "needsYou",
       pendingTool: { name: "ask", inputSummary: "Which routes default to All?" },
     });
-    const [tile] = buildTiles([session], workspaceList, new Map(), new Set());
+    const tile = buildTiles([session], workspaceList, new Map(), new Set())[0]!;
     expect(tile.state).toBe("needsYou");
     expect(openQuestion(session)).toBe("Which routes default to All?");
   });

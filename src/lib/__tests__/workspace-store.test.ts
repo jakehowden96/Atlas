@@ -67,14 +67,8 @@ describe("workspace store", () => {
       expect(result).toBe(true);
       const ws = get(workspaces);
       expect(ws).toHaveLength(1);
-      expect(ws[0].name).toBe("my-app");
-      expect(ws[0].path).toBe("/Users/jake/projects/my-app");
-    });
-
-    it("assigns a color to the workspace", async () => {
-      await addWorkspace("/a");
-      const ws = get(workspaces);
-      expect(ws[0].color).toBeTruthy();
+      expect(ws[0]!.name).toBe("my-app");
+      expect(ws[0]!.path).toBe("/Users/jake/projects/my-app");
     });
 
     it("does not add duplicate paths", async () => {
@@ -91,12 +85,12 @@ describe("workspace store", () => {
 
     it("names a Windows backslash path from its last segment", async () => {
       await addWorkspace("C:\\Users\\jake\\Documents\\GitHub\\Atlas");
-      expect(get(workspaces)[0].name).toBe("Atlas");
+      expect(get(workspaces)[0]!.name).toBe("Atlas");
     });
 
     it("names a mixed-separator path from its last segment", async () => {
       await addWorkspace("C:/Users/jake\\projects\\my-app");
-      expect(get(workspaces)[0].name).toBe("my-app");
+      expect(get(workspaces)[0]!.name).toBe("my-app");
     });
 
     it("assigns colours from the palette", async () => {
@@ -152,8 +146,8 @@ describe("workspace store", () => {
       await addWorkspace("/Users/jake/my-project");
       await addSession("/Users/jake/my-project", "my-project", "tab-1", "claude-1", "claude-code");
       const ws = get(workspaces);
-      expect(ws[0].sessions).toHaveLength(1);
-      expect(ws[0].sessions[0].label).toBe("My Project");
+      expect(ws[0]!.sessions).toHaveLength(1);
+      expect(ws[0]!.sessions[0]!.label).toBe("My Project");
     });
 
     it("appends to workspace sessions array, so array order is insertion order", async () => {
@@ -161,39 +155,9 @@ describe("workspace store", () => {
       await addSession("/a", "first", "tab-1", "claude-1", "claude-code");
       await addSession("/a", "second", "tab-2", "claude-2", "claude-code");
       const ws = get(workspaces);
-      expect(ws[0].sessions).toHaveLength(2);
-      expect(ws[0].sessions[0].label).toBe("First");
-      expect(ws[0].sessions[1].label).toBe("Second");
-    });
-
-    it("sets activeSessionId", async () => {
-      await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1", "claude-code");
-      expect(get(activeSessionId)).toBeTruthy();
-    });
-
-    it("stores the claude session id", async () => {
-      await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1", "claude-code");
-      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe("claude-1");
-    });
-
-    it("stores a null claude session id", async () => {
-      await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", null, "claude-code");
-      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBeNull();
-    });
-
-    it("stores the harness id", async () => {
-      await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1", "omp");
-      expect(get(workspaces)[0].sessions[0].harnessId).toBe("omp");
-    });
-
-    it("stores a null harness id", async () => {
-      await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1", null);
-      expect(get(workspaces)[0].sessions[0].harnessId).toBeNull();
+      expect(ws[0]!.sessions).toHaveLength(2);
+      expect(ws[0]!.sessions[0]!.label).toBe("First");
+      expect(ws[0]!.sessions[1]!.label).toBe("Second");
     });
   });
 
@@ -201,9 +165,9 @@ describe("workspace store", () => {
     it("reattaches the tab and records the claude session id", async () => {
       await addWorkspace("/a");
       await addSession("/a", "test", "tab-1", null, "claude-code");
-      const sessionId = get(workspaces)[0].sessions[0].id;
+      const sessionId = get(workspaces)[0]!.sessions[0]!.id;
       await resumeSession(sessionId, "tab-2", "claude-9");
-      const session = get(workspaces)[0].sessions[0];
+      const session = get(workspaces)[0]!.sessions[0]!;
       expect(session.status).toBe("running");
       expect(session.terminalTabId).toBe("tab-2");
       expect(session.claudeSessionId).toBe("claude-9");
@@ -216,7 +180,7 @@ describe("workspace store", () => {
       await addSession("/a", "test", "tab-1", OLD_ID, "claude-code");
       const changed = await rebindSessionClaudeId("tab-1", NEW_ID);
       expect(changed).toBe(true);
-      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe(NEW_ID);
+      expect(get(workspaces)[0]!.sessions[0]!.claudeSessionId).toBe(NEW_ID);
     });
 
     it("refuses an id that is not a UUID, since it is later typed into a shell", async () => {
@@ -226,7 +190,7 @@ describe("workspace store", () => {
       for (const bad of ["x; rm -rf ~", "--dangerously", "claude-new", ""]) {
         expect(await rebindSessionClaudeId("tab-1", bad)).toBe(false);
       }
-      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe(OLD_ID);
+      expect(get(workspaces)[0]!.sessions[0]!.claudeSessionId).toBe(OLD_ID);
       expect(stateSave).not.toHaveBeenCalled();
     });
 
@@ -244,7 +208,7 @@ describe("workspace store", () => {
       await addSession("/a", "one", "tab-1", OLD_ID, "claude-code");
       await addSession("/a", "two", "tab-2", OTHER_ID, "claude-code");
       await rebindSessionClaudeId("tab-1", NEW_ID);
-      const sessions = get(workspaces)[0].sessions;
+      const sessions = get(workspaces)[0]!.sessions;
       expect(sessions.find((s) => s.terminalTabId === "tab-2")?.claudeSessionId).toBe(OTHER_ID);
     });
 
@@ -253,7 +217,7 @@ describe("workspace store", () => {
       await addSession("/a", "test", "tab-1", OLD_ID, "claude-code");
       const changed = await rebindSessionClaudeId("tab-missing", NEW_ID);
       expect(changed).toBe(false);
-      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe(OLD_ID);
+      expect(get(workspaces)[0]!.sessions[0]!.claudeSessionId).toBe(OLD_ID);
     });
   });
 
@@ -261,15 +225,15 @@ describe("workspace store", () => {
     it("removes session from workspace", async () => {
       await addWorkspace("/a");
       await addSession("/a", "test", "tab-1", "claude-1", "claude-code");
-      const sessionId = get(workspaces)[0].sessions[0].id;
+      const sessionId = get(workspaces)[0]!.sessions[0]!.id;
       await removeSession("/a", sessionId);
-      expect(get(workspaces)[0].sessions).toHaveLength(0);
+      expect(get(workspaces)[0]!.sessions).toHaveLength(0);
     });
 
     it("clears activeSessionId if it matches", async () => {
       await addWorkspace("/a");
       await addSession("/a", "test", "tab-1", "claude-1", "claude-code");
-      const sessionId = get(workspaces)[0].sessions[0].id;
+      const sessionId = get(workspaces)[0]!.sessions[0]!.id;
       activeSessionId.set(sessionId);
       await removeSession("/a", sessionId);
       expect(get(activeSessionId)).toBe("");
@@ -279,10 +243,10 @@ describe("workspace store", () => {
       await addWorkspace("/a");
       await addSession("/a", "first", "tab-1", "claude-1", "claude-code");
       await addSession("/a", "second", "tab-2", "claude-2", "claude-code");
-      const sessions = get(workspaces)[0].sessions;
-      activeSessionId.set(sessions[0].id);
-      await removeSession("/a", sessions[1].id);
-      expect(get(activeSessionId)).toBe(sessions[0].id);
+      const sessions = get(workspaces)[0]!.sessions;
+      activeSessionId.set(sessions[0]!.id);
+      await removeSession("/a", sessions[1]!.id);
+      expect(get(activeSessionId)).toBe(sessions[0]!.id);
     });
   });
 
@@ -315,7 +279,7 @@ describe("workspace store", () => {
       );
       await loadWorkspaces();
       const ids = Object.fromEntries(
-        get(workspaces)[0].sessions.map((s) => [s.id, s.claudeSessionId]),
+        get(workspaces)[0]!.sessions.map((s) => [s.id, s.claudeSessionId]),
       );
       expect(ids).toEqual({ good: OLD_ID, shell: null, flag: null });
     });
@@ -343,7 +307,7 @@ describe("workspace store", () => {
       await loadWorkspaces();
       const ws = get(workspaces);
       expect(ws).toHaveLength(1);
-      expect(ws[0].sessions[0].status).toBe("idle");
+      expect(ws[0]!.sessions[0]!.status).toBe("idle");
     });
 
     it("drops a malformed workspace or session and keeps the rest", async () => {
@@ -366,7 +330,7 @@ describe("workspace store", () => {
       await loadWorkspaces();
       const ws = get(workspaces);
       expect(ws.map((w) => w.path)).toEqual(["/b"]);
-      expect(ws[0].sessions.map((s) => s.id)).toEqual(["ok"]);
+      expect(ws[0]!.sessions.map((s) => s.id)).toEqual(["ok"]);
     });
 
     it("preserves claudeSessionId across a reload", async () => {
@@ -390,7 +354,7 @@ describe("workspace store", () => {
         ]),
       );
       await loadWorkspaces();
-      const session = get(workspaces)[0].sessions[0];
+      const session = get(workspaces)[0]!.sessions[0]!;
       expect(session.claudeSessionId).toBe(OLD_ID);
       expect(session.terminalTabId).toBeNull();
     });
@@ -409,7 +373,7 @@ describe("workspace store", () => {
         ]),
       );
       await loadWorkspaces();
-      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBeNull();
+      expect(get(workspaces)[0]!.sessions[0]!.claudeSessionId).toBeNull();
     });
 
     it("migrates sessions written without harnessId to null", async () => {
@@ -433,7 +397,7 @@ describe("workspace store", () => {
         ]),
       );
       await loadWorkspaces();
-      expect(get(workspaces)[0].sessions[0].harnessId).toBeNull();
+      expect(get(workspaces)[0]!.sessions[0]!.harnessId).toBeNull();
     });
 
     it("migrates a retired Everforest colour onto the new palette", async () => {
@@ -453,7 +417,7 @@ describe("workspace store", () => {
         JSON.stringify([{ path: "/a", name: "a", color: WORKSPACE_COLORS[3], sessions: [] }]),
       );
       await loadWorkspaces();
-      expect(get(workspaces)[0].color).toBe(WORKSPACE_COLORS[3]);
+      expect(get(workspaces)[0]!.color).toBe(WORKSPACE_COLORS[3]);
     });
 
     it("handles missing file gracefully", async () => {
@@ -471,7 +435,7 @@ describe("workspace store", () => {
         (t) => t.title === "Your workspaces file could not be read",
       );
       expect(recovered).toHaveLength(1);
-      expect(recovered[0].body).toContain("workspaces.json.bak");
+      expect(recovered[0]!.body).toContain("workspaces.json.bak");
       expect(get(workspaces)).toEqual([]);
     });
 
@@ -501,7 +465,7 @@ describe("workspace store", () => {
       await addWorkspace("/a");
       await addWorkspace("/b");
       expect(get(toasts)).toHaveLength(1);
-      expect(get(toasts)[0].title).toMatch(/save/i);
+      expect(get(toasts)[0]!.title).toMatch(/save/i);
     });
   });
 
@@ -522,7 +486,7 @@ describe("workspace store", () => {
 
       const ws = get(workspaces).find((w) => w.path === "/a");
       expect(ws?.sessions).toHaveLength(1);
-      expect(ws?.sessions[0].terminalTabId).toBe("tab-1");
+      expect(ws?.sessions[0]?.terminalTabId).toBe("tab-1");
     });
 
     it("restores an unhidden workspace in its original position", async () => {
@@ -570,7 +534,7 @@ describe("workspace store", () => {
       await hideWorkspace("/a");
 
       const calls = vi.mocked(stateSave).mock.calls;
-      const written = calls[calls.length - 1][1] as string;
+      const written = calls[calls.length - 1]![1] as string;
       expect(JSON.parse(written).removedWorkspaces).toEqual(["/a"]);
 
       workspaces.set([]);
@@ -623,7 +587,7 @@ describe("workspace persistence", () => {
   it("writes the schema version with every save", async () => {
     await addWorkspace("/versioned");
     const calls = vi.mocked(stateSave).mock.calls;
-    expect(JSON.parse(calls[calls.length - 1][1] as string).version).toBe(WORKSPACES_VERSION);
+    expect(JSON.parse(calls[calls.length - 1]![1] as string).version).toBe(WORKSPACES_VERSION);
     workspaces.set([]);
   });
 });

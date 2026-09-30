@@ -52,6 +52,11 @@ describe("renderMarkdown", () => {
     );
   });
 
+  it("ends a blockquote at the first unquoted line, including at end of input", () => {
+    expect(renderMarkdown("> a\n> b")).toBe("<blockquote><p>a\nb</p></blockquote>");
+    expect(renderMarkdown("> a\nafter")).toBe("<blockquote><p>a</p></blockquote>\n<p>after</p>");
+  });
+
   it("renders a blockquote's contents as blocks", () => {
     const html = renderMarkdown("> ## Heads up\n> body");
     expect(html).toContain("<blockquote>");
@@ -135,8 +140,28 @@ describe("renderMarkdown escaping", () => {
   });
 
   it("cannot be broken out of an href", () => {
-    const html = renderMarkdown('[x](https://e.com"onmouseover="alert(1))');
+    // No parenthesis in the target, so this reaches the link rule and the quote
+    // is what would end the attribute.
+    const html = renderMarkdown('[x](https://e.com"onmouseover="alert1)');
+    expect(html).toContain('href="https://e.com&quot;onmouseover=&quot;alert1"');
     expect(html).not.toContain('"onmouseover="');
+  });
+
+  it.each(["data:text/html,hi", "JAVASCRIPT:alert1", "vbscript:x"])(
+    "drops a link to %j, keeping its label",
+    (target) => {
+      expect(renderMarkdown(`[label](${target})`)).toBe("<p>label</p>");
+    },
+  );
+
+  it("keeps an entity-encoded scheme inert by escaping the ampersand", () => {
+    // Left unescaped, the browser would decode `&#106;` to `j` inside the href.
+    const html = renderMarkdown("[x](&#106;avascript:alert1)");
+    expect(html).toContain('href="&amp;#106;avascript:alert1"');
+  });
+
+  it.each(["mailto:a@b.c", "/rel/path", "#frag"])("keeps a link to %s", (target) => {
+    expect(renderMarkdown(`[x](${target})`)).toContain(`href="${target}"`);
   });
 });
 
@@ -199,8 +224,8 @@ describe("renderMarkdown hardening", () => {
   });
 
   it("strips a closing hash sequence from a heading only after a space", () => {
-    expect(outline("# Title ##")[0].text).toBe("Title");
-    expect(outline("# C#")[0].text).toBe("C#");
+    expect(outline("# Title ##")[0]!.text).toBe("Title");
+    expect(outline("# C#")[0]!.text).toBe("C#");
   });
 
   it("reads a heading with a long run of spaces in linear time", () => {

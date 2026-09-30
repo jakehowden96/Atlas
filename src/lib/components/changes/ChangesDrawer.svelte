@@ -1,5 +1,6 @@
 <script lang="ts">
   import { get } from "svelte/store";
+  import { toggled } from "../../sets";
   import { parseDiff, type DiffFile } from "../../diff-parser";
   import {
     cssEscape,
@@ -45,14 +46,18 @@
   // `open` so the slide-out keyframes finish before the node leaves the DOM.
   let visible = $state(false);
   let closing = $state(false);
+  /** The pending unmount. A reopen inside the exit window must cancel it, or it
+   *  would fire later and hide a panel that is meant to be open. */
+  let exitTimer: ReturnType<typeof setTimeout> | undefined;
 
   $effect(() => {
     if (open) {
+      clearTimeout(exitTimer);
       visible = true;
       closing = false;
     } else if (visible && !closing) {
       closing = true;
-      closeWith(() => {
+      exitTimer = closeWith(() => {
         visible = false;
         closing = false;
       }, EXIT_MS);
@@ -96,11 +101,11 @@
   // base (upstream merge-base, else merge-base with main/master). It only fills
   // `local_raw` in when the two differ, so with nothing committed on top of the
   // base both segments resolve to the same diff — which is the truth.
-  const BASE_OPTIONS: Segment[] = [
+  const BASE_OPTIONS: Segment<BaseView>[] = [
     { id: "working", label: "Working tree" },
     { id: "main", label: "vs main" },
   ];
-  const MODE_OPTIONS: Segment[] = [
+  const MODE_OPTIONS: Segment<"split" | "unified">[] = [
     { id: "unified", label: "Unified" },
     { id: "split", label: "Split" },
   ];
@@ -194,11 +199,7 @@
   });
 
   function toggleViewed(key: string) {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
-    const next = new Set(viewedFiles);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    viewedFiles = next;
+    viewedFiles = toggled(viewedFiles, key);
   }
 
   let viewedCount = $derived(flatFiles.filter((f) => viewedFiles.has(f.key)).length);
@@ -211,19 +212,11 @@
   let expandedFiles: Set<string> = $state(new Set());
 
   function toggleUserCollapsed(key: string) {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
-    const next = new Set(userCollapsed);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    userCollapsed = next;
+    userCollapsed = toggled(userCollapsed, key);
   }
 
   function toggleExpand(key: string) {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
-    const next = new Set(expandedFiles);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    expandedFiles = next;
+    expandedFiles = toggled(expandedFiles, key);
   }
 
   function scrollToFile(key: string) {
@@ -238,7 +231,6 @@
   let composerKey = $state<string | null>(null);
 
   let commentsByAnchorKey = $derived.by(() => {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const m = new Map<string, ReviewComment[]>();
     for (const c of $activeSessionComments) {
       const k = anchorDomKey(c.anchor);
@@ -288,7 +280,7 @@
           size="sm"
           options={BASE_OPTIONS}
           value={base}
-          onChange={(id) => (base = id as BaseView)}
+          onChange={(id) => (base = id)}
         />
       </span>
 

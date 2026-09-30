@@ -183,18 +183,18 @@ describe("range selection", () => {
   it("windows the tools list, busiest first, with a per-tool error rate", () => {
     const all = toolRows(s, "all");
     expect(all.map((t) => t.name)).toEqual(["Bash", "PowerShell", "Read"]);
-    expect(all[0].errorPct).toBeCloseTo((14 / 411) * 100);
-    expect(all[1].errorPct).toBeCloseTo((14 / 133) * 100);
-    expect(all[2].errorPct).toBe(0);
+    expect(all[0]!.errorPct).toBeCloseTo((14 / 411) * 100);
+    expect(all[1]!.errorPct).toBeCloseTo((14 / 133) * 100);
+    expect(all[2]!.errorPct).toBe(0);
 
     const week = toolRows(s, "7d");
     expect(week).toHaveLength(1);
-    expect(week[0].errorPct).toBeCloseTo(1);
+    expect(week[0]!.errorPct).toBeCloseTo(1);
   });
 
   it("windows the workspace table too, not just the model tables", () => {
     expect(projectRows(s, "all")).toHaveLength(1);
-    expect(projectRows(s, "all")[0][1].cost).toBeCloseTo(36.7);
+    expect(projectRows(s, "all")[0]![1].cost).toBeCloseTo(36.7);
     expect(projectRows(s, "7d")).toHaveLength(0);
   });
 
@@ -241,10 +241,10 @@ describe("day series", () => {
   it("fills gaps with zeroes and ends on today", () => {
     const week = daySeries(byDay, today, 7);
     expect(week).toHaveLength(7);
-    expect(week[0].date).toBe("2026-09-02");
-    expect(week[week.length - 1].date).toBe("2026-09-08");
-    expect(week[week.length - 1].stats.sessions).toBe(1);
-    expect(week[0].stats.sessions).toBe(0);
+    expect(week[0]!.date).toBe("2026-09-02");
+    expect(week[week.length - 1]!.date).toBe("2026-09-08");
+    expect(week[week.length - 1]!.stats.sessions).toBe(1);
+    expect(week[0]!.stats.sessions).toBe(0);
   });
 
   it("finds the busiest day for the heatmap caption", () => {
@@ -256,8 +256,8 @@ describe("day series", () => {
 
   it("runs all-time sparklines from the first recorded day to today", () => {
     const all = sparkSeries(byDay, "all", today);
-    expect(all[0].date).toBe("2026-09-01");
-    expect(all[all.length - 1].date).toBe("2026-09-08");
+    expect(all[0]!.date).toBe("2026-09-01");
+    expect(all[all.length - 1]!.date).toBe("2026-09-08");
     expect(all).toHaveLength(8);
     expect(sparkSeries(byDay, "7d", today)).toHaveLength(7);
     expect(sparkSeries({}, "all", today)).toHaveLength(0);
@@ -306,12 +306,12 @@ describe("model table", () => {
       "Peak context",
       "Avg message length",
     ]);
-    expect(rows[1].values).toEqual(["254K"]);
-    expect(rows[2].values).toEqual(["$36.70"]);
-    expect(rows[3].values).toEqual(["1h 0m"]);
-    expect(rows[5].values).toEqual(["2.1%"]);
-    expect(rows[8].values).toEqual(["446K"]);
-    expect(rows[9].values).toEqual(["412 chars"]);
+    expect(rows[1]!.values).toEqual(["254K"]);
+    expect(rows[2]!.values).toEqual(["$36.70"]);
+    expect(rows[3]!.values).toEqual(["1h 0m"]);
+    expect(rows[5]!.values).toEqual(["2.1%"]);
+    expect(rows[8]!.values).toEqual(["446K"]);
+    expect(rows[9]!.values).toEqual(["412 chars"]);
   });
 });
 

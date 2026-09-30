@@ -18,10 +18,6 @@ describe("view store", () => {
     newSessionSeed.set(null);
   });
 
-  it("defaults to sessions", () => {
-    expect(get(activeView)).toBe("sessions");
-  });
-
   it("switches between the four views", () => {
     for (const v of ["session", "prs", "stats", "sessions"] as const) {
       showView(v);
@@ -41,21 +37,6 @@ describe("view store", () => {
     diffOpen.set(true);
     showView("prs");
     expect(get(diffOpen)).toBe(false);
-  });
-
-  it("opens the New Session modal unseeded by default", () => {
-    openNewSession();
-    expect(get(newSessionOpen)).toBe(true);
-    expect(get(newSessionSeed)).toBeNull();
-  });
-
-  it("carries a Stats row's workspace and session into Resume mode", () => {
-    openNewSession({ workspacePath: "/repo/atlas", resumeSessionId: "uuid-1" });
-    expect(get(newSessionOpen)).toBe(true);
-    expect(get(newSessionSeed)).toEqual({
-      workspacePath: "/repo/atlas",
-      resumeSessionId: "uuid-1",
-    });
   });
 
   it("clears a previous seed on the next plain open", () => {

@@ -35,7 +35,7 @@
   import { openNewSession } from "../../stores/view";
   import { visibleWorkspaces } from "../../stores/workspace";
   import Sparkline from "../ui/Sparkline.svelte";
-  import SegmentedControl from "../ui/SegmentedControl.svelte";
+  import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
 
   /* Both the summary and its loading flag live in `stores/stats`: the top bar
      needs the same figures while this screen is unmounted, and two independent
@@ -49,7 +49,7 @@
   let now = $state(new Date());
   let ticker: ReturnType<typeof setInterval> | null = null;
 
-  const rangeOptions = [
+  const rangeOptions: Segment<Range>[] = [
     { id: "7d", label: "7 days" },
     { id: "30d", label: "30 days" },
     { id: "all", label: "All time" },
@@ -189,7 +189,7 @@
     <SegmentedControl
       options={rangeOptions}
       value={range}
-      onChange={(id) => (range = id as Range)}
+      onChange={(id) => (range = id)}
       size="sm"
     />
     <span class="note">
@@ -247,7 +247,7 @@
           {#each rows as row (row.label)}
             <div class="model-row" style="--cols: {models.length}">
               <span class="model-label">{row.label}</span>
-              {#each row.values as value, i (models[i][0])}
+              {#each row.values as value, i (models[i]?.[0] ?? i)}
                 <span class="num">{value}</span>
               {/each}
             </div>
@@ -387,7 +387,7 @@
             {/each}
           </div>
           <div class="heat-caption">
-            <span>{heatmap.length > 0 ? shortDate(heatmap[0].date) : ""}</span>
+            <span>{heatmap[0] ? shortDate(heatmap[0].date) : ""}</span>
             <span>
               {heatmapPeak
                 ? `peak ${shortDate(heatmapPeak.date)} · ${heatmapPeak.stats.sessions}`

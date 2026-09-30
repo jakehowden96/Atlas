@@ -69,80 +69,80 @@ describe("parseDiff", () => {
     const files = parseDiff(SINGLE_FILE_DIFF);
     expect(files).toHaveLength(1);
 
-    const file = files[0];
+    const file = files[0]!;
     expect(file.oldName).toBe("src/model.py");
     expect(file.newName).toBe("src/model.py");
     expect(file.changeType).toBe("modified");
     expect(file.hunks).toHaveLength(1);
 
-    const lines = file.hunks[0].lines;
+    const lines = file.hunks[0]!.lines;
     // hunk-header, context, remove, add, context
-    expect(lines[0].type).toBe("hunk-header");
-    expect(lines[1].type).toBe("context");
-    expect(lines[2].type).toBe("remove");
-    expect(lines[2].content).toContain("0.1");
-    expect(lines[2].oldNum).toBe(25);
-    expect(lines[2].newNum).toBeNull();
-    expect(lines[3].type).toBe("add");
-    expect(lines[3].content).toContain("0.25");
-    expect(lines[3].oldNum).toBeNull();
-    expect(lines[3].newNum).toBe(25);
-    expect(lines[4].type).toBe("context");
+    expect(lines[0]!.type).toBe("hunk-header");
+    expect(lines[1]!.type).toBe("context");
+    expect(lines[2]!.type).toBe("remove");
+    expect(lines[2]!.content).toContain("0.1");
+    expect(lines[2]!.oldNum).toBe(25);
+    expect(lines[2]!.newNum).toBeNull();
+    expect(lines[3]!.type).toBe("add");
+    expect(lines[3]!.content).toContain("0.25");
+    expect(lines[3]!.oldNum).toBeNull();
+    expect(lines[3]!.newNum).toBe(25);
+    expect(lines[4]!.type).toBe("context");
   });
 
   it("parses a multi-file diff", () => {
     const files = parseDiff(MULTI_FILE_DIFF);
     expect(files).toHaveLength(2);
-    expect(files[0].newName).toBe("src/model.py");
-    expect(files[1].newName).toBe("src/train.py");
+    expect(files[0]!.newName).toBe("src/model.py");
+    expect(files[1]!.newName).toBe("src/train.py");
 
     // Second file has an addition
-    const lines = files[1].hunks[0].lines;
+    const lines = files[1]!.hunks[0]!.lines;
     const addLines = lines.filter((l) => l.type === "add");
     expect(addLines).toHaveLength(1);
-    expect(addLines[0].content).toContain("model.compile()");
+    expect(addLines[0]!.content).toContain("model.compile()");
   });
 
   it("detects new file change type", () => {
     const files = parseDiff(NEW_FILE_DIFF);
     expect(files).toHaveLength(1);
-    expect(files[0].changeType).toBe("added");
-    expect(files[0].newName).toBe("src/utils.py");
+    expect(files[0]!.changeType).toBe("added");
+    expect(files[0]!.newName).toBe("src/utils.py");
   });
 
   it("detects deleted file change type", () => {
     const files = parseDiff(DELETED_FILE_DIFF);
     expect(files).toHaveLength(1);
-    expect(files[0].changeType).toBe("deleted");
+    expect(files[0]!.changeType).toBe("deleted");
   });
 
   it("detects renamed file change type", () => {
     const files = parseDiff(RENAMED_FILE_DIFF);
     expect(files).toHaveLength(1);
-    expect(files[0].changeType).toBe("renamed");
-    expect(files[0].oldName).toBe("old_name.py");
-    expect(files[0].newName).toBe("new_name.py");
+    expect(files[0]!.changeType).toBe("renamed");
+    expect(files[0]!.oldName).toBe("old_name.py");
+    expect(files[0]!.newName).toBe("new_name.py");
   });
 
   it("tracks line numbers correctly through a hunk", () => {
     const files = parseDiff(SINGLE_FILE_DIFF);
-    const lines = files[0].hunks[0].lines.filter((l) => l.type !== "hunk-header");
+    const lines = files[0]!.hunks[0]!.lines.filter((l) => l.type !== "hunk-header");
 
     // Context line: old=24, new=24
-    expect(lines[0].oldNum).toBe(24);
-    expect(lines[0].newNum).toBe(24);
+    expect(lines[0]!.oldNum).toBe(24);
+    expect(lines[0]!.newNum).toBe(24);
 
     // Remove line: old=25, new=null
-    expect(lines[1].oldNum).toBe(25);
-    expect(lines[1].newNum).toBeNull();
+    expect(lines[1]!.oldNum).toBe(25);
+    expect(lines[1]!.newNum).toBeNull();
 
     // Add line: old=null, new=25
-    expect(lines[2].oldNum).toBeNull();
-    expect(lines[2].newNum).toBe(25);
+    expect(lines[2]!.oldNum).toBeNull();
+    expect(lines[2]!.newNum).toBe(25);
 
     // Context line: old=26, new=26
-    expect(lines[3].oldNum).toBe(26);
-    expect(lines[3].newNum).toBe(26);
+    expect(lines[3]!.oldNum).toBe(26);
+    expect(lines[3]!.newNum).toBe(26);
   });
 
   it("handles binary file diff (no hunks)", () => {
@@ -151,7 +151,7 @@ new file mode 100644
 Binary files /dev/null and b/image.png differ`;
     const files = parseDiff(diff);
     expect(files).toHaveLength(1);
-    expect(files[0].hunks).toHaveLength(0);
+    expect(files[0]!.hunks).toHaveLength(0);
   });
 
   it("handles mode change only", () => {
@@ -160,8 +160,8 @@ old mode 100644
 new mode 100755`;
     const files = parseDiff(diff);
     expect(files).toHaveLength(1);
-    expect(files[0].changeType).toBe("modified");
-    expect(files[0].hunks).toHaveLength(0);
+    expect(files[0]!.changeType).toBe("modified");
+    expect(files[0]!.hunks).toHaveLength(0);
   });
 
   it("handles file with spaces in path", () => {
@@ -173,7 +173,7 @@ new mode 100755`;
 +new`;
     const files = parseDiff(diff);
     expect(files).toHaveLength(1);
-    expect(files[0].newName).toBe("my file.ts");
+    expect(files[0]!.newName).toBe("my file.ts");
   });
 
   it("handles multiple hunks in a single file", () => {
@@ -192,7 +192,7 @@ new mode 100755`;
  context`;
     const files = parseDiff(diff);
     expect(files).toHaveLength(1);
-    expect(files[0].hunks).toHaveLength(2);
+    expect(files[0]!.hunks).toHaveLength(2);
   });
 });
 
@@ -208,7 +208,7 @@ describe("parseDiff edge cases", () => {
       "+b",
       "",
     ].join("\n");
-    const [file] = parseDiff(diff);
+    const file = parseDiff(diff)[0]!;
     expect(file.oldName).toBe("café.txt");
     expect(file.newName).toBe("café.txt");
   });
@@ -227,7 +227,7 @@ describe("parseDiff edge cases", () => {
       'rename to "sp\\303\\244ce.txt"',
       "",
     ].join("\n");
-    const [file] = parseDiff(diff);
+    const file = parseDiff(diff)[0]!;
     expect(file.changeType).toBe("renamed");
     expect(file.oldName).toBe("old.txt");
     expect(file.newName).toBe("späce.txt");
@@ -235,8 +235,8 @@ describe("parseDiff edge cases", () => {
 
   it("drops the carriage return CRLF files leave on every diff line", () => {
     const diff = "diff --git a/a b/a\r\n--- a/a\r\n+++ b/a\r\n@@ -1 +1 @@\r\n-old\r\n+x\r\n";
-    const [file] = parseDiff(diff);
-    const contents = file.hunks[0].lines.map((l) => l.content);
+    const file = parseDiff(diff)[0]!;
+    const contents = file.hunks[0]!.lines.map((l) => l.content);
     expect(contents.some((c) => c.includes("\r"))).toBe(false);
     expect(contents).toContain("x");
   });
@@ -254,7 +254,7 @@ describe("parseDiff edge cases", () => {
       "+TWO",
       "",
     ].join("\n");
-    const lines = parseDiff(diff)[0].hunks[0].lines;
+    const lines = parseDiff(diff)[0]!.hunks[0]!.lines;
     const changed = lines.find((l) => l.type === "add");
     expect(changed?.newNum).toBe(3);
     expect(lines.find((l) => l.type === "remove")?.oldNum).toBe(3);
@@ -262,6 +262,6 @@ describe("parseDiff edge cases", () => {
 
   it("does not invent a context line from the trailing newline", () => {
     const diff = "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-a\n+b\n";
-    expect(parseDiff(diff)[0].hunks[0].lines.filter((l) => l.type === "context")).toEqual([]);
+    expect(parseDiff(diff)[0]!.hunks[0]!.lines.filter((l) => l.type === "context")).toEqual([]);
   });
 });
