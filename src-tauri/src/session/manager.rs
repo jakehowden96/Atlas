@@ -163,7 +163,7 @@ impl LiveSessionManager {
             .iter()
             .filter(|(uuid, watch)| {
                 path == watch.breadcrumb
-                    || tails.get(*uuid).map_or(true, |tail| tail.owns(uuid, path))
+                    || tails.get(*uuid).is_none_or(|tail| tail.owns(uuid, path))
             })
             .map(|(uuid, _)| uuid.clone())
             .collect()

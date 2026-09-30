@@ -143,7 +143,7 @@ fn build_panel_multi(
     let mut found_any_repo = false;
 
     for entry in dir_entries {
-        if !entry.file_type().map_or(false, |t| t.is_dir()) {
+        if !entry.file_type().is_ok_and(|t| t.is_dir()) {
             continue;
         }
 

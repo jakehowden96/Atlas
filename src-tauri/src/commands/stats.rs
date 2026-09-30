@@ -2,7 +2,7 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Mutex};
 use std::time::{Duration, Instant, UNIX_EPOCH};
@@ -10,8 +10,8 @@ use tauri::{AppHandle, Emitter};
 
 use crate::session::omp;
 use crate::transcript::{
-    assistant_model, line_type, model_family, request_key, requests_to_by_model, tool_results,
-    tool_uses, user_text, ModelSessionData, ReqData,
+    assistant_model, jsonl_lines, line_type, model_family, request_key, requests_to_by_model,
+    tool_results, tool_uses, user_text, ModelSessionData, ReqData,
 };
 
 /// A "user" line can be genuinely typed by the human, or injected by a skill/hook/
@@ -360,7 +360,7 @@ fn parse_model_usage(path: &Path) -> HashMap<String, ModelSessionData> {
     let reader = BufReader::new(file);
     let mut requests: HashMap<String, ReqData> = HashMap::new();
 
-    for line in reader.lines().flatten() {
+    for line in jsonl_lines(reader) {
         if line.trim().is_empty() {
             continue;
         }
@@ -479,11 +479,7 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
     // Keyed by requestId (or uuid fallback for requestId-less lines)
     let mut requests: HashMap<String, ReqData> = HashMap::new();
 
-    for line in reader.lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => continue,
-        };
+    for line in jsonl_lines(reader) {
         if line.trim().is_empty() {
             continue;
         }
@@ -1294,6 +1290,35 @@ mod tests {
             writeln!(f, "{}", line).unwrap();
         }
         f
+    }
+
+    /// A persistent read error (here EISDIR: a directory named like a
+    /// transcript) must end the read. `lines()` yields the same `Err` forever.
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_named_like_a_transcript_does_not_hang_the_parser() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("agent.jsonl");
+        std::fs::create_dir(&path).unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(parse_model_usage(&path).len());
+        });
+        assert_eq!(rx.recv_timeout(Duration::from_secs(3)), Ok(0));
+    }
+
+    /// Invalid UTF-8 costs the line it sits on, not the rest of the file.
+    #[test]
+    fn a_line_of_invalid_utf8_is_skipped_not_fatal() {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut f, b"\xff\xfe not utf8\n").unwrap();
+        std::io::Write::write_all(
+            &mut f,
+            br#"{"type":"user","message":{"role":"user","content":"hello"},"timestamp":"2026-01-01T00:00:00Z","cwd":"/tmp"}"#,
+        )
+        .unwrap();
+        std::io::Write::write_all(&mut f, b"\n").unwrap();
+        assert_eq!(parse_session(f.path()).unwrap().user_messages, 1);
     }
 
     #[test]

@@ -5,7 +5,6 @@
 
 use serde_json::Value;
 use std::collections::HashMap;
-use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -15,7 +14,7 @@ use super::live::{
     TranscriptLine, MAX_LINES, REPLY_SUMMARY,
 };
 use crate::commands::stats::{merge_model_data, SessionRecord};
-use crate::transcript::{context_pct, model_family, ModelSessionData};
+use crate::transcript::{context_pct, jsonl_lines, model_family, ModelSessionData};
 
 // ── Paths ────────────────────────────────────────────────────────────────────
 
@@ -824,8 +823,7 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
     let mut subagents: u32 = 0;
     let mut by_model: HashMap<String, ModelSessionData> = HashMap::new();
 
-    for line in reader.lines() {
-        let Ok(line) = line else { continue };
+    for line in jsonl_lines(reader) {
         if line.trim().is_empty() {
             continue;
         }
@@ -1012,7 +1010,7 @@ fn omp_model_usage(path: &Path) -> HashMap<String, ModelSessionData> {
     let Ok(file) = std::fs::File::open(path) else {
         return by_model;
     };
-    for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
+    for line in jsonl_lines(std::io::BufReader::new(file)) {
         let Ok(obj) = serde_json::from_str::<Value>(&line) else {
             continue;
         };

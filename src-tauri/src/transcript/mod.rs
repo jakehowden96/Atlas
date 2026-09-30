@@ -8,6 +8,22 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::io::BufRead;
+
+/// The lines of a JSONL transcript. A line that is not valid UTF-8 is skipped;
+/// any other read error ends the iteration. `BufRead::lines` repeats the same
+/// `Err` forever for a persistent I/O error (a directory, a failing disk), so
+/// `flatten()` or `continue` on it would spin.
+pub(crate) fn jsonl_lines<R: BufRead>(reader: R) -> impl Iterator<Item = String> {
+    reader
+        .lines()
+        .map_while(|line| match line {
+            Ok(line) => Some(Some(line)),
+            Err(e) if e.kind() == std::io::ErrorKind::InvalidData => Some(None),
+            Err(_) => None,
+        })
+        .flatten()
+}
 
 // ── Pricing ───────────────────────────────────────────────────────────────────
 

@@ -51,7 +51,7 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
             match event.kind {
                 EventKind::Create(_) | EventKind::Modify(_) => {
                     for path in &event.paths {
-                        if path.file_name().map_or(false, |f| f == "panel.json") {
+                        if path.file_name().is_some_and(|f| f == "panel.json") {
                             let session_id = session_id_from_path(path);
 
                             let last_emit = last_emit_per_session
@@ -84,7 +84,7 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
                                     log::warn!("Failed to read panel.json: {}", e);
                                 }
                             }
-                        } else if path.file_name().map_or(false, |f| f == "notification.json") {
+                        } else if path.file_name().is_some_and(|f| f == "notification.json") {
                             let session_id = session_id_from_path(path);
 
                             match std::fs::read_to_string(path) {
@@ -110,7 +110,7 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
                                     log::warn!("Failed to read notification.json: {}", e);
                                 }
                             }
-                        } else if path.file_name().map_or(false, |f| f == "session-id.json") {
+                        } else if path.file_name().is_some_and(|f| f == "session-id.json") {
                             let session_id = session_id_from_path(path);
 
                             match std::fs::read_to_string(path) {
