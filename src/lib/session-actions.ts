@@ -44,6 +44,7 @@ import {
   hideWorkspace,
   rebindSessionClaudeId,
   resumeSession,
+  setSessionDiffStats,
   stripBundleExtension,
   unhideWorkspace,
   updateSessionStatus,
@@ -68,7 +69,7 @@ async function endSessionTail(claudeSessionId: string | null | undefined) {
 }
 
 /** Kill a terminal tab's PTY, if it has one, and drop the tab with the review
- *  comments and touched-file counts kept under its id. */
+ *  comments, touched-file counts and diff-stat badge kept under its id. */
 export async function closeSessionTab(tabId: string) {
   const tab = get(tabs).find((t) => t.id === tabId);
   if (tab && tab.ptyId >= 0) {
@@ -81,6 +82,7 @@ export async function closeSessionTab(tabId: string) {
   removeTab(tabId);
   clearForSession(tabId);
   setSessionTouchedFiles(tabId, []);
+  setSessionDiffStats(tabId, null);
 }
 
 /**
