@@ -41,6 +41,13 @@ export function looksLikeAbsolutePath(query: string): boolean {
   return q.startsWith("/") || q.startsWith("~/") || WINDOWS_PATH.test(q);
 }
 
+/** A typed `~/…` path made absolute. Nothing downstream expands a tilde, so a
+ *  workspace stored with one would fail every spawn. Anything else is returned
+ *  untouched. */
+export function expandHome(path: string, home: string): string {
+  return path.startsWith("~/") ? `${home.replace(/[\\/]+$/, "")}/${path.slice(2)}` : path;
+}
+
 // ── Workspace list ────────────────────────────────────────────────────────────
 
 /** Latest session start in a workspace; 0 when it has never been used. */
@@ -177,6 +184,32 @@ export function setMode(
   const column: NewSessionColumn =
     mode === "resume" && counts.resumable > 0 ? "resume" : "workspaces";
   return { ...state, mode, column };
+}
+
+/**
+ * Which harness the modal opens on. A seed that asks to resume needs a harness
+ * that can; the last-used one wins only if it qualifies. -1 means the seed
+ * wants a resume and no harness offers one.
+ */
+export function harnessIndexFor(
+  list: { id: string; resumable: boolean }[],
+  lastId: string,
+  wantsResume: boolean,
+): number {
+  const last = list.findIndex((h) => h.id === lastId);
+  if (!wantsResume) return Math.max(0, last);
+  if (last >= 0 && list[last]?.resumable) return last;
+  return list.findIndex((h) => h.resumable);
+}
+
+/** Resume only exists for a harness that can resume; switching to one that
+ *  cannot must not leave the Resume pane up over a disabled Start. */
+export function leaveResumeIfUnsupported(
+  state: NewSessionState,
+  harnessResumable: boolean,
+): NewSessionState {
+  if (state.mode !== "resume" || harnessResumable) return state;
+  return { ...state, mode: "fresh", column: "workspaces" };
 }
 
 /**

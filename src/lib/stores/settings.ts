@@ -11,8 +11,9 @@ import {
   type Keymap,
 } from "../keymap";
 import { log } from "../logger";
+import { reportStorageFailure } from "../storage-failure";
 import { themeMode, type ThemeMode } from "../theme";
-import { openFiles, sources } from "./files";
+import { openFiles, sources } from "./file-tabs";
 import { liveSessions } from "./liveSessions";
 import { tabs } from "./terminal";
 import { workspaces } from "./workspace";
@@ -137,6 +138,7 @@ function isValidHarness(v: unknown): v is HarnessConfig {
   const h = v as Record<string, unknown>;
   return (
     typeof h.id === "string" &&
+    h.id !== "" &&
     typeof h.label === "string" &&
     typeof h.command === "string" &&
     Array.isArray(h.args) &&
@@ -154,11 +156,14 @@ function isValidHarness(v: unknown): v is HarnessConfig {
 export const MIN_TERMINAL_FONT_SIZE = 8;
 export const MAX_TERMINAL_FONT_SIZE = 24;
 
+let dirEnsured = false;
 async function ensureDir() {
+  if (dirEnsured) return;
   const dirExists = await exists(SETTINGS_DIR, { baseDir: BaseDirectory.Home });
   if (!dirExists) {
     await mkdir(SETTINGS_DIR, { baseDir: BaseDirectory.Home });
   }
+  dirEnsured = true;
 }
 
 /**
@@ -174,7 +179,9 @@ export async function loadSettings() {
     const raw = await readTextFile(SETTINGS_FILE, { baseDir: BaseDirectory.Home });
     const data = JSON.parse(raw) as PersistedSettings;
     if (data.enableNotifications === false) enableNotifications.set(false);
-    if (Array.isArray(data.watchedRepos)) watchedRepos.set(data.watchedRepos);
+    if (Array.isArray(data.watchedRepos)) {
+      watchedRepos.set(data.watchedRepos.filter((repo) => typeof repo === "string"));
+    }
     if (data.theme === "system" || data.theme === "light" || data.theme === "dark") {
       themeMode.set(data.theme);
     }
@@ -199,7 +206,12 @@ export async function loadSettings() {
     // an old settings.json with no `harnesses` key keeps the three defaults,
     // and a corrupted file can't leave the picker empty.
     if (Array.isArray(data.harnesses)) {
-      const valid = data.harnesses.filter(isValidHarness);
+      const seenIds = new Set<string>();
+      const valid = data.harnesses.filter((h) => {
+        if (!isValidHarness(h) || seenIds.has(h.id)) return false;
+        seenIds.add(h.id);
+        return true;
+      });
       if (valid.length > 0) harnesses.set(valid);
     }
     if (typeof data.lastHarnessId === "string") lastHarnessId.set(data.lastHarnessId);
@@ -215,7 +227,7 @@ export async function loadSettings() {
     log.info("settings", "settings loaded");
   } catch (e) {
     log.error("settings", "failed to load settings", e);
-    console.warn("Failed to load settings (using defaults):", e);
+    reportStorageFailure("settings", "load", e);
   }
 }
 
@@ -244,7 +256,7 @@ async function persistSettings() {
     });
   } catch (e) {
     log.error("settings", "failed to persist settings", e);
-    console.error("Failed to persist settings:", e);
+    reportStorageFailure("settings", "save", e);
   }
 }
 
@@ -345,8 +357,8 @@ export async function setAutoAddReposFromWorkspaces(value: boolean) {
 /**
  * Turning this off has to stop the tails, not just hide the numbers — a tail
  * left running keeps re-reading the transcript and pushing `session-update`.
- * The tracked set is exactly `liveSessions`' keys, which is what
- * `session-update` populates.
+ * The tails to stop are `liveSessions`' keys (what `session-update` has
+ * populated) plus every running session, whose tail may not have emitted yet.
  */
 export async function setTailTranscripts(value: boolean) {
   tailTranscripts.set(value);
@@ -364,16 +376,21 @@ export async function setTailTranscripts(value: boolean) {
         log.warn("settings", `start tail failed for ${uuid}: ${e}`);
       }
     }
-  } else {
-    for (const uuid of get(liveSessions).keys()) {
-      try {
-        await stopSessionTail(uuid);
-      } catch (e) {
-        log.warn("settings", `stopSessionTail failed for ${uuid}: ${e}`);
-      }
+    await persistSettings();
+    return;
+  }
+  // Saved first: the stops are IPC round trips per session and the toggle must
+  // not wait on them. A tail that has started but not emitted yet is not in
+  // `liveSessions`, so the running sessions are stopped too.
+  await persistSettings();
+  const uuids = new Set([...get(liveSessions).keys(), ...runningTails().map((t) => t.uuid)]);
+  for (const uuid of uuids) {
+    try {
+      await stopSessionTail(uuid);
+    } catch (e) {
+      log.warn("settings", `stopSessionTail failed for ${uuid}: ${e}`);
     }
   }
-  await persistSettings();
 }
 
 /** Every currently-running session with a live-tailable transcript, and which

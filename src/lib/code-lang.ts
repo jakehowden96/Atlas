@@ -9,7 +9,9 @@
  * separately in `code-editor.ts` rather than mapped here.
  */
 
-/** LSP language id by lowercase extension. */
+/** LSP language id by lowercase extension, for the languages `src-tauri/src/lsp/server.rs`
+ *  has a server for. Anything else is `plaintext`, so opening it never tries to
+ *  start a server that cannot exist. */
 const LSP_IDS: Record<string, string> = {
   ts: "typescript",
   mts: "typescript",
@@ -23,21 +25,6 @@ const LSP_IDS: Record<string, string> = {
   rs: "rust",
   py: "python",
   go: "go",
-  json: "json",
-  jsonc: "json",
-  md: "markdown",
-  markdown: "markdown",
-  css: "css",
-  scss: "scss",
-  html: "html",
-  yml: "yaml",
-  yaml: "yaml",
-  toml: "toml",
-  sh: "shellscript",
-  bash: "shellscript",
-  zsh: "shellscript",
-  sql: "sql",
-  cs: "csharp",
 };
 
 /** The extension of `path`, lowercased, or "" when it has none. */

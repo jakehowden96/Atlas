@@ -1,4 +1,5 @@
-import { derived, get, writable } from "svelte/store";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { derived, get, writable, type Writable } from "svelte/store";
 import type { DirEntry, DocEntry, PlanEntry } from "../../types/files";
 import {
   absolutePath,
@@ -17,13 +18,13 @@ import {
 } from "../ipc";
 import { log } from "../logger";
 import type { OutlineItem } from "../markdown";
+import { openFiles, sources } from "./file-tabs";
 import { setFileSources, setOpenFiles } from "./settings";
 import { showToast } from "./toast";
+import { showView } from "./view";
 
 /** Workspace path whose documents the tree column is showing. */
 export const fileWs = writable<string>("");
-/** Open file keys in tab order. Persisted — see `stores/settings.ts`. */
-export const openFiles = writable<string[]>([]);
 /** The key of the file the editor is showing; `""` when nothing is open. */
 export const activeFile = writable<string>("");
 export const fileMode = writable<"source" | "split" | "preview">("source");
@@ -41,8 +42,6 @@ export const diskDocs = writable<Map<string, string>>(new Map());
  *  too rather than popping open. Nothing here is persisted, so an old settings
  *  file is unaffected. */
 export const expanded = writable<Set<string>>(new Set());
-/** Folders registered from disk. Phase 04 lists them; persisted like `openFiles`. */
-export const sources = writable<string[]>([]);
 /** The text files directly inside each registered source, by folder path.
  *  The browser walks a folder at a time, so the tree lists one level too. */
 export const sourceFiles = writable<Map<string, DirEntry[]>>(new Map());
@@ -58,9 +57,20 @@ export const plans = writable<PlanEntry[]>([]);
 
 /** Keys with unsaved edits, derived once rather than in each component. */
 export const dirtyFiles = derived(docs, ($docs) => new Set($docs.keys()));
+/** Keys whose file failed to load. They open read-only and cannot be saved. */
+export const unreadable = writable<Set<string>>(new Set());
+/** Keys with unsaved edits whose file changed on disk underneath them. */
+export const conflicts = writable<Set<string>>(new Set());
+
+/** Why the tree is empty when a listing failed; `""` when the last one worked. */
+export const listError = writable("");
+
+/** The backend stops walking a workspace at this many entries
+ *  (`MAX_ENTRIES` in `commands/files.rs`), so a list this long is cut short. */
+export const DOC_LIST_LIMIT = 2000;
 
 /** Refresh the workspace listing. A workspace that cannot be walked lists as
- *  empty rather than throwing — the tree has nowhere to show an error. */
+ *  empty and sets `listError`, which the tree shows. */
 export async function loadDocs(workspacePath: string): Promise<void> {
   if (!workspacePath) {
     docEntries.set([]);
@@ -68,8 +78,10 @@ export async function loadDocs(workspacePath: string): Promise<void> {
   }
   try {
     docEntries.set(await listWorkspaceDocs(workspacePath));
+    listError.set("");
   } catch (e) {
     log.error("files", `listWorkspaceDocs failed for ${workspacePath}`, e);
+    listError.set(`Could not list ${workspacePath}: ${String(e)}`);
     docEntries.set([]);
   }
 }
@@ -80,6 +92,7 @@ export async function loadPlans(): Promise<void> {
     plans.set(await listClaudePlans());
   } catch (e) {
     log.error("files", "listClaudePlans failed", e);
+    listError.set(`Could not list Claude plans: ${String(e)}`);
     plans.set([]);
   }
 }
@@ -97,6 +110,7 @@ export async function loadSourceFiles(paths: string[]): Promise<void> {
       );
     } catch (e) {
       log.error("files", `listDir failed for ${dir}`, e);
+      listError.set(`Could not list ${dir}: ${String(e)}`);
       next.set(dir, []);
     }
   }
@@ -148,10 +162,13 @@ export function closeFile(key: string): void {
     next.delete(key);
     return next;
   });
+  setMember(unreadable, key, false);
+  setMember(conflicts, key, false);
   if (get(activeFile) === key) activeFile.set(next[at] ?? next[at - 1] ?? "");
 }
 
 export function setDoc(key: string, text: string): void {
+  ensureQuitGuard();
   docs.update((current) => {
     const next = new Map(current);
     next.set(key, text);
@@ -173,8 +190,9 @@ function setDiskDoc(key: string, text: string) {
 }
 
 /** Read a file's text into `diskDocs` unless it is already known. A file that
- *  cannot be read opens empty with a toast rather than leaving the editor
- *  stuck on the file before it. */
+ *  cannot be read opens empty but is recorded in `unreadable`: the editor shows
+ *  it read-only and saving is refused, so the empty buffer can never replace the
+ *  real file on disk. */
 export async function loadFileText(key: string): Promise<void> {
   if (!key || get(diskDocs).has(key)) return;
   // A brand-new note is an unsaved buffer with nothing on disk to read yet.
@@ -185,6 +203,7 @@ export async function loadFileText(key: string): Promise<void> {
   } catch (e) {
     log.error("files", `read failed for ${key}`, e);
     showToast("Could not open that file", { body: String(e) });
+    setMember(unreadable, key, true);
     setDiskDoc(key, "");
   }
 }
@@ -192,9 +211,20 @@ export async function loadFileText(key: string): Promise<void> {
 /** Write the active file's pending edit to disk. A failed write keeps the edit,
  *  so the only thing lost is the save. */
 export async function saveActiveFile(): Promise<void> {
-  const key = get(activeFile);
+  await saveFile(get(activeFile));
+}
+
+/** Write one file's pending edit to disk. */
+async function saveFile(key: string): Promise<void> {
   const text = get(docs).get(key);
-  if (!key || text === undefined) return;
+  if (!key || text === undefined || get(unreadable).has(key)) return;
+  if (get(conflicts).has(key)) {
+    showToast("File changed on disk", {
+      body: "Reload it or keep your version before saving.",
+      type: "warning",
+    });
+    return;
+  }
   const { source, path } = parseFileKey(key);
   // The editor hands back LF whatever the file used, so the file's own endings
   // are restored from the text it was read with.
@@ -205,11 +235,122 @@ export async function saveActiveFile(): Promise<void> {
     // it the moment the unsaved edit is dropped — and the next save can still
     // see which endings the file has.
     setDiskDoc(key, out);
-    dropDoc(key);
+    // Keystrokes that landed while the write was in flight are not on disk;
+    // dropping the doc would lose them. They stay as a fresh unsaved edit.
+    if (get(docs).get(key) === text) dropDoc(key);
   } catch (e) {
     log.error("files", `save failed for ${key}`, e);
     showToast("Could not save", { body: String(e) });
   }
+}
+
+/** Add or remove `key` in a set store, leaving the set alone if nothing changes. */
+function setMember(store: Writable<Set<string>>, key: string, present: boolean) {
+  store.update((current) => {
+    if (current.has(key) === present) return current;
+    const next = new Set(current);
+    if (present) next.add(key);
+    else next.delete(key);
+    return next;
+  });
+}
+
+/** What the unsaved-changes dialog is asking about: one tab, or quitting Atlas. */
+export type CloseRequest = { kind: "tab"; key: string } | { kind: "quit" };
+export const closeRequest = writable<CloseRequest | null>(null);
+
+/** Close a tab, asking first if it holds unsaved edits. */
+export function requestCloseFile(key: string): void {
+  if (get(dirtyFiles).has(key)) closeRequest.set({ kind: "tab", key });
+  else closeFile(key);
+}
+
+/** Act on the user's answer to the unsaved-changes dialog. A save that fails
+ *  leaves the file dirty, and then nothing closes — the edit is never traded
+ *  for the exit. */
+export async function resolveCloseRequest(choice: "save" | "discard" | "cancel"): Promise<void> {
+  const request = get(closeRequest);
+  closeRequest.set(null);
+  if (!request || choice === "cancel") return;
+  if (request.kind === "tab") {
+    if (choice === "save") {
+      await saveFile(request.key);
+      if (get(dirtyFiles).has(request.key)) return;
+    }
+    closeFile(request.key);
+    return;
+  }
+  if (choice === "save") {
+    for (const key of get(dirtyFiles)) await saveFile(key);
+    if (get(dirtyFiles).size > 0) return;
+  }
+  await getCurrentWindow().destroy();
+}
+
+let quitGuarded = false;
+
+/** Intercept the window's close while any file has unsaved edits. Registered on
+ *  the first edit rather than at startup, so it costs nothing until it matters.
+ *  Unedited windows close as before: the handler only prevents when dirty. */
+function ensureQuitGuard(): void {
+  if (quitGuarded) return;
+  quitGuarded = true;
+  getCurrentWindow()
+    .onCloseRequested((event) => {
+      if (get(dirtyFiles).size === 0) return;
+      event.preventDefault();
+      // The dialog lives in the Files view; bring it up wherever the user is.
+      showView("files");
+      closeRequest.set({ kind: "quit" });
+    })
+    .catch((e) => {
+      quitGuarded = false;
+      log.warn("files", `could not guard window close: ${e}`);
+    });
+}
+
+/**
+ * A file under the watched workspace changed on disk. Nothing happens unless it
+ * is open here. A clean tab is re-read so it shows what is on disk; a tab with
+ * unsaved edits is flagged in `conflicts` instead, so the user's typing is never
+ * replaced silently. Our own saves echo through here too, and are recognised by
+ * the disk text already matching what was last written.
+ */
+export async function handleExternalChange(workspacePath: string, relPath: string): Promise<void> {
+  const key = fileKey(workspacePath, relPath);
+  if (!get(openFiles).includes(key) || get(unreadable).has(key)) return;
+  const known = get(diskDocs).get(key);
+  if (known === undefined) return;
+  let latest: string;
+  try {
+    latest = await readTextFileAt(absolutePath(workspacePath, relPath));
+  } catch (e) {
+    // Deleted or unreadable now: keep what the editor has rather than blanking it.
+    log.warn("files", `re-read failed for ${key}: ${e}`);
+    return;
+  }
+  if (latest === known) return;
+  if (get(docs).has(key)) setMember(conflicts, key, true);
+  else setDiskDoc(key, latest);
+}
+
+/** Conflict resolution: discard the unsaved edit and show what is on disk now. */
+export async function reloadFromDisk(key: string): Promise<void> {
+  const { source, path } = parseFileKey(key);
+  try {
+    setDiskDoc(key, await readTextFileAt(absolutePath(source, path)));
+  } catch (e) {
+    log.error("files", `reload failed for ${key}`, e);
+    showToast("Could not reload that file", { body: String(e) });
+    return;
+  }
+  dropDoc(key);
+  setMember(conflicts, key, false);
+}
+
+/** Conflict resolution: keep the unsaved edit, so the next save overwrites the disk. */
+export function keepMine(key: string): void {
+  setMember(conflicts, key, false);
 }
 
 export function toggleExpanded(key: string): void {

@@ -15,16 +15,17 @@
   import { autocompletion } from "@codemirror/autocomplete";
   import { languageSupportFor, atlasEditorTheme } from "../../code-editor";
   import { languageIdFor } from "../../code-lang";
+  import { pathToFileUri } from "../../files";
   import { clientFor } from "../../lsp-client";
   import { Compartment, EditorState } from "@codemirror/state";
-  import { EditorView, keymap } from "@codemirror/view";
+  import { EditorView } from "@codemirror/view";
   import {
     hoverTooltips,
     languageServerSupport,
     serverCompletionSource,
   } from "@codemirror/lsp-client";
   import { basicSetup } from "codemirror";
-  import { onDestroy } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import { log } from "../../logger";
 
   interface Props {
@@ -36,21 +37,32 @@
     root: string;
     /** The text to show. Echoes of this component's own edits are ignored. */
     text: string;
+    /** True for a file that could not be read. */
+    readOnly?: boolean;
     onChange: (text: string) => void;
   }
 
-  let { docKey, path, root, text, onChange }: Props = $props();
+  let { docKey, path, root, text, readOnly = false, onChange }: Props = $props();
 
   let host = $state<HTMLDivElement | undefined>();
   let view: EditorView | null = null;
   /** Swapped when the file's language changes, so the editor is built once. */
   const language = new Compartment();
   const lsp = new Compartment();
+  const access = new Compartment();
+
+  function accessFor(locked: boolean) {
+    return locked ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : [];
+  }
 
   /** True while a store update is being applied, so it is not echoed back. */
   let applying = false;
+  /** The document's text as of the last transaction, so the sync effect can
+   *  recognise an echo of its own edit without serialising the document again. */
+  let lastEmitted = "";
 
   function create(container: HTMLDivElement, doc: string) {
+    lastEmitted = doc;
     return new EditorView({
       parent: container,
       state: EditorState.create({
@@ -60,10 +72,12 @@
           atlasEditorTheme,
           language.of([]),
           lsp.of([]),
+          access.of(accessFor(readOnly)),
           EditorView.lineWrapping,
           EditorView.updateListener.of((update) => {
             if (!update.docChanged || applying) return;
-            onChange(update.state.doc.toString());
+            lastEmitted = update.state.doc.toString();
+            onChange(lastEmitted);
           }),
         ],
       }),
@@ -76,10 +90,16 @@
     const container = host;
     const key = docKey;
     if (!container || !key) return;
-    view?.destroy();
-    view = create(container, text);
-    void attachLanguage(view, path);
-    void attachServer(view, path, root);
+    // Only `host` and `docKey` are dependencies. `text` changes on every
+    // keystroke (it echoes the editor's own edits back), and `path`/`root` are
+    // reconfigured elsewhere, so reading them tracked would rebuild the editor
+    // — caret, focus and undo history included — on every key.
+    view = untrack(() => {
+      const next = create(container, text);
+      void attachLanguage(next, path);
+      void attachServer(next, path, root);
+      return next;
+    });
     return () => {
       view?.destroy();
       view = null;
@@ -92,7 +112,8 @@
   $effect(() => {
     const next = text;
     const current = view;
-    if (!current || current.state.doc.toString() === next) return;
+    if (!current || lastEmitted === next) return;
+    lastEmitted = next;
     applying = true;
     current.dispatch({
       changes: { from: 0, to: current.state.doc.length, insert: next },
@@ -117,13 +138,12 @@
     try {
       const client = await clientFor(languageId, forRoot);
       if (!client || target !== view) return;
-      const uri = `file://${forRoot.replace(/\/$/, "")}/${forPath}`;
+      const uri = pathToFileUri(`${forRoot.replace(/[\\/]$/, "")}/${forPath}`);
       target.dispatch({
         effects: lsp.reconfigure([
           languageServerSupport(client, uri, languageId),
           hoverTooltips(),
           autocompletion({ override: [serverCompletionSource] }),
-          keymap.of([]),
         ]),
       });
       log.info("lsp", `attached ${languageId} to ${forPath}`);
@@ -132,14 +152,18 @@
     }
   }
 
+  /* A file that failed to load shows as an empty buffer; typing into it would
+     only tempt a save over the real file, so it cannot be edited. */
+  $effect(() => {
+    const current = view;
+    const locked = readOnly;
+    current?.dispatch({ effects: access.reconfigure(accessFor(locked)) });
+  });
+
   onDestroy(() => {
     view?.destroy();
     view = null;
   });
-
-  export function focus() {
-    view?.focus();
-  }
 
   /** Put the caret on a line, for the outline rail's jumps. */
   export function goToLine(line: number) {

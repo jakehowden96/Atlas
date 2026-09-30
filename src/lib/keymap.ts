@@ -143,6 +143,13 @@ function signature(b: Binding): string {
   return `${b.mod ? "mod+" : ""}${b.shift ? "shift+" : ""}${b.key.toLowerCase()}`;
 }
 
+/** Every keypress shape a binding answers. A binding with no `shift` fires with
+ *  or without Shift held (see `matchBinding`), so it occupies both. */
+function overlapSignatures(b: Binding): string[] {
+  if (b.shift !== undefined) return [signature(b)];
+  return [signature({ ...b, shift: false }), signature({ ...b, shift: true })];
+}
+
 /**
  * The actions that share a chord with another action.
  *
@@ -154,10 +161,11 @@ export function findConflicts(keymap: Keymap): Action[] {
   const owners = new Map<string, Set<Action>>();
   for (const action of ACTIONS) {
     for (const binding of keymap[action]) {
-      const sig = signature(binding);
-      const set = owners.get(sig) ?? new Set<Action>();
-      set.add(action);
-      owners.set(sig, set);
+      for (const sig of overlapSignatures(binding)) {
+        const set = owners.get(sig) ?? new Set<Action>();
+        set.add(action);
+        owners.set(sig, set);
+      }
     }
   }
   const clashing = new Set<Action>();
@@ -205,6 +213,18 @@ export function formatChord(bindings: Binding[], isMac: boolean = IS_MAC): strin
   return shown.map((b) => formatBinding(b, isMac)).join(" or ");
 }
 
+/** Chords the OS or a focused text field already uses: clipboard, select all,
+ *  undo, and the macOS quit/hide/minimise/close-window menu items. Binding one
+ *  would make the global handler swallow it everywhere, paste included. */
+const RESERVED_KEYS = new Set(["c", "v", "x", "a", "z", "q", "h", "m", "tab"]);
+
+function isReserved(e: KeyboardEvent): boolean {
+  const key = e.key.toLowerCase();
+  // ⇧⌘W is Atlas's own close-session default; plain ⌘W is the window's.
+  if (key === "w") return !e.shiftKey;
+  return RESERVED_KEYS.has(key);
+}
+
 /**
  * Turn a keypress into a binding for the recorder in Settings. Null means the
  * press is not a usable chord: a bare modifier, an AltGr composition, or a key
@@ -214,6 +234,7 @@ export function formatChord(bindings: Binding[], isMac: boolean = IS_MAC): strin
 export function parseBindingFromEvent(e: KeyboardEvent): Binding | null {
   if (MODIFIER_KEYS.has(e.key) || e.altKey) return null;
   if (!e.metaKey && !e.ctrlKey) return null;
+  if (isReserved(e)) return null;
   return {
     mod: true,
     shift: e.shiftKey,

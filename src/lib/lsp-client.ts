@@ -6,6 +6,7 @@
  * process-shaped stays in `src-tauri/src/lsp`. This file is only the wire.
  */
 import { LSPClient } from "@codemirror/lsp-client";
+import { pathToFileUri } from "./files";
 import { lspSend, lspStart, onLspMessage } from "./ipc";
 import { log } from "./logger";
 
@@ -17,9 +18,12 @@ export interface Transport {
 
 /** Handlers per session id. One backend listener fans out to all of them. */
 const handlers = new Map<string, Set<(value: string) => void>>();
-/** In-flight or settled starts, keyed the same way the backend keys sessions. */
+/** In-flight or settled starts, keyed the same way the backend keys sessions.
+ *  A failed start is removed, so installing a server does not need a restart. */
 const starting = new Map<string, Promise<string | null>>();
-const clients = new Map<string, LSPClient>();
+/** One client per pair. The promise is stored, not the result, so two editors
+ *  mounting together share a client instead of each creating one. */
+const clients = new Map<string, Promise<LSPClient | null>>();
 let listening: Promise<unknown> | null = null;
 
 /** Attach the single `lsp-message` listener, once per app run. */
@@ -49,6 +53,7 @@ export async function transportFor(languageId: string, root: string): Promise<Tr
   if (!pending) {
     pending = lspStart(languageId, root).catch((e) => {
       log.info("lsp", `no language server for ${languageId}: ${e}`);
+      starting.delete(key);
       return null;
     });
     starting.set(key, pending);
@@ -76,15 +81,20 @@ export async function transportFor(languageId: string, root: string): Promise<Tr
  * server. One client per pair, shared by every editor on that pair — the
  * expensive part of a language server is the indexing it does at startup.
  */
-export async function clientFor(languageId: string, root: string): Promise<LSPClient | null> {
+export function clientFor(languageId: string, root: string): Promise<LSPClient | null> {
   const key = sessionKey(languageId, root);
   const existing = clients.get(key);
   if (existing) return existing;
-  const transport = await transportFor(languageId, root);
-  if (!transport) return null;
-  const client = new LSPClient({ rootUri: `file://${root}` }).connect(transport);
-  clients.set(key, client);
-  return client;
+  const created = transportFor(languageId, root).then((transport) => {
+    if (!transport) {
+      clients.delete(key);
+      return null;
+    }
+    return new LSPClient({ rootUri: pathToFileUri(root) }).connect(transport);
+  });
+  created.catch(() => clients.delete(key));
+  clients.set(key, created);
+  return created;
 }
 
 /** Test seam: drop every cached client, handler and start. */

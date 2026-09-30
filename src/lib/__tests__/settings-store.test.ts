@@ -48,12 +48,13 @@ import {
   watchedRepos,
   type HarnessConfig,
 } from "../stores/settings";
-import { openFiles, sources } from "../stores/files";
+import { openFiles, sources } from "../stores/file-tabs";
 import { liveSessions } from "../stores/liveSessions";
 import { tabs } from "../stores/terminal";
 import { themeMode } from "../theme";
 import { workspaces } from "../stores/workspace";
 import { exists, readTextFile, writeTextFile, mkdir } from "@tauri-apps/plugin-fs";
+import { toasts } from "../stores/toast";
 import { startOmpTail, startSessionTail, stopSessionTail } from "../ipc";
 
 /** The persisted object the last `writeTextFile` call wrote. */
@@ -103,6 +104,14 @@ describe("settings store", () => {
       vi.mocked(exists).mockResolvedValue(false);
       await loadSettings();
       expect(get(enableNotifications)).toBe(true);
+    });
+
+    it("tells the user when the settings file cannot be read", async () => {
+      toasts.set([]);
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue("{not valid json");
+      await loadSettings();
+      expect(get(toasts).map((t) => t.title)).toEqual(["Could not read your settings"]);
     });
 
     it("handles corrupted JSON gracefully", async () => {
@@ -244,6 +253,21 @@ describe("settings store", () => {
       expect(get(harnesses)).toEqual(DEFAULT_HARNESSES);
     });
 
+    it("drops harnesses with an empty or repeated id", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify({
+          harnesses: [
+            { ...customHarness, id: "" },
+            customHarness,
+            { ...customHarness, label: "dup" },
+          ],
+        }),
+      );
+      await loadSettings();
+      expect(get(harnesses)).toEqual([customHarness]);
+    });
+
     it("keeps the defaults when the file has no harnesses key at all", async () => {
       vi.mocked(exists).mockResolvedValue(true);
       vi.mocked(readTextFile).mockResolvedValue(JSON.stringify({ theme: "dark" }));
@@ -314,6 +338,15 @@ describe("settings store", () => {
       );
       await loadSettings();
       expect(get(watchedRepos)).toEqual(["owner/repo-a", "owner/repo-b"]);
+    });
+
+    it("keeps only string entries of watchedRepos", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify({ watchedRepos: ["owner/repo", 1, {}, null] }),
+      );
+      await loadSettings();
+      expect(get(watchedRepos)).toEqual(["owner/repo"]);
     });
 
     it("ignores non-array watchedRepos in file", async () => {
@@ -432,6 +465,44 @@ describe("settings store", () => {
       expect(stopSessionTail).toHaveBeenCalledWith("uuid-a");
       expect(stopSessionTail).toHaveBeenCalledWith("uuid-b");
       expect(lastWritten().tailTranscripts).toBe(false);
+    });
+
+    it("also stops a tail that has started but not emitted yet", async () => {
+      allowWrites();
+      liveSessions.set(new Map());
+      workspaces.set([
+        {
+          path: "/a",
+          name: "a",
+          sessions: [
+            {
+              id: "s1",
+              label: "S1",
+              status: "running",
+              terminalTabId: "tab-1",
+              createdAt: "",
+              claudeSessionId: "uuid-fresh",
+              harnessId: null,
+            },
+          ],
+        },
+      ]);
+
+      await setTailTranscripts(false);
+
+      expect(stopSessionTail).toHaveBeenCalledWith("uuid-fresh");
+    });
+
+    it("saves the setting before waiting on the stops", async () => {
+      allowWrites();
+      let release!: () => void;
+      vi.mocked(stopSessionTail).mockReturnValue(new Promise<void>((r) => (release = r)));
+      liveSessions.set(new Map([["uuid-a", { sessionUuid: "uuid-a" }]] as never));
+
+      const pending = setTailTranscripts(false);
+      await vi.waitFor(() => expect(lastWritten().tailTranscripts).toBe(false));
+      release();
+      await pending;
     });
 
     it("keeps the live session entries so tiles degrade rather than vanish", async () => {

@@ -8,8 +8,14 @@ describe("languageIdFor", () => {
     expect(languageIdFor("src/lib/ipc.ts")).toBe("typescript");
     expect(languageIdFor("src/App.svelte")).toBe("svelte");
     expect(languageIdFor("src-tauri/src/lib.rs")).toBe("rust");
-    expect(languageIdFor("package.json")).toBe("json");
-    expect(languageIdFor("README.md")).toBe("markdown");
+  });
+
+  /* Every id here would start a language server, so a language Atlas ships no
+     server for must not have one — it would fail a spawn per workspace root. */
+  it("names only languages that have a server, so others never try to start one", () => {
+    expect(languageIdFor("package.json")).toBe("plaintext");
+    expect(languageIdFor("README.md")).toBe("plaintext");
+    expect(languageIdFor("style.css")).toBe("plaintext");
   });
 
   it("separates the react dialects, which have their own language ids", () => {

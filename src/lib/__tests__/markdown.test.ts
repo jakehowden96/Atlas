@@ -180,3 +180,32 @@ describe("wikilinks", () => {
     expect(wikilinks("# Title\n\nJust prose.")).toEqual([]);
   });
 });
+
+describe("renderMarkdown hardening", () => {
+  it("drops a link whose scheme is hidden behind a control character", () => {
+    const html = renderMarkdown("[x](\u0001javascript:alert1)");
+    expect(html).not.toContain("href");
+    expect(html).toContain("x");
+  });
+
+  it("does not put emphasis markup inside a link target", () => {
+    const html = renderMarkdown("[x](https://a/*b*)");
+    expect(html).toContain('href="https://a/*b*"');
+    expect(html).not.toContain("<em>");
+  });
+
+  it("still emphasises a link label", () => {
+    expect(renderMarkdown("[**x**](https://a)")).toContain("<strong>x</strong></a>");
+  });
+
+  it("strips a closing hash sequence from a heading only after a space", () => {
+    expect(outline("# Title ##")[0].text).toBe("Title");
+    expect(outline("# C#")[0].text).toBe("C#");
+  });
+
+  it("reads a heading with a long run of spaces in linear time", () => {
+    const started = performance.now();
+    outline(`# a${" ".repeat(200_000)}b`);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+});

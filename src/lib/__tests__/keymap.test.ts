@@ -84,6 +84,17 @@ describe("matchBinding", () => {
   });
 });
 
+describe("findConflicts and chords that ignore Shift", () => {
+  it("flags a shifted binding that a shift-agnostic default also answers", () => {
+    // toggleRail's ⌘\ has no `shift`, so it fires with Shift held as well.
+    const clashing: Keymap = {
+      ...DEFAULT_KEYMAP,
+      jump: [{ mod: true, shift: true, key: "\\" }],
+    };
+    expect(findConflicts(clashing)).toEqual(expect.arrayContaining(["jump", "toggleRail"]));
+  });
+});
+
 describe("findConflicts", () => {
   it("finds nothing in the defaults", () => {
     expect(findConflicts(DEFAULT_KEYMAP)).toEqual([]);
@@ -130,6 +141,16 @@ describe("parseBindingFromEvent", () => {
         makeKeyEvent({ ctrlKey: true, shiftKey: true, key: "@", code: "Digit2" }),
       ),
     ).toEqual({ mod: true, shift: true, key: "Digit2" });
+  });
+
+  it("refuses chords the OS or the text fields need for clipboard, undo and window control", () => {
+    for (const key of ["c", "v", "x", "a", "z", "q", "w", "h", "m", "Tab"]) {
+      expect(parseBindingFromEvent(makeKeyEvent({ metaKey: true, key }))).toBeNull();
+    }
+    // ⇧⌘W is Atlas's own default for closing a session, so it stays recordable.
+    expect(
+      parseBindingFromEvent(makeKeyEvent({ metaKey: true, shiftKey: true, key: "w" })),
+    ).toEqual({ mod: true, shift: true, key: "w" });
   });
 
   it("rejects bare modifiers, AltGr and chords without ⌘/Ctrl", () => {

@@ -27,7 +27,23 @@ export interface OutlineItem {
 export type ResolveWikilink = (target: string) => boolean;
 
 const FENCE = /^ {0,3}```(.*)$/;
-const HEADING = /^ {0,3}(#{1,3})\s+(.*?)\s*#*\s*$/;
+const HEADING = /^ {0,3}(#{1,3})\s+(.*)$/;
+
+/** A heading line's level and title, or null. The optional closing `#` run is
+ *  stripped by hand: a regex for it backtracks quadratically on a long run of
+ *  spaces, and this runs on every keystroke via `outline`. */
+function parseHeading(line: string): { level: number; title: string } | null {
+  const m = HEADING.exec(line);
+  if (!m) return null;
+  let title = m[2].trim();
+  const closing = /#+$/.exec(title);
+  if (closing) {
+    const before = title.slice(0, closing.index);
+    // A closing sequence must follow a space; `C#` keeps its hash.
+    if (before === "" || /\s$/.test(before)) title = before.trimEnd();
+  }
+  return { level: m[1].length, title };
+}
 const QUOTE = /^ {0,3}> ?(.*)$/;
 const ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
 const TASK = /^\[([ xX])\]\s+(.*)$/;
@@ -55,9 +71,14 @@ export function outline(src: string): OutlineItem[] {
       continue;
     }
     if (fenced) continue;
-    const m = HEADING.exec(line);
-    if (!m) continue;
-    items.push({ level: m[1].length, text: plainText(m[2]), id: headingId(m[2], seen), line: at });
+    const heading = parseHeading(line);
+    if (!heading) continue;
+    items.push({
+      level: heading.level,
+      text: plainText(heading.title),
+      id: headingId(heading.title, seen),
+      line: at,
+    });
   }
   return items;
 }
@@ -118,11 +139,11 @@ function renderBlocks(lines: string[], ctx: Ctx): string {
       continue;
     }
 
-    const heading = HEADING.exec(line);
+    const heading = parseHeading(line);
     if (heading) {
-      const level = heading[1].length;
-      const id = headingId(heading[2], ctx.seen);
-      out.push(`<h${level} id="${id}">${inline(heading[2], ctx)}</h${level}>`);
+      const { level, title } = heading;
+      const id = headingId(title, ctx.seen);
+      out.push(`<h${level} id="${id}">${inline(title, ctx)}</h${level}>`);
       i++;
       continue;
     }
@@ -278,12 +299,16 @@ function inline(src: string, ctx: Ctx): string {
   const slots: string[] = [];
   const hold = (html: string) => `<${slots.push(html) - 1}>`;
 
-  let out = escapeHtml(src)
-    .replace(/`([^`]+)`/g, (_m, code) => hold(`<code class="md-code">${code}</code>`))
-    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*([^*\n]+)\*/g, "<em>$1</em>")
-    .replace(/\[\[([^[\]\n]+)\]\]/g, (_m, target) => hold(wikilink(target, ctx)))
-    .replace(/\[([^[\]\n]*)\]\(([^()\s]*)\)/g, (_m, label, href) => hold(anchor(label, href)));
+  // Links are parked before emphasis runs, so a `*` in a url or wikilink target
+  // cannot grow markup inside an attribute; a link label is emphasised on its own.
+  let out = emphasis(
+    escapeHtml(src)
+      .replace(/`([^`]+)`/g, (_m, code) => hold(`<code class="md-code">${code}</code>`))
+      .replace(/\[\[([^[\]\n]+)\]\]/g, (_m, target) => hold(wikilink(target, ctx)))
+      .replace(/\[([^[\]\n]*)\]\(([^()\s]*)\)/g, (_m, label, href) =>
+        hold(anchor(emphasis(label), href)),
+      ),
+  );
 
   // A link label can hold a code span, so a slot can hold another slot — two
   // passes is the whole depth of it.
@@ -291,6 +316,12 @@ function inline(src: string, ctx: Ctx): string {
     out = out.replace(/<(\d+)>/g, (_m, n) => slots[Number(n)] ?? "");
   }
   return out;
+}
+
+function emphasis(text: string): string {
+  return text
+    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*\n]+)\*/g, "<em>$1</em>");
 }
 
 /** `label` arrives escaped; the resolver wants the text the author typed. */
@@ -312,7 +343,14 @@ function anchor(label: string, href: string): string {
 /** Relative and fragment urls pass; anything naming a scheme has to name one
  *  of ours, which is what keeps `javascript:` out of an href. */
 function isSafeHref(href: string): boolean {
-  const url = href.trim();
+  // Browsers ignore control characters and whitespace inside a scheme, so
+  // `\x01javascript:` must be judged as `javascript:`.
+  const url = Array.from(href)
+    .filter((c) => {
+      const code = c.charCodeAt(0);
+      return code > 0x20 && code !== 0x7f;
+    })
+    .join("");
   if (!url) return false;
   if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return /^(https?|mailto):/i.test(url);
   return true;

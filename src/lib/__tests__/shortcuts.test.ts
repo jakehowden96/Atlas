@@ -9,6 +9,10 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
   BaseDirectory: { Home: 0 },
 }));
 
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({ onCloseRequested: vi.fn().mockResolvedValue(() => {}) }),
+}));
+
 vi.mock("../ipc", () => ({
   listClaudePlans: vi.fn(),
   listDir: vi.fn(),

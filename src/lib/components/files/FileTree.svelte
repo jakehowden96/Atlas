@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { UnlistenFn } from "@tauri-apps/api/event";
-  import { onDestroy, onMount } from "svelte";
   import { get } from "svelte/store";
   import {
     buildDocTree,
@@ -19,21 +18,23 @@
   import {
     activeFile,
     dirtyFiles,
+    DOC_LIST_LIMIT,
     docEntries,
     expanded,
     fileWs,
+    handleExternalChange,
+    listError,
     loadDocs,
     loadPlans,
     loadSourceFiles,
     openFile,
-    openFiles,
     plans,
     removeSource,
     setDoc,
     sourceFiles,
-    sources,
     toggleExpanded,
   } from "../../stores/files";
+  import { openFiles, sources } from "../../stores/file-tabs";
   import { openDialogOpen } from "../../stores/view";
   import { activeWorkspacePath, visibleWorkspaces } from "../../stores/workspace";
 
@@ -142,16 +143,27 @@
   });
 
   // An edit made outside Atlas arrives here; re-listing is cheap and keeps the
-  // tree correct for creations and deletions as well as edits.
-  let unlistenDocs: UnlistenFn | null = null;
-  onMount(async () => {
-    unlistenDocs = await onDocsChanged((workspacePath) => {
-      if (workspacePath === get(fileWs)) void loadDocs(workspacePath);
-    });
-  });
-  onDestroy(() => {
-    unlistenDocs?.();
-    unlistenDocs = null;
+  // tree correct for creations and deletions as well as edits. An open tab for
+  // the changed file is reloaded or flagged as conflicting. `onDocsChanged`
+  // resolves asynchronously, so a view torn down before it does must unlisten
+  // the moment the handle arrives.
+  $effect(() => {
+    let stopped = false;
+    let unlisten: UnlistenFn | null = null;
+    onDocsChanged((workspacePath, relPath) => {
+      if (workspacePath !== get(fileWs)) return;
+      void loadDocs(workspacePath);
+      void handleExternalChange(workspacePath, relPath);
+    })
+      .then((fn) => {
+        if (stopped) fn();
+        else unlisten = fn;
+      })
+      .catch((e) => log.warn("files", `could not listen for doc changes: ${e}`));
+    return () => {
+      stopped = true;
+      unlisten?.();
+    };
   });
 </script>
 
@@ -249,7 +261,12 @@
     </section>
   </div>
 
-  <div class="footer">{myPlans.length} plans · {docCount} docs</div>
+  {#if $listError}<p class="list-error" role="alert">{$listError}</p>{/if}
+  <div class="footer">
+    {myPlans.length} plans · {docCount} docs{$docEntries.length >= DOC_LIST_LIMIT
+      ? " · list truncated"
+      : ""}
+  </div>
 </aside>
 
 {#snippet diskRow(path: string, name: string, depth: number)}
@@ -544,6 +561,14 @@
     height: 6px;
     border-radius: 50%;
     background: var(--text);
+  }
+
+  .list-error {
+    margin: 0;
+    padding: 6px 12px;
+    color: var(--warn);
+    font-size: var(--fs-2xs);
+    word-break: break-word;
   }
 
   .footer {

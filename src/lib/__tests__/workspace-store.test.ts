@@ -33,6 +33,7 @@ import {
   type Workspace,
 } from "../stores/workspace";
 import { exists, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { toasts } from "../stores/toast";
 
 describe("workspace store", () => {
   beforeEach(() => {
@@ -286,6 +287,30 @@ describe("workspace store", () => {
       expect(ws[0].sessions[0].status).toBe("idle");
     });
 
+    it("drops a malformed workspace or session and keeps the rest", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify([
+          { name: "no path" },
+          null,
+          {
+            path: "/b",
+            name: "b",
+            color: WORKSPACE_COLORS[0],
+            sessions: [
+              { id: "ok", label: "ok", status: "idle", createdAt: "" },
+              { id: "odd", label: "odd", status: "exploded", createdAt: "" },
+              "junk",
+            ],
+          },
+        ]),
+      );
+      await loadWorkspaces();
+      const ws = get(workspaces);
+      expect(ws.map((w) => w.path)).toEqual(["/b"]);
+      expect(ws[0].sessions.map((s) => s.id)).toEqual(["ok"]);
+    });
+
     it("preserves claudeSessionId across a reload", async () => {
       vi.mocked(exists).mockResolvedValue(true);
       vi.mocked(readTextFile).mockResolvedValue(
@@ -392,6 +417,19 @@ describe("workspace store", () => {
     });
   });
 
+  describe("storage failures", () => {
+    it("tells the user once when workspaces cannot be saved", async () => {
+      toasts.set([]);
+      vi.mocked(writeTextFile)
+        .mockRejectedValueOnce(new Error("denied"))
+        .mockRejectedValueOnce(new Error("denied"));
+      await addWorkspace("/a");
+      await addWorkspace("/b");
+      expect(get(toasts)).toHaveLength(1);
+      expect(get(toasts)[0].title).toMatch(/save/i);
+    });
+  });
+
   describe("hideWorkspace / unhideWorkspace", () => {
     it("drops a hidden workspace from visibleWorkspaces but keeps it in workspaces", async () => {
       await addWorkspace("/a");
@@ -422,6 +460,14 @@ describe("workspace store", () => {
 
       await unhideWorkspace("/b");
       expect(get(visibleWorkspaces).map((w) => w.path)).toEqual(["/a", "/b", "/c"]);
+    });
+
+    it("brings a hidden workspace back when its folder is added again", async () => {
+      await addWorkspace("/a");
+      await hideWorkspace("/a");
+
+      expect(await addWorkspace("/a")).toBe(true);
+      expect(get(visibleWorkspaces).map((w) => w.path)).toEqual(["/a"]);
     });
 
     it("is a no-op when the workspace is already hidden", async () => {

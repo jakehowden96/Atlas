@@ -33,6 +33,7 @@ import {
   hasUnsavedUnder,
   matchLineEndings,
   parentDir,
+  pathToFileUri,
   parseFileKey,
   planWorkspace,
   resolveWikilink,
@@ -49,9 +50,9 @@ import {
   fileWs,
   loadDocs,
   openFile,
-  openFiles,
   toggleExpanded,
 } from "../stores/files";
+import { openFiles } from "../stores/file-tabs";
 import type { Workspace } from "../stores/workspace";
 
 function doc(rel_path: string, is_dir = false): DocEntry {
@@ -570,7 +571,24 @@ describe("editorTarget", () => {
     });
   });
 
+  it("splits a Windows disk path on backslashes [UNVERIFIED on Windows]", () => {
+    expect(editorTarget("disk", "C:\\x\\a.ts")).toEqual({ root: "C:\\x", relative: "a.ts" });
+    expect(editorTarget("disk", "C:\\a.ts")).toEqual({ root: "C:\\", relative: "a.ts" });
+  });
+
   it("drops a trailing separator on the workspace so the uri has no double slash", () => {
     expect(editorTarget("/repo/web/", "src/app.ts").root).toBe("/repo/web");
+  });
+});
+
+describe("pathToFileUri", () => {
+  it("percent-encodes spaces, # and %", () => {
+    const uri = pathToFileUri("/Users/x/My Projects/a#b/100%/app");
+    expect(uri).toBe("file:///Users/x/My%20Projects/a%23b/100%25/app");
+    expect(new URL(uri).pathname).toBe("/Users/x/My%20Projects/a%23b/100%25/app");
+  });
+
+  it("gives a Windows drive path three slashes and forward separators [UNVERIFIED on Windows]", () => {
+    expect(pathToFileUri("C:\\Users\\x y\\app")).toBe("file:///C:/Users/x%20y/app");
   });
 });

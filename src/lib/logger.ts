@@ -109,12 +109,8 @@ export const log = {
   },
 
   error(source: string, message: string, err?: unknown) {
-    const full = err ? `${message}: ${formatError(err)}` : message;
+    const full = err === undefined ? message : `${message}: ${formatError(err)}`;
     enqueue("ERROR", source, full);
-  },
-
-  async flush() {
-    await flush();
   },
 
   async init() {

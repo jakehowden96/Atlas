@@ -16,7 +16,7 @@
   import { chords } from "../../stores/settings";
   import {
     activeFile,
-    closeFile,
+    conflicts,
     dirtyFiles,
     diskDocs,
     docEntries,
@@ -25,12 +25,16 @@
     fileWs,
     loadFileText,
     openFile,
-    openFiles,
     outlineJump,
     plans,
+    requestCloseFile,
+    keepMine,
+    reloadFromDisk,
     saveActiveFile,
     setDoc,
+    unreadable,
   } from "../../stores/files";
+  import { openFiles } from "../../stores/file-tabs";
   import { fileRailOpen, openNewSession } from "../../stores/view";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
   import CodeEditor from "./CodeEditor.svelte";
@@ -40,6 +44,8 @@
   /** The unsaved edit if there is one, else the text last read from disk. */
   let text = $derived($docs.get(key) ?? $diskDocs.get(key) ?? "");
   let dirty = $derived($dirtyFiles.has(key));
+  let unreadableFile = $derived($unreadable.has(key));
+  let conflicted = $derived($conflicts.has(key));
   let markdown = $derived(/\.(md|markdown)$/i.test(file.path));
   /** Preview is markdown-only, so a `.txt` always shows its source. */
   let mode = $derived(markdown ? $fileMode : "source");
@@ -51,8 +57,17 @@
   ]);
 
   let files = $derived($docEntries.filter((e) => !e.is_dir));
+  /* The preview and footer counts are whole-document passes, so they follow
+     typing after a pause rather than on every key. A different file shows at once. */
+  let settled = $state({ key: "", text: "" });
+  let slowText = $derived(settled.key === key ? settled.text : text);
+  $effect(() => {
+    const next = { key, text };
+    const timer = setTimeout(() => (settled = next), 150);
+    return () => clearTimeout(timer);
+  });
   let html = $derived(
-    mode === "source" ? "" : renderMarkdown(text, (t) => resolveWikilink(t, files) !== null),
+    mode === "source" ? "" : renderMarkdown(slowText, (t) => resolveWikilink(t, files) !== null),
   );
 
   let target = $derived(editorTarget(file.source, file.path));
@@ -68,8 +83,8 @@
   let kind = $derived(
     markdown ? "Markdown" : ext === "txt" ? "Text" : ext ? ext.toUpperCase() : "Document",
   );
-  let lines = $derived(text ? text.split("\n").length : 0);
-  let words = $derived(text.trim() ? text.trim().split(/\s+/).length : 0);
+  let lines = $derived(slowText ? slowText.split("\n").length : 0);
+  let words = $derived(slowText.trim() ? slowText.trim().split(/\s+/).length : 0);
   let modified = $derived.by(() => {
     const stamp =
       file.source === "plans"
@@ -173,7 +188,7 @@
             type="button"
             class="tab-close"
             aria-label="Close {basename(f.path)}"
-            onclick={() => closeFile(tab)}>✕</button
+            onclick={() => requestCloseFile(tab)}>✕</button
           >
         </div>
       {/each}
@@ -186,6 +201,7 @@
           <span class="crumb" class:leaf={i === crumbs.length - 1}>{crumb}</span>
         {/each}
       </span>
+      {#if unreadableFile}<span class="pill">Read-only · could not be read</span>{/if}
       {#if dirty}<span class="pill">Unsaved</span>{/if}
 
       <div class="spacer"></div>
@@ -232,6 +248,14 @@
       </button>
     </div>
 
+    {#if conflicted}
+      <div class="conflict" role="alert">
+        <span>This file changed on disk while you had unsaved edits.</span>
+        <button type="button" onclick={() => void reloadFromDisk(key)}>Reload from disk</button>
+        <button type="button" onclick={() => keepMine(key)}>Keep mine</button>
+      </div>
+    {/if}
+
     <div class="body">
       {#if mode !== "preview"}
         <CodeEditor
@@ -240,6 +264,7 @@
           path={target.relative}
           root={target.root}
           {text}
+          readOnly={unreadableFile}
           onChange={(next) => setDoc(key, next)}
         />
       {/if}
@@ -438,6 +463,25 @@
     font-family: var(--font-mono);
     font-size: var(--fs-2xs);
     opacity: 0.7;
+  }
+
+  .conflict {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--warn);
+    font-size: var(--fs-xs);
+  }
+
+  .conflict button {
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    color: var(--text);
+    cursor: pointer;
   }
 
   /* ── Body ──────────────────────────────────────────────────────────────── */
