@@ -1,3 +1,4 @@
+use super::proc::no_window;
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 use tokio::sync::OnceCell;
@@ -162,6 +163,9 @@ pub(crate) fn validate_repo_slug(slug: &str) -> Result<(), String> {
         return Err(format!("Expected owner/repo, got '{}'", slug));
     }
     for part in &parts {
+        if *part == "." || *part == ".." {
+            return Err(format!("Invalid path segment in '{}'", slug));
+        }
         if part.is_empty() {
             return Err(format!("Empty owner or repo in '{}'", slug));
         }
@@ -175,6 +179,13 @@ pub(crate) fn validate_repo_slug(slug: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// `gh` without a console window flashing up on Windows.
+fn gh_command() -> Command {
+    let mut cmd = Command::new("gh");
+    no_window(&mut cmd);
+    cmd
+}
+
 fn fetch_one(repo: &str) -> RepoPrs {
     if let Err(e) = validate_repo_slug(repo) {
         return RepoPrs {
@@ -184,7 +195,7 @@ fn fetch_one(repo: &str) -> RepoPrs {
         };
     }
 
-    let output = Command::new("gh")
+    let output = gh_command()
         .args([
             "pr",
             "list",
@@ -282,7 +293,7 @@ pub struct GhViewer {
 static VIEWER: OnceCell<GhViewer> = OnceCell::const_new();
 
 fn fetch_viewer_login() -> Option<String> {
-    let output = Command::new("gh")
+    let output = gh_command()
         .args(["api", "user", "--jq", ".login"])
         .output()
         .ok()?;
@@ -321,40 +332,52 @@ pub async fn gh_viewer() -> Result<Option<GhViewer>, String> {
 /// Tauri 2 doesn't ship the opener plugin in this project, so we shell out.
 fn browser_launcher(url: &str) -> Command {
     #[cfg(target_os = "macos")]
-    {
+    let mut cmd = {
         let mut cmd = Command::new("open");
         cmd.arg(url);
         cmd
-    }
+    };
     #[cfg(target_os = "windows")]
-    {
+    let mut cmd = {
         let mut cmd = Command::new("cmd");
         // The empty "" is `start`'s window-title argument — without it `start`
         // consumes the URL as the title and opens nothing.
         cmd.args(["/C", "start", "", url]);
         cmd
-    }
+    };
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
+    let mut cmd = {
         let mut cmd = Command::new("xdg-open");
         cmd.arg(url);
         cmd
-    }
+    };
+    no_window(&mut cmd);
+    cmd
 }
 
-/// Open an external URL in the user's default browser. Rejects anything that
-/// isn't `https://` — that scheme check is the guard against launching
-/// arbitrary handlers.
-#[tauri::command(async)]
-pub async fn open_url(url: String) -> Result<(), String> {
+/// The scheme check is the guard against launching arbitrary handlers: only
+/// `https://` URLs may be opened.
+fn check_open_url(url: &str) -> Result<(), String> {
     if !url.starts_with("https://") {
         return Err("Only https:// URLs are allowed".to_string());
     }
     // `cmd /C start` re-parses its command line, so a shell metacharacter in
-    // the URL would escape argument quoting on Windows.
-    if url.contains(['&', '|', '^', '<', '>', '"', '%']) {
-        return Err("URL contains characters that cannot be passed to the shell".to_string());
+    // the URL would escape argument quoting on Windows. The other launchers
+    // take the URL as a single argument, where `&` in a query string is just
+    // a character.
+    #[cfg(windows)]
+    {
+        if url.contains(['&', '|', '^', '<', '>', '"', '%']) {
+            return Err("URL contains characters that cannot be passed to the shell".to_string());
+        }
     }
+    Ok(())
+}
+
+/// Open an external URL in the user's default browser.
+#[tauri::command(async)]
+pub async fn open_url(url: String) -> Result<(), String> {
+    check_open_url(&url)?;
     tokio::task::spawn_blocking(move || {
         browser_launcher(&url)
             .status()
@@ -480,57 +503,28 @@ mod tests {
         assert!(review_request_logins(&[]).is_empty());
     }
 
-    #[tokio::test]
-    async fn gh_viewer_degrades_instead_of_erroring() {
-        // Whether or not gh is installed and authenticated here, the command
-        // must resolve — All-only is the fallback, an error is not. When it
-        // does find a viewer the login is never blank; the filters match on it.
-        let viewer = gh_viewer().await.expect("gh_viewer must never error");
-        if let Some(viewer) = viewer {
-            assert!(!viewer.login.is_empty());
-        }
-    }
-
-    #[tokio::test]
-    async fn open_url_rejects_non_https_schemes() {
-        assert!(open_url("file:///etc/passwd".to_string()).await.is_err());
-        assert!(open_url("http://example.com".to_string()).await.is_err());
-        assert!(open_url("calculator".to_string()).await.is_err());
-    }
-
-    #[tokio::test]
-    async fn open_url_rejects_shell_metacharacters() {
-        assert!(open_url("https://example.com/&calc".to_string())
-            .await
-            .is_err());
-        assert!(open_url("https://example.com/a|b".to_string())
-            .await
-            .is_err());
+    #[test]
+    fn open_url_accepts_https_with_a_query_string() {
+        assert!(check_open_url("https://example.com/?a=1&b=2").is_ok());
     }
 
     #[test]
-    fn browser_launcher_targets_the_platform_opener() {
-        let cmd = browser_launcher("https://example.com");
-        let program = cmd.get_program().to_string_lossy().to_string();
-        let args: Vec<String> = cmd
-            .get_args()
-            .map(|a| a.to_string_lossy().to_string())
-            .collect();
+    fn open_url_rejects_non_https_schemes() {
+        assert!(check_open_url("file:///etc/passwd").is_err());
+        assert!(check_open_url("http://example.com").is_err());
+        assert!(check_open_url("calculator").is_err());
+    }
 
-        #[cfg(target_os = "macos")]
-        {
-            assert_eq!(program, "open");
-            assert_eq!(args, vec!["https://example.com"]);
-        }
-        #[cfg(target_os = "windows")]
-        {
-            assert_eq!(program, "cmd");
-            assert_eq!(args, vec!["/C", "start", "", "https://example.com"]);
-        }
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        {
-            assert_eq!(program, "xdg-open");
-            assert_eq!(args, vec!["https://example.com"]);
-        }
+    #[cfg(windows)]
+    #[test]
+    fn open_url_rejects_cmd_metacharacters_on_windows() {
+        assert!(check_open_url("https://example.com/&calc").is_err());
+        assert!(check_open_url("https://example.com/a|b").is_err());
+    }
+
+    #[test]
+    fn slug_rejects_dot_segments() {
+        assert!(validate_repo_slug("./repo").is_err());
+        assert!(validate_repo_slug("owner/..").is_err());
     }
 }

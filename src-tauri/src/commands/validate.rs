@@ -1,16 +1,20 @@
 // --- Input validation ---
 
+/// Session IDs are UUIDs or Atlas-generated tab ids and become directory names
+/// and the `ATLAS_SESSION_ID` env value, so only plain ASCII is allowed: a
+/// non-ASCII letter has composed and decomposed spellings that name different
+/// directories on macOS.
 pub(crate) fn validate_session_id(id: &str) -> Result<(), String> {
+    const MAX_LEN: usize = 128;
     if id.is_empty() {
         return Err("Session ID cannot be empty".to_string());
     }
-    if id.contains('/') || id.contains('\\') || id.contains("..") {
-        return Err("Session ID contains invalid characters".to_string());
+    if id.len() > MAX_LEN {
+        return Err(format!("Session ID longer than {MAX_LEN} characters"));
     }
-    // Allow UUID format and simple alphanumeric-hyphen IDs
     if !id
         .chars()
-        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     {
         return Err("Session ID contains invalid characters".to_string());
     }
@@ -92,6 +96,13 @@ mod tests {
     fn validate_session_id_rejects_special_chars() {
         assert!(validate_session_id("abc def").is_err());
         assert!(validate_session_id("abc!def").is_err());
+    }
+
+    #[test]
+    fn validate_session_id_rejects_non_ascii_and_overlong() {
+        assert!(validate_session_id("é").is_err());
+        assert!(validate_session_id(&"a".repeat(129)).is_err());
+        assert!(validate_session_id(&"a".repeat(128)).is_ok());
     }
 
     #[test]

@@ -9,6 +9,7 @@ use super::validate::validate_cwd;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Mutex};
 use std::time::{Duration, Instant};
@@ -197,9 +198,12 @@ fn list_children(dir: &Path) -> Result<Vec<DirEntry>, String> {
     for entry in read_dir.flatten() {
         let path = entry.path();
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            log::debug!("Skipping non-UTF-8 entry {}", path.display());
             continue;
         };
-        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        // `DirEntry::file_type` does not follow symlinks, and a symlinked
+        // folder (`/tmp`, a linked project) must still be navigable.
+        let is_dir = path.is_dir();
         entries.push(DirEntry {
             name: name.to_string(),
             path: path.to_string_lossy().to_string(),
@@ -297,15 +301,80 @@ fn validate_doc_path(path: &str) -> Result<PathBuf, String> {
 #[tauri::command(async)]
 pub fn read_text_file_at(path: String) -> Result<String, String> {
     let path = validate_doc_path(&path)?;
-    let metadata = std::fs::metadata(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
-    if metadata.len() > MAX_READ_BYTES {
+    let file = std::fs::File::open(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
+    // A `.md` symlink to `/dev/zero` reports length 0, so check the handle is
+    // a regular file, and cap the read itself rather than trusting a size that
+    // can change between stat and read.
+    let metadata = file
+        .metadata()
+        .map_err(|e| format!("{}: {}", path.display(), e))?;
+    if !metadata.is_file() {
+        return Err(format!("{} is not a regular file", path.display()));
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_READ_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("{}: {}", path.display(), e))?;
+    if bytes.len() as u64 > MAX_READ_BYTES {
         return Err(format!(
-            "{} is {} bytes — the editor opens files up to 2 MB",
-            path.display(),
-            metadata.len()
+            "{} is larger than 2 MB — the editor opens files up to 2 MB",
+            path.display()
         ));
     }
-    std::fs::read_to_string(&path).map_err(|e| format!("{}: {}", path.display(), e))
+    String::from_utf8(bytes).map_err(|_| format!("{} is not a UTF-8 text file", path.display()))
+}
+
+/// Replace `target` with `contents` without ever leaving it truncated: write a
+/// sibling temp file, flush it to disk, then rename over the original. A crash
+/// or a full disk mid-save leaves the old file intact.
+fn write_atomically(target: &Path, contents: &str) -> std::io::Result<()> {
+    let (Some(dir), Some(name)) = (target.parent(), target.file_name()) else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "path has no parent directory or file name",
+        ));
+    };
+    let existing = std::fs::metadata(target).ok();
+    // Writing in place fails on a read-only file; a rename would not.
+    if existing
+        .as_ref()
+        .is_some_and(|m| m.permissions().readonly())
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "file is read-only",
+        ));
+    }
+
+    // Dot-prefixed and with no document extension, so the docs watcher and
+    // the tree ignore it.
+    let mut tmp_name = std::ffi::OsString::from(".");
+    tmp_name.push(name);
+    tmp_name.push(format!(".atlas-tmp-{}", std::process::id()));
+    let tmp = dir.join(tmp_name);
+
+    let written = (|| {
+        // A stale temp from a crashed save would make `create_new` fail.
+        let _ = std::fs::remove_file(&tmp);
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)?;
+        file.write_all(contents.as_bytes())?;
+        // The rename swaps the inode, so carry the mode over.
+        if let Some(meta) = &existing {
+            file.set_permissions(meta.permissions())?;
+        }
+        file.sync_all()?;
+        drop(file);
+        // [UNVERIFIED on Windows] rename-over-existing fails there while
+        // another process holds the target open without share-delete.
+        std::fs::rename(&tmp, target)
+    })();
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    written
 }
 
 #[tauri::command(async)]
@@ -314,19 +383,20 @@ pub fn write_text_file_at(path: String, contents: String) -> Result<(), String> 
     let parent = path
         .parent()
         .ok_or_else(|| format!("Path has no parent directory: {}", path.display()))?;
-    let name = path
-        .file_name()
-        .ok_or_else(|| format!("Path has no file name: {}", path.display()))?;
 
     // New notes land in directories that may not exist yet.
     std::fs::create_dir_all(parent).map_err(|e| format!("{}: {}", parent.display(), e))?;
-    // Write through the resolved parent, so a symlinked directory cannot
-    // redirect the write somewhere outside the tree the user picked.
-    let real_parent =
-        std::fs::canonicalize(parent).map_err(|e| format!("{}: {}", parent.display(), e))?;
 
-    std::fs::write(real_parent.join(name), contents)
-        .map_err(|e| format!("{}: {}", path.display(), e))
+    // Save through a symlinked file rather than replacing the link with a
+    // regular file, as writing in place always did.
+    let target = match std::fs::symlink_metadata(&path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            std::fs::canonicalize(&path).map_err(|e| format!("{}: {}", path.display(), e))?
+        }
+        _ => path.clone(),
+    };
+
+    write_atomically(&target, &contents).map_err(|e| format!("{}: {}", path.display(), e))
 }
 
 /// One `notify` watcher per watched workspace. Dropping a watcher stops it and
@@ -440,6 +510,15 @@ fn spawn_docs_watcher(
     Ok(watcher)
 }
 
+/// The `DocsWatchers` key for a workspace. `/a/b` and `/a/b/` are one
+/// workspace; keyed by the raw string they got two watchers and every edit was
+/// announced twice.
+fn watch_key(workspace_path: &str) -> String {
+    std::fs::canonicalize(workspace_path)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| workspace_path.to_string())
+}
+
 /// Watch a workspace for document edits made outside Atlas. Changes then arrive
 /// as debounced `docs-changed` events until `stop_docs_watch`.
 #[tauri::command]
@@ -449,12 +528,13 @@ pub fn start_docs_watch(
     watchers: State<'_, DocsWatchers>,
 ) -> Result<(), String> {
     validate_cwd(&workspace_path)?;
+    let key = watch_key(&workspace_path);
     let mut watchers = watchers.0.lock().map_err(|e| e.to_string())?;
-    if watchers.contains_key(&workspace_path) {
+    if watchers.contains_key(&key) {
         return Ok(());
     }
-    let watcher = spawn_docs_watcher(app, workspace_path.clone())?;
-    watchers.insert(workspace_path, watcher);
+    let watcher = spawn_docs_watcher(app, workspace_path)?;
+    watchers.insert(key, watcher);
     Ok(())
 }
 
@@ -464,7 +544,7 @@ pub fn stop_docs_watch(
     watchers: State<'_, DocsWatchers>,
 ) -> Result<(), String> {
     let mut watchers = watchers.0.lock().map_err(|e| e.to_string())?;
-    watchers.remove(&workspace_path);
+    watchers.remove(&watch_key(&workspace_path));
     Ok(())
 }
 
@@ -591,13 +671,115 @@ mod tests {
     fn write_text_file_at_refuses_a_path_the_editor_cannot_open() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("icon.png");
-        let err = write_text_file_at(
+        assert!(write_text_file_at(
             path.to_string_lossy().to_string(),
             "not an image".to_string(),
         )
-        .unwrap_err();
-        assert!(err.contains("icon.png"), "unexpected error: {}", err);
+        .is_err());
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn write_replaces_contents_and_leaves_no_temp_file() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("note.md");
+        std::fs::write(&path, "old").unwrap();
+        write_text_file_at(path.to_string_lossy().to_string(), "new".to_string()).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+        let names: Vec<_> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, vec![std::ffi::OsString::from("note.md")]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_keeps_the_file_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("private.md");
+        std::fs::write(&path, "old").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        write_text_file_at(path.to_string_lossy().to_string(), "new".to_string()).unwrap();
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_refuses_a_read_only_file_and_leaves_it_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("locked.md");
+        std::fs::write(&path, "old").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
+
+        assert!(write_text_file_at(path.to_string_lossy().to_string(), "new".to_string()).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "old");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_saves_through_a_symlinked_file() {
+        let tmp = TempDir::new().unwrap();
+        let real = tmp.path().join("real/target.md");
+        touch(&real);
+        let link = tmp.path().join("note.md");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        write_text_file_at(link.to_string_lossy().to_string(), "new".to_string()).unwrap();
+
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "new");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_refuses_a_device_behind_a_document_name() {
+        let tmp = TempDir::new().unwrap();
+        let link = tmp.path().join("zero.md");
+        std::os::unix::fs::symlink("/dev/zero", &link).unwrap();
+        assert!(read_text_file_at(link.to_string_lossy().to_string()).is_err());
+    }
+
+    #[test]
+    fn read_rejects_an_oversized_file_and_non_utf8() {
+        let tmp = TempDir::new().unwrap();
+        let big = tmp.path().join("big.md");
+        std::fs::write(&big, vec![b'a'; MAX_READ_BYTES as usize + 1]).unwrap();
+        assert!(read_text_file_at(big.to_string_lossy().to_string()).is_err());
+
+        let binary = tmp.path().join("bin.md");
+        std::fs::write(&binary, [0xff, 0xfe, 0x00]).unwrap();
+        let err = read_text_file_at(binary.to_string_lossy().to_string()).unwrap_err();
+        assert!(err.contains("UTF-8"), "{err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn list_children_lets_the_dialog_enter_a_symlinked_folder() {
+        let tmp = TempDir::new().unwrap();
+        touch(&tmp.path().join("real/deep.md"));
+        std::os::unix::fs::symlink(tmp.path().join("real"), tmp.path().join("link")).unwrap();
+
+        let entries = list_children(tmp.path()).unwrap();
+        let link = entries.iter().find(|e| e.name == "link").unwrap();
+        assert!(link.is_dir);
+        assert!(!link.is_text);
+    }
+
+    #[test]
+    fn one_workspace_has_one_watch_key_however_it_is_spelled() {
+        let tmp = TempDir::new().unwrap();
+        let plain = tmp.path().to_string_lossy().to_string();
+        let slashed = format!("{plain}{}", std::path::MAIN_SEPARATOR);
+        assert_eq!(watch_key(&plain), watch_key(&slashed));
     }
 
     #[test]
