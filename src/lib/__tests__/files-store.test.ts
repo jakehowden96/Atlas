@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => windowApi }))
 vi.mock("../stores/toast", () => ({ showToast: vi.fn() }));
 
 import { setOpenFiles } from "../stores/settings";
-import { listWorkspaceDocs, readTextFileAt, writeTextFileAt } from "../ipc";
+import { listDir, listWorkspaceDocs, readTextFileAt, writeTextFileAt } from "../ipc";
 import { fileKey } from "../files";
 import type { TextFile, WriteOutcome } from "../../types/files";
 import {
@@ -41,6 +41,8 @@ import {
   diskDocs,
   docs,
   loadFileText,
+  loadSourceFiles,
+  truncatedSources,
   saveActiveFile,
   setDoc,
   unreadable,
@@ -340,8 +342,26 @@ describe("listing failures", () => {
     await loadDocs("/ws");
     expect(get(listError)).toContain("permission denied");
 
-    vi.mocked(listWorkspaceDocs).mockResolvedValueOnce([]);
+    vi.mocked(listWorkspaceDocs).mockResolvedValueOnce({ entries: [], truncated: false });
     await loadDocs("/ws");
     expect(get(listError)).toBe("");
+  });
+});
+
+describe("registered folder listings", () => {
+  it("remembers which folders the backend cut short", async () => {
+    const entry = (name: string) => ({
+      name,
+      path: `/src/${name}`,
+      is_dir: false,
+      is_text: true,
+    });
+    vi.mocked(listDir)
+      .mockResolvedValueOnce({ entries: [entry("a.md")], truncated: true })
+      .mockResolvedValueOnce({ entries: [entry("b.md")], truncated: false });
+
+    await loadSourceFiles(["/big", "/small"]);
+
+    expect([...get(truncatedSources)]).toEqual(["/big"]);
   });
 });

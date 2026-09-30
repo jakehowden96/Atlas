@@ -72,24 +72,30 @@ const conflictMtimes = new Map<string, number | null>();
 /** Why the tree is empty when a listing failed; `""` when the last one worked. */
 export const listError = writable("");
 
-/** The backend stops walking a workspace at this many entries
- *  (`MAX_ENTRIES` in `commands/files.rs`), so a list this long is cut short. */
-export const DOC_LIST_LIMIT = 2000;
+/** The backend's walk of the shown workspace hit a cap, so `docEntries` is
+ *  incomplete. The tree says so rather than looking merely empty. */
+export const docsTruncated = writable(false);
+/** Registered folders whose listing was cut at the backend's cap. */
+export const truncatedSources = writable<Set<string>>(new Set());
 
 /** Refresh the workspace listing. A workspace that cannot be walked lists as
  *  empty and sets `listError`, which the tree shows. */
 export async function loadDocs(workspacePath: string): Promise<void> {
   if (!workspacePath) {
     docEntries.set([]);
+    docsTruncated.set(false);
     return;
   }
   try {
-    docEntries.set(await listWorkspaceDocs(workspacePath));
+    const listing = await listWorkspaceDocs(workspacePath);
+    docEntries.set(listing.entries);
+    docsTruncated.set(listing.truncated);
     listError.set("");
   } catch (e) {
     log.error("files", `listWorkspaceDocs failed for ${workspacePath}`, e);
     listError.set(`Could not list ${workspacePath}: ${String(e)}`);
     docEntries.set([]);
+    docsTruncated.set(false);
   }
 }
 
@@ -109,12 +115,15 @@ export async function loadPlans(): Promise<void> {
  *  one is the user's call. */
 export async function loadSourceFiles(paths: string[]): Promise<void> {
   const next = new Map<string, DirEntry[]>();
+  const cut = new Set<string>();
   for (const dir of paths) {
     try {
+      const listing = await listDir(dir);
       next.set(
         dir,
-        (await listDir(dir)).filter((entry) => entry.is_text),
+        listing.entries.filter((entry) => entry.is_text),
       );
+      if (listing.truncated) cut.add(dir);
     } catch (e) {
       log.error("files", `listDir failed for ${dir}`, e);
       listError.set(`Could not list ${dir}: ${String(e)}`);
@@ -122,6 +131,7 @@ export async function loadSourceFiles(paths: string[]): Promise<void> {
     }
   }
   sourceFiles.set(next);
+  truncatedSources.set(cut);
 }
 
 /** Register a folder under "From disk". The tree lists it from `sources`. */

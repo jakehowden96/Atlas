@@ -18,8 +18,8 @@
   import {
     activeFile,
     dirtyFiles,
-    DOC_LIST_LIMIT,
     docEntries,
+    docsTruncated,
     expanded,
     fileWs,
     handleExternalChange,
@@ -32,6 +32,7 @@
     removeSource,
     setDoc,
     sourceFiles,
+    truncatedSources,
     toggleExpanded,
   } from "../../stores/files";
   import { openFiles, sources } from "../../stores/file-tabs";
@@ -251,6 +252,9 @@
         {:else}
           <p class="empty nested">Nothing yet</p>
         {/each}
+        {#if $truncatedSources.has(source)}
+          <p class="empty nested">List truncated — this folder has more files than are shown</p>
+        {/if}
       {/each}
       {#each looseDiskFiles as path (path)}
         {@render diskRow(path, basename(path), 0)}
@@ -263,9 +267,7 @@
 
   {#if $listError}<p class="list-error" role="alert">{$listError}</p>{/if}
   <div class="footer">
-    {myPlans.length} plans · {docCount} docs{$docEntries.length >= DOC_LIST_LIMIT
-      ? " · list truncated"
-      : ""}
+    {myPlans.length} plans · {docCount} docs{$docsTruncated ? " · list truncated" : ""}
   </div>
 </aside>
 

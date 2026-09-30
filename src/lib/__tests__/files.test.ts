@@ -3,15 +3,15 @@ import { get } from "svelte/store";
 
 vi.mock("../ipc", () => ({
   listClaudePlans: vi.fn(async () => []),
-  listDir: vi.fn(async () => []),
-  listWorkspaceDocs: vi.fn(async () => []),
+  listDir: vi.fn(async () => ({ entries: [], truncated: false })),
+  listWorkspaceDocs: vi.fn(async () => ({ entries: [], truncated: false })),
   readTextFileAt: vi.fn(async () => ({ contents: "", mtime: 1 })),
   writeTextFileAt: vi.fn(async () => ({ kind: "saved", mtime: 1 })),
   startSessionTail: vi.fn(),
   stopSessionTail: vi.fn(),
 }));
 
-import type { DocEntry, PlanEntry } from "../../types/files";
+import type { DocEntry, DocList, PlanEntry } from "../../types/files";
 import {
   absolutePath,
   ancestorPaths,
@@ -36,6 +36,7 @@ import type { SessionTile } from "../overview";
 import {
   activeFile,
   docEntries,
+  docsTruncated,
   expanded,
   fileWs,
   loadDocs,
@@ -61,6 +62,11 @@ function listed(entries: DocEntry[]): DocEntry[] {
     if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
     return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
   });
+}
+
+/** What `list_workspace_docs` resolves to. */
+function listing(entries: DocEntry[], truncated = false): DocList {
+  return { entries: listed(entries), truncated };
 }
 
 function plan(name: string): PlanEntry {
@@ -273,12 +279,12 @@ describe("tree expansion", () => {
     openFiles.set([]);
     activeFile.set("");
     docEntries.set([]);
-    vi.mocked(listWorkspaceDocs).mockResolvedValue([]);
+    vi.mocked(listWorkspaceDocs).mockResolvedValue({ entries: [], truncated: false });
   });
 
   it("lists a workspace with every folder shut", async () => {
     vi.mocked(listWorkspaceDocs).mockResolvedValue(
-      listed([doc("docs", true), doc("docs/guide.md"), doc("src", true), doc("README.md")]),
+      listing([doc("docs", true), doc("docs/guide.md"), doc("src", true), doc("README.md")]),
     );
     fileWs.set(ws);
     await loadDocs(ws);
@@ -291,6 +297,17 @@ describe("tree expansion", () => {
         .map((n) => n.name),
     ).toEqual(["docs", "src"]);
     expect([...get(expanded)]).toEqual([]);
+  });
+
+  it("records whether the backend's walk was cut short, and clears it on a complete re-list", async () => {
+    fileWs.set(ws);
+    vi.mocked(listWorkspaceDocs).mockResolvedValue(listing([doc("README.md")], true));
+    await loadDocs(ws);
+    expect(get(docsTruncated)).toBe(true);
+
+    vi.mocked(listWorkspaceDocs).mockResolvedValue(listing([doc("README.md")]));
+    await loadDocs(ws);
+    expect(get(docsTruncated)).toBe(false);
   });
 
   it("opens and shuts one folder", () => {
@@ -309,7 +326,7 @@ describe("tree expansion", () => {
     // What `onDocsChanged` runs on every external edit, with a folder that was
     // not there the first time round.
     vi.mocked(listWorkspaceDocs).mockResolvedValue(
-      listed([doc("docs", true), doc("docs/guide.md"), doc("src", true), doc("notes", true)]),
+      listing([doc("docs", true), doc("docs/guide.md"), doc("src", true), doc("notes", true)]),
     );
     await loadDocs(ws);
 

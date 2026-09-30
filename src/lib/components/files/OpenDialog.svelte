@@ -20,6 +20,7 @@
 
   let dir = $state("");
   let entries = $state<DirEntry[]>([]);
+  let truncated = $state(false);
   let error = $state("");
 
   let crumbs = $derived(dir ? breadcrumbs(dir) : []);
@@ -48,11 +49,14 @@
     const path = target ?? dir ?? "";
     try {
       dir = path || $fileWs || (await homeDir());
-      entries = await listDir(dir);
+      const listing = await listDir(dir);
+      entries = listing.entries;
+      truncated = listing.truncated;
       error = "";
     } catch (e) {
       log.error("files", `listDir failed for ${dir || path}`, e);
       entries = [];
+      truncated = false;
       error = String(e);
     }
   }
@@ -123,6 +127,9 @@
             <span class="name">{entry.name}</span>
           </button>
         {/each}
+      {/if}
+      {#if truncated}
+        <p class="message">This folder has more entries than are shown.</p>
       {/if}
     </div>
 

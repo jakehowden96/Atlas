@@ -1,8 +1,8 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
-  DirEntry,
-  DocEntry,
+  DirList,
+  DocList,
   DocsChangedEvent,
   PlanEntry,
   TextFile,
@@ -233,9 +233,10 @@ export async function onClaudeSessionStart(
 /**
  * Every file the editor can open under a workspace — prose, source and config
  * — directories included, already sorted directories-first then by name.
- * Capped at depth 8 and 2000 entries.
+ * Capped at depth 8, 2000 entries and 100 000 directory entries looked at;
+ * `truncated` says a cap cut the walk short.
  */
-export async function listWorkspaceDocs(workspacePath: string): Promise<DocEntry[]> {
+export async function listWorkspaceDocs(workspacePath: string): Promise<DocList> {
   return invoke("list_workspace_docs", { workspacePath });
 }
 
@@ -247,9 +248,10 @@ export async function listClaudePlans(): Promise<PlanEntry[]> {
 /**
  * One directory's children, flat and unfiltered, for the Open… dialog. Rejects
  * a path that is not an existing absolute directory inside a workspace or a
- * folder added to Files.
+ * folder added to Files. At most 5000 children come back; `truncated` says
+ * there were more.
  */
-export async function listDir(path: string): Promise<DirEntry[]> {
+export async function listDir(path: string): Promise<DirList> {
   return invoke("list_dir", { path });
 }
 

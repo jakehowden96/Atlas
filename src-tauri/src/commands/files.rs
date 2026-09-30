@@ -9,7 +9,7 @@ use super::files_scope::FilesScope;
 use super::validate::validate_cwd;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Mutex};
@@ -34,8 +34,22 @@ const DOC_EXTENSIONS: &[&str] = &[
 ];
 
 /// Caps on the walk, so a stray home-directory workspace cannot hang the UI.
-const MAX_DEPTH: usize = 8;
-const MAX_ENTRIES: usize = 2000;
+/// `visits` counts every directory entry looked at, kept or not: a workspace
+/// full of files the tree never shows would otherwise be walked without bound.
+struct Limits {
+    depth: usize,
+    entries: usize,
+    visits: usize,
+}
+
+const WALK_LIMITS: Limits = Limits {
+    depth: 8,
+    entries: 2000,
+    visits: 100_000,
+};
+
+/// Most children `list_dir` returns for one folder.
+const MAX_DIR_ENTRIES: usize = 5000;
 
 /// Largest file the editor will open.
 const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
@@ -45,6 +59,21 @@ const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
 /// one, so this is a trailing edge — emitting on the first event would race a
 /// half-written file.
 const DEBOUNCE: Duration = Duration::from_millis(300);
+
+/// A workspace's documents. `truncated` says the walk hit a cap (entry count,
+/// visit count or depth), so the tree is incomplete.
+#[derive(serde::Serialize)]
+pub struct DocList {
+    pub entries: Vec<DocEntry>,
+    pub truncated: bool,
+}
+
+/// One folder's children; `truncated` says there were more than were returned.
+#[derive(serde::Serialize)]
+pub struct DirList {
+    pub entries: Vec<DirEntry>,
+    pub truncated: bool,
+}
 
 #[derive(serde::Serialize)]
 pub struct DocEntry {
@@ -132,15 +161,18 @@ fn should_prune_dir(name: &str) -> bool {
 
 /// Every document under `root`, plus the directories on the way to them.
 ///
-/// Sorted directories-first then case-insensitively by name, which also orders
-/// each sibling group that way once the frontend rebuilds the tree — so it does
-/// not have to re-sort.
-fn walk_docs(root: &Path) -> Vec<DocEntry> {
+/// Breadth-first, so when a cap cuts the walk short it is the deepest
+/// directories that are missing, not an arbitrary subset. Sorted
+/// directories-first then case-insensitively by name, which also orders each
+/// sibling group that way once the frontend rebuilds the tree — so it does not
+/// have to re-sort.
+fn walk_docs(root: &Path, limits: &Limits) -> DocList {
     let mut entries: Vec<DocEntry> = Vec::new();
-    let mut stack = vec![(root.to_path_buf(), 0usize)];
-    let mut depth_capped = false;
+    let mut queue = VecDeque::from([(root.to_path_buf(), 0usize)]);
+    let mut visited = 0usize;
+    let mut truncated = false;
 
-    'walk: while let Some((dir, depth)) = stack.pop() {
+    'walk: while let Some((dir, depth)) = queue.pop_front() {
         let read_dir = match std::fs::read_dir(&dir) {
             Ok(r) => r,
             Err(e) => {
@@ -150,12 +182,14 @@ fn walk_docs(root: &Path) -> Vec<DocEntry> {
         };
 
         for entry in read_dir.flatten() {
-            if entries.len() >= MAX_ENTRIES {
+            visited += 1;
+            if visited > limits.visits {
                 log::warn!(
-                    "Doc walk of {} hit the {} entry cap — the tree is truncated",
+                    "Doc walk of {} looked at {} entries — the tree is truncated",
                     root.display(),
-                    MAX_ENTRIES
+                    limits.visits
                 );
+                truncated = true;
                 break 'walk;
             }
 
@@ -170,13 +204,23 @@ fn walk_docs(root: &Path) -> Vec<DocEntry> {
                 if should_prune_dir(&name) {
                     continue;
                 }
-                if depth + 1 < MAX_DEPTH {
-                    stack.push((path.clone(), depth + 1));
+                if depth + 1 < limits.depth {
+                    queue.push_back((path.clone(), depth + 1));
                 } else {
-                    depth_capped = true;
+                    truncated = true;
                 }
             } else if !is_doc_file(&path) {
                 continue;
+            }
+
+            if entries.len() >= limits.entries {
+                log::warn!(
+                    "Doc walk of {} hit the {} entry cap — the tree is truncated",
+                    root.display(),
+                    limits.entries
+                );
+                truncated = true;
+                break 'walk;
             }
 
             let Ok(rel) = path.strip_prefix(root) else {
@@ -198,12 +242,8 @@ fn walk_docs(root: &Path) -> Vec<DocEntry> {
         }
     }
 
-    if depth_capped {
-        log::warn!(
-            "Doc walk of {} hit the depth cap of {} — deeper directories were skipped",
-            root.display(),
-            MAX_DEPTH
-        );
+    if truncated {
+        log::warn!("Doc walk of {} is incomplete", root.display());
     }
 
     entries.sort_by(|a, b| {
@@ -212,7 +252,7 @@ fn walk_docs(root: &Path) -> Vec<DocEntry> {
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
             .then_with(|| a.rel_path.cmp(&b.rel_path))
     });
-    entries
+    DocList { entries, truncated }
 }
 
 /// Every file the editor can open under a workspace, directories included.
@@ -220,10 +260,10 @@ fn walk_docs(root: &Path) -> Vec<DocEntry> {
 pub async fn list_workspace_docs(
     workspace_path: String,
     scope: State<'_, FilesScope>,
-) -> Result<Vec<DocEntry>, String> {
+) -> Result<DocList, String> {
     validate_cwd(&workspace_path)?;
     scope.resolve(&workspace_path)?;
-    tokio::task::spawn_blocking(move || Ok(walk_docs(Path::new(&workspace_path))))
+    tokio::task::spawn_blocking(move || Ok(walk_docs(Path::new(&workspace_path), &WALK_LIMITS)))
         .await
         .map_err(|e| format!("Task join error: {}", e))?
 }
@@ -233,11 +273,21 @@ pub async fn list_workspace_docs(
 /// `walk_docs` recurses and keeps only documents, which is the wrong shape for
 /// a folder browser: the Open… dialog lists what is really in the folder and
 /// greys out what it cannot open, so the folder looks like itself.
-fn list_children(dir: &Path) -> Result<Vec<DirEntry>, String> {
+fn list_children(dir: &Path) -> Result<DirList, String> {
     let read_dir = std::fs::read_dir(dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
 
     let mut entries: Vec<DirEntry> = Vec::new();
+    let mut truncated = false;
     for entry in read_dir.flatten() {
+        if entries.len() >= MAX_DIR_ENTRIES {
+            log::warn!(
+                "{} has more than {} entries — the listing is truncated",
+                dir.display(),
+                MAX_DIR_ENTRIES
+            );
+            truncated = true;
+            break;
+        }
         let path = entry.path();
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
             log::debug!("Skipping non-UTF-8 entry {}", path.display());
@@ -259,12 +309,12 @@ fn list_children(dir: &Path) -> Result<Vec<DirEntry>, String> {
             .cmp(&a.is_dir)
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
-    Ok(entries)
+    Ok(DirList { entries, truncated })
 }
 
 /// The contents of one directory, for the Open… dialog's browser.
 #[tauri::command(async)]
-pub async fn list_dir(path: String, scope: State<'_, FilesScope>) -> Result<Vec<DirEntry>, String> {
+pub async fn list_dir(path: String, scope: State<'_, FilesScope>) -> Result<DirList, String> {
     validate_cwd(&path)?;
     scope.resolve(&path)?;
     tokio::task::spawn_blocking(move || list_children(Path::new(&path)))
@@ -708,8 +758,9 @@ mod tests {
         touch(&root.join("node_modules/pkg/readme.md"));
         touch(&root.join("target/debug/notes.txt"));
 
-        let entries = walk_docs(root);
-        let paths = rel_paths(&entries);
+        let walked = walk_docs(root, &WALK_LIMITS);
+        let entries = &walked.entries;
+        let paths = rel_paths(entries);
 
         assert!(paths.contains(&"README.md"));
         assert!(paths.contains(&"docs/guide.markdown"));
@@ -732,11 +783,93 @@ mod tests {
         touch(&root.join("d1/d2/d3/d4/d5/d6/d7/within.md"));
         touch(&root.join("d1/d2/d3/d4/d5/d6/d7/d8/beyond.md"));
 
-        let entries = walk_docs(root);
-        let paths = rel_paths(&entries);
+        let walked = walk_docs(root, &WALK_LIMITS);
+        let entries = &walked.entries;
+        let paths = rel_paths(entries);
 
         assert!(paths.contains(&"d1/d2/d3/d4/d5/d6/d7/within.md"));
         assert!(!paths.iter().any(|p| p.ends_with("beyond.md")));
+        assert!(walked.truncated, "a depth cut must be reported");
+    }
+
+    #[test]
+    fn a_walk_that_fits_is_not_truncated() {
+        let tmp = TempDir::new().unwrap();
+        touch(&tmp.path().join("a.md"));
+        touch(&tmp.path().join("docs/b.md"));
+        assert!(!walk_docs(tmp.path(), &WALK_LIMITS).truncated);
+    }
+
+    #[test]
+    fn hitting_the_entry_cap_is_reported_and_keeps_the_shallowest_entries() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        for n in 0..6 {
+            touch(&root.join(format!("top{n}.md")));
+        }
+        touch(&root.join("deep/er/still/buried.md"));
+        // The six files and the `deep` folder fill the cap exactly.
+        let limits = Limits {
+            entries: 7,
+            ..WALK_LIMITS
+        };
+
+        let walked = walk_docs(root, &limits);
+
+        assert!(walked.truncated);
+        assert_eq!(walked.entries.len(), 7);
+        // Breadth-first: the cut falls on the deepest files, never on the top
+        // level that was listed first.
+        let paths = rel_paths(&walked.entries);
+        assert!((0..6).all(|n| paths.contains(&format!("top{n}.md").as_str())));
+        assert!(!paths.iter().any(|p| p.ends_with("buried.md")));
+    }
+
+    #[test]
+    fn exactly_filling_the_entry_cap_is_not_truncation() {
+        let tmp = TempDir::new().unwrap();
+        for n in 0..4 {
+            touch(&tmp.path().join(format!("n{n}.md")));
+        }
+        let limits = Limits {
+            entries: 4,
+            ..WALK_LIMITS
+        };
+        let walked = walk_docs(tmp.path(), &limits);
+        assert_eq!(walked.entries.len(), 4);
+        assert!(!walked.truncated);
+    }
+
+    #[test]
+    fn files_the_tree_never_shows_still_count_against_the_visit_cap() {
+        let tmp = TempDir::new().unwrap();
+        for n in 0..40 {
+            touch(&tmp.path().join(format!("blob{n}.bin")));
+        }
+        touch(&tmp.path().join("kept.md"));
+        let limits = Limits {
+            visits: 10,
+            ..WALK_LIMITS
+        };
+
+        let walked = walk_docs(tmp.path(), &limits);
+
+        assert!(walked.truncated, "40 skipped files must not be free");
+    }
+
+    #[test]
+    fn a_huge_folder_listing_is_cut_and_reported() {
+        let tmp = TempDir::new().unwrap();
+        for n in 0..MAX_DIR_ENTRIES + 3 {
+            std::fs::write(tmp.path().join(format!("f{n}.md")), "").unwrap();
+        }
+        let listed = list_children(tmp.path()).unwrap();
+        assert_eq!(listed.entries.len(), MAX_DIR_ENTRIES);
+        assert!(listed.truncated);
+
+        let small = TempDir::new().unwrap();
+        touch(&small.path().join("a.md"));
+        assert!(!list_children(small.path()).unwrap().truncated);
     }
 
     #[test]
@@ -747,7 +880,7 @@ mod tests {
         touch(&root.join("beta.md"));
         touch(&root.join("zeta/inner.md"));
 
-        let entries = walk_docs(root);
+        let entries = walk_docs(root, &WALK_LIMITS).entries;
         assert_eq!(entries[0].rel_path, "zeta");
         assert!(entries[0].is_dir);
 
@@ -768,7 +901,7 @@ mod tests {
         touch(&root.join("icon.png"));
         touch(&root.join("sub/deep.md"));
 
-        let entries = list_children(root).unwrap();
+        let entries = list_children(root).unwrap().entries;
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         // Directories first, then by name — and nothing from inside `sub`, which
         // the dialog reaches by walking into it.
@@ -967,7 +1100,7 @@ mod tests {
         touch(&tmp.path().join("real/deep.md"));
         std::os::unix::fs::symlink(tmp.path().join("real"), tmp.path().join("link")).unwrap();
 
-        let entries = list_children(tmp.path()).unwrap();
+        let entries = list_children(tmp.path()).unwrap().entries;
         let link = entries.iter().find(|e| e.name == "link").unwrap();
         assert!(link.is_dir);
         assert!(!link.is_text);

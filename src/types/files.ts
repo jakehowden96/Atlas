@@ -15,6 +15,12 @@ export interface DocEntry {
   modified: string | null;
 }
 
+/** A workspace's documents. `truncated` means a cap was hit and the list is incomplete. */
+export interface DocList {
+  entries: DocEntry[];
+  truncated: boolean;
+}
+
 /**
  * A file in `~/.claude/plans`. `name` is the file stem — a slugified cwd plus a
  * random suffix (`c-users-me-github-atlas-atl-curried-thacker`), not a session
@@ -38,6 +44,12 @@ export interface DirEntry {
   path: string;
   is_dir: boolean;
   is_text: boolean;
+}
+
+/** One folder's children; `truncated` means there were more than were returned. */
+export interface DirList {
+  entries: DirEntry[];
+  truncated: boolean;
 }
 
 export interface DocsChangedEvent {
