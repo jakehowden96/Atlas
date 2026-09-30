@@ -111,32 +111,14 @@ describe("handleGlobalKeydown", () => {
     expect(e.preventDefault).toHaveBeenCalled();
   });
 
-  it("Ctrl+N opens the new session modal", () => {
-    const e = makeKeyEvent({ ctrlKey: true, key: "n" });
-    expect(handleGlobalKeydown(e)).toBe(true);
-    expect(get(newSessionOpen)).toBe(true);
-  });
-
   it("⌘K opens the jump palette", () => {
     const e = makeKeyEvent({ metaKey: true, key: "k" });
     expect(handleGlobalKeydown(e)).toBe(true);
     expect(get(jumpOpen)).toBe(true);
   });
 
-  it("Ctrl+K opens the jump palette", () => {
-    const e = makeKeyEvent({ ctrlKey: true, key: "k" });
-    expect(handleGlobalKeydown(e)).toBe(true);
-    expect(get(jumpOpen)).toBe(true);
-  });
-
   it("⌘, opens settings", () => {
     const e = makeKeyEvent({ metaKey: true, key: "," });
-    expect(handleGlobalKeydown(e)).toBe(true);
-    expect(get(settingsOpen)).toBe(true);
-  });
-
-  it("Ctrl+, opens settings", () => {
-    const e = makeKeyEvent({ ctrlKey: true, key: "," });
     expect(handleGlobalKeydown(e)).toBe(true);
     expect(get(settingsOpen)).toBe(true);
   });

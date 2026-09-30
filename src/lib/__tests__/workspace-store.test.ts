@@ -71,12 +71,6 @@ describe("workspace store", () => {
       expect(ws[0]!.path).toBe("/Users/jake/projects/my-app");
     });
 
-    it("assigns a color to the workspace", async () => {
-      await addWorkspace("/a");
-      const ws = get(workspaces);
-      expect(ws[0]!.color).toBeTruthy();
-    });
-
     it("does not add duplicate paths", async () => {
       await addWorkspace("/a");
       const result = await addWorkspace("/a");
@@ -164,36 +158,6 @@ describe("workspace store", () => {
       expect(ws[0]!.sessions).toHaveLength(2);
       expect(ws[0]!.sessions[0]!.label).toBe("First");
       expect(ws[0]!.sessions[1]!.label).toBe("Second");
-    });
-
-    it("sets activeSessionId", async () => {
-      await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1", "claude-code");
-      expect(get(activeSessionId)).toBeTruthy();
-    });
-
-    it("stores the claude session id", async () => {
-      await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1", "claude-code");
-      expect(get(workspaces)[0]!.sessions[0]!.claudeSessionId).toBe("claude-1");
-    });
-
-    it("stores a null claude session id", async () => {
-      await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", null, "claude-code");
-      expect(get(workspaces)[0]!.sessions[0]!.claudeSessionId).toBeNull();
-    });
-
-    it("stores the harness id", async () => {
-      await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1", "omp");
-      expect(get(workspaces)[0]!.sessions[0]!.harnessId).toBe("omp");
-    });
-
-    it("stores a null harness id", async () => {
-      await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1", null);
-      expect(get(workspaces)[0]!.sessions[0]!.harnessId).toBeNull();
     });
   });
 

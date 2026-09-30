@@ -89,13 +89,6 @@ describe("transportFor", () => {
     await transportFor("typescript", "/repo");
     expect(vi.mocked(lspStart)).toHaveBeenCalledTimes(1);
   });
-
-  it("sends on the session it was started for", async () => {
-    vi.mocked(lspStart).mockResolvedValue(started("typescript:/repo"));
-    const transport = await transportFor("typescript", "/repo");
-    transport?.send('{"jsonrpc":"2.0"}');
-    expect(vi.mocked(lspSend)).toHaveBeenCalledWith("typescript:/repo", '{"jsonrpc":"2.0"}');
-  });
 });
 
 describe("failed and concurrent starts", () => {

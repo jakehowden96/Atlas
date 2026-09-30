@@ -135,8 +135,28 @@ describe("renderMarkdown escaping", () => {
   });
 
   it("cannot be broken out of an href", () => {
-    const html = renderMarkdown('[x](https://e.com"onmouseover="alert(1))');
+    // No parenthesis in the target, so this reaches the link rule and the quote
+    // is what would end the attribute.
+    const html = renderMarkdown('[x](https://e.com"onmouseover="alert1)');
+    expect(html).toContain('href="https://e.com&quot;onmouseover=&quot;alert1"');
     expect(html).not.toContain('"onmouseover="');
+  });
+
+  it.each(["data:text/html,hi", "JAVASCRIPT:alert1", "vbscript:x"])(
+    "drops a link to %j, keeping its label",
+    (target) => {
+      expect(renderMarkdown(`[label](${target})`)).toBe("<p>label</p>");
+    },
+  );
+
+  it("keeps an entity-encoded scheme inert by escaping the ampersand", () => {
+    // Left unescaped, the browser would decode `&#106;` to `j` inside the href.
+    const html = renderMarkdown("[x](&#106;avascript:alert1)");
+    expect(html).toContain('href="&amp;#106;avascript:alert1"');
+  });
+
+  it.each(["mailto:a@b.c", "/rel/path", "#frag"])("keeps a link to %s", (target) => {
+    expect(renderMarkdown(`[x](${target})`)).toContain(`href="${target}"`);
   });
 });
 
