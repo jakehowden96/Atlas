@@ -357,8 +357,8 @@ export async function setAutoAddReposFromWorkspaces(value: boolean) {
 /**
  * Turning this off has to stop the tails, not just hide the numbers — a tail
  * left running keeps re-reading the transcript and pushing `session-update`.
- * The tracked set is exactly `liveSessions`' keys, which is what
- * `session-update` populates.
+ * The tails to stop are `liveSessions`' keys (what `session-update` has
+ * populated) plus every running session, whose tail may not have emitted yet.
  */
 export async function setTailTranscripts(value: boolean) {
   tailTranscripts.set(value);
@@ -376,16 +376,21 @@ export async function setTailTranscripts(value: boolean) {
         log.warn("settings", `start tail failed for ${uuid}: ${e}`);
       }
     }
-  } else {
-    for (const uuid of get(liveSessions).keys()) {
-      try {
-        await stopSessionTail(uuid);
-      } catch (e) {
-        log.warn("settings", `stopSessionTail failed for ${uuid}: ${e}`);
-      }
+    await persistSettings();
+    return;
+  }
+  // Saved first: the stops are IPC round trips per session and the toggle must
+  // not wait on them. A tail that has started but not emitted yet is not in
+  // `liveSessions`, so the running sessions are stopped too.
+  await persistSettings();
+  const uuids = new Set([...get(liveSessions).keys(), ...runningTails().map((t) => t.uuid)]);
+  for (const uuid of uuids) {
+    try {
+      await stopSessionTail(uuid);
+    } catch (e) {
+      log.warn("settings", `stopSessionTail failed for ${uuid}: ${e}`);
     }
   }
-  await persistSettings();
 }
 
 /** Every currently-running session with a live-tailable transcript, and which

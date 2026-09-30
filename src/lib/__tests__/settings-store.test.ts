@@ -467,6 +467,44 @@ describe("settings store", () => {
       expect(lastWritten().tailTranscripts).toBe(false);
     });
 
+    it("also stops a tail that has started but not emitted yet", async () => {
+      allowWrites();
+      liveSessions.set(new Map());
+      workspaces.set([
+        {
+          path: "/a",
+          name: "a",
+          sessions: [
+            {
+              id: "s1",
+              label: "S1",
+              status: "running",
+              terminalTabId: "tab-1",
+              createdAt: "",
+              claudeSessionId: "uuid-fresh",
+              harnessId: null,
+            },
+          ],
+        },
+      ]);
+
+      await setTailTranscripts(false);
+
+      expect(stopSessionTail).toHaveBeenCalledWith("uuid-fresh");
+    });
+
+    it("saves the setting before waiting on the stops", async () => {
+      allowWrites();
+      let release!: () => void;
+      vi.mocked(stopSessionTail).mockReturnValue(new Promise<void>((r) => (release = r)));
+      liveSessions.set(new Map([["uuid-a", { sessionUuid: "uuid-a" }]] as never));
+
+      const pending = setTailTranscripts(false);
+      await vi.waitFor(() => expect(lastWritten().tailTranscripts).toBe(false));
+      release();
+      await pending;
+    });
+
     it("keeps the live session entries so tiles degrade rather than vanish", async () => {
       allowWrites();
       liveSessions.set(new Map([["uuid-a", { sessionUuid: "uuid-a" }]] as never));
