@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 mod atomic_write;
 mod commands;
 pub mod hook;
