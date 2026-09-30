@@ -35,7 +35,7 @@
   import { openNewSession } from "../../stores/view";
   import { visibleWorkspaces } from "../../stores/workspace";
   import Sparkline from "../ui/Sparkline.svelte";
-  import SegmentedControl from "../ui/SegmentedControl.svelte";
+  import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
 
   /* Both the summary and its loading flag live in `stores/stats`: the top bar
      needs the same figures while this screen is unmounted, and two independent
@@ -49,7 +49,7 @@
   let now = $state(new Date());
   let ticker: ReturnType<typeof setInterval> | null = null;
 
-  const rangeOptions = [
+  const rangeOptions: Segment<Range>[] = [
     { id: "7d", label: "7 days" },
     { id: "30d", label: "30 days" },
     { id: "all", label: "All time" },
@@ -189,7 +189,7 @@
     <SegmentedControl
       options={rangeOptions}
       value={range}
-      onChange={(id) => (range = id as Range)}
+      onChange={(id) => (range = id)}
       size="sm"
     />
     <span class="note">

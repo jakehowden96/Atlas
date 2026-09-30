@@ -151,12 +151,12 @@ function sanitizeWorkspace(raw: unknown): Workspace | null {
  * build's save replaces it.
  */
 export function migrateWorkspaces(raw: unknown): {
-  stored: StoredWorkspaces;
+  stored: ParsedWorkspaces;
   newerThanKnown: boolean;
 } {
   if (Array.isArray(raw)) return { stored: { workspaces: raw }, newerThanKnown: false };
   if (!raw || typeof raw !== "object") return { stored: {}, newerThanKnown: false };
-  const stored = raw as StoredWorkspaces;
+  const stored: ParsedWorkspaces = raw;
   const version = typeof stored.version === "number" ? stored.version : 0;
   return { stored, newerThanKnown: version > WORKSPACES_VERSION };
 }
@@ -171,8 +171,10 @@ export async function loadWorkspaces() {
     if (loaded.contents === null) return;
     const { stored, newerThanKnown } = migrateWorkspaces(JSON.parse(loaded.contents));
     if (newerThanKnown) reportNewerState("workspaces");
-    const rawList = Array.isArray(stored?.workspaces) ? stored.workspaces : [];
-    const removed = Array.isArray(stored?.removedWorkspaces) ? stored.removedWorkspaces : [];
+    const rawList: unknown[] = Array.isArray(stored.workspaces) ? stored.workspaces : [];
+    const removed: unknown[] = Array.isArray(stored.removedWorkspaces)
+      ? stored.removedWorkspaces
+      : [];
     removedWorkspaces.set(removed.filter((p): p is string => typeof p === "string"));
     // One malformed entry costs that entry, not the whole file.
     const data = rawList.flatMap((entry) => {
@@ -211,6 +213,10 @@ interface StoredWorkspaces {
   workspaces?: unknown[];
   removedWorkspaces?: unknown[];
 }
+
+/** The workspaces file as parsed: same keys, nothing about their values
+ *  trusted until `loadWorkspaces` has checked them. */
+type ParsedWorkspaces = { [K in keyof StoredWorkspaces]?: unknown };
 
 const persister = createStatePersister(
   "workspaces",

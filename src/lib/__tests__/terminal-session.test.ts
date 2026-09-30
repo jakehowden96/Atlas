@@ -145,6 +145,7 @@ function container(size = { w: 800, h: 600 }) {
     clientHeight: size.h,
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
+    // Partial fake: TerminalSession only measures and listens; there is no DOM here.
   } as unknown as HTMLDivElement;
 }
 
@@ -162,7 +163,8 @@ function makeSession(overrides: Partial<ConstructorParameters<typeof TerminalSes
     cwd: "/work",
     ...overrides,
   });
-  // The private xterm is what the handlers under test are attached to.
+  // The private xterm is what the handlers under test are attached to, so the
+  // test reaches past `private` to get it.
   const terminal = (session as unknown as { terminal: InstanceType<typeof fakes.FakeTerminal> })
     .terminal;
   return { session, terminal, onPtyReady, onSpawnError, onExit };

@@ -38,6 +38,7 @@ function makeKeyEvent(overrides: Partial<KeyboardEvent> = {}): KeyboardEvent {
     key: "",
     preventDefault: vi.fn(),
     ...overrides,
+    // Partial fake: the handler reads only these fields, and a real KeyboardEvent needs a DOM.
   } as unknown as KeyboardEvent;
   return e;
 }

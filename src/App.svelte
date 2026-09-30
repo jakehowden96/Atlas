@@ -56,7 +56,7 @@
   // off entirely rather than shown as a "0" alert pill. The Sessions count is
   // the tile count the chips and the status line use, which also covers a
   // session whose transcript is not being tailed.
-  let viewOptions = $derived<Segment[]>([
+  let viewOptions = $derived<Segment<View>[]>([
     { id: "sessions", label: "Sessions", count: $liveTiles.length },
     { id: "files", label: "Files", dot: $dirtyFiles.size > 0 },
     {
@@ -111,7 +111,7 @@
     <SegmentedControl
       options={viewOptions}
       value={$activeView === "session" ? "sessions" : $activeView}
-      onChange={(id) => showView(id as View)}
+      onChange={(id) => showView(id)}
     />
 
     <div class="spacer"></div>

@@ -97,11 +97,11 @@
   // base (upstream merge-base, else merge-base with main/master). It only fills
   // `local_raw` in when the two differ, so with nothing committed on top of the
   // base both segments resolve to the same diff — which is the truth.
-  const BASE_OPTIONS: Segment[] = [
+  const BASE_OPTIONS: Segment<BaseView>[] = [
     { id: "working", label: "Working tree" },
     { id: "main", label: "vs main" },
   ];
-  const MODE_OPTIONS: Segment[] = [
+  const MODE_OPTIONS: Segment<"split" | "unified">[] = [
     { id: "unified", label: "Unified" },
     { id: "split", label: "Split" },
   ];
@@ -276,7 +276,7 @@
           size="sm"
           options={BASE_OPTIONS}
           value={base}
-          onChange={(id) => (base = id as BaseView)}
+          onChange={(id) => (base = id)}
         />
       </span>
 

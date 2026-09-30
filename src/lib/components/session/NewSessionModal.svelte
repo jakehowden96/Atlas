@@ -98,7 +98,7 @@
 
   // The id stays "fresh" — `NewSessionSeed` and the Stats view read it. Only the
   // label the user sees changed.
-  let modeOptions = $derived<Segment[]>([
+  let modeOptions = $derived<Segment<NewSessionMode>[]>([
     { id: "fresh", label: "New" },
     {
       id: "resume",
@@ -213,8 +213,8 @@
     closeWith(() => newSessionSeed.set(null));
   }
 
-  function chooseMode(id: string) {
-    nav = setMode(view, id as NewSessionMode, counts);
+  function chooseMode(id: NewSessionMode) {
+    nav = setMode(view, id, counts);
   }
 
   function chooseHarness(id: string) {

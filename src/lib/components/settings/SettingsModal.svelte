@@ -55,12 +55,12 @@
     watchedRepos,
     type HarnessConfig,
     type OverviewOrdering,
-    type PrRefreshMinutes,
+    PR_REFRESH_CHOICES,
   } from "../../stores/settings";
   import { themeMode, type ThemeMode } from "../../theme";
   import { setWorkspaceColor, visibleWorkspaces, WORKSPACE_COLORS } from "../../stores/workspace";
   import Modal from "../ui/Modal.svelte";
-  import SegmentedControl from "../ui/SegmentedControl.svelte";
+  import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
   import Toggle from "../ui/Toggle.svelte";
   import { errorMessage } from "../../ipc-error";
 
@@ -75,26 +75,26 @@
     { id: "harnesses", label: "Harnesses" },
   ];
 
-  const APPEARANCE = [
+  const APPEARANCE: Segment<ThemeMode>[] = [
     { id: "system", label: "System" },
     { id: "light", label: "Light" },
     { id: "dark", label: "Dark" },
   ];
 
-  const ORDERING = [
+  const ORDERING: Segment<OverviewOrdering>[] = [
     { id: "attention", label: "Attention" },
     { id: "workspace", label: "Workspace" },
     { id: "manual", label: "Manual" },
     { id: "opened", label: "Opened" },
   ];
 
-  const REFRESH = [
+  const REFRESH: Segment[] = [
     { id: "1", label: "1m" },
     { id: "3", label: "3m" },
     { id: "10", label: "10m" },
   ];
 
-  const READY_MODE = [
+  const READY_MODE: Segment<HarnessConfig["readyMode"]>[] = [
     { id: "altscreen", label: "Alt-screen" },
     { id: "immediate", label: "Immediate" },
   ];
@@ -343,7 +343,7 @@
                 options={APPEARANCE}
                 value={$themeMode}
                 size="sm"
-                onChange={(id) => void setTheme(id as ThemeMode)}
+                onChange={(id) => void setTheme(id)}
               />
             </div>
 
@@ -402,7 +402,7 @@
                 options={ORDERING}
                 value={$overviewOrdering}
                 size="sm"
-                onChange={(id) => void setOverviewOrdering(id as OverviewOrdering)}
+                onChange={(id) => void setOverviewOrdering(id)}
               />
             </div>
           </div>
@@ -599,7 +599,10 @@
                 options={REFRESH}
                 value={String($prRefreshMinutes)}
                 size="sm"
-                onChange={(id) => void setPrRefreshMinutes(Number(id) as PrRefreshMinutes)}
+                onChange={(id) => {
+                  const minutes = PR_REFRESH_CHOICES.find((m) => String(m) === id);
+                  if (minutes) void setPrRefreshMinutes(minutes);
+                }}
               />
             </div>
           </div>
@@ -766,8 +769,7 @@
                         options={READY_MODE}
                         value={h.readyMode}
                         size="sm"
-                        onChange={(id) =>
-                          updateHarness(h.id, { readyMode: id as HarnessConfig["readyMode"] })}
+                        onChange={(id) => updateHarness(h.id, { readyMode: id })}
                       />
                     </div>
                   </div>

@@ -52,7 +52,7 @@
   // so those segments are hidden and All is the only filter.
   const activeFilter = $derived<PrFilter>(viewerLogin ? $prFilter : "all");
 
-  const filterOptions = $derived<Segment[]>(
+  const filterOptions = $derived<Segment<PrFilter>[]>(
     viewerLogin
       ? [
           { id: "all", label: "All", count: $prFilterCounts.all },
@@ -189,7 +189,7 @@
     <SegmentedControl
       options={filterOptions}
       value={activeFilter}
-      onChange={(id) => prFilter.set(id as PrFilter)}
+      onChange={(id) => prFilter.set(id)}
     />
     <div class="spacer"></div>
     <span class="meta">
