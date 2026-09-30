@@ -244,6 +244,21 @@ describe("settings store", () => {
       expect(get(harnesses)).toEqual(DEFAULT_HARNESSES);
     });
 
+    it("drops harnesses with an empty or repeated id", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify({
+          harnesses: [
+            { ...customHarness, id: "" },
+            customHarness,
+            { ...customHarness, label: "dup" },
+          ],
+        }),
+      );
+      await loadSettings();
+      expect(get(harnesses)).toEqual([customHarness]);
+    });
+
     it("keeps the defaults when the file has no harnesses key at all", async () => {
       vi.mocked(exists).mockResolvedValue(true);
       vi.mocked(readTextFile).mockResolvedValue(JSON.stringify({ theme: "dark" }));
@@ -314,6 +329,15 @@ describe("settings store", () => {
       );
       await loadSettings();
       expect(get(watchedRepos)).toEqual(["owner/repo-a", "owner/repo-b"]);
+    });
+
+    it("keeps only string entries of watchedRepos", async () => {
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue(
+        JSON.stringify({ watchedRepos: ["owner/repo", 1, {}, null] }),
+      );
+      await loadSettings();
+      expect(get(watchedRepos)).toEqual(["owner/repo"]);
     });
 
     it("ignores non-array watchedRepos in file", async () => {

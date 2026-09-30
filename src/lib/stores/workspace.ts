@@ -93,6 +93,52 @@ async function ensureDir() {
   dirEnsured = true;
 }
 
+const SESSION_STATUSES: WorkspaceSession["status"][] = [
+  "complete",
+  "running",
+  "error",
+  "idle",
+  "starting",
+];
+
+/** A session row read from disk, or null if it is not one. A row is live only
+ *  within a run, so whatever Atlas was doing when it last wrote is reset. */
+function sanitizeSession(raw: unknown): WorkspaceSession | null {
+  if (!raw || typeof raw !== "object") return null;
+  const s = raw as Record<string, unknown>;
+  const status = SESSION_STATUSES.find((v) => v === s.status);
+  if (typeof s.id !== "string" || typeof s.label !== "string" || !status) return null;
+  return {
+    id: s.id,
+    label: s.label,
+    status: status === "running" || status === "starting" ? "idle" : status,
+    terminalTabId: null,
+    createdAt: typeof s.createdAt === "string" ? s.createdAt : "",
+    // Written by a version of Atlas that did not track Claude session ids.
+    claudeSessionId: typeof s.claudeSessionId === "string" ? s.claudeSessionId : null,
+    // Written by a version of Atlas that predates harnesses.
+    harnessId: typeof s.harnessId === "string" ? s.harnessId : null,
+  };
+}
+
+/** A workspace read from disk, or null if it is not one. The colour is left as
+ *  found (possibly missing); `loadWorkspaces` retags it against the palette. */
+function sanitizeWorkspace(raw: unknown): Workspace | null {
+  if (!raw || typeof raw !== "object") return null;
+  const w = raw as Record<string, unknown>;
+  if (typeof w.path !== "string" || typeof w.name !== "string") return null;
+  const sessions = Array.isArray(w.sessions) ? w.sessions : [];
+  return {
+    path: w.path,
+    name: w.name,
+    color: typeof w.color === "string" ? w.color : undefined,
+    sessions: sessions.flatMap((entry) => {
+      const session = sanitizeSession(entry);
+      return session ? [session] : [];
+    }),
+  };
+}
+
 export async function loadWorkspaces() {
   log.info("workspace", "loadWorkspaces started");
   try {
@@ -100,9 +146,18 @@ export async function loadWorkspaces() {
     if (!fileExists) return;
     const raw = await readTextFile(STORAGE_FILE, { baseDir: BaseDirectory.Home });
     // Files written before workspaces could be hidden are a bare array.
-    const parsed = JSON.parse(raw) as Workspace[] | StoredWorkspaces;
-    const data = Array.isArray(parsed) ? parsed : (parsed.workspaces ?? []);
-    removedWorkspaces.set(Array.isArray(parsed) ? [] : (parsed.removedWorkspaces ?? []));
+    const parsed: unknown = JSON.parse(raw);
+    const stored: StoredWorkspaces | null = Array.isArray(parsed)
+      ? { workspaces: parsed }
+      : (parsed as StoredWorkspaces | null);
+    const rawList = Array.isArray(stored?.workspaces) ? stored.workspaces : [];
+    const removed = Array.isArray(stored?.removedWorkspaces) ? stored.removedWorkspaces : [];
+    removedWorkspaces.set(removed.filter((p): p is string => typeof p === "string"));
+    // One malformed entry costs that entry, not the whole file.
+    const data = rawList.flatMap((entry) => {
+      const ws = sanitizeWorkspace(entry);
+      return ws ? [ws] : [];
+    });
     log.info("workspace", `parsed ${data.length} workspaces`);
     const seen: Workspace[] = [];
     for (const ws of data) {
@@ -116,14 +171,6 @@ export async function loadWorkspaces() {
         ws.color = nextAvailableColor(seen);
       }
       seen.push(ws);
-      for (const s of ws.sessions) {
-        if (s.status === "running" || s.status === "starting") s.status = "idle";
-        s.terminalTabId = null;
-        // Written by a version of Atlas that did not track Claude session ids.
-        s.claudeSessionId = s.claudeSessionId ?? null;
-        // Written by a version of Atlas that predates harnesses.
-        s.harnessId = s.harnessId ?? null;
-      }
     }
     workspaces.set(data);
     log.info("workspace", `store updated with ${data.length} workspaces`);
@@ -136,8 +183,9 @@ export async function loadWorkspaces() {
 /** The on-disk shape. A hide has to outlive a restart, so it is written
  *  alongside the workspaces rather than kept in memory. */
 interface StoredWorkspaces {
-  workspaces?: Workspace[];
-  removedWorkspaces?: string[];
+  /** `unknown` on the way in: `loadWorkspaces` validates each entry. */
+  workspaces?: unknown[];
+  removedWorkspaces?: unknown[];
 }
 
 async function persist() {

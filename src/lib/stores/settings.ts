@@ -137,6 +137,7 @@ function isValidHarness(v: unknown): v is HarnessConfig {
   const h = v as Record<string, unknown>;
   return (
     typeof h.id === "string" &&
+    h.id !== "" &&
     typeof h.label === "string" &&
     typeof h.command === "string" &&
     Array.isArray(h.args) &&
@@ -174,7 +175,9 @@ export async function loadSettings() {
     const raw = await readTextFile(SETTINGS_FILE, { baseDir: BaseDirectory.Home });
     const data = JSON.parse(raw) as PersistedSettings;
     if (data.enableNotifications === false) enableNotifications.set(false);
-    if (Array.isArray(data.watchedRepos)) watchedRepos.set(data.watchedRepos);
+    if (Array.isArray(data.watchedRepos)) {
+      watchedRepos.set(data.watchedRepos.filter((repo) => typeof repo === "string"));
+    }
     if (data.theme === "system" || data.theme === "light" || data.theme === "dark") {
       themeMode.set(data.theme);
     }
@@ -199,7 +202,12 @@ export async function loadSettings() {
     // an old settings.json with no `harnesses` key keeps the three defaults,
     // and a corrupted file can't leave the picker empty.
     if (Array.isArray(data.harnesses)) {
-      const valid = data.harnesses.filter(isValidHarness);
+      const seenIds = new Set<string>();
+      const valid = data.harnesses.filter((h) => {
+        if (!isValidHarness(h) || seenIds.has(h.id)) return false;
+        seenIds.add(h.id);
+        return true;
+      });
       if (valid.length > 0) harnesses.set(valid);
     }
     if (typeof data.lastHarnessId === "string") lastHarnessId.set(data.lastHarnessId);
