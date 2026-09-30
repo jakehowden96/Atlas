@@ -60,9 +60,11 @@ impl AtlasError {
         }
     }
 
-    pub fn io(message: impl Into<String>) -> Self {
+    /// An OS-level failure with no path to report; takes any error so
+    /// `.map_err(AtlasError::io)` works on foreign error types.
+    pub fn io(cause: impl fmt::Display) -> Self {
         Self::Io {
-            message: message.into(),
+            message: cause.to_string(),
         }
     }
 

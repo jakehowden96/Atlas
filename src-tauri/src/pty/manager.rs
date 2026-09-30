@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use tauri::ipc::{Channel, InvokeResponseBody};
 
 use super::session::PtySession;
+use crate::error::AtlasError;
 
 /// The interactive shell to run inside a PTY, plus its startup arguments.
 ///
@@ -233,7 +234,7 @@ impl PtyManager {
         cwd: Option<String>,
         env_vars: Option<HashMap<String, String>>,
         on_data: Channel<InvokeResponseBody>,
-    ) -> Result<u32, String> {
+    ) -> Result<u32, AtlasError> {
         let (shell, shell_args) = default_shell();
         let size = PtySize {
             rows,
@@ -252,10 +253,8 @@ impl PtyManager {
         cwd: Option<String>,
         env_vars: Option<HashMap<String, String>>,
         on_data: Channel<InvokeResponseBody>,
-    ) -> Result<u32, String> {
-        let pair = native_pty_system()
-            .openpty(size)
-            .map_err(|e| e.to_string())?;
+    ) -> Result<u32, AtlasError> {
+        let pair = native_pty_system().openpty(size).map_err(AtlasError::io)?;
 
         // `CommandBuilder::new` seeds the child's environment from this process,
         // so the shell inherits everything Atlas was launched with.
@@ -296,21 +295,18 @@ impl PtyManager {
             }
         }
 
-        let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+        let child = pair.slave.spawn_command(cmd).map_err(AtlasError::io)?;
 
-        let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+        let writer = pair.master.take_writer().map_err(AtlasError::io)?;
 
-        let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+        let reader = pair.master.try_clone_reader().map_err(AtlasError::io)?;
 
         // Assign ID
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
 
         let session = PtySession::new(pair.master, child, writer)?;
 
-        self.sessions
-            .write()
-            .map_err(|e| e.to_string())?
-            .insert(id, session);
+        self.sessions.write()?.insert(id, session);
 
         // The reader ends on EOF, which killing the child (or the shell
         // exiting) produces by closing the slave side.
@@ -339,31 +335,27 @@ impl PtyManager {
         Ok(id)
     }
 
-    pub fn write(&self, id: u32, data: Vec<u8>) -> Result<(), String> {
-        let sessions = self.sessions.read().map_err(|e| e.to_string())?;
+    pub fn write(&self, id: u32, data: Vec<u8>) -> Result<(), AtlasError> {
+        let sessions = self.sessions.read()?;
         let session = sessions
             .get(&id)
-            .ok_or_else(|| format!("Session {} not found", id))?;
+            .ok_or_else(|| AtlasError::not_found(format!("Terminal {id} not found")))?;
         session.write(data)
     }
 
-    pub fn resize(&self, id: u32, cols: u16, rows: u16) -> Result<(), String> {
-        let sessions = self.sessions.read().map_err(|e| e.to_string())?;
+    pub fn resize(&self, id: u32, cols: u16, rows: u16) -> Result<(), AtlasError> {
+        let sessions = self.sessions.read()?;
         let session = sessions
             .get(&id)
-            .ok_or_else(|| format!("Session {} not found", id))?;
+            .ok_or_else(|| AtlasError::not_found(format!("Terminal {id} not found")))?;
         session.resize(cols, rows)
     }
 
     /// Kill a session's shell. The session leaves the table first and is
     /// killed after the lock is released: `kill` waits out a shell that ignores
     /// SIGHUP, and every other tab's write and resize would queue behind it.
-    pub fn kill(&self, id: u32) -> Result<(), String> {
-        let removed = self
-            .sessions
-            .write()
-            .map_err(|e| e.to_string())?
-            .remove(&id);
+    pub fn kill(&self, id: u32) -> Result<(), AtlasError> {
+        let removed = self.sessions.write()?.remove(&id);
         match removed {
             Some(session) => session.kill(),
             None => Ok(()),
@@ -401,6 +393,7 @@ impl PtyManager {
 #[cfg(test)]
 mod tests {
     use super::{default_shell, PtyManager};
+    use crate::error::AtlasError;
 
     /// A live PTY session running `sleep`, inserted without a frontend channel.
     #[cfg(unix)]
@@ -409,6 +402,23 @@ mod tests {
 
         let session = session_with_writer("sleep", &["60"], Box::new(std::io::sink()));
         manager.sessions.write().unwrap().insert(id, session);
+    }
+
+    #[test]
+    fn writing_or_resizing_a_terminal_that_is_gone_is_not_found() {
+        let manager = PtyManager::new();
+        assert!(matches!(
+            manager.write(9, b"x".to_vec()),
+            Err(AtlasError::NotFound { .. })
+        ));
+        assert!(matches!(
+            manager.resize(9, 80, 24),
+            Err(AtlasError::NotFound { .. })
+        ));
+        assert!(
+            manager.kill(9).is_ok(),
+            "killing a gone terminal is a no-op"
+        );
     }
 
     #[cfg(unix)]

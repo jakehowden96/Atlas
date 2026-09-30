@@ -1,3 +1,4 @@
+use crate::error::AtlasError;
 use portable_pty::{Child, ExitStatus, MasterPty};
 use std::io::Write;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -19,12 +20,11 @@ impl PtySession {
         master: Box<dyn MasterPty + Send>,
         child: Box<dyn Child + Send + Sync>,
         writer: Box<dyn Write + Send>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, AtlasError> {
         let (input, queue) = channel();
         std::thread::Builder::new()
             .name("pty-input".into())
-            .spawn(move || drain_input(queue, writer))
-            .map_err(|e| e.to_string())?;
+            .spawn(move || drain_input(queue, writer))?;
         Ok(Self {
             master: Mutex::new(master),
             child: Mutex::new(child),
@@ -34,14 +34,14 @@ impl PtySession {
 
     /// Queue `data` for the shell. Returns as soon as it is queued; fails once
     /// the PTY's input has closed (the shell is gone or a write failed).
-    pub fn write(&self, data: Vec<u8>) -> Result<(), String> {
+    pub fn write(&self, data: Vec<u8>) -> Result<(), AtlasError> {
         self.input
             .send(data)
-            .map_err(|_| "Terminal input is closed".to_string())
+            .map_err(|_| AtlasError::io("Terminal input is closed"))
     }
 
-    pub fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
-        let master = self.master.lock().map_err(|e| e.to_string())?;
+    pub fn resize(&self, cols: u16, rows: u16) -> Result<(), AtlasError> {
+        let master = self.master.lock()?;
         master
             .resize(portable_pty::PtySize {
                 rows,
@@ -49,15 +49,11 @@ impl PtySession {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|e| e.to_string())
+            .map_err(AtlasError::io)
     }
 
-    pub fn kill(&self) -> Result<(), String> {
-        self.child
-            .lock()
-            .map_err(|e| e.to_string())?
-            .kill()
-            .map_err(|e| e.to_string())?;
+    pub fn kill(&self) -> Result<(), AtlasError> {
+        self.child.lock()?.kill()?;
         self.reap(Duration::from_secs(1));
         Ok(())
     }
