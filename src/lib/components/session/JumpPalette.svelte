@@ -6,14 +6,13 @@
    */
   import { fileKey, type FileSource } from "../../files";
   import { rankJumpRows, type JumpRow } from "../../new-session";
-  import { buildTiles, compareByAttention, type SessionTile } from "../../overview";
+  import { compareByAttention, type SessionTile } from "../../overview";
   import { openSession } from "../../session-actions";
   import { docEntries, fileWs, loadDocs, loadPlans, openFile, plans } from "../../stores/files";
-  import { liveSessionList } from "../../stores/liveSessions";
+  import { liveTiles } from "../../stores/liveTiles";
   import { prRepos } from "../../stores/prs";
-  import { tabs } from "../../stores/terminal";
   import { focusedSessionId, jumpOpen, showView } from "../../stores/view";
-  import { activeWorkspacePath, sessionDiffStats, visibleWorkspaces } from "../../stores/workspace";
+  import { activeWorkspacePath, visibleWorkspaces } from "../../stores/workspace";
   import Modal from "../ui/Modal.svelte";
 
   /** A `JumpRow` plus what ⏎ should do with it, so the ranking stays pure. */
@@ -38,12 +37,7 @@
   /** The rendered rows, indexed like `rows`, so the selection can be scrolled to. */
   let rowEls: HTMLButtonElement[] = [];
 
-  let needsInputTabs = $derived(new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)));
-  let tiles = $derived(
-    [...buildTiles($liveSessionList, $visibleWorkspaces, $sessionDiffStats, needsInputTabs)].sort(
-      compareByAttention,
-    ),
-  );
+  let tiles = $derived([...$liveTiles].sort(compareByAttention));
 
   let sessionRows = $derived<Row[]>(
     tiles.map((tile) => ({

@@ -4,15 +4,15 @@
   import { get } from "svelte/store";
   import type { SessionState } from "../../../types/session";
   import { formatTokens } from "../../format";
-  import { buildTiles, compareByAttention, formatElapsed, type SessionTile } from "../../overview";
+  import { compareByAttention, formatElapsed, type SessionTile } from "../../overview";
   import { closeSession } from "../../session-actions";
   import { refreshPanel } from "../../ipc";
   import { filesTouched, tabIdForSession } from "../../session-view";
-  import { liveSessionList } from "../../stores/liveSessions";
+  import { liveTiles } from "../../stores/liveTiles";
   import { panelData } from "../../stores/panel";
   import { activeTabId, tabs } from "../../stores/terminal";
   import { activeView, diffOpen, focusedSessionId, railOpen, showView } from "../../stores/view";
-  import { sessionDiffStats, visibleWorkspaces, workspaces } from "../../stores/workspace";
+  import { workspaces } from "../../stores/workspace";
   import ChangesDrawer from "../changes/ChangesDrawer.svelte";
   import TerminalContainer from "../terminal/TerminalContainer.svelte";
   import StatePill, { type PillState } from "../ui/StatePill.svelte";
@@ -33,12 +33,7 @@
   }, 1000);
   onDestroy(() => clearInterval(clock));
 
-  let needsInputTabs = $derived(new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)));
-  let tiles = $derived(
-    [...buildTiles($liveSessionList, $visibleWorkspaces, $sessionDiffStats, needsInputTabs)].sort(
-      compareByAttention,
-    ),
-  );
+  let tiles = $derived([...$liveTiles].sort(compareByAttention));
 
   /**
    * The visible terminal. Resolved from `focusedSessionId` through the

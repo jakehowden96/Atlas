@@ -1,15 +1,9 @@
 <script lang="ts">
   import { onDestroy, tick, untrack } from "svelte";
-  import {
-    buildTiles,
-    filterByWorkspace,
-    handleGridKey,
-    pinKey,
-    tileComparator,
-  } from "../../overview";
+  import { get } from "svelte/store";
+  import { filterByWorkspace, handleGridKey, pinKey, tileComparator } from "../../overview";
   import { addWorkspaceFolder } from "../../session-actions";
-  import { liveSessionList } from "../../stores/liveSessions";
-  import { tabs } from "../../stores/terminal";
+  import { liveTiles } from "../../stores/liveTiles";
   import {
     chords,
     overviewOrdering,
@@ -18,22 +12,24 @@
     tailTranscripts,
   } from "../../stores/settings";
   import { activeView, jumpOpen, newSessionOpen, shortcutsOpen, wsFilter } from "../../stores/view";
-  import { sessionDiffStats, visibleWorkspaces } from "../../stores/workspace";
+  import { visibleWorkspaces } from "../../stores/workspace";
   import Chip from "../ui/Chip.svelte";
   import SessionTile from "./SessionTile.svelte";
 
   // Elapsed is derived from LiveSession.startedAt rather than stored, so the
-  // only thing that has to change every second is this clock.
+  // only thing that has to change every second is this clock. This view stays
+  // mounted behind the Session view, so it only ticks while the grid is on
+  // screen and is stamped afresh on return.
   let now = $state(Date.now());
   const clock = setInterval(() => {
-    now = Date.now();
+    if (get(activeView) === "sessions") now = Date.now();
   }, 1000);
   onDestroy(() => clearInterval(clock));
+  $effect(() => {
+    if ($activeView === "sessions") now = Date.now();
+  });
 
-  let needsInputTabs = $derived(new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)));
-  let allTiles = $derived(
-    buildTiles($liveSessionList, $visibleWorkspaces, $sessionDiffStats, needsInputTabs),
-  );
+  let allTiles = $derived($liveTiles);
   let pinned = $derived(new Set($pinnedSessions));
   let comparator = $derived(tileComparator($overviewOrdering, pinned));
   let tiles = $derived.by(() => {
