@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use tauri::ipc::Channel;
+use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::State;
 
 use super::panel::cleanup_session_analysis;
@@ -12,7 +12,7 @@ pub fn pty_spawn(
     rows: u16,
     cwd: Option<String>,
     env_vars: Option<HashMap<String, String>>,
-    on_data: Channel<Vec<u8>>,
+    on_data: Channel<InvokeResponseBody>,
 ) -> Result<u32, String> {
     manager.spawn(cols, rows, cwd, env_vars, on_data)
 }

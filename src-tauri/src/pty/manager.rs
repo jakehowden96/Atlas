@@ -2,10 +2,10 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::HashMap;
 use std::io::Read;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock};
 use std::thread;
-use std::time::Duration;
-use tauri::ipc::Channel;
+use std::time::{Duration, Instant};
+use tauri::ipc::{Channel, InvokeResponseBody};
 
 use super::session::PtySession;
 
@@ -77,6 +77,114 @@ const INHERITED_CLAUDE_MARKERS: &[&str] = &[
     "CLAUDE_PID",
 ];
 
+/// Bytes read from one PTY per `read` call.
+const READ_CHUNK: usize = 8192;
+
+/// Output is sent to the webview in batches of about this size at most.
+const MAX_BATCH: usize = 128 * 1024;
+
+/// Minimum gap between two sends. A PTY read returns at most 1 KiB on macOS,
+/// so sending each read on its own is a thousand IPC round trips per MiB; under
+/// a flood (`yes`, `cat bigfile`) reads are coalesced for this long instead.
+/// The first output after a quiet spell goes out at once, so keystroke echo
+/// does not wait.
+const MIN_SEND_INTERVAL: Duration = Duration::from_millis(4);
+
+/// Output the reader has produced and the sender has not yet delivered.
+struct Pending {
+    bytes: Vec<u8>,
+    /// The reader is done; send what is left and stop.
+    eof: bool,
+    /// `send` refused a batch (the webview is gone); stop reading.
+    sink_closed: bool,
+}
+
+fn lock(pending: &Mutex<Pending>) -> MutexGuard<'_, Pending> {
+    // Nothing panics while holding this lock, and the data stays consistent.
+    pending.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Forward everything `reader` produces to `send`, in order and byte for byte,
+/// in batches (see `MIN_SEND_INTERVAL`). `send` returns false once nobody is
+/// listening. Returns true if the output ended at EOF, false if the read failed
+/// or `send` gave up.
+///
+/// Memory is bounded: once `MAX_BATCH` bytes are waiting the reader stops
+/// reading, which fills the PTY's own buffer and holds the shell back, rather
+/// than queueing without limit.
+fn pump_output<R: Read>(mut reader: R, send: impl FnMut(Vec<u8>) -> bool + Send) -> bool {
+    let shared = (
+        Mutex::new(Pending {
+            bytes: Vec::new(),
+            eof: false,
+            sink_closed: false,
+        }),
+        Condvar::new(),
+    );
+    let (pending, changed) = &shared;
+
+    thread::scope(|scope| {
+        scope.spawn(move || send_batches(pending, changed, send));
+
+        let mut buf = [0u8; READ_CHUNK];
+        let reached_eof = loop {
+            let n = match reader.read(&mut buf) {
+                Ok(0) => break true,
+                Ok(n) => n,
+                Err(_) => break false,
+            };
+            let mut state = lock(pending);
+            while state.bytes.len() >= MAX_BATCH && !state.sink_closed {
+                state = changed.wait(state).unwrap_or_else(PoisonError::into_inner);
+            }
+            if state.sink_closed {
+                break false;
+            }
+            state.bytes.extend_from_slice(&buf[..n]);
+            changed.notify_all();
+        };
+
+        lock(pending).eof = true;
+        changed.notify_all();
+        reached_eof
+    })
+}
+
+/// The sending half of `pump_output`: paces and delivers what the reader
+/// accumulates, until the reader is done and nothing is left.
+fn send_batches(
+    pending: &Mutex<Pending>,
+    changed: &Condvar,
+    mut send: impl FnMut(Vec<u8>) -> bool,
+) {
+    let mut last_sent: Option<Instant> = None;
+    loop {
+        {
+            let mut state = lock(pending);
+            while state.bytes.is_empty() && !state.eof {
+                state = changed.wait(state).unwrap_or_else(PoisonError::into_inner);
+            }
+            if state.bytes.is_empty() {
+                return;
+            }
+        }
+
+        // Output that arrives while this sleeps joins the batch.
+        if let Some(sent) = last_sent {
+            thread::sleep(MIN_SEND_INTERVAL.saturating_sub(sent.elapsed()));
+        }
+
+        let batch = std::mem::take(&mut lock(pending).bytes);
+        changed.notify_all();
+        last_sent = Some(Instant::now());
+        if !send(batch) {
+            lock(pending).sink_closed = true;
+            changed.notify_all();
+            return;
+        }
+    }
+}
+
 pub struct PtyManager {
     sessions: Arc<RwLock<HashMap<u32, PtySession>>>,
     next_id: AtomicU32,
@@ -96,7 +204,7 @@ impl PtyManager {
         rows: u16,
         cwd: Option<String>,
         env_vars: Option<HashMap<String, String>>,
-        on_data: Channel<Vec<u8>>,
+        on_data: Channel<InvokeResponseBody>,
     ) -> Result<u32, String> {
         let pty_system = native_pty_system();
 
@@ -153,7 +261,7 @@ impl PtyManager {
 
         let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
-        let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+        let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
 
         // Assign ID
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
@@ -170,23 +278,9 @@ impl PtyManager {
         let sessions = Arc::clone(&self.sessions);
         let session_id = id;
         thread::spawn(move || {
-            let mut buf = [0u8; 8192];
-            let mut reached_eof = false;
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) => {
-                        reached_eof = true;
-                        break;
-                    }
-                    Ok(n) => {
-                        let data = buf[..n].to_vec();
-                        if on_data.send(data).is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
+            let reached_eof = pump_output(reader, |bytes| {
+                on_data.send(InvokeResponseBody::Raw(bytes)).is_ok()
+            });
             // Clean up the session when the reader exits, and reap a shell that
             // exited on its own so it does not stay a zombie until Atlas quits.
             let removed = sessions
@@ -343,6 +437,117 @@ mod tests {
             waited < Duration::from_millis(100),
             "a write to another tab waited {waited:?} behind a kill"
         );
+    }
+
+    /// Hands out `data` in reads of `chunk` bytes, like a PTY does.
+    struct Chunked {
+        data: Vec<u8>,
+        pos: usize,
+        chunk: usize,
+    }
+
+    impl std::io::Read for Chunked {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let n = self.chunk.min(buf.len()).min(self.data.len() - self.pos);
+            buf[..n].copy_from_slice(&self.data[self.pos..self.pos + n]);
+            self.pos += n;
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn output_is_delivered_byte_for_byte_and_in_order_in_few_messages() {
+        use super::{pump_output, MAX_BATCH, READ_CHUNK};
+
+        // Every byte value, in a non-repeating order, 1 KiB per read.
+        let data: Vec<u8> = (0..1 << 20)
+            .map(|i: usize| (i.wrapping_mul(31) ^ (i >> 8)) as u8)
+            .collect();
+        let reader = Chunked {
+            data: data.clone(),
+            pos: 0,
+            chunk: 1024,
+        };
+
+        let mut messages: Vec<Vec<u8>> = Vec::new();
+        let reached_eof = pump_output(reader, |bytes| {
+            messages.push(bytes);
+            true
+        });
+
+        assert!(reached_eof);
+        assert_eq!(messages.concat(), data);
+        assert!(
+            messages.iter().all(|m| m.len() < MAX_BATCH + READ_CHUNK),
+            "a batch exceeded the cap"
+        );
+        assert!(
+            messages.len() < 100,
+            "1024 reads were sent as {} messages",
+            messages.len()
+        );
+    }
+
+    #[test]
+    fn output_after_a_quiet_spell_is_sent_without_waiting_for_a_full_batch() {
+        use super::pump_output;
+        use std::io::Read;
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        /// One short read, then silence until released, then EOF.
+        struct OneKeystroke {
+            release: mpsc::Receiver<()>,
+            sent: bool,
+        }
+        impl Read for OneKeystroke {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if !self.sent {
+                    self.sent = true;
+                    buf[..3].copy_from_slice(b"$ l");
+                    return Ok(3);
+                }
+                let _ = self.release.recv();
+                Ok(0)
+            }
+        }
+
+        let (release_tx, release) = mpsc::channel();
+        let (delivered_tx, delivered) = mpsc::channel();
+        let pump = std::thread::spawn(move || {
+            pump_output(
+                OneKeystroke {
+                    release,
+                    sent: false,
+                },
+                move |bytes| delivered_tx.send(bytes).is_ok(),
+            )
+        });
+
+        // The reader is still blocked: only an eager send can satisfy this.
+        let first = delivered.recv_timeout(Duration::from_secs(2));
+        release_tx.send(()).unwrap();
+        assert!(pump.join().unwrap());
+        assert_eq!(first.unwrap(), b"$ l");
+    }
+
+    #[test]
+    fn pump_stops_reading_once_the_webview_stops_listening() {
+        use super::pump_output;
+
+        let endless = Chunked {
+            data: vec![b'y'; 1 << 30],
+            pos: 0,
+            chunk: 8192,
+        };
+        let mut sent = 0;
+        let reached_eof = pump_output(endless, |_| {
+            sent += 1;
+            false
+        });
+
+        assert!(!reached_eof);
+        assert_eq!(sent, 1, "kept sending after the sink refused a batch");
     }
 
     #[test]

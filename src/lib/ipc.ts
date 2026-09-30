@@ -14,7 +14,9 @@ export async function ptySpawn(
   cwd?: string,
   envVars?: Record<string, string>,
 ): Promise<number> {
-  const channel = new Channel<number[]>();
+  // The backend sends raw bytes, which Tauri delivers as an ArrayBuffer: a
+  // JSON number array cost about 3.5x the bytes and a parse per message.
+  const channel = new Channel<ArrayBuffer>();
   channel.onmessage = (data) => {
     onData(new Uint8Array(data));
   };
