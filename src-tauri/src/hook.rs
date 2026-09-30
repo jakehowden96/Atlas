@@ -74,13 +74,19 @@ fn write_notification(
 /// when the payload carries no `session_id` — nothing worth reporting.
 fn build_session_start(input: &str) -> Option<ClaudeSessionStart> {
     let parsed: serde_json::Value = serde_json::from_str(input).ok()?;
-    let claude_session_id = parsed.get("session_id").and_then(|v| v.as_str())?.to_string();
+    let claude_session_id = parsed
+        .get("session_id")
+        .and_then(|v| v.as_str())?
+        .to_string();
     let source = parsed
         .get("source")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    Some(ClaudeSessionStart { claude_session_id, source })
+    Some(ClaudeSessionStart {
+        claude_session_id,
+        source,
+    })
 }
 
 fn write_session_start(

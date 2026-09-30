@@ -22,6 +22,7 @@ interface TerminalProps {
   tabId: string;
   visible: boolean;
   ready: boolean;
+  harnessLabel?: string;
   cwd?: string;
   onData?: (data: string) => void;
   onPtyReady: (ptyId: number) => void;

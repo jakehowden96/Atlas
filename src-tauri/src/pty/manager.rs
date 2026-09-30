@@ -122,12 +122,36 @@ impl PtyManager {
 
         // Inherit safe environment variables (whitelist approach to avoid leaking secrets)
         const SAFE_PREFIXES: &[&str] = &[
-            "HOME", "USER", "LOGNAME", "SHELL", "PATH", "LANG", "LC_",
-            "TERM", "COLORTERM", "EDITOR", "VISUAL", "PAGER", "LESS",
-            "XDG_", "SSH_AUTH_SOCK", "DISPLAY", "TMPDIR", "TZ",
-            "HOMEBREW_", "NVM_", "VOLTA_", "CARGO_HOME", "RUSTUP_HOME",
-            "GOPATH", "GOROOT", "JAVA_HOME", "PYENV_",
-            "FNM_", "BUN_INSTALL", "DENO_INSTALL",
+            "HOME",
+            "USER",
+            "LOGNAME",
+            "SHELL",
+            "PATH",
+            "LANG",
+            "LC_",
+            "TERM",
+            "COLORTERM",
+            "EDITOR",
+            "VISUAL",
+            "PAGER",
+            "LESS",
+            "XDG_",
+            "SSH_AUTH_SOCK",
+            "DISPLAY",
+            "TMPDIR",
+            "TZ",
+            "HOMEBREW_",
+            "NVM_",
+            "VOLTA_",
+            "CARGO_HOME",
+            "RUSTUP_HOME",
+            "GOPATH",
+            "GOROOT",
+            "JAVA_HOME",
+            "PYENV_",
+            "FNM_",
+            "BUN_INSTALL",
+            "DENO_INSTALL",
         ];
         for (key, value) in std::env::vars() {
             if SAFE_PREFIXES.iter().any(|p| key.starts_with(p)) {
@@ -165,15 +189,9 @@ impl PtyManager {
 
         let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
 
-        let writer = pair
-            .master
-            .take_writer()
-            .map_err(|e| e.to_string())?;
+        let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
-        let mut reader = pair
-            .master
-            .try_clone_reader()
-            .map_err(|e| e.to_string())?;
+        let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
 
         // Assign ID
         let id = {
@@ -274,7 +292,6 @@ impl PtyManager {
         master.tty_name().map(|p| p.to_string_lossy().into_owned())
     }
 }
-
 
 #[cfg(test)]
 mod tests {

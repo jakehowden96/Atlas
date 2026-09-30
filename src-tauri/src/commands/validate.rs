@@ -8,7 +8,10 @@ pub(crate) fn validate_session_id(id: &str) -> Result<(), String> {
         return Err("Session ID contains invalid characters".to_string());
     }
     // Allow UUID format and simple alphanumeric-hyphen IDs
-    if !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+    if !id
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
         return Err("Session ID contains invalid characters".to_string());
     }
     Ok(())

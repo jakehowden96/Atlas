@@ -88,7 +88,6 @@ pub struct ClaudeSessionStartEvent {
 }
 
 pub fn sessions_dir() -> Result<PathBuf, String> {
-    let home = dirs::home_dir()
-        .ok_or_else(|| "Could not determine home directory".to_string())?;
+    let home = dirs::home_dir().ok_or_else(|| "Could not determine home directory".to_string())?;
     Ok(home.join(".atlas").join("sessions"))
 }

@@ -15,8 +15,8 @@ pub(crate) struct DiffBundle {
 /// Caps individual files at 100 KB and total output at 1 MB to avoid
 /// stalling on large untracked assets (images, data files, build artifacts).
 pub(crate) fn generate_untracked_diffs(git_root: &str) -> String {
-    const MAX_FILE_SIZE: u64 = 100 * 1024;       // 100 KB per file
-    const MAX_TOTAL_SIZE: usize = 1024 * 1024;    // 1 MB total output
+    const MAX_FILE_SIZE: u64 = 100 * 1024; // 100 KB per file
+    const MAX_TOTAL_SIZE: usize = 1024 * 1024; // 1 MB total output
 
     let file_list = match git_cmd(git_root, &["ls-files", "--others", "--exclude-standard"]) {
         Ok(list) if !list.is_empty() => list,
@@ -342,10 +342,7 @@ diff --git a/file.rs b/file.rs
     fn truncate_diff_cuts_at_file_boundary() {
         // First file fits under the cap; second file pushes past it.
         let first = format!("diff --git a/a.rs b/a.rs\n{}", "+x\n".repeat(100));
-        let second = format!(
-            "diff --git a/b.rs b/b.rs\n+{}\n",
-            "y".repeat(MAX_DIFF_SIZE)
-        );
+        let second = format!("diff --git a/b.rs b/b.rs\n+{}\n", "y".repeat(MAX_DIFF_SIZE));
         let result = truncate_diff(format!("{first}{second}"));
         assert_eq!(result, first);
     }

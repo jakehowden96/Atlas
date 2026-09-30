@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::pty::manager::PtyManager;
 use super::panel::cleanup_session_analysis;
+use crate::pty::manager::PtyManager;
 
 #[tauri::command]
 pub fn pty_spawn(
@@ -33,7 +33,11 @@ pub fn pty_resize(
 }
 
 #[tauri::command]
-pub fn pty_kill(manager: State<'_, PtyManager>, id: u32, session_id: Option<String>) -> Result<(), String> {
+pub fn pty_kill(
+    manager: State<'_, PtyManager>,
+    id: u32,
+    session_id: Option<String>,
+) -> Result<(), String> {
     manager.kill(id)?;
     if let Some(sid) = session_id {
         cleanup_session_analysis(&sid);

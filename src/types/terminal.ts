@@ -9,10 +9,12 @@ export interface TerminalTab {
   cwd?: string;
   onData?: (data: string) => void;
   needsInput?: boolean;
-  /** False until Claude Code's TUI enters the alternate screen buffer. The
-   *  terminal stays hidden behind the "Starting Claude Code…" overlay until
+  /** False until the harness's TUI enters the alternate screen buffer. The
+   *  terminal stays hidden behind the "Starting <harness>…" overlay until
    *  then, so the shell prompt and the launch command are never shown. */
   ready?: boolean;
+  /** The launched harness's label, named by that overlay. */
+  harnessLabel?: string;
 }
 
 /**

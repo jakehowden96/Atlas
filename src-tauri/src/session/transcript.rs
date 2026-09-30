@@ -123,14 +123,20 @@ mod tests {
 
     #[test]
     fn rejects_session_uuid_with_dot_dot() {
-        assert!(!is_valid_session_uuid("550e8400-e29b-41d4-a716-4466554400.."));
+        assert!(!is_valid_session_uuid(
+            "550e8400-e29b-41d4-a716-4466554400.."
+        ));
     }
 
     #[test]
     fn rejects_wrong_length_session_uuid() {
         assert!(!is_valid_session_uuid(""));
-        assert!(!is_valid_session_uuid("550e8400-e29b-41d4-a716-44665544000"));
-        assert!(!is_valid_session_uuid("550e8400-e29b-41d4-a716-4466554400000"));
+        assert!(!is_valid_session_uuid(
+            "550e8400-e29b-41d4-a716-44665544000"
+        ));
+        assert!(!is_valid_session_uuid(
+            "550e8400-e29b-41d4-a716-4466554400000"
+        ));
     }
 
     #[test]

@@ -57,7 +57,8 @@
 
   /**
    * The plan file this session's workspace owns, newest first, or null when
-   * Claude has never written one for it — which is what disables "Open →".
+   * Claude has never written one for it. With none there is nothing to open,
+   * so "Open →" is not drawn: a muted disabled link read as a broken one.
    *
    * A plan is named after a slugified cwd, not a session, so a workspace's
    * sessions all share its plans; the most recent one is the live plan.
@@ -110,9 +111,9 @@
         <span>Plan</span>
         <span class="heading-end">
           <span class="count">{plan.done}/{plan.total}</span>
-          <button type="button" class="review" disabled={!planFile} onclick={openPlan}>
-            Open →
-          </button>
+          {#if planFile}
+            <button type="button" class="review" onclick={openPlan}>Open →</button>
+          {/if}
         </span>
       </div>
       <div class="rows">
@@ -429,12 +430,6 @@
     letter-spacing: 0;
     text-transform: none;
     cursor: pointer;
-  }
-
-  /* No plan file has been written for this workspace yet. */
-  .review:disabled {
-    color: var(--muted);
-    cursor: default;
   }
 
   .files {

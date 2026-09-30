@@ -52,11 +52,11 @@
   let stopStatsFeed: (() => void) | null = null;
 
   // ── Top-bar status, off the same tiles the Sessions grid builds ───────────
-  // Not off `$liveSessionList`: the backend never reports `needsYou` — the
-  // transcript cannot see a permission prompt, so `live.rs` `finalize` only
-  // ever assigns Idle or Running, and a blocked session arrived here as
+  // Not off `$liveSessionList`: Claude Code's tail never reports `needsYou` —
+  // the transcript cannot see a permission prompt, so `live.rs` `finalize`
+  // only ever assigns Idle or Running, and a blocked session arrived here as
   // "running" while its tile correctly said needs-you. The Notification hook's
-  // flag is the only needs-you signal and `buildTiles` is where it is folded
+  // flag is its only needs-you signal and `buildTiles` is where it is folded
   // in, so counting anywhere else is counting the wrong thing.
   let needsInputTabs = $derived(
     new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)),

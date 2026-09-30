@@ -74,6 +74,7 @@
         tabId: tab.id,
         visible: showing && tab.id === visibleTabId,
         ready: tab.ready !== false,
+        harnessLabel: tab.harnessLabel,
         cwd: tab.cwd,
         onData: tab.onData,
         onPtyReady: (ptyId: number) => handlePtyReady(tab.id, ptyId),

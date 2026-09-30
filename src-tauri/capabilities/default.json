@@ -33,6 +33,7 @@
       "identifier": "fs:allow-remove",
       "allow": [{ "path": "$HOME/.atlas/logs/**" }]
     },
-    "notification:default"
+    "notification:default",
+    "clipboard-manager:allow-write-text"
   ]
 }

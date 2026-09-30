@@ -85,7 +85,10 @@ mod tests {
     #[test]
     fn reads_one_whole_message() {
         let mut r = FrameReader::new();
-        assert_eq!(r.push(&frame(r#"{"id":1}"#)), vec![r#"{"id":1}"#.to_string()]);
+        assert_eq!(
+            r.push(&frame(r#"{"id":1}"#)),
+            vec![r#"{"id":1}"#.to_string()]
+        );
     }
 
     #[test]

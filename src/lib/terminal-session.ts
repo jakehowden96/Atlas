@@ -2,6 +2,7 @@ import { Terminal, type IDecoration, type IMarker } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel, getPanelData } from "./ipc";
 import { setTabTitle, activeTabId, setTabNeedsInput, setTabReady, tabs } from "./stores/terminal";
 import { panelData } from "./stores/panel";
@@ -72,6 +73,20 @@ export class TerminalSession {
     if (this.terminal.options.fontSize === size) return;
     this.terminal.options.fontSize = size;
     this.refit();
+  };
+
+  /** Copy-on-select, the way Claude Code's own TUI copies what you highlight.
+      A TUI that leaves the mouse to the terminal — OMP, a plain shell — gets
+      xterm's native selection instead, which copies nothing by itself. Read on
+      the next tick: xterm finishes the gesture in its own document-level
+      mouseup, which fires after this one bubbles through the container. */
+  private copySelection = () => {
+    setTimeout(() => {
+      if (!this.terminal.hasSelection()) return;
+      writeText(this.terminal.getSelection()).catch((e) =>
+        log.warn("terminal", `copy-on-select failed: ${e}`),
+      );
+    }, 0);
   };
 
   /**
@@ -158,6 +173,7 @@ export class TerminalSession {
     this.registerKeyHandler();
     this.registerOscHandlers();
     this.registerReadinessHandler();
+    opts.container.addEventListener("mouseup", this.copySelection);
     this.terminal.onWriteParsed(() => this.scheduleScreenPublish());
     // Cols changing makes a cached tint's `width` stale, and a row shrink can
     // orphan entries past the new row count — simplest is to drop the cache
@@ -590,6 +606,7 @@ export class TerminalSession {
     this.unsubscribeTheme?.();
     this.unsubscribeFontSize?.();
     this.prefersDark?.removeEventListener("change", this.applyXtermTheme);
+    this.container.removeEventListener("mouseup", this.copySelection);
     this.stopPolling();
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     if (this.ptyId !== null) {

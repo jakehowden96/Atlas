@@ -130,7 +130,16 @@ export async function spawnHarnessSession(
   // session that happened to be focused before.
   focusedSessionId.set(session.id);
 
-  addTab({ type: "terminal", id: tabId, title: "", ptyId: -1, terminal, cwd: workspacePath, ready: false });
+  addTab({
+    type: "terminal",
+    id: tabId,
+    title: "",
+    ptyId: -1,
+    terminal,
+    cwd: workspacePath,
+    ready: false,
+    harnessLabel: harness.label,
+  });
 
   // The PTY is spawned by the TerminalSession this tab mounts, so its id lands
   // on the tab a moment later; wait for it rather than for a clock.

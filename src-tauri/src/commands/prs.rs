@@ -177,7 +177,11 @@ pub(crate) fn validate_repo_slug(slug: &str) -> Result<(), String> {
 
 fn fetch_one(repo: &str) -> RepoPrs {
     if let Err(e) = validate_repo_slug(repo) {
-        return RepoPrs { repo: repo.to_string(), prs: vec![], error: Some(e) };
+        return RepoPrs {
+            repo: repo.to_string(),
+            prs: vec![],
+            error: Some(e),
+        };
     }
 
     let output = Command::new("gh")
@@ -499,7 +503,9 @@ mod tests {
         assert!(open_url("https://example.com/&calc".to_string())
             .await
             .is_err());
-        assert!(open_url("https://example.com/a|b".to_string()).await.is_err());
+        assert!(open_url("https://example.com/a|b".to_string())
+            .await
+            .is_err());
     }
 
     #[test]

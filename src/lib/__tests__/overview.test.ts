@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { LiveSession, SessionState } from "../../types/session";
+import type { LiveSession, SessionState, TranscriptLine } from "../../types/session";
 import {
   activity,
   buildTiles,
@@ -8,9 +8,11 @@ import {
   compareByAttention,
   compareByOpened,
   compareByWorkspace,
+  feedItems,
   filterByWorkspace,
   formatElapsed,
   handleGridKey,
+  openQuestion,
   pinKey,
   planSegments,
   type SessionTile,
@@ -404,6 +406,16 @@ describe("buildTiles", () => {
     );
     expect(tile.state).toBe("idle");
   });
+
+  it("keeps a backend needs-you and lifts the question it is blocked on", () => {
+    const session = live("uuid-a", {
+      state: "needsYou",
+      pendingTool: { name: "ask", inputSummary: "Which routes default to All?" },
+    });
+    const [tile] = buildTiles([session], workspaceList, new Map(), new Set());
+    expect(tile.state).toBe("needsYou");
+    expect(openQuestion(session)).toBe("Which routes default to All?");
+  });
 });
 
 describe("shortToolName", () => {
@@ -463,6 +475,19 @@ describe("activity", () => {
     expect(activity(session, clock)).toEqual({ running: true, text: "Working…" });
   });
 
+  it("counts the background agents a running session is waiting on", () => {
+    const agent = { task: "t", agentType: null, startedAt: null, finishedAt: null, toolCount: 0 };
+    const session = live("uuid-a", {
+      state: "running",
+      subagents: [
+        { ...agent, done: false },
+        { ...agent, done: false },
+        { ...agent, done: true },
+      ],
+    });
+    expect(activity(session, clock)).toEqual({ running: true, text: "Waiting on 2 agents" });
+  });
+
   it("shows when the turn ended and how long it took", () => {
     const session = live("uuid-a", {
       state: "idle",
@@ -483,6 +508,45 @@ describe("activity", () => {
       lastActivity: "2026-01-01T00:00:00.000Z",
     });
     expect(activity(session, clock)).toEqual({ running: false, text: "Finished 11:04" });
+  });
+});
+
+describe("feedItems", () => {
+  const line = (text: string, role: TranscriptLine["role"] = "note"): TranscriptLine => ({
+    role,
+    text,
+    timestamp: null,
+  });
+
+  it("reads roles off the text, so the working-dressed newest line keeps its kind", () => {
+    const items = feedItems([
+      line("> go ahead", "user"),
+      line("* mcp__claude_ai_Linear__list_issues team PAR", "working"),
+    ]);
+    expect(items).toEqual([
+      { kind: "you", text: "go ahead", tool: null },
+      { kind: "step", text: "team PAR", tool: "Linear · list_issues" },
+    ]);
+  });
+
+  it("drops successful tool results but keeps failures as alerts", () => {
+    const items = feedItems([
+      line("* Bash pnpm test", "step"),
+      line("  12 passed", "tool"),
+      line("  could not compile", "alert"),
+    ]);
+    expect(items.map((i) => i.kind)).toEqual(["step", "alert"]);
+  });
+
+  it("cuts the callout's question off the newest note, dropping it when nothing is left", () => {
+    const lines = [line("> hi", "user"), line("Done. **Push it?**")];
+    const items = feedItems(lines, "**Push it?**");
+    expect(items[items.length - 1]).toEqual({
+      kind: "note",
+      text: "Done.",
+      tool: null,
+    });
+    expect(feedItems([line("> hi", "user"), line("Push it?")], "Push it?")).toHaveLength(1);
   });
 });
 

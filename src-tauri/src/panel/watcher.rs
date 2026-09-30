@@ -67,17 +67,16 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
                                 Ok(contents) => {
                                     match serde_json::from_str::<PanelData>(&contents) {
                                         Ok(data) => {
-                                            let _ =
-                                                handle.emit("panel-update", PanelUpdateEvent {
+                                            let _ = handle.emit(
+                                                "panel-update",
+                                                PanelUpdateEvent {
                                                     session_id: session_id.clone(),
                                                     data,
-                                                });
+                                                },
+                                            );
                                         }
                                         Err(e) => {
-                                            log::warn!(
-                                                "Failed to parse panel.json: {}",
-                                                e
-                                            );
+                                            log::warn!("Failed to parse panel.json: {}", e);
                                         }
                                     }
                                 }
@@ -103,10 +102,7 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
                                             );
                                         }
                                         Err(e) => {
-                                            log::warn!(
-                                                "Failed to parse notification.json: {}",
-                                                e
-                                            );
+                                            log::warn!("Failed to parse notification.json: {}", e);
                                         }
                                     }
                                 }
@@ -132,10 +128,7 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
                                             );
                                         }
                                         Err(e) => {
-                                            log::warn!(
-                                                "Failed to parse session-id.json: {}",
-                                                e
-                                            );
+                                            log::warn!("Failed to parse session-id.json: {}", e);
                                         }
                                     }
                                 }

@@ -86,8 +86,14 @@ pub fn lsp_start(
         .spawn()
         .map_err(|e| format!("could not start {}: {e}", spec.command.display()))?;
 
-    let stdin = child.stdin.take().ok_or("no stdin on the language server")?;
-    let stdout = child.stdout.take().ok_or("no stdout on the language server")?;
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or("no stdin on the language server")?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("no stdout on the language server")?;
     let stderr = child.stderr.take();
 
     // Relay stdout. A server writes as it pleases, so the reader owns a
@@ -106,7 +112,10 @@ pub fn lsp_start(
                     for message in reader.push(&chunk[..n]) {
                         let _ = emit_app.emit(
                             "lsp-message",
-                            LspMessage { id: emit_id.clone(), message },
+                            LspMessage {
+                                id: emit_id.clone(),
+                                message,
+                            },
                         );
                     }
                 }
@@ -132,7 +141,11 @@ pub fn lsp_start(
         .lock()
         .map_err(|e| e.to_string())?
         .insert(id.clone(), Session { child, stdin });
-    log::info!("started language server {} ({})", id, spec.command.display());
+    log::info!(
+        "started language server {} ({})",
+        id,
+        spec.command.display()
+    );
     Ok(id)
 }
 
@@ -177,11 +190,20 @@ mod tests {
     }
 
     /* Two editors on the same language in the same workspace must land on one
-       server — starting rust-analyzer twice for one repo indexes it twice. */
+    server — starting rust-analyzer twice for one repo indexes it twice. */
     #[test]
     fn the_same_language_and_root_is_the_same_session() {
-        assert_eq!(session_id("typescript", "/a"), session_id("typescript", "/a"));
-        assert_ne!(session_id("typescript", "/a"), session_id("typescript", "/b"));
-        assert_ne!(session_id("typescript", "/a"), session_id("javascript", "/a"));
+        assert_eq!(
+            session_id("typescript", "/a"),
+            session_id("typescript", "/a")
+        );
+        assert_ne!(
+            session_id("typescript", "/a"),
+            session_id("typescript", "/b")
+        );
+        assert_ne!(
+            session_id("typescript", "/a"),
+            session_id("javascript", "/a")
+        );
     }
 }

@@ -7,12 +7,22 @@
     tabId: string;
     visible: boolean;
     ready?: boolean;
+    /** Names the harness in the loading overlay. */
+    harnessLabel?: string;
     onPtyReady: (ptyId: number) => void;
     cwd?: string;
     onData?: (data: string) => void;
   }
 
-  let { tabId, visible, ready = true, onPtyReady, cwd, onData }: Props = $props();
+  let {
+    tabId,
+    visible,
+    ready = true,
+    harnessLabel = "session",
+    onPtyReady,
+    cwd,
+    onData,
+  }: Props = $props();
 
   let containerEl: HTMLDivElement;
   let session: TerminalSession | null = null;
@@ -48,7 +58,7 @@
 {#if !ready}
   <div class="loading-overlay">
     <span class="material-symbols-outlined loading-spinner">progress_activity</span>
-    <span class="loading-text">Starting Claude Code...</span>
+    <span class="loading-text">Starting {harnessLabel}...</span>
   </div>
 {/if}
 <div class="terminal-container" bind:this={containerEl}></div>

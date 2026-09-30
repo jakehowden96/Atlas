@@ -56,8 +56,7 @@ pub async fn get_git_status(cwd: String) -> Result<GitStatus, String> {
             .unwrap_or(0);
 
         // Get current branch
-        let branch = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
-            .unwrap_or_default();
+        let branch = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default();
 
         Ok(GitStatus {
             has_unstaged,
@@ -66,7 +65,9 @@ pub async fn get_git_status(cwd: String) -> Result<GitStatus, String> {
             commits_behind,
             branch,
         })
-    }).await.map_err(|e| format!("Task join error: {}", e))?
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Parse a git remote URL into an `owner/repo` slug.
@@ -176,9 +177,9 @@ pub async fn list_workspace_repos(workspace_path: String) -> Result<Vec<Workspac
 pub async fn git_checkout_branch(cwd: String, branch: String) -> Result<(), String> {
     validate_cwd(&cwd)?;
     validate_branch_name(&branch)?;
-    tokio::task::spawn_blocking(move || {
-        git_cmd(&cwd, &["checkout", &branch]).map(|_| ())
-    }).await.map_err(|e| format!("Task join error: {}", e))?
+    tokio::task::spawn_blocking(move || git_cmd(&cwd, &["checkout", &branch]).map(|_| ()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[cfg(test)]

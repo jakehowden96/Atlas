@@ -30,17 +30,21 @@ const PROMPT_SUMMARY: usize = 400;
 /// question survives.
 pub(super) const REPLY_SUMMARY: usize = 4000;
 
+/// Longest assistant note kept on one transcript line — enough for the grid
+/// card's feed to show a few lines of prose, not just the first.
+const NOTE_SUMMARY: usize = 600;
+
 // ── Data model ────────────────────────────────────────────────────────────────
 
 /// The serde mirror of the `SessionState` union in `src/types/session.ts`.
 ///
-/// Only `Running` and `Idle` are ever constructed in Rust — `finalize` picks
-/// between them from the transcript, and nothing else assigns the field.
-/// `NeedsYou` and `Error` are produced entirely on the frontend: `buildTiles`
-/// in `overview.ts` folds needs-you in from the Notification hook's per-tab
-/// flag, and `pendingLive` maps a workspace row whose `status` is `"error"`.
-/// They stay declared because this enum is the serde boundary and the TS union
-/// names all four — `ATTENTION_RANK` and `PILL` map every one of them.
+/// Claude Code's tail only ever constructs `Running` and `Idle` — its
+/// `finalize` picks between them from the transcript, which cannot see a
+/// permission prompt; `buildTiles` in `overview.ts` folds that needs-you in
+/// from the Notification hook's per-tab flag. OMP has no such hook, but its
+/// `ask` tool is in the transcript, so `omp::OmpTail` sets `NeedsYou` itself
+/// while one is unanswered. `Error` is produced entirely on the frontend:
+/// `pendingLive` maps a workspace row whose `status` is `"error"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SessionState {
@@ -189,7 +193,10 @@ pub(super) struct LineReader {
 
 impl LineReader {
     pub(super) fn new() -> Self {
-        LineReader { offset: 0, partial: Vec::new() }
+        LineReader {
+            offset: 0,
+            partial: Vec::new(),
+        }
     }
 
     fn reset(&mut self) {
@@ -239,7 +246,8 @@ impl LineReader {
 
 // ── Subagent transcripts ──────────────────────────────────────────────────────
 
-/// Counts `tool_use` blocks in one subagent's own transcript.
+/// Counts `tool_use` blocks in one subagent's own transcript, and keeps its
+/// requests so their usage reaches the session's totals.
 ///
 /// Subagent turns are not written into the parent file — every line there is
 /// `isSidechain: false`. Each `Agent` call gets
@@ -248,23 +256,30 @@ impl LineReader {
 struct SubagentCounter {
     reader: LineReader,
     tool_count: u32,
+    /// requestId -> usage, deduplicated the same way as the parent's.
+    requests: HashMap<String, ReqData>,
 }
 
 impl SubagentCounter {
     fn new() -> Self {
-        SubagentCounter { reader: LineReader::new(), tool_count: 0 }
+        SubagentCounter {
+            reader: LineReader::new(),
+            tool_count: 0,
+            requests: HashMap::new(),
+        }
     }
 
-    /// Returns true when the count changed.
+    /// Returns true when the count or the usage changed.
     fn poll(&mut self, path: &Path) -> bool {
         let (lines, rewound) = self.reader.read_new(path);
         if rewound {
             self.tool_count = 0;
+            self.requests.clear();
         }
         if lines.is_empty() {
             return rewound;
         }
-        let before = self.tool_count;
+        let before = (self.tool_count, self.requests.len());
         for raw in &lines {
             let Ok(obj) = serde_json::from_str::<Value>(raw) else {
                 continue;
@@ -274,8 +289,13 @@ impl SubagentCounter {
             }
             let msg = obj.get("message").unwrap_or(&Value::Null);
             self.tool_count += tool_uses(msg).len() as u32;
+            if let (Some(model), Some(key)) = (assistant_model(&obj), request_key(&obj)) {
+                self.requests
+                    .entry(key)
+                    .or_insert_with(|| ReqData::from_message(model, msg));
+            }
         }
-        rewound || self.tool_count != before
+        rewound || (self.tool_count, self.requests.len()) != before
     }
 }
 
@@ -464,8 +484,10 @@ impl SessionTail {
                 self.last_request = None;
             }
             if !is_meta {
-                self.push_line(LineRole::User, format!("> {}", excerpt(text)), timestamp);
+                // A notification or local command is plumbing, not something
+                // said — the card's feed shows the prompt the user typed.
                 if let Some(prompt) = prompt_text(text) {
+                    self.push_line(LineRole::User, format!("> {}", prompt), timestamp);
                     self.session.last_prompt = Some(prompt);
                     self.session.last_reply = None;
                     self.session.turn_ended_at = None;
@@ -478,7 +500,8 @@ impl SessionTail {
         // async launch reports `isAsync: true` — see `is_async_launch`.
         let async_launch = is_async_launch(obj);
         for result in tool_results(obj) {
-            self.outstanding.retain(|(id, _, _)| id != result.tool_use_id);
+            self.outstanding
+                .retain(|(id, _, _)| id != result.tool_use_id);
             if let Some(&idx) = self.subagent_index.get(result.tool_use_id) {
                 // A background spawn's result is a launch receipt, not a
                 // completion: it lands seconds in while the agent runs for
@@ -491,7 +514,11 @@ impl SessionTail {
                     self.finish_subagent(idx, timestamp.clone());
                 }
             }
-            let role = if result.is_error { LineRole::Alert } else { LineRole::Tool };
+            let role = if result.is_error {
+                LineRole::Alert
+            } else {
+                LineRole::Tool
+            };
             let text = format!("  {}", excerpt(&result_text(result.content)));
             self.push_line(role, text, timestamp.clone());
         }
@@ -510,19 +537,14 @@ impl SessionTail {
                 if block.get("type").and_then(|v| v.as_str()) == Some("text") {
                     if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
                         if !text.trim().is_empty() {
-                            self.push_line(
-                                LineRole::Note,
-                                excerpt(text),
-                                timestamp.clone(),
-                            );
+                            self.push_line(LineRole::Note, note_text(text), timestamp.clone());
                             texts.push(text);
                         }
                     }
                 }
             }
             if !texts.is_empty() {
-                self.session.last_reply =
-                    Some(capped(texts.join("\n\n").trim(), REPLY_SUMMARY));
+                self.session.last_reply = Some(capped(texts.join("\n\n").trim(), REPLY_SUMMARY));
             }
         }
 
@@ -531,7 +553,9 @@ impl SessionTail {
             let summary = input_summary(tool.input);
             self.push_line(
                 LineRole::Step,
-                format!("* {} {}", tool.name, summary).trim_end().to_string(),
+                format!("* {} {}", tool.name, summary)
+                    .trim_end()
+                    .to_string(),
                 timestamp.clone(),
             );
             self.outstanding
@@ -584,7 +608,10 @@ impl SessionTail {
         // pending, so an absent value only means zero once we have seen the
         // field at all — a Claude Code that never writes it must not settle
         // every subagent on every turn.
-        match obj.get("pendingBackgroundAgentCount").and_then(|v| v.as_u64()) {
+        match obj
+            .get("pendingBackgroundAgentCount")
+            .and_then(|v| v.as_u64())
+        {
             Some(count) => {
                 self.seen_background_count = true;
                 if count == 0 {
@@ -617,7 +644,11 @@ impl SessionTail {
     }
 
     fn push_line(&mut self, role: LineRole, text: String, timestamp: Option<String>) {
-        self.session.lines.push(TranscriptLine { role, text, timestamp });
+        self.session.lines.push(TranscriptLine {
+            role,
+            text,
+            timestamp,
+        });
         if self.session.lines.len() > MAX_LINES {
             let overflow = self.session.lines.len() - MAX_LINES;
             self.session.lines.drain(..overflow);
@@ -634,6 +665,12 @@ impl SessionTail {
             cost_estimate += req.cost();
             peak_context = peak_context.max(req.context());
             tool_calls += req.tool_names.len() as u32;
+        }
+        // A subagent's requests are billed to this session but never written
+        // into its transcript. Spend only: its context and tools are its own.
+        for req in self.subagent_files.values().flat_map(|c| c.requests.values()) {
+            output_tokens += req.output_tokens;
+            cost_estimate += req.cost();
         }
         // Newest request, not biggest: after a compact or a `/clear` the window
         // really is emptier, and a peak would stay pinned to the old high while
@@ -754,26 +791,35 @@ impl SessionTail {
     /// `tool_use` blocks in the parent transcript, so
     /// `<session uuid>/workflows/wf_<runId>.json` is the only record of them.
     fn poll_workflow_agents(&mut self) -> bool {
-        let Ok(entries) = std::fs::read_dir(&self.workflows_dir) else { return false };
+        let Ok(entries) = std::fs::read_dir(&self.workflows_dir) else {
+            return false;
+        };
         let mut changed = false;
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("json") {
                 continue;
             }
-            let Ok(meta) = std::fs::metadata(&path) else { continue };
+            let Ok(meta) = std::fs::metadata(&path) else {
+                continue;
+            };
             let marker = (meta.len(), meta.modified().ok());
             if self.workflow_files.get(&path) == Some(&marker) {
                 continue;
             }
-            let Ok(text) = std::fs::read_to_string(&path) else { continue };
-            let Ok(run) = serde_json::from_str::<Value>(&text) else { continue };
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(run) = serde_json::from_str::<Value>(&text) else {
+                continue;
+            };
             self.workflow_files.insert(path.clone(), marker);
             for (key, agent) in workflow_agents(&run) {
                 if let Some(&idx) = self.workflow_agent_index.get(&key) {
                     self.session.subagents[idx] = agent;
                 } else {
-                    self.workflow_agent_index.insert(key, self.session.subagents.len());
+                    self.workflow_agent_index
+                        .insert(key, self.session.subagents.len());
                     self.session.subagents.push(agent);
                 }
             }
@@ -802,6 +848,15 @@ pub(super) fn capped(text: &str, max: usize) -> String {
     }
     let cut: String = text.chars().take(max).collect();
     format!("{}…", cut)
+}
+
+/// An assistant text block as one transcript line: whitespace collapsed and
+/// capped, so the feed can clamp it to a few lines rather than the first.
+pub(super) fn note_text(text: &str) -> String {
+    capped(
+        &text.split_whitespace().collect::<Vec<_>>().join(" "),
+        NOTE_SUMMARY,
+    )
 }
 
 /// The newest user prompt, for the Sessions grid card. None for a
@@ -840,7 +895,15 @@ pub(super) fn result_text(content: &Value) -> String {
 
 /// The most identifying field of a tool's input, for `* Bash pnpm test`.
 pub(super) fn input_summary(input: &Value) -> String {
-    for key in ["command", "file_path", "path", "pattern", "description", "url", "prompt"] {
+    for key in [
+        "command",
+        "file_path",
+        "path",
+        "pattern",
+        "description",
+        "url",
+        "prompt",
+    ] {
         if let Some(value) = input.get(key).and_then(|v| v.as_str()) {
             return excerpt(value);
         }
@@ -961,8 +1024,10 @@ fn workflow_task(entry: &Value) -> String {
 /// rather than pushing a duplicate.
 fn workflow_agents(run: &Value) -> Vec<(String, Subagent)> {
     let run_id = run["runId"].as_str().unwrap_or("wf");
-    let run_over =
-        matches!(run.get("status").and_then(|v| v.as_str()), Some("completed") | Some("killed"));
+    let run_over = matches!(
+        run.get("status").and_then(|v| v.as_str()),
+        Some("completed") | Some("killed")
+    );
 
     run["workflowProgress"]
         .as_array()
@@ -991,11 +1056,14 @@ fn workflow_agents(run: &Value) -> Vec<(String, Subagent)> {
             let finished_at = if !done {
                 None
             } else {
-                entry["lastProgressAt"].as_i64().and_then(iso_from_epoch_ms).or_else(|| {
-                    started_at_ms.and_then(|start| {
-                        iso_from_epoch_ms(start + entry["durationMs"].as_i64().unwrap_or(0))
+                entry["lastProgressAt"]
+                    .as_i64()
+                    .and_then(iso_from_epoch_ms)
+                    .or_else(|| {
+                        started_at_ms.and_then(|start| {
+                            iso_from_epoch_ms(start + entry["durationMs"].as_i64().unwrap_or(0))
+                        })
                     })
-                })
             };
 
             let tool_count = entry["toolCalls"].as_u64().unwrap_or(0) as u32;
@@ -1117,7 +1185,9 @@ mod tests {
                 continue;
             }
             assistant_lines += 1;
-            naive_output += obj["message"]["usage"]["output_tokens"].as_u64().unwrap_or(0);
+            naive_output += obj["message"]["usage"]["output_tokens"]
+                .as_u64()
+                .unwrap_or(0);
         }
 
         assert!(
@@ -1207,7 +1277,11 @@ mod tests {
     fn unanswered_tool_use_becomes_the_pending_tool() {
         let (_dir, mut tail) = tail_with(&fixture_lines());
         tail.poll();
-        let pending = tail.session().pending_tool.as_ref().expect("last call is unanswered");
+        let pending = tail
+            .session()
+            .pending_tool
+            .as_ref()
+            .expect("last call is unanswered");
         assert_eq!(pending.name, "Bash");
         assert_eq!(pending.input_summary, "pnpm test");
         assert_eq!(tail.session().state, SessionState::Running);
@@ -1253,7 +1327,9 @@ mod tests {
         let subagents = &tail.session().subagents;
         assert!(!subagents.is_empty(), "the fixture spawns subagents");
         assert!(
-            subagents.iter().any(|s| s.task == "Check the parser" && s.done),
+            subagents
+                .iter()
+                .any(|s| s.task == "Check the parser" && s.done),
             "an answered Agent call is done: {:?}",
             subagents
         );
@@ -1297,7 +1373,10 @@ mod tests {
             tail.offset() > first_offset,
             "the offset advanced past the first read"
         );
-        assert!(tail.requests.len() > requests_after_first, "new requests folded in");
+        assert!(
+            tail.requests.len() > requests_after_first,
+            "new requests folded in"
+        );
         // Parsing from 0 again would double every request's usage.
         let (_dir2, mut whole) = tail_with(&all);
         whole.poll();
@@ -1313,13 +1392,19 @@ mod tests {
         let line = r#"{"type":"user","message":{"role":"user","content":"hello"},"timestamp":"2026-01-01T00:00:00Z"}"#;
         let (head, rest) = line.split_at(40);
 
-        let mut file = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
         write!(file, "{}", head).unwrap();
         drop(file);
         assert!(!tail.poll(), "a partial line yields nothing yet");
         assert!(tail.session().lines.is_empty());
 
-        let mut file = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
         writeln!(file, "{}", rest).unwrap();
         drop(file);
         assert!(tail.poll());
@@ -1367,7 +1452,7 @@ mod tests {
     }
 
     #[test]
-    fn subagent_tool_counts_come_from_the_subagent_transcript() {
+    fn subagent_tool_counts_and_spend_come_from_the_subagent_transcript() {
         let all = fixture_lines();
         let (dir, mut tail) = tail_with(&all);
 
@@ -1391,6 +1476,11 @@ mod tests {
         )
         .unwrap();
 
+        let parent_only = {
+            let (_d, mut t) = tail_with(&all);
+            t.poll();
+            t.session().output_tokens
+        };
         tail.poll();
         let agent = tail
             .session()
@@ -1399,6 +1489,15 @@ mod tests {
             .find(|s| s.task == "Check the parser")
             .expect("the Agent call is tracked");
         assert_eq!(agent.tool_count, 2);
+
+        // Regression: the tile showed the parent's spend alone, while Stats
+        // already folded the subagent files in.
+        let record =
+            crate::commands::stats::parse_session(&dir.path().join(format!("{}.jsonl", UUID)))
+                .unwrap();
+        assert_eq!(tail.session().output_tokens, parent_only + 10);
+        assert_eq!(tail.session().output_tokens, record.output_tokens);
+        assert!((tail.session().cost_estimate - record.cost_estimate).abs() < 1e-9);
     }
 
     #[test]
@@ -1426,7 +1525,11 @@ mod tests {
         assert_eq!(tail.session().state, SessionState::Idle);
         assert!(tail.session().pending_tool.is_none());
         assert!(
-            !tail.session().lines.iter().any(|l| l.role == LineRole::Working),
+            !tail
+                .session()
+                .lines
+                .iter()
+                .any(|l| l.role == LineRole::Working),
             "an idle session has no working line"
         );
         assert_eq!(tail.session().lines.last().unwrap().role, LineRole::Note);
@@ -1458,8 +1561,10 @@ mod tests {
     /// the `end_turn` that follows it, a `turn_duration` claiming one agent is
     /// pending, that agent's `task-notification`, and a later `turn_duration`
     /// that omits the count because none are left.
-    const BG_FIXTURE: &str =
-        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/background-subagent.jsonl");
+    const BG_FIXTURE: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/background-subagent.jsonl"
+    );
 
     /// The `Agent` call's id and description in `BG_FIXTURE`.
     const BG_ID: &str = "toolu_01V7H7Jwyq2aDAk2BcmVQGra";
@@ -1545,7 +1650,10 @@ mod tests {
         let lines = bg_lines();
         let (dir, mut tail) = tail_with(&lines[SPAWN..=COUNT_ONE]);
         tail.poll();
-        assert!(tail.session().subagents[0].finished_at.is_none(), "still running");
+        assert!(
+            tail.session().subagents[0].finished_at.is_none(),
+            "still running"
+        );
 
         let path = dir.path().join(format!("{}.jsonl", UUID));
         append(&path, &lines[NOTIFICATION..=NOTIFICATION]);
@@ -1651,9 +1759,18 @@ mod tests {
             "<tool-use-id>toolu_9</tool-use-id>\n<status>completed</status>\n",
             "<summary>Agent finished</summary>\n</task-notification>",
         );
-        assert_eq!(task_notification(notification), Some(("toolu_9", "completed")));
-        assert_eq!(task_notification("compare <status>x</status> in the docs"), None);
-        assert_eq!(task_notification("<task-notification>\n<status>ok</status>"), None);
+        assert_eq!(
+            task_notification(notification),
+            Some(("toolu_9", "completed"))
+        );
+        assert_eq!(
+            task_notification("compare <status>x</status> in the docs"),
+            None
+        );
+        assert_eq!(
+            task_notification("<task-notification>\n<status>ok</status>"),
+            None
+        );
     }
 
     #[test]
@@ -1662,7 +1779,9 @@ mod tests {
         assert!(is_async_launch(&receipt));
         // Every ordinary tool result — and a background spawn that failed to
         // launch, which reports one — omits the flag.
-        assert!(!is_async_launch(&serde_json::json!({"toolUseResult": {"stdout": ""}})));
+        assert!(!is_async_launch(
+            &serde_json::json!({"toolUseResult": {"stdout": ""}})
+        ));
         assert!(!is_async_launch(&serde_json::json!({"type": "user"})));
     }
 
@@ -1719,7 +1838,10 @@ mod tests {
         write_workflow(
             dir.path(),
             UUID,
-            &workflow_body("done", ", \"lastProgressAt\":1790080308664,\"durationMs\":418917"),
+            &workflow_body(
+                "done",
+                ", \"lastProgressAt\":1790080308664,\"durationMs\":418917",
+            ),
         );
         assert!(tail.poll());
 
@@ -1757,7 +1879,10 @@ mod tests {
     fn workflow_agent_states_map_to_done_defensively() {
         let progress = serde_json::json!({"runId": "wf_1", "status": "running",
             "workflowProgress": [{"type": "workflow_agent", "agentId": "a1", "state": "progress", "startedAt": 1790079889746_i64}]});
-        assert!(!workflow_agents(&progress)[0].1.done, "progress is not done");
+        assert!(
+            !workflow_agents(&progress)[0].1.done,
+            "progress is not done"
+        );
 
         let queued = serde_json::json!({"runId": "wf_1", "status": "running",
             "workflowProgress": [{"type": "workflow_agent", "agentId": "a1", "state": "queued", "queuedAt": 1790079889746_i64}]});
@@ -1832,6 +1957,17 @@ mod tests {
         tail.poll();
 
         assert_eq!(tail.session().last_prompt.as_deref(), Some("/model opus"));
+        let texts: Vec<&str> = tail
+            .session()
+            .lines
+            .iter()
+            .map(|l| l.text.as_str())
+            .collect();
+        assert_eq!(
+            texts,
+            ["> /model opus"],
+            "the feed shows prompts, not plumbing"
+        );
     }
 
     #[test]

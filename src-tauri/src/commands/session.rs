@@ -65,8 +65,11 @@ pub async fn start_omp_tail(
     manager: State<'_, LiveSessionManager>,
     ptys: State<'_, PtyManager>,
 ) -> Result<(), String> {
-    let tty = ptys.tty_name(pty_id).ok_or_else(|| format!("no tty for pty {pty_id}"))?;
-    let agent_dir = omp::agent_dir().ok_or_else(|| "could not determine home directory".to_string())?;
+    let tty = ptys
+        .tty_name(pty_id)
+        .ok_or_else(|| format!("no tty for pty {pty_id}"))?;
+    let agent_dir =
+        omp::agent_dir().ok_or_else(|| "could not determine home directory".to_string())?;
     let breadcrumb = omp::breadcrumb_path(&agent_dir, &tty);
     let since = SystemTime::now() - Duration::from_secs(2);
 
@@ -77,7 +80,13 @@ pub async fn start_omp_tail(
         .map_err(|e| e.to_string())?;
 
     if let Some(session) = session {
-        let _ = app.emit("session-update", SessionUpdateEvent { session_uuid, session });
+        let _ = app.emit(
+            "session-update",
+            SessionUpdateEvent {
+                session_uuid,
+                session,
+            },
+        );
     }
     Ok(())
 }

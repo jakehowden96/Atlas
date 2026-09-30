@@ -51,7 +51,7 @@ fn stats_path() -> Result<PathBuf, String> {
 
 // ── Version ───────────────────────────────────────────────────────────────────
 
-const STATS_FILE_VERSION: u32 = 6;
+const STATS_FILE_VERSION: u32 = 7;
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
@@ -378,8 +378,7 @@ fn parse_model_usage(path: &Path) -> HashMap<String, ModelSessionData> {
         let Some(req_key) = request_key(&obj) else {
             continue;
         };
-        let new_tools: Vec<String> =
-            tool_uses(msg).iter().map(|t| t.name.to_string()).collect();
+        let new_tools: Vec<String> = tool_uses(msg).iter().map(|t| t.name.to_string()).collect();
         let entry = requests
             .entry(req_key)
             .or_insert_with(|| ReqData::from_message(model, msg));
@@ -389,7 +388,7 @@ fn parse_model_usage(path: &Path) -> HashMap<String, ModelSessionData> {
     requests_to_by_model(requests)
 }
 
-fn merge_model_data(
+pub(crate) fn merge_model_data(
     base: &mut HashMap<String, ModelSessionData>,
     other: HashMap<String, ModelSessionData>,
 ) {
@@ -415,7 +414,11 @@ fn file_mtime_size(path: &Path) -> (u64, u64) {
         .map(|m| {
             let mtime = m
                 .modified()
-                .map(|t| t.duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0))
+                .map(|t| {
+                    t.duration_since(UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0)
+                })
                 .unwrap_or(0);
             (mtime, m.len())
         })
@@ -440,9 +443,7 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
                 .map(|entries| {
                     entries
                         .flatten()
-                        .filter(|e| {
-                            e.path().extension().and_then(|x| x.to_str()) == Some("jsonl")
-                        })
+                        .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
                         .count() as u32
                 })
                 .unwrap_or(0)
@@ -711,7 +712,11 @@ fn collect_session_files(projects_dir: &Path) -> Vec<PathBuf> {
         return files;
     };
     for project_entry in project_entries.flatten() {
-        if !project_entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+        if !project_entry
+            .file_type()
+            .map(|t| t.is_dir())
+            .unwrap_or(false)
+        {
             continue;
         }
         let Ok(session_entries) = std::fs::read_dir(project_entry.path()) else {
@@ -720,7 +725,10 @@ fn collect_session_files(projects_dir: &Path) -> Vec<PathBuf> {
         for session_entry in session_entries.flatten() {
             let path = session_entry.path();
             if path.extension().and_then(|e| e.to_str()) == Some("jsonl")
-                && session_entry.file_type().map(|t| t.is_file()).unwrap_or(false)
+                && session_entry
+                    .file_type()
+                    .map(|t| t.is_file())
+                    .unwrap_or(false)
             {
                 files.push(path);
             }
@@ -751,7 +759,10 @@ fn collect_omp_session_files(sessions_dir: &Path) -> Vec<PathBuf> {
         for session_entry in session_entries.flatten() {
             let path = session_entry.path();
             if path.extension().and_then(|e| e.to_str()) == Some("jsonl")
-                && session_entry.file_type().map(|t| t.is_file()).unwrap_or(false)
+                && session_entry
+                    .file_type()
+                    .map(|t| t.is_file())
+                    .unwrap_or(false)
             {
                 files.push(path);
             }
@@ -1009,7 +1020,12 @@ fn cache_from_json(json: &str) -> HashMap<String, SessionRecord> {
     serde_json::from_str::<StatsFile>(json)
         .ok()
         .filter(|f| f.version == STATS_FILE_VERSION)
-        .map(|f| f.sessions.into_iter().map(|s| (s.path.clone(), s)).collect())
+        .map(|f| {
+            f.sessions
+                .into_iter()
+                .map(|s| (s.path.clone(), s))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -1050,8 +1066,11 @@ pub fn recompute() -> Result<StatsSummary, String> {
             }
         }
 
-        let parsed =
-            if path.starts_with(&projects_dir) { parse_session(path) } else { omp::parse_omp_session(path) };
+        let parsed = if path.starts_with(&projects_dir) {
+            parse_session(path)
+        } else {
+            omp::parse_omp_session(path)
+        };
         match parsed {
             Ok(rec) => records.push(rec),
             Err(e) => log::warn!("Failed to parse session {}: {}", path.display(), e),
@@ -1138,7 +1157,9 @@ fn resumable_for_cwd(records: &[SessionRecord], cwd: &str) -> Vec<ResumableSessi
     let want = normalize_path(cwd);
     let mut matched: Vec<&SessionRecord> = records
         .iter()
-        .filter(|r| r.harness.is_none() && r.cwd.as_deref().is_some_and(|c| normalize_path(c) == want))
+        .filter(|r| {
+            r.harness.is_none() && r.cwd.as_deref().is_some_and(|c| normalize_path(c) == want)
+        })
         .collect();
     matched.sort_by(|a, b| b.last_timestamp.cmp(&a.last_timestamp));
     matched
@@ -1194,9 +1215,7 @@ pub async fn list_resumable_sessions(cwd: String) -> Result<Vec<ResumableSession
 
 fn is_session_jsonl(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()) == Some("jsonl")
-        && !path
-            .components()
-            .any(|c| c.as_os_str() == "subagents")
+        && !path.components().any(|c| c.as_os_str() == "subagents")
 }
 
 /// Holds the stats watcher alive for the life of the app. `Manager::manage` is
@@ -1226,7 +1245,9 @@ pub fn start_stats_watcher(app_handle: AppHandle) -> Result<StatsWatcher, String
 
     if let Some(omp_dir) = omp_sessions_dir() {
         if omp_dir.exists() {
-            watcher.watch(&omp_dir, RecursiveMode::Recursive).map_err(|e| e.to_string())?;
+            watcher
+                .watch(&omp_dir, RecursiveMode::Recursive)
+                .map_err(|e| e.to_string())?;
         }
     }
 
@@ -1283,7 +1304,10 @@ mod tests {
             r#"{"type":"user","isMeta":true,"message":{"role":"user","content":"sys"},"timestamp":"2026-01-01T00:02:00Z","cwd":"/tmp"}"#,
         ]);
         let rec = parse_session(f.path()).unwrap();
-        assert_eq!(rec.user_messages, 1, "only the plain-string non-meta line counts");
+        assert_eq!(
+            rec.user_messages, 1,
+            "only the plain-string non-meta line counts"
+        );
     }
 
     #[test]
@@ -1341,9 +1365,8 @@ mod tests {
 
     #[test]
     fn extracts_ai_title() {
-        let f = write_lines(&[
-            r#"{"type":"ai-title","aiTitle":"My session title","sessionId":"abc"}"#,
-        ]);
+        let f =
+            write_lines(&[r#"{"type":"ai-title","aiTitle":"My session title","sessionId":"abc"}"#]);
         let rec = parse_session(f.path()).unwrap();
         assert_eq!(rec.title.as_deref(), Some("My session title"));
     }
@@ -1368,7 +1391,10 @@ mod tests {
         ]);
         let rec = parse_session(f.path()).unwrap();
         assert_eq!(rec.user_messages, 2);
-        assert_eq!(rec.user_chars, 7, "only counts chars from plain-string non-meta messages");
+        assert_eq!(
+            rec.user_chars, 7,
+            "only counts chars from plain-string non-meta messages"
+        );
     }
 
     #[test]
@@ -1383,9 +1409,15 @@ mod tests {
         ];
         let f = write_lines(lines);
         let rec = parse_session(f.path()).unwrap();
-        assert_eq!(rec.by_model["Sonnet"].user_chars, 2, "Sonnet only answered the 2-char message");
+        assert_eq!(
+            rec.by_model["Sonnet"].user_chars, 2,
+            "Sonnet only answered the 2-char message"
+        );
         assert_eq!(rec.by_model["Sonnet"].user_messages, 1);
-        assert_eq!(rec.by_model["Opus"].user_chars, 36, "Opus only answered the 36-char message");
+        assert_eq!(
+            rec.by_model["Opus"].user_chars, 36,
+            "Opus only answered the 36-char message"
+        );
         assert_eq!(rec.by_model["Opus"].user_messages, 1);
         // Session-level totals still cover both turns
         assert_eq!(rec.user_messages, 2);
@@ -1401,7 +1433,10 @@ mod tests {
         let rec = parse_session(f.path()).unwrap();
         assert_eq!(rec.by_model["Opus"].subagent_prompt_chars, 15);
         assert_eq!(rec.by_model["Opus"].subagent_prompt_count, 1);
-        assert_eq!(rec.by_model["Opus"].user_chars, 0, "subagent prompts aren't counted as human messages");
+        assert_eq!(
+            rec.by_model["Opus"].user_chars, 0,
+            "subagent prompts aren't counted as human messages"
+        );
     }
 
     #[test]
@@ -1467,10 +1502,17 @@ mod tests {
             r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"orphan","is_error":true}]},"timestamp":"2026-01-01T00:00:03Z","cwd":"/tmp"}"#,
         ]);
         let rec = parse_session(f.path()).unwrap();
-        assert_eq!(rec.tool_errors, 2, "both errored results still count session-wide");
+        assert_eq!(
+            rec.tool_errors, 2,
+            "both errored results still count session-wide"
+        );
         assert_eq!(rec.tool_errors_by_name.get("Bash").copied(), Some(1));
         assert_eq!(rec.tool_errors_by_name.get("Read").copied(), None);
-        assert_eq!(rec.tool_errors_by_name.len(), 1, "the orphan id is charged to no tool");
+        assert_eq!(
+            rec.tool_errors_by_name.len(),
+            1,
+            "the orphan id is charged to no tool"
+        );
     }
 
     #[test]
@@ -1504,7 +1546,10 @@ mod tests {
         let ps = summary.by_project.get("/repo/one").expect("project key");
         assert_eq!(ps.sessions, 2);
         assert_eq!(ps.subagents, 4);
-        assert!((ps.cost - 4.0).abs() < 1e-9, "cost is summed across sessions");
+        assert!(
+            (ps.cost - 4.0).abs() < 1e-9,
+            "cost is summed across sessions"
+        );
         assert_eq!(ps.output_tokens, 200);
     }
 
@@ -1546,7 +1591,11 @@ mod tests {
         let records = vec![rec("fresh", &at(2)), old];
         let s = aggregate(&records);
 
-        assert_eq!(s.tool_usage.get("Bash").copied(), Some(8), "all-time sums both");
+        assert_eq!(
+            s.tool_usage.get("Bash").copied(),
+            Some(8),
+            "all-time sums both"
+        );
         assert_eq!(s.tool_usage_7d.get("Bash").copied(), Some(4));
         assert_eq!(s.tool_errors.get("Bash").copied(), Some(2));
         assert_eq!(s.tool_errors_7d.get("Bash").copied(), Some(1));
@@ -1566,12 +1615,28 @@ mod tests {
             .collect();
         records[0].last_timestamp = Some("2026-03-01T00:00:00Z".to_string());
         records[0].by_model = HashMap::from([
-            ("Sonnet".to_string(), ModelSessionData { output_tokens: 5, ..Default::default() }),
-            ("Opus".to_string(), ModelSessionData { output_tokens: 500, ..Default::default() }),
+            (
+                "Sonnet".to_string(),
+                ModelSessionData {
+                    output_tokens: 5,
+                    ..Default::default()
+                },
+            ),
+            (
+                "Opus".to_string(),
+                ModelSessionData {
+                    output_tokens: 500,
+                    ..Default::default()
+                },
+            ),
         ]);
 
         let s = aggregate(&records);
-        assert_eq!(s.recent_sessions.len(), RECENT_SESSION_LIMIT, "capped at 50");
+        assert_eq!(
+            s.recent_sessions.len(),
+            RECENT_SESSION_LIMIT,
+            "capped at 50"
+        );
         assert_eq!(s.recent_sessions[0].session_id, "s00", "newest first");
         assert_eq!(
             s.recent_sessions[0].model.as_deref(),
@@ -1607,7 +1672,10 @@ mod tests {
             "\"version\":3",
             1,
         );
-        assert!(stale.contains("\"version\":3"), "the fixture was actually downgraded");
+        assert!(
+            stale.contains("\"version\":3"),
+            "the fixture was actually downgraded"
+        );
         assert!(
             cache_from_json(&stale).is_empty(),
             "a v3 stats.json is dropped, forcing every session to be re-parsed"
@@ -1658,7 +1726,10 @@ mod tests {
             make_rec("s2", week_ts_2, "Sonnet"),
         ];
         let summary = aggregate(&records);
-        let ws = summary.by_week.get("2026-W02").expect("2026-W02 key should exist");
+        let ws = summary
+            .by_week
+            .get("2026-W02")
+            .expect("2026-W02 key should exist");
         assert_eq!(ws.sessions, 2);
         assert_eq!(ws.by_model.get("Opus").copied(), Some(1));
         assert_eq!(ws.by_model.get("Sonnet").copied(), Some(1));
@@ -1709,14 +1780,32 @@ mod tests {
         ];
         let summary = aggregate(&records);
 
-        assert!(summary.by_model.contains_key("Opus"), "all-time keeps old Opus");
-        assert!(summary.by_model.contains_key("Sonnet"), "all-time keeps recent Sonnet");
+        assert!(
+            summary.by_model.contains_key("Opus"),
+            "all-time keeps old Opus"
+        );
+        assert!(
+            summary.by_model.contains_key("Sonnet"),
+            "all-time keeps recent Sonnet"
+        );
 
-        assert!(summary.by_model_7d.contains_key("Sonnet"), "7d window has recent Sonnet");
-        assert!(!summary.by_model_7d.contains_key("Opus"), "7d window drops 120-day-old Opus");
+        assert!(
+            summary.by_model_7d.contains_key("Sonnet"),
+            "7d window has recent Sonnet"
+        );
+        assert!(
+            !summary.by_model_7d.contains_key("Opus"),
+            "7d window drops 120-day-old Opus"
+        );
 
-        assert!(summary.by_model_30d.contains_key("Sonnet"), "30d window has recent Sonnet");
-        assert!(!summary.by_model_30d.contains_key("Opus"), "30d window drops 120-day-old Opus");
+        assert!(
+            summary.by_model_30d.contains_key("Sonnet"),
+            "30d window has recent Sonnet"
+        );
+        assert!(
+            !summary.by_model_30d.contains_key("Opus"),
+            "30d window drops 120-day-old Opus"
+        );
     }
 
     // ── Phase 10: resumable sessions ───────────────────────────────────────
@@ -1734,7 +1823,10 @@ mod tests {
             normalize_path(r"C:\Users\jakeh\Documents\GitHub\Atlas"),
             normalize_path("C:/Users/jakeh/Documents/GitHub/Atlas/"),
         );
-        assert_eq!(normalize_path("/repo/atlas/"), normalize_path("/repo/atlas"));
+        assert_eq!(
+            normalize_path("/repo/atlas/"),
+            normalize_path("/repo/atlas")
+        );
     }
 
     #[cfg(windows)]
@@ -1758,7 +1850,11 @@ mod tests {
     fn resumable_matches_a_workspace_whose_separators_differ_from_the_transcript() {
         let records = vec![rec_in("a", "2026-01-01T00:00:00Z", r"C:\repo\atlas")];
         let found = resumable_for_cwd(&records, "C:/repo/atlas/");
-        assert_eq!(found.len(), 1, "backslash cwd matches a forward-slash workspace");
+        assert_eq!(
+            found.len(),
+            1,
+            "backslash cwd matches a forward-slash workspace"
+        );
         assert_eq!(found[0].session_id, "a");
     }
 
@@ -1781,7 +1877,10 @@ mod tests {
             found.iter().all(|r| r.session_id != "other"),
             "another workspace's sessions never leak in",
         );
-        assert_eq!(found[0].user_messages, 2, "message count comes from the record");
+        assert_eq!(
+            found[0].user_messages, 2,
+            "message count comes from the record"
+        );
         assert_eq!(found[0].git_branch.as_deref(), Some("main"));
     }
 

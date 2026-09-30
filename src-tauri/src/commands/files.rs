@@ -23,13 +23,11 @@ use tauri::{AppHandle, Emitter, State};
 /// the source pane.
 const DOC_EXTENSIONS: &[&str] = &[
     // Prose.
-    "md", "markdown", "txt", "rst", "adoc",
-    // Web and app source.
+    "md", "markdown", "txt", "rst", "adoc", // Web and app source.
     "ts", "tsx", "js", "jsx", "mjs", "cjs", "svelte", "vue", "css", "scss", "less", "html", "htm",
     // Everything else people keep in a repo.
     "rs", "go", "py", "rb", "java", "kt", "kts", "swift", "c", "h", "cc", "cpp", "hpp", "cs", "php",
-    "lua", "sql", "sh", "bash", "zsh", "ps1", "r",
-    // Config and data.
+    "lua", "sql", "sh", "bash", "zsh", "ps1", "r", // Config and data.
     "json", "jsonc", "yaml", "yml", "toml", "ini", "cfg", "xml",
 ];
 
@@ -520,7 +518,10 @@ mod tests {
 
         assert!(paths.contains(&"README.md"));
         assert!(paths.contains(&"docs/guide.markdown"));
-        assert!(paths.contains(&"src/main.rs"), "source files are listed now");
+        assert!(
+            paths.contains(&"src/main.rs"),
+            "source files are listed now"
+        );
         assert!(!paths.iter().any(|p| p.contains(".git")));
         assert!(!paths.iter().any(|p| p.contains("node_modules")));
         assert!(!paths.iter().any(|p| p.contains("target")));
@@ -603,8 +604,11 @@ mod tests {
     fn write_text_file_at_accepts_a_source_path() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("src/main.rs");
-        write_text_file_at(path.to_string_lossy().to_string(), "fn main() {}".to_string())
-            .unwrap();
+        write_text_file_at(
+            path.to_string_lossy().to_string(),
+            "fn main() {}".to_string(),
+        )
+        .unwrap();
         assert_eq!(
             read_text_file_at(path.to_string_lossy().to_string()).unwrap(),
             "fn main() {}"
@@ -633,7 +637,10 @@ mod tests {
     #[test]
     fn list_plans_in_returns_markdown_stems() {
         let tmp = TempDir::new().unwrap();
-        touch(&tmp.path().join("c-users-me-github-atlas-atl-curried-thacker.md"));
+        touch(
+            &tmp.path()
+                .join("c-users-me-github-atlas-atl-curried-thacker.md"),
+        );
         touch(&tmp.path().join("notes.txt"));
 
         let plans = list_plans_in(tmp.path()).unwrap();

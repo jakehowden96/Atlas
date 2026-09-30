@@ -49,34 +49,72 @@ pub(crate) fn pricing_for(model: &str) -> Pricing {
             cache_write: 12.5,
             cache_read: if m.contains("fable-5-1") { 0.25 } else { 1.0 },
         },
-        "Opus" if is_legacy_opus(&m) => {
-            Pricing { input: 15.0, output: 75.0, cache_write: 18.75, cache_read: 1.5 }
-        }
-        "Opus" => Pricing { input: 5.0, output: 25.0, cache_write: 6.25, cache_read: 0.5 },
-        "Sonnet" if m.contains("sonnet-5") => {
-            Pricing { input: 2.0, output: 10.0, cache_write: 2.5, cache_read: 0.2 }
-        }
-        "Sonnet" => Pricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.3 },
+        "Opus" if is_legacy_opus(&m) => Pricing {
+            input: 15.0,
+            output: 75.0,
+            cache_write: 18.75,
+            cache_read: 1.5,
+        },
+        "Opus" => Pricing {
+            input: 5.0,
+            output: 25.0,
+            cache_write: 6.25,
+            cache_read: 0.5,
+        },
+        "Sonnet" if m.contains("sonnet-5") => Pricing {
+            input: 2.0,
+            output: 10.0,
+            cache_write: 2.5,
+            cache_read: 0.2,
+        },
+        "Sonnet" => Pricing {
+            input: 3.0,
+            output: 15.0,
+            cache_write: 3.75,
+            cache_read: 0.3,
+        },
         // Version-first ids again — `claude-3-5-haiku-…`, `claude-3-haiku-…`.
-        "Haiku" if m.contains("3-5-haiku") => {
-            Pricing { input: 0.8, output: 4.0, cache_write: 1.0, cache_read: 0.08 }
-        }
-        "Haiku" if m.contains("3-haiku") => {
-            Pricing { input: 0.25, output: 1.25, cache_write: 0.3, cache_read: 0.03 }
-        }
-        "Haiku" => Pricing { input: 1.0, output: 5.0, cache_write: 1.25, cache_read: 0.1 },
+        "Haiku" if m.contains("3-5-haiku") => Pricing {
+            input: 0.8,
+            output: 4.0,
+            cache_write: 1.0,
+            cache_read: 0.08,
+        },
+        "Haiku" if m.contains("3-haiku") => Pricing {
+            input: 0.25,
+            output: 1.25,
+            cache_write: 0.3,
+            cache_read: 0.03,
+        },
+        "Haiku" => Pricing {
+            input: 1.0,
+            output: 5.0,
+            cache_write: 1.25,
+            cache_read: 0.1,
+        },
         // A model from no family we know — mid-range Sonnet-tier fallback.
-        _ => Pricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.3 },
+        _ => Pricing {
+            input: 3.0,
+            output: 15.0,
+            cache_write: 3.75,
+            cache_read: 0.3,
+        },
     }
 }
 
 pub(crate) fn model_family(model: &str) -> String {
     let m = model.to_ascii_lowercase();
-    if m.contains("opus") { "Opus".to_string() }
-    else if m.contains("fable") { "Fable".to_string() }
-    else if m.contains("sonnet") { "Sonnet".to_string() }
-    else if m.contains("haiku") { "Haiku".to_string() }
-    else { model.to_string() }
+    if m.contains("opus") {
+        "Opus".to_string()
+    } else if m.contains("fable") {
+        "Fable".to_string()
+    } else if m.contains("sonnet") {
+        "Sonnet".to_string()
+    } else if m.contains("haiku") {
+        "Haiku".to_string()
+    } else {
+        model.to_string()
+    }
 }
 
 // ── Context window ────────────────────────────────────────────────────────────
@@ -236,7 +274,10 @@ pub(crate) fn tool_uses(msg: &Value) -> Vec<ToolUse<'_>> {
         .filter(|item| item.get("type").and_then(|v| v.as_str()) == Some("tool_use"))
         .map(|item| ToolUse {
             id: item.get("id").and_then(|v| v.as_str()).unwrap_or(""),
-            name: item.get("name").and_then(|v| v.as_str()).unwrap_or("unknown"),
+            name: item
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown"),
             input: item.get("input").unwrap_or(&Value::Null),
         })
         .collect()
@@ -261,8 +302,14 @@ pub(crate) fn tool_results(obj: &Value) -> Vec<ToolResult<'_>> {
         .iter()
         .filter(|item| item.get("type").and_then(|v| v.as_str()) == Some("tool_result"))
         .map(|item| ToolResult {
-            tool_use_id: item.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or(""),
-            is_error: item.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false),
+            tool_use_id: item
+                .get("tool_use_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+            is_error: item
+                .get("is_error")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             content: item.get("content").unwrap_or(&Value::Null),
         })
         .collect()
@@ -286,7 +333,10 @@ mod tests {
         assert_eq!(context_window_for("claude-opus-5"), 1_000_000);
         assert_eq!(context_window_for("claude-sonnet-4-6"), 1_000_000);
         assert_eq!(context_window_for("claude-fable-5"), 1_000_000);
-        assert_eq!(context_window_for("some-future-model"), DEFAULT_CONTEXT_WINDOW);
+        assert_eq!(
+            context_window_for("some-future-model"),
+            DEFAULT_CONTEXT_WINDOW
+        );
     }
 
     #[test]

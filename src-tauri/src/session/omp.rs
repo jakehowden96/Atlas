@@ -10,11 +10,11 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use super::live::{
-    capped, excerpt, input_summary, iso_from_epoch_ms, prompt_text, result_text, LineReader,
-    LineRole, LiveSession, PendingTool, PlanItem, SessionState, Subagent, TranscriptLine,
-    MAX_LINES, REPLY_SUMMARY,
+    capped, excerpt, input_summary, iso_from_epoch_ms, note_text, prompt_text, result_text,
+    LineReader, LineRole, LiveSession, PendingTool, PlanItem, SessionState, Subagent,
+    TranscriptLine, MAX_LINES, REPLY_SUMMARY,
 };
-use crate::commands::stats::SessionRecord;
+use crate::commands::stats::{merge_model_data, SessionRecord};
 use crate::transcript::{context_pct, model_family, ModelSessionData};
 
 // ── Paths ────────────────────────────────────────────────────────────────────
@@ -57,6 +57,11 @@ pub struct OmpTail {
     /// `<transcript path>` without its extension — the directory OMP writes
     /// each `task` subagent's own transcript into, `<name>.jsonl`.
     sidecar: PathBuf,
+    /// `.<transcript file name>.lock`, beside it. OMP appends through a
+    /// long-lived descriptor, and FSEvents reports nothing for those writes;
+    /// the lock it creates and removes around each append is the only event
+    /// the transcript's growth produces.
+    lock: PathBuf,
     reader: LineReader,
     /// Keyed by the Atlas session uuid, never OMP's own `session.id`.
     session: LiveSession,
@@ -67,8 +72,9 @@ pub struct OmpTail {
     /// A `task` toolCall's id -> the indices it spawned, so an errored launch
     /// can finish every one of them.
     task_calls: HashMap<String, Vec<usize>>,
-    /// Subagent name -> its own transcript's reader plus running tool count.
-    subagent_files: HashMap<String, (LineReader, u32)>,
+    /// Every subagent transcript under `sidecar`, nested ones included ->
+    /// its reader and what it has added up to.
+    subagent_files: HashMap<PathBuf, SubagentFile>,
     /// `stopReason` of the newest assistant message.
     last_stop_reason: Option<String>,
     /// When the newest user prompt landed, so the closing assistant message
@@ -81,8 +87,13 @@ pub struct OmpTail {
 impl OmpTail {
     pub fn new(session_uuid: String, path: PathBuf) -> Self {
         let sidecar = path.with_extension("");
+        let lock = path.with_file_name(format!(
+            ".{}.lock",
+            path.file_name().unwrap_or_default().to_string_lossy()
+        ));
         OmpTail {
             path,
+            lock,
             sidecar,
             reader: LineReader::new(),
             session: LiveSession::new(session_uuid),
@@ -104,10 +115,11 @@ impl OmpTail {
         &self.session
     }
 
-    /// True for the transcript itself or one of its subagents' — a rewritten
+    /// True for the transcript, its write lock, or a subagent's transcript
+    /// (whose locks sit in the same sidecar directory) — a rewritten
     /// breadcrumb only ever names the parent file.
     pub fn owns(&self, path: &Path) -> bool {
-        path == self.path || path.starts_with(&self.sidecar)
+        path == self.path || path == self.lock || path.starts_with(&self.sidecar)
     }
 
     /// Fold in everything appended since the last call. Returns true when
@@ -201,7 +213,9 @@ impl OmpTail {
 
     fn fold_user(&mut self, msg: &Value, timestamp: Option<String>) {
         let text = text_blocks(msg.get("content").unwrap_or(&Value::Null));
-        self.push_line(LineRole::User, format!("> {}", excerpt(&text)), timestamp.clone());
+        if let Some(line) = prompt_text(&text) {
+            self.push_line(LineRole::User, format!("> {}", line), timestamp.clone());
+        }
 
         let attribution = msg.get("attribution").and_then(|v| v.as_str());
         if attribution.is_none() || attribution == Some("user") {
@@ -227,7 +241,7 @@ impl OmpTail {
                 }
                 if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
                     if !text.trim().is_empty() {
-                        self.push_line(LineRole::Note, excerpt(text), timestamp.clone());
+                        self.push_line(LineRole::Note, note_text(text), timestamp.clone());
                         texts.push(text);
                     }
                 }
@@ -240,7 +254,11 @@ impl OmpTail {
                 if block.get("type").and_then(|v| v.as_str()) != Some("toolCall") {
                     continue;
                 }
-                let id = block.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let id = block
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let name = block
                     .get("name")
                     .and_then(|v| v.as_str())
@@ -262,8 +280,7 @@ impl OmpTail {
                     let mut spawned = Vec::new();
                     if let Some(tasks) = arguments.get("tasks").and_then(|v| v.as_array()) {
                         for entry in tasks {
-                            let Some(task_name) = entry.get("name").and_then(|v| v.as_str())
-                            else {
+                            let Some(task_name) = entry.get("name").and_then(|v| v.as_str()) else {
                                 continue;
                             };
                             let idx = self.session.subagents.len();
@@ -287,22 +304,13 @@ impl OmpTail {
             }
         }
 
-        if let Some(usage) = msg.get("usage") {
-            let output = usage.get("output").and_then(|v| v.as_u64()).unwrap_or(0);
-            self.session.output_tokens += output;
-            self.session.cost_estimate += usage
-                .get("cost")
-                .and_then(|c| c.get("total"))
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0);
-
-            let input = usage.get("input").and_then(|v| v.as_u64()).unwrap_or(0);
-            let cache_read = usage.get("cacheRead").and_then(|v| v.as_u64()).unwrap_or(0);
-            let cache_write = usage.get("cacheWrite").and_then(|v| v.as_u64()).unwrap_or(0);
-            let ctx = input + cache_read + cache_write;
+        if let Some(usage) = msg.get("usage").map(Usage::from) {
+            self.session.output_tokens += usage.output;
+            self.session.cost_estimate += usage.cost;
+            let ctx = usage.context();
             if ctx > 0 {
                 self.session.peak_context = self.session.peak_context.max(ctx);
-                self.session.context_tokens = ctx + output;
+                self.session.context_tokens = ctx + usage.output;
             }
         }
 
@@ -325,13 +333,24 @@ impl OmpTail {
             .unwrap_or("")
             .to_string();
         let tool_name = msg.get("toolName").and_then(|v| v.as_str()).unwrap_or("");
-        let is_error = msg.get("isError").and_then(|v| v.as_bool()).unwrap_or(false);
+        let is_error = msg
+            .get("isError")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         self.outstanding.retain(|(id, _, _)| id != &tool_call_id);
 
         let content = msg.get("content").unwrap_or(&Value::Null);
-        let role = if is_error { LineRole::Alert } else { LineRole::Tool };
-        self.push_line(role, format!("  {}", excerpt(&result_text(content))), timestamp.clone());
+        let role = if is_error {
+            LineRole::Alert
+        } else {
+            LineRole::Tool
+        };
+        self.push_line(
+            role,
+            format!("  {}", excerpt(&result_text(content))),
+            timestamp.clone(),
+        );
 
         if tool_name == "todo" && !is_error {
             let details = msg.get("details").unwrap_or(&Value::Null);
@@ -364,7 +383,10 @@ impl OmpTail {
         if obj.get("customType").and_then(|v| v.as_str()) != Some("async-result") {
             return;
         }
-        let Some(jobs) = obj.get("details").and_then(|d| d.get("jobs")).and_then(|v| v.as_array())
+        let Some(jobs) = obj
+            .get("details")
+            .and_then(|d| d.get("jobs"))
+            .and_then(|v| v.as_array())
         else {
             return;
         };
@@ -400,8 +422,10 @@ impl OmpTail {
                 self.last_stop_reason = Some("exit".to_string());
             }
             Some("user_todo_edit") => {
-                if let Some(phases) =
-                    obj.get("data").and_then(|d| d.get("phases")).and_then(|v| v.as_array())
+                if let Some(phases) = obj
+                    .get("data")
+                    .and_then(|d| d.get("phases"))
+                    .and_then(|v| v.as_array())
                 {
                     self.session.plan = plan_from_phases(phases);
                 }
@@ -421,7 +445,11 @@ impl OmpTail {
     }
 
     fn push_line(&mut self, role: LineRole, text: String, timestamp: Option<String>) {
-        self.session.lines.push(TranscriptLine { role, text, timestamp });
+        self.session.lines.push(TranscriptLine {
+            role,
+            text,
+            timestamp,
+        });
         if self.session.lines.len() > MAX_LINES {
             let overflow = self.session.lines.len() - MAX_LINES;
             self.session.lines.drain(..overflow);
@@ -449,29 +477,40 @@ impl OmpTail {
         self.session.lines[idx].role = LineRole::Working;
     }
 
-    /// Refresh `tool_count` for every subagent whose own transcript has grown,
-    /// and finish the ones that yielded.
+    /// Add every subagent transcript's new spend to the session's, refresh
+    /// `tool_count` for the subagents the parent's own `task` calls named, and
+    /// finish the ones that yielded. A subagent's requests never appear in the
+    /// parent transcript — nor a nested subagent's in its parent's — so this is
+    /// the only place their cost is seen.
     fn poll_subagent_files(&mut self) -> bool {
         let mut changed = false;
-        let entries: Vec<(String, usize)> =
-            self.subagent_index.iter().map(|(name, &idx)| (name.clone(), idx)).collect();
-
-        for (name, idx) in entries {
-            let path = self.sidecar.join(format!("{}.jsonl", name));
-            let (lines, rewound) = self
+        for path in subagent_transcripts(&self.sidecar) {
+            // Only a direct child can be one of the parent's own `task` calls;
+            // a nested one was spawned by a subagent and is spend alone.
+            let idx = if path.parent() == Some(self.sidecar.as_path()) {
+                path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .and_then(|name| self.subagent_index.get(name))
+                    .copied()
+            } else {
+                None
+            };
+            let file = self
                 .subagent_files
-                .entry(name.clone())
-                .or_insert_with(|| (LineReader::new(), 0))
-                .0
-                .read_new(&path);
+                .entry(path.clone())
+                .or_insert_with(SubagentFile::new);
+            let (lines, rewound) = file.reader.read_new(&path);
             if rewound {
-                self.subagent_files.get_mut(&name).unwrap().1 = 0;
+                self.session.output_tokens -= file.output_tokens;
+                self.session.cost_estimate -= file.cost;
+                file.tool_count = 0;
+                file.output_tokens = 0;
+                file.cost = 0.0;
             }
             if lines.is_empty() && !rewound {
                 continue;
             }
 
-            let mut tool_calls = 0u32;
             let mut finishes: Vec<Option<String>> = Vec::new();
             for raw in &lines {
                 let Ok(obj) = serde_json::from_str::<Value>(raw) else {
@@ -484,22 +523,32 @@ impl OmpTail {
                 match msg.get("role").and_then(|v| v.as_str()) {
                     Some("assistant") => {
                         if let Some(content) = msg.get("content").and_then(|v| v.as_array()) {
-                            tool_calls += content
+                            file.tool_count += content
                                 .iter()
                                 .filter(|b| {
                                     b.get("type").and_then(|v| v.as_str()) == Some("toolCall")
                                 })
                                 .count() as u32;
                         }
+                        if let Some(usage) = msg.get("usage").map(Usage::from) {
+                            file.output_tokens += usage.output;
+                            file.cost += usage.cost;
+                            self.session.output_tokens += usage.output;
+                            self.session.cost_estimate += usage.cost;
+                        }
                     }
                     Some("toolResult") => {
-                        let is_yield = msg.get("toolName").and_then(|v| v.as_str())
-                            == Some("yield");
-                        let is_error =
-                            msg.get("isError").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let is_yield =
+                            msg.get("toolName").and_then(|v| v.as_str()) == Some("yield");
+                        let is_error = msg
+                            .get("isError")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
                         if is_yield && !is_error {
                             finishes.push(
-                                obj.get("timestamp").and_then(|v| v.as_str()).map(str::to_string),
+                                obj.get("timestamp")
+                                    .and_then(|v| v.as_str())
+                                    .map(str::to_string),
                             );
                         }
                     }
@@ -507,11 +556,12 @@ impl OmpTail {
                 }
             }
 
-            let entry = self.subagent_files.get_mut(&name).unwrap();
-            entry.1 += tool_calls;
-            self.session.subagents[idx].tool_count = entry.1;
-            for ts in finishes {
-                self.finish_subagent(idx, ts);
+            let tool_count = file.tool_count;
+            if let Some(idx) = idx {
+                self.session.subagents[idx].tool_count = tool_count;
+                for ts in finishes {
+                    self.finish_subagent(idx, ts);
+                }
             }
             changed = true;
         }
@@ -519,9 +569,12 @@ impl OmpTail {
     }
 
     fn finalize(&mut self) {
+        // An `ask` blocks the turn on the user, so it is the tool the card
+        // shows even when a call issued before it is still outstanding.
+        let asking = self.outstanding.iter().find(|(_, name, _)| name == "ask");
         self.session.pending_tool =
-            self.outstanding
-                .first()
+            asking
+                .or(self.outstanding.first())
                 .map(|(_, name, summary)| PendingTool {
                     name: name.clone(),
                     input_summary: summary.clone(),
@@ -532,7 +585,9 @@ impl OmpTail {
         );
 
         let subagent_running = self.session.subagents.iter().any(|s| !s.done);
-        self.session.state = if self.session.pending_tool.is_none()
+        self.session.state = if asking.is_some() {
+            SessionState::NeedsYou
+        } else if self.session.pending_tool.is_none()
             && !subagent_running
             && matches!(&self.last_stop_reason, Some(r) if r != "toolUse")
         {
@@ -542,6 +597,98 @@ impl OmpTail {
         };
 
         self.apply_working_marker();
+    }
+}
+
+/// Deepest a subagent chain is followed — OMP's own walk back from a nested
+/// transcript to its root session stops at the same depth.
+const MAX_SUBAGENT_DEPTH: usize = 8;
+
+/// Every subagent transcript beneath a session: OMP writes an agent's `task`
+/// children to `<its transcript minus .jsonl>/<name>.jsonl`, so a subagent
+/// that delegates in turn has a directory of its own beside its file. Only
+/// those directories are descended into — the rest of an artifacts directory
+/// is tool output.
+fn subagent_transcripts(sidecar: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut dirs = vec![(sidecar.to_path_buf(), 0)];
+    while let Some((dir, depth)) = dirs.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("jsonl")
+                || !entry.file_type().map(|t| t.is_file()).unwrap_or(false)
+            {
+                continue;
+            }
+            if depth + 1 < MAX_SUBAGENT_DEPTH {
+                dirs.push((path.with_extension(""), depth + 1));
+            }
+            found.push(path);
+        }
+    }
+    found
+}
+
+/// One `task` subagent's own transcript, read incrementally, and what it has
+/// contributed so far — kept so a rewound file can take its share back out.
+struct SubagentFile {
+    reader: LineReader,
+    tool_count: u32,
+    output_tokens: u64,
+    cost: f64,
+}
+
+impl SubagentFile {
+    fn new() -> Self {
+        SubagentFile {
+            reader: LineReader::new(),
+            tool_count: 0,
+            output_tokens: 0,
+            cost: 0.0,
+        }
+    }
+}
+
+/// The fields Atlas reads off one assistant message's `usage`.
+struct Usage {
+    input: u64,
+    output: u64,
+    cache_read: u64,
+    cache_write: u64,
+    /// `usage.cost.total` — OMP prices each request itself.
+    cost: f64,
+}
+
+impl Usage {
+    fn from(usage: &Value) -> Self {
+        let tokens = |key: &str| usage.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
+        Usage {
+            input: tokens("input"),
+            output: tokens("output"),
+            cache_read: tokens("cacheRead"),
+            cache_write: tokens("cacheWrite"),
+            cost: usage
+                .get("cost")
+                .and_then(|c| c.get("total"))
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0),
+        }
+    }
+
+    /// Tokens the request carried in.
+    fn context(&self) -> u64 {
+        self.input + self.cache_read + self.cache_write
+    }
+
+    fn add_to(&self, entry: &mut ModelSessionData) {
+        entry.assistant_msgs += 1;
+        entry.output_tokens += self.output;
+        entry.cache_creation_tokens += self.cache_write;
+        entry.cost_estimate += self.cost;
+        entry.peak_context = entry.peak_context.max(self.context());
     }
 }
 
@@ -564,16 +711,21 @@ fn text_blocks(content: &Value) -> String {
         .unwrap_or_default()
 }
 
-/// The most identifying field of a `toolCall`'s arguments, falling back to
-/// the model's own stated intent (`arguments.i`) when none of the usual keys
-/// are present.
+/// The most identifying field of a `toolCall`'s arguments — for `ask`, the
+/// first question it puts to the user — falling back to the model's own
+/// stated intent (`arguments.i`) when none of the usual keys are present.
 fn tool_call_summary(arguments: &Value) -> String {
     let summary = input_summary(arguments);
     if !summary.is_empty() {
         return summary;
     }
-    arguments
-        .get("i")
+    let question = arguments
+        .get("questions")
+        .and_then(|v| v.as_array())
+        .and_then(|qs| qs.first())
+        .and_then(|q| q.get("question"));
+    question
+        .or(arguments.get("i"))
         .and_then(|v| v.as_str())
         .map(excerpt)
         .unwrap_or_default()
@@ -610,7 +762,11 @@ fn plan_from_phases(phases: &[Value]) -> Vec<PlanItem> {
             let text = task.get("content").and_then(|v| v.as_str())?;
             Some(PlanItem {
                 text: text.to_string(),
-                status: task.get("status").and_then(|v| v.as_str()).unwrap_or("pending").to_string(),
+                status: task
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("pending")
+                    .to_string(),
             })
         })
         .collect()
@@ -625,7 +781,11 @@ fn file_mtime_size(path: &Path) -> (u64, u64) {
         .map(|m| {
             let mtime = m
                 .modified()
-                .map(|t| t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0))
+                .map(|t| {
+                    t.duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0)
+                })
                 .unwrap_or(0);
             (mtime, m.len())
         })
@@ -715,34 +875,13 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
                             .and_then(|v| v.as_str())
                             .map(|m| model_family(&after_last_slash(m)));
 
-                        if let Some(usage) = msg.get("usage") {
-                            let output = usage.get("output").and_then(|v| v.as_u64()).unwrap_or(0);
-                            let cache_write =
-                                usage.get("cacheWrite").and_then(|v| v.as_u64()).unwrap_or(0);
-                            let cost = usage
-                                .get("cost")
-                                .and_then(|c| c.get("total"))
-                                .and_then(|v| v.as_f64())
-                                .unwrap_or(0.0);
-                            let input = usage.get("input").and_then(|v| v.as_u64()).unwrap_or(0);
-                            let cache_read =
-                                usage.get("cacheRead").and_then(|v| v.as_u64()).unwrap_or(0);
-                            let ctx = input + cache_read + cache_write;
-
-                            output_tokens += output;
-                            cache_creation_tokens += cache_write;
-                            cost_estimate += cost;
-                            peak_context = peak_context.max(ctx);
-
+                        if let Some(usage) = msg.get("usage").map(Usage::from) {
+                            output_tokens += usage.output;
+                            cache_creation_tokens += usage.cache_write;
+                            cost_estimate += usage.cost;
+                            peak_context = peak_context.max(usage.context());
                             if let Some(family) = &family {
-                                let entry = by_model.entry(family.clone()).or_default();
-                                entry.assistant_msgs += 1;
-                                entry.output_tokens += output;
-                                entry.cache_creation_tokens += cache_write;
-                                entry.cost_estimate += cost;
-                                if ctx > entry.peak_context {
-                                    entry.peak_context = ctx;
-                                }
+                                usage.add_to(by_model.entry(family.clone()).or_default());
                             }
                         }
 
@@ -778,7 +917,11 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
                         }
                     }
                     Some("toolResult") => {
-                        if msg.get("isError").and_then(|v| v.as_bool()).unwrap_or(false) {
+                        if msg
+                            .get("isError")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                        {
                             tool_errors += 1;
                             if let Some(id) = msg.get("toolCallId").and_then(|v| v.as_str()) {
                                 if let Some(name) = tool_name_by_id.get(id) {
@@ -794,9 +937,34 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
         }
     }
 
+    // Each `task` subagent writes `<transcript path minus .jsonl>/<name>.jsonl`
+    // — and its own subagents a level below that — and none of their requests
+    // reach the parent file, so their spend is only found here, folded into
+    // the headline totals the way Claude Code's `subagents/` files are.
+    let mut by_model_subagents: HashMap<String, ModelSessionData> = HashMap::new();
+    let mut subagent_invocations: HashMap<String, u32> = HashMap::new();
+    for sub_path in subagent_transcripts(&path.with_extension("")) {
+        let sub_usage = omp_model_usage(&sub_path);
+        if let Some(dominant) = sub_usage
+            .iter()
+            .max_by_key(|(_, d)| d.output_tokens)
+            .map(|(f, _)| f.clone())
+        {
+            *subagent_invocations.entry(dominant).or_insert(0) += 1;
+        }
+        for sub_data in sub_usage.values() {
+            output_tokens += sub_data.output_tokens;
+            cache_creation_tokens += sub_data.cache_creation_tokens;
+            cost_estimate += sub_data.cost_estimate;
+        }
+        merge_model_data(&mut by_model_subagents, sub_usage);
+    }
+
     let duration_secs = {
         let parse_ts = |s: &str| -> Option<i64> {
-            chrono::DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.timestamp())
+            chrono::DateTime::parse_from_rfc3339(s)
+                .ok()
+                .map(|dt| dt.timestamp())
         };
         match (
             first_timestamp.as_deref().and_then(parse_ts),
@@ -831,10 +999,51 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
         tool_errors,
         tool_errors_by_name,
         by_model,
-        by_model_subagents: HashMap::new(),
-        subagent_invocations: HashMap::new(),
+        by_model_subagents,
+        subagent_invocations,
         harness: Some("omp".to_string()),
     })
+}
+
+/// Per-model-family usage of one OMP transcript's assistant messages — a
+/// subagent's, whose prompts and tool errors the dashboard does not break out.
+fn omp_model_usage(path: &Path) -> HashMap<String, ModelSessionData> {
+    let mut by_model: HashMap<String, ModelSessionData> = HashMap::new();
+    let Ok(file) = std::fs::File::open(path) else {
+        return by_model;
+    };
+    for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
+        let Ok(obj) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if obj.get("type").and_then(|v| v.as_str()) != Some("message") {
+            continue;
+        }
+        let msg = obj.get("message").unwrap_or(&Value::Null);
+        if msg.get("role").and_then(|v| v.as_str()) != Some("assistant") {
+            continue;
+        }
+        let (Some(model), Some(usage)) = (
+            msg.get("model").and_then(|v| v.as_str()),
+            msg.get("usage").map(Usage::from),
+        ) else {
+            continue;
+        };
+        let entry = by_model
+            .entry(model_family(&after_last_slash(model)))
+            .or_default();
+        usage.add_to(entry);
+        entry.tool_calls += msg
+            .get("content")
+            .and_then(|v| v.as_array())
+            .map_or(0, |blocks| {
+                blocks
+                    .iter()
+                    .filter(|b| b.get("type").and_then(|v| v.as_str()) == Some("toolCall"))
+                    .count() as u32
+            });
+    }
+    by_model
 }
 
 #[cfg(test)]
@@ -843,6 +1052,17 @@ mod tests {
     use std::io::Write;
 
     const UUID: &str = "11111111-2222-4333-8444-555555555555";
+
+    /// Regression: an OMP append is only ever announced by its lock file.
+    /// Ignoring that event left a live card frozen until something unrelated
+    /// — a breadcrumb rewrite — happened to touch the directory.
+    #[test]
+    fn the_transcripts_write_lock_counts_as_its_own_write() {
+        let dir = Path::new("/sessions/-code-atlas");
+        let tail = OmpTail::new(UUID.to_string(), dir.join("2026-01-01T00-00-00Z_abc.jsonl"));
+        assert!(tail.owns(&dir.join(".2026-01-01T00-00-00Z_abc.jsonl.lock")));
+        assert!(!tail.owns(&dir.join(".2026-01-01T00-00-00Z_other.jsonl.lock")));
+    }
 
     /// Write `lines` into a temp dir as `session.jsonl`, and return the tail
     /// plus the dir (kept alive for the test's duration).
@@ -900,11 +1120,45 @@ mod tests {
         let (_dir, mut tail) = tail_with(&[assistant]);
         assert!(tail.poll());
 
-        let pending = tail.session().pending_tool.as_ref().expect("bash is unanswered");
+        let pending = tail
+            .session()
+            .pending_tool
+            .as_ref()
+            .expect("bash is unanswered");
         assert_eq!(pending.name, "bash");
         assert_eq!(pending.input_summary, "pnpm test");
         assert_eq!(tail.session().state, SessionState::Running);
         assert_eq!(tail.session().lines.last().unwrap().role, LineRole::Working);
+    }
+
+    /// Regression: OMP blocked on its `ask` tool read as Running, so a
+    /// session waiting on an answer looked busy for as long as nobody noticed.
+    #[test]
+    fn an_unanswered_ask_needs_you_until_its_result_lands() {
+        let ask = serde_json::json!({
+            "type": "message", "timestamp": "2026-01-01T00:00:00Z",
+            "message": {"role": "assistant", "stopReason": "toolUse",
+                "content": [{"type": "toolCall", "id": "a1", "name": "ask", "arguments": {
+                    "i": "Resolving scope",
+                    "questions": [{"id": "q", "question": "Which routes default to All?", "options": []}]
+                }}]}
+        })
+        .to_string();
+        let (dir, mut tail) = tail_with(&[ask]);
+        assert!(tail.poll());
+        assert_eq!(tail.session().state, SessionState::NeedsYou);
+        let pending = tail.session().pending_tool.as_ref().expect("ask is unanswered");
+        assert_eq!(pending.name, "ask");
+        assert_eq!(pending.input_summary, "Which routes default to All?");
+
+        let answer = serde_json::json!({
+            "type": "message", "timestamp": "2026-01-01T00:01:00Z",
+            "message": {"role": "toolResult", "toolCallId": "a1", "toolName": "ask", "content": []}
+        })
+        .to_string();
+        append(&dir.path().join("session.jsonl"), &[answer]);
+        assert!(tail.poll());
+        assert_eq!(tail.session().state, SessionState::Running);
     }
 
     #[test]
@@ -934,7 +1188,11 @@ mod tests {
         tail.poll();
 
         let plan = &tail.session().plan;
-        assert_eq!(plan.len(), 2, "the view result did not touch the plan: {plan:?}");
+        assert_eq!(
+            plan.len(),
+            2,
+            "the view result did not touch the plan: {plan:?}"
+        );
         assert_eq!(plan[0].text, "Do the thing");
         assert_eq!(plan[0].status, "completed");
         assert_eq!(plan[1].status, "in_progress");
@@ -967,7 +1225,10 @@ mod tests {
         assert_eq!(subagents.len(), 2);
         assert_eq!(subagents[0].agent_type, Some("scout".to_string()));
         assert_eq!(subagents[1].agent_type, Some("task".to_string()));
-        assert!(!subagents[0].done && !subagents[1].done, "a launch receipt is not completion");
+        assert!(
+            !subagents[0].done && !subagents[1].done,
+            "a launch receipt is not completion"
+        );
     }
 
     #[test]
@@ -1005,6 +1266,99 @@ mod tests {
         assert_eq!(agent.finished_at.as_deref(), Some("2026-01-01T00:00:04Z"));
     }
 
+    fn subagent_reply(cost: f64, output: u64) -> String {
+        serde_json::json!({
+            "type": "message", "timestamp": "2026-01-01T00:00:02Z",
+            "message": {"role": "assistant", "model": "anthropic/claude-sonnet-5", "stopReason": "toolUse",
+                "content": [{"type": "toolCall", "id": "s1", "name": "read", "arguments": {}}],
+                "usage": {"input": 10, "output": output, "cacheRead": 0, "cacheWrite": 0,
+                    "cost": {"total": cost}}}
+        })
+        .to_string()
+    }
+
+    /// Regression: a subagent's requests only ever land in its own transcript,
+    /// so a session that delegated most of its work showed a fraction of what
+    /// it had spent.
+    #[test]
+    fn subagent_spend_counts_toward_the_session_once_and_leaves_with_a_rewrite() {
+        let call = serde_json::json!({
+            "type": "message", "timestamp": "2026-01-01T00:00:00Z",
+            "message": {"role": "assistant", "stopReason": "toolUse",
+                "content": [{"type": "toolCall", "id": "t1", "name": "task", "arguments": {
+                    "tasks": [{"name": "Scout1", "agent": "scout", "task": "look around"}]
+                }}],
+                "usage": {"input": 10, "output": 1, "cost": {"total": 0.25}}}
+        })
+        .to_string();
+        let (dir, mut tail) = tail_with(&[call]);
+        tail.poll();
+
+        let sidecar = dir.path().join("session");
+        std::fs::create_dir_all(&sidecar).unwrap();
+        let sub = sidecar.join("Scout1.jsonl");
+        std::fs::write(&sub, format!("{}\n", subagent_reply(1.0, 10))).unwrap();
+        tail.poll();
+        append(&sub, &[subagent_reply(0.5, 5)]);
+        tail.poll();
+        assert!((tail.session().cost_estimate - 1.75).abs() < 1e-9);
+        assert_eq!(tail.session().output_tokens, 16);
+        assert_eq!(tail.session().subagents[0].tool_count, 2);
+
+        // Rewritten shorter: its old share comes back out before the new one lands.
+        std::fs::write(&sub, format!("{}\n", subagent_reply(0.1, 2))).unwrap();
+        tail.poll();
+        assert!((tail.session().cost_estimate - 0.35).abs() < 1e-9);
+        assert_eq!(tail.session().output_tokens, 3);
+        assert_eq!(tail.session().subagents[0].tool_count, 1);
+
+        // A subagent that delegates in turn: its child's spend is the
+        // session's too, but the child is not one of the parent's own agents.
+        std::fs::create_dir_all(sidecar.join("Scout1")).unwrap();
+        std::fs::write(
+            sidecar.join("Scout1").join("Deep.jsonl"),
+            format!("{}\n", subagent_reply(2.0, 4)),
+        )
+        .unwrap();
+        tail.poll();
+        assert!((tail.session().cost_estimate - 2.35).abs() < 1e-9);
+        assert_eq!(tail.session().output_tokens, 7);
+        assert_eq!(tail.session().subagents[0].tool_count, 1);
+    }
+
+    #[test]
+    fn stats_fold_every_subagent_transcript_into_the_session_totals() {
+        let parent = serde_json::json!({
+            "type": "message", "timestamp": "2026-01-01T00:00:00Z",
+            "message": {"role": "assistant", "model": "anthropic/claude-opus-5-5", "stopReason": "stop",
+                "content": [], "usage": {"input": 10, "output": 1, "cost": {"total": 0.25}}}
+        })
+        .to_string();
+        let (dir, _tail) = tail_with(&[parent]);
+        let sidecar = dir.path().join("session");
+        std::fs::create_dir_all(&sidecar).unwrap();
+        std::fs::write(sidecar.join("A.jsonl"), format!("{}\n", subagent_reply(1.0, 10))).unwrap();
+        std::fs::write(sidecar.join("B.jsonl"), format!("{}\n", subagent_reply(0.5, 5))).unwrap();
+        // Not a transcript: OMP keeps tool logs in the same directory.
+        std::fs::write(sidecar.join("14.bash.log"), "noise\n").unwrap();
+        // B delegated in turn; its child sits in B's own directory.
+        std::fs::create_dir_all(sidecar.join("B")).unwrap();
+        std::fs::write(sidecar.join("B").join("Deep.jsonl"), format!("{}\n", subagent_reply(2.0, 4)))
+            .unwrap();
+        // Tool output, not a delegating agent: never descended into.
+        std::fs::create_dir_all(sidecar.join("local")).unwrap();
+        std::fs::write(sidecar.join("local").join("x.jsonl"), format!("{}\n", subagent_reply(9.0, 9)))
+            .unwrap();
+
+        let rec = parse_omp_session(&dir.path().join("session.jsonl")).unwrap();
+        assert!((rec.cost_estimate - 3.75).abs() < 1e-9);
+        assert_eq!(rec.output_tokens, 20);
+        assert!((rec.by_model["Opus"].cost_estimate - 0.25).abs() < 1e-9);
+        assert!((rec.by_model_subagents["Sonnet"].cost_estimate - 3.5).abs() < 1e-9);
+        assert_eq!(rec.by_model_subagents["Sonnet"].tool_calls, 3);
+        assert_eq!(rec.subagent_invocations["Sonnet"], 3);
+    }
+
     #[test]
     fn an_async_result_finishes_the_job_it_names() {
         let call = serde_json::json!({
@@ -1029,7 +1383,10 @@ mod tests {
 
         let agent = &tail.session().subagents[0];
         assert!(agent.done);
-        assert_eq!(agent.finished_at.as_deref(), Some("2026-01-01T00:01:00.000Z"));
+        assert_eq!(
+            agent.finished_at.as_deref(),
+            Some("2026-01-01T00:01:00.000Z")
+        );
     }
 
     #[test]
@@ -1056,14 +1413,19 @@ mod tests {
         assert_eq!(tail.session().context_tokens, 10 + 20 + 5);
         assert_eq!(tail.session().peak_context, 300);
 
-        let reset = serde_json::json!({"type": "reset_boundary", "timestamp": "2026-01-01T00:00:10Z"})
-            .to_string();
+        let reset =
+            serde_json::json!({"type": "reset_boundary", "timestamp": "2026-01-01T00:00:10Z"})
+                .to_string();
         let path = dir.path().join("session.jsonl");
         append(&path, &[reset]);
         tail.poll();
 
         assert_eq!(tail.session().context_tokens, 0);
-        assert_eq!(tail.session().peak_context, 300, "the historical high is kept");
+        assert_eq!(
+            tail.session().peak_context,
+            300,
+            "the historical high is kept"
+        );
     }
 
     #[test]

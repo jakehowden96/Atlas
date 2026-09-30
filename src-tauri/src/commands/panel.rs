@@ -1,9 +1,7 @@
-use crate::panel::types::{
-    sessions_dir, DiffData, PanelData, ProjectDiff,
-};
 use super::diff::{count_diff_stats, discover_diff};
 use super::git::{git_cmd, should_skip_dir};
 use super::validate::{validate_cwd, validate_session_id};
+use crate::panel::types::{sessions_dir, DiffData, PanelData, ProjectDiff};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::{Arc, Mutex};
@@ -47,10 +45,7 @@ pub fn get_panel_data(session_id: String) -> Result<Option<PanelData>, String> {
 /// If CWD is NOT a git repo → scan child directories for git repos,
 /// collect diffs from all repos with changes (like sift's scanForRepos).
 #[tauri::command(async)]
-pub async fn refresh_panel(
-    session_id: String,
-    cwd: String,
-) -> Result<Option<PanelData>, String> {
+pub async fn refresh_panel(session_id: String, cwd: String) -> Result<Option<PanelData>, String> {
     validate_session_id(&session_id)?;
     validate_cwd(&cwd)?;
     let panel_path = sessions_dir()?.join(&session_id).join("panel.json");
@@ -97,12 +92,13 @@ fn build_panel_single(
     let (files_changed, lines_added, lines_removed) = count_diff_stats(&bundle.full);
 
     // Only populate local_* fields when local differs from full (i.e. full includes upstream/branch changes)
-    let (local_raw, local_fc, local_la, local_lr) = if !bundle.local.is_empty() && bundle.local != bundle.full {
-        let (fc, la, lr) = count_diff_stats(&bundle.local);
-        (Some(bundle.local), Some(fc), Some(la), Some(lr))
-    } else {
-        (None, None, None, None)
-    };
+    let (local_raw, local_fc, local_la, local_lr) =
+        if !bundle.local.is_empty() && bundle.local != bundle.full {
+            let (fc, la, lr) = count_diff_stats(&bundle.local);
+            (Some(bundle.local), Some(fc), Some(la), Some(lr))
+        } else {
+            (None, None, None, None)
+        };
 
     let data = PanelData {
         version: 1,
@@ -229,7 +225,10 @@ fn write_panel(session_id: &str, data: &PanelData, panel_path: &std::path::Path)
 
     let dir = match sessions_dir() {
         Ok(d) => d.join(session_id),
-        Err(e) => { log::warn!("Failed to resolve sessions dir: {}", e); return; }
+        Err(e) => {
+            log::warn!("Failed to resolve sessions dir: {}", e);
+            return;
+        }
     };
     if let Err(e) = fs::create_dir_all(&dir) {
         log::warn!("Failed to create session dir: {}", e);

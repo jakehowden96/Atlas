@@ -20,10 +20,7 @@ fn setup_logging() {
 
     std::fs::create_dir_all(&log_dir).ok();
 
-    let file_config = fern::DateBased::new(
-        log_dir.join("atlas-backend-"),
-        "%Y-%m-%d.log",
-    );
+    let file_config = fern::DateBased::new(log_dir.join("atlas-backend-"), "%Y-%m-%d.log");
 
     fern::Dispatch::new()
         .format(|out, message, record| {
@@ -45,11 +42,15 @@ fn setup_logging() {
 }
 
 fn clean_old_logs(log_dir: &std::path::Path, max_age_days: u64) {
-    let cutoff = std::time::SystemTime::now()
-        - std::time::Duration::from_secs(max_age_days * 24 * 60 * 60);
-    let Ok(entries) = std::fs::read_dir(log_dir) else { return };
+    let cutoff =
+        std::time::SystemTime::now() - std::time::Duration::from_secs(max_age_days * 24 * 60 * 60);
+    let Ok(entries) = std::fs::read_dir(log_dir) else {
+        return;
+    };
     for entry in entries.flatten() {
-        if !entry.file_name().to_string_lossy().ends_with(".log") { continue; }
+        if !entry.file_name().to_string_lossy().ends_with(".log") {
+            continue;
+        }
         if let Ok(meta) = entry.metadata() {
             if let Ok(modified) = meta.modified() {
                 if modified < cutoff {
@@ -104,7 +105,9 @@ fn merge_hook(settings: &mut serde_json::Value, event: &str, marker: &str, comma
     let Some(hooks_obj) = hooks.as_object_mut() else {
         return false;
     };
-    let entry_list = hooks_obj.entry(event).or_insert_with(|| serde_json::json!([]));
+    let entry_list = hooks_obj
+        .entry(event)
+        .or_insert_with(|| serde_json::json!([]));
     let Some(entries) = entry_list.as_array_mut() else {
         return false;
     };
@@ -113,7 +116,11 @@ fn merge_hook(settings: &mut serde_json::Value, event: &str, marker: &str, comma
         entry
             .get("hooks")
             .and_then(|h| h.as_array())
-            .is_some_and(|inner| inner.iter().any(|hook| hook_command_str(hook).contains(marker)))
+            .is_some_and(|inner| {
+                inner
+                    .iter()
+                    .any(|hook| hook_command_str(hook).contains(marker))
+            })
     });
     if already_installed {
         return false;
@@ -198,7 +205,10 @@ fn update_claude_settings(merge: impl FnOnce(&mut serde_json::Value) -> bool, la
 /// Install the Atlas notification hook into ~/.claude/settings.json
 /// so Claude Code notifies Atlas when it needs input.
 fn install_notification_hook(command: &str) {
-    update_claude_settings(|settings| merge_notification_hook(settings, command), "notification");
+    update_claude_settings(
+        |settings| merge_notification_hook(settings, command),
+        "notification",
+    );
 }
 
 /// Install the Atlas session-start hook into ~/.claude/settings.json so Atlas
@@ -242,6 +252,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         // macOS can swallow ⌘Escape inside the webview before it ever becomes a
         // JS keydown event (a known wry/WKWebView gap), so `backToSessions`
         // cannot rely on JS alone. A native menu accelerator is delivered by
@@ -306,22 +317,37 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             match panel::watcher::start_watcher(handle) {
-                Ok(watcher) => { app.manage(watcher); }
-                Err(e) => log::error!("Failed to start panel watcher: {} — panel updates will not work", e),
+                Ok(watcher) => {
+                    app.manage(watcher);
+                }
+                Err(e) => log::error!(
+                    "Failed to start panel watcher: {} — panel updates will not work",
+                    e
+                ),
             }
 
             let stats_handle = app.handle().clone();
             match commands::stats::start_stats_watcher(stats_handle) {
-                Ok(watcher) => { app.manage(watcher); }
-                Err(e) => log::warn!("Failed to start stats watcher: {} — live stats updates will not work", e),
+                Ok(watcher) => {
+                    app.manage(watcher);
+                }
+                Err(e) => log::warn!(
+                    "Failed to start stats watcher: {} — live stats updates will not work",
+                    e
+                ),
             }
 
             // Separate from the stats watcher above: that one debounces a full
             // recompute at 1s, which the live session view must not wait on.
             let live_handle = app.handle().clone();
             match session::manager::start_live_watcher(live_handle, live_sessions) {
-                Ok(watcher) => { app.manage(watcher); }
-                Err(e) => log::warn!("Failed to start live session watcher: {} — session updates will not work", e),
+                Ok(watcher) => {
+                    app.manage(watcher);
+                }
+                Err(e) => log::warn!(
+                    "Failed to start live session watcher: {} — session updates will not work",
+                    e
+                ),
             }
 
             // Back-fill stats from all historical transcripts on launch (off the UI thread).

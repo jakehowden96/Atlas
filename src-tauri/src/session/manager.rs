@@ -149,33 +149,36 @@ impl LiveSessionManager {
         }
     }
 
-    /// Every OMP watch whose transcript `path` may belong to, resolved and
-    /// folded in.
-    fn omp_event(&self, path: &Path) -> Vec<(String, LiveSession)> {
-        let watches: HashMap<String, OmpWatch> = match self.omp_watches.lock() {
-            Ok(watches) => watches.clone(),
-            Err(_) => return Vec::new(),
+    /// Every OMP watch whose transcript `path` may belong to. Nothing is read:
+    /// the watcher resolves each one when its throttle comes due, so a write
+    /// inside the window is folded in then rather than read and dropped.
+    fn omp_owners(&self, path: &Path) -> Vec<String> {
+        let Ok(watches) = self.omp_watches.lock() else {
+            return Vec::new();
         };
-
-        let mut candidates = Vec::new();
-        for (uuid, watch) in &watches {
-            let owns = path == watch.breadcrumb
-                || match self.tails.lock() {
-                    Ok(tails) => match tails.get(uuid) {
-                        Some(tail) => tail.owns(uuid, path),
-                        None => true,
-                    },
-                    Err(_) => false,
-                };
-            if owns {
-                candidates.push(uuid.clone());
-            }
-        }
-
-        candidates
-            .into_iter()
-            .filter_map(|uuid| self.resolve_omp(&uuid).map(|session| (uuid, session)))
+        let Ok(tails) = self.tails.lock() else {
+            return Vec::new();
+        };
+        watches
+            .iter()
+            .filter(|(uuid, watch)| {
+                path == watch.breadcrumb
+                    || tails.get(*uuid).map_or(true, |tail| tail.owns(uuid, path))
+            })
+            .map(|(uuid, _)| uuid.clone())
             .collect()
+    }
+
+    /// Fold in whatever `session_uuid`'s transcript gained since the last
+    /// read, re-resolving an OMP session's breadcrumb first. `None` when
+    /// nothing changed.
+    fn refresh(&self, session_uuid: &str) -> Option<LiveSession> {
+        let is_omp = self.omp_watches.lock().ok()?.contains_key(session_uuid);
+        if is_omp {
+            self.resolve_omp(session_uuid)
+        } else {
+            self.poll(session_uuid)
+        }
     }
 
     /// Register a session to be tailed as soon as its transcript appears.
@@ -209,21 +212,25 @@ impl LiveSessionManager {
 
     /// If `path` is the transcript of a pending session, begin tailing it.
     /// Returns the uuid when a tail was newly attached.
+    ///
+    /// The tail is attached unread: the watcher's next `refresh` does the
+    /// first read and so reports it. Reading here would leave that refresh
+    /// with nothing new, and the first turn unshown until the file grew again.
     fn adopt_pending(&self, path: &Path) -> Option<String> {
         if path.extension()? != "jsonl" {
             return None;
         }
         let uuid = path.file_stem()?.to_str()?.to_string();
         {
-            let pending = self.pending.lock().ok()?;
-            if !pending.contains(&uuid) {
+            let mut pending = self.pending.lock().ok()?;
+            if !pending.remove(&uuid) {
                 return None;
             }
         }
-        self.start(&uuid, path.to_path_buf()).ok()?;
-        if let Ok(mut pending) = self.pending.lock() {
-            pending.remove(&uuid);
-        }
+        let mut tails = self.tails.lock().ok()?;
+        tails
+            .entry(uuid.clone())
+            .or_insert_with(|| Tail::Claude(SessionTail::new(uuid.clone(), path.to_path_buf())));
         Some(uuid)
     }
 
@@ -258,7 +265,54 @@ impl LiveSessionManager {
 /// Without this a workflow's agents only surface when the parent transcript
 /// next grows, which during a run can be minutes.
 fn owns_sidecar(transcript: &Path, uuid: &str, path: &Path) -> bool {
-    transcript.parent().map(|dir| path.starts_with(dir.join(uuid))).unwrap_or(false)
+    transcript
+        .parent()
+        .map(|dir| path.starts_with(dir.join(uuid)))
+        .unwrap_or(false)
+}
+
+/// Per-session emit throttle with a trailing edge.
+///
+/// A write inside `DEBOUNCE` of the last emit used to be skipped outright, so
+/// the last write of a burst — an OMP `toolResult` lands milliseconds after
+/// its `toolCall` — was never reported until the file grew again, and a card
+/// sat on a finished tool until the next turn. Marking the session instead
+/// and flushing it once the window closes keeps the leading-edge emit and
+/// guarantees the trailing one.
+#[derive(Default)]
+struct Throttle {
+    last_emit: HashMap<String, Instant>,
+    dirty: HashSet<String>,
+}
+
+impl Throttle {
+    fn mark(&mut self, uuid: String) {
+        self.dirty.insert(uuid);
+    }
+
+    fn due_at(&self, uuid: &str, now: Instant) -> Instant {
+        self.last_emit.get(uuid).map_or(now, |at| *at + DEBOUNCE)
+    }
+
+    /// When the soonest dirty session comes due; `None` with nothing dirty.
+    fn next_due(&self, now: Instant) -> Option<Instant> {
+        self.dirty.iter().map(|uuid| self.due_at(uuid, now)).min()
+    }
+
+    /// Dirty sessions whose window has closed, stamped as emitted at `now`.
+    fn take_due(&mut self, now: Instant) -> Vec<String> {
+        let due: Vec<String> = self
+            .dirty
+            .iter()
+            .filter(|uuid| self.due_at(uuid, now) <= now)
+            .cloned()
+            .collect();
+        for uuid in &due {
+            self.dirty.remove(uuid);
+            self.last_emit.insert(uuid.clone(), now);
+        }
+        due
+    }
 }
 
 /// Holds the watcher alive for the life of the app. `Manager::manage` is keyed
@@ -292,55 +346,48 @@ pub fn start_live_watcher(
     let omp_dir = omp::agent_dir();
     if let Some(dir) = &omp_dir {
         if dir.exists() {
-            watcher.watch(dir, RecursiveMode::Recursive).map_err(|e| e.to_string())?;
+            watcher
+                .watch(dir, RecursiveMode::Recursive)
+                .map_err(|e| e.to_string())?;
         }
     }
 
     std::thread::spawn(move || {
-        let mut last_emit: HashMap<String, Instant> = HashMap::new();
+        let mut throttle = Throttle::default();
 
-        for event in rx {
-            if !matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) {
-                continue;
-            }
-            for path in &event.paths {
-                if omp_dir.as_deref().is_some_and(|dir| path.starts_with(dir)) {
-                    for (uuid, session) in manager.omp_event(path) {
-                        let slot = last_emit
-                            .entry(uuid.clone())
-                            .or_insert_with(|| Instant::now() - DEBOUNCE);
-                        if slot.elapsed() < DEBOUNCE {
-                            continue;
+        loop {
+            let received = match throttle.next_due(Instant::now()) {
+                None => rx.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected),
+                Some(at) => rx.recv_timeout(at.saturating_duration_since(Instant::now())),
+            };
+            match received {
+                Ok(event) if matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) => {
+                    for path in &event.paths {
+                        if omp_dir.as_deref().is_some_and(|dir| path.starts_with(dir)) {
+                            for uuid in manager.omp_owners(path) {
+                                throttle.mark(uuid);
+                            }
+                        } else if let Some(uuid) = manager
+                            .uuid_for_path(path)
+                            // A pending session's file may be appearing for the first time.
+                            .or_else(|| manager.adopt_pending(path))
+                        {
+                            throttle.mark(uuid);
                         }
-                        *slot = Instant::now();
-                        let _ = app_handle.emit(
-                            "session-update",
-                            SessionUpdateEvent { session_uuid: uuid, session },
-                        );
                     }
-                    continue;
                 }
+                Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
 
-                // A pending session's file may be appearing for the first time.
-                let uuid = match manager.uuid_for_path(path) {
-                    Some(uuid) => uuid,
-                    None => match manager.adopt_pending(path) {
-                        Some(uuid) => uuid,
-                        None => continue,
-                    },
-                };
-                let slot = last_emit
-                    .entry(uuid.clone())
-                    .or_insert_with(|| Instant::now() - DEBOUNCE);
-                if slot.elapsed() < DEBOUNCE {
-                    continue;
-                }
-                *slot = Instant::now();
-
-                if let Some(session) = manager.poll(&uuid) {
+            for uuid in throttle.take_due(Instant::now()) {
+                if let Some(session) = manager.refresh(&uuid) {
                     let _ = app_handle.emit(
                         "session-update",
-                        SessionUpdateEvent { session_uuid: uuid, session },
+                        SessionUpdateEvent {
+                            session_uuid: uuid,
+                            session,
+                        },
                     );
                 }
             }
@@ -364,8 +411,7 @@ mod tests {
         path
     }
 
-    const USER_LINE: &str =
-        r#"{"type":"user","message":{"role":"user","content":"hello"},"timestamp":"2026-01-01T00:00:00Z"}"#;
+    const USER_LINE: &str = r#"{"type":"user","message":{"role":"user","content":"hello"},"timestamp":"2026-01-01T00:00:00Z"}"#;
 
     #[test]
     fn start_reads_the_transcript_and_get_returns_it() {
@@ -399,7 +445,10 @@ mod tests {
 
         assert_eq!(adopted, UUID);
         assert!(!manager.is_pending(UUID), "no longer pending once tailed");
-        assert_eq!(manager.get(UUID).unwrap().expect("tracked").lines.len(), 1);
+        let session = manager
+            .refresh(UUID)
+            .expect("the first read is reported, not swallowed by adoption");
+        assert_eq!(session.lines.len(), 1);
     }
 
     #[test]
@@ -417,7 +466,10 @@ mod tests {
         let manager = LiveSessionManager::new();
         manager.expect(UUID).unwrap();
         manager.stop(UUID).unwrap();
-        assert!(!manager.is_pending(UUID), "a closed session must not be adopted later");
+        assert!(
+            !manager.is_pending(UUID),
+            "a closed session must not be adopted later"
+        );
     }
 
     #[test]
@@ -446,7 +498,10 @@ mod tests {
 
         assert!(manager.poll(UUID).is_none(), "nothing appended yet");
 
-        let mut file = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
         writeln!(file, "{}", USER_LINE).unwrap();
         drop(file);
 
@@ -473,7 +528,11 @@ mod tests {
 
         manager.start(UUID, path.clone()).unwrap();
         let again = manager.start(UUID, path).unwrap();
-        assert_eq!(again.lines.len(), 1, "the file is not re-read from the start");
+        assert_eq!(
+            again.lines.len(),
+            1,
+            "the file is not re-read from the start"
+        );
     }
 
     #[test]
@@ -488,10 +547,18 @@ mod tests {
             Some(UUID.to_string())
         );
         assert_eq!(
-            manager.uuid_for_path(&dir.path().join(UUID).join("subagents").join("agent-a.jsonl")),
+            manager.uuid_for_path(
+                &dir.path()
+                    .join(UUID)
+                    .join("subagents")
+                    .join("agent-a.jsonl")
+            ),
             Some(UUID.to_string())
         );
-        assert_eq!(manager.uuid_for_path(&dir.path().join("other-uuid.jsonl")), None);
+        assert_eq!(
+            manager.uuid_for_path(&dir.path().join("other-uuid.jsonl")),
+            None
+        );
         assert_eq!(
             manager.uuid_for_path(&dir.path().join(format!("{}-other", UUID)).join("x.json")),
             None,
@@ -540,7 +607,11 @@ mod tests {
 
         let manager = LiveSessionManager::new();
         let session = manager
-            .watch_omp("uuid-1", breadcrumb.clone(), std::time::SystemTime::UNIX_EPOCH)
+            .watch_omp(
+                "uuid-1",
+                breadcrumb.clone(),
+                std::time::SystemTime::UNIX_EPOCH,
+            )
             .unwrap();
         assert_eq!(session.title.as_deref(), Some("first"));
 
@@ -551,7 +622,11 @@ mod tests {
         let session = manager
             .watch_omp("uuid-1", breadcrumb, std::time::SystemTime::UNIX_EPOCH)
             .expect("resolves to the new target");
-        assert_eq!(session.title.as_deref(), Some("second"), "the tail switched files");
+        assert_eq!(
+            session.title.as_deref(),
+            Some("second"),
+            "the tail switched files"
+        );
     }
 
     #[test]
@@ -564,14 +639,44 @@ mod tests {
 
         let manager = LiveSessionManager::new();
         manager
-            .watch_omp("uuid-1", breadcrumb.clone(), std::time::SystemTime::UNIX_EPOCH)
+            .watch_omp(
+                "uuid-1",
+                breadcrumb.clone(),
+                std::time::SystemTime::UNIX_EPOCH,
+            )
             .unwrap();
         manager.stop("uuid-1").unwrap();
 
-        assert!(manager.get("uuid-1").unwrap().is_none(), "the tail is dropped");
         assert!(
-            manager.omp_event(&breadcrumb).is_empty(),
-            "a stopped session's watch no longer resolves"
+            manager.get("uuid-1").unwrap().is_none(),
+            "the tail is dropped"
         );
+        assert!(
+            manager.omp_owners(&breadcrumb).is_empty(),
+            "a stopped session's watch no longer claims writes"
+        );
+    }
+
+    /// An OMP `toolResult` lands milliseconds after the `toolCall` that was
+    /// just emitted. That second write must still be reported once the window
+    /// closes — dropping it left a card on a finished tool until the next turn.
+    #[test]
+    fn a_write_inside_the_window_is_flushed_when_it_closes() {
+        let mut throttle = Throttle::default();
+        let t0 = Instant::now();
+
+        throttle.mark("a".into());
+        assert_eq!(throttle.take_due(t0), vec!["a".to_string()], "leading edge");
+
+        let inside = t0 + DEBOUNCE / 10;
+        throttle.mark("a".into());
+        assert!(throttle.take_due(inside).is_empty(), "held inside the window");
+        assert_eq!(throttle.next_due(inside), Some(t0 + DEBOUNCE));
+        assert_eq!(
+            throttle.take_due(t0 + DEBOUNCE),
+            vec!["a".to_string()],
+            "trailing edge"
+        );
+        assert_eq!(throttle.next_due(t0 + DEBOUNCE), None, "nothing left dirty");
     }
 }

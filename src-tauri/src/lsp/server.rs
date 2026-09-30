@@ -49,18 +49,27 @@ pub fn resolve(language_id: &str, workspace_root: &Path) -> Option<ServerSpec> {
             .or_else(|| on_path(binary))
             .or_else(|| beside_atlas(binary));
         if let Some(command) = found {
-            return Some(ServerSpec { command, args: stdio_args(binary) });
+            return Some(ServerSpec {
+                command,
+                args: stdio_args(binary),
+            });
         }
     }
     if let Some(binary) = lookup(PATH_SERVERS, language_id) {
         if let Some(command) = on_path(binary) {
-            return Some(ServerSpec { command, args: stdio_args(binary) });
+            return Some(ServerSpec {
+                command,
+                args: stdio_args(binary),
+            });
         }
     }
     None
 }
 
-fn lookup(table: &'static [(&'static str, &'static str)], language_id: &str) -> Option<&'static str> {
+fn lookup(
+    table: &'static [(&'static str, &'static str)],
+    language_id: &str,
+) -> Option<&'static str> {
     table
         .iter()
         .find(|(id, _)| *id == language_id)
@@ -148,14 +157,19 @@ mod tests {
         let bin = dir.path().join("node_modules").join(".bin");
         std::fs::create_dir_all(&bin).unwrap();
         std::fs::write(bin.join("typescript-language-server"), "#!/bin/sh\n").unwrap();
-        for id in ["typescript", "typescriptreact", "javascript", "javascriptreact"] {
+        for id in [
+            "typescript",
+            "typescriptreact",
+            "javascript",
+            "javascriptreact",
+        ] {
             assert!(resolve(id, dir.path()).is_some(), "{id}");
         }
     }
 
     /* The fallback exists so a workspace that has installed nothing itself
-       still gets diagnostics. It is last, so a project that pins its own
-       TypeScript is the one that reports on its code. */
+    still gets diagnostics. It is last, so a project that pins its own
+    TypeScript is the one that reports on its code. */
     #[test]
     fn falls_back_to_the_server_atlas_ships() {
         let empty = tempfile::tempdir().unwrap();
@@ -163,7 +177,10 @@ mod tests {
         // found came from beside the test binary — which is Atlas's own tree.
         let spec = resolve("typescript", empty.path());
         let shipped = beside_atlas("typescript-language-server");
-        assert_eq!(spec.map(|s| s.command), shipped.or_else(|| on_path("typescript-language-server")));
+        assert_eq!(
+            spec.map(|s| s.command),
+            shipped.or_else(|| on_path("typescript-language-server"))
+        );
     }
 
     /* rust-analyzer takes no flag; handing it `--stdio` makes it exit. */

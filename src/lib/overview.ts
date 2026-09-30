@@ -4,7 +4,7 @@
  * The join, the sort and the filter live here rather than in the components so
  * they can be unit-tested without a Svelte compiler (README → Conventions).
  */
-import type { LiveSession, PlanItem, SessionState } from "../types/session";
+import type { LiveSession, PlanItem, SessionState, TranscriptLine } from "../types/session";
 import type { OverviewOrdering } from "./stores/settings";
 import type { View } from "./stores/view";
 import type { DiffStats, Workspace, WorkspaceSession } from "./stores/workspace";
@@ -47,8 +47,9 @@ export interface SessionTile {
  * silently shows another session's diff numbers.
  *
  * `needsInputTabs` are the terminal tabs the Notification hook has flagged
- * (`TabItem.needsInput`). The backend never sets `SessionState::NeedsYou`
- * itself — `live.rs` says so explicitly — so that flag is the real signal.
+ * (`TabItem.needsInput`). Claude Code's tail never sets `needsYou` itself —
+ * the transcript cannot see a permission prompt — so that flag is its only
+ * signal. OMP's tail does, while its `ask` tool waits on an answer.
  *
  * Folding it in needs a terminal tab id, which only the workspace row carries,
  * so the second loop's rowless tiles can never read needs-you. That costs
@@ -141,7 +142,7 @@ function toTile(
 ): SessionTile {
   const tabId = row?.terminalTabId ?? null;
   const flagged = tabId !== null && needsInputTabs.has(tabId);
-  const asking = live.state === "idle" && splitReply(live.lastReply).question !== null;
+  const asking = openQuestion(live) !== null;
   return {
     sessionUuid: live.sessionUuid,
     atlasSessionId: row?.id ?? "",
@@ -317,6 +318,17 @@ export function splitReply(reply: string | null): { body: string; question: stri
   return { body: paragraphs.join("\n\n"), question: null };
 }
 
+/**
+ * The question the session is still waiting on: an OMP `ask` it is blocked
+ * on — the only `needsYou` the backend reports — or an idle session's closing
+ * question. Once it is running again the question has been answered, or the
+ * session moved past it, and lifting it into the callout would pin a stale ask.
+ */
+export function openQuestion(live: LiveSession): string | null {
+  if (live.state === "needsYou") return live.pendingTool?.inputSummary || null;
+  return live.state === "idle" ? splitReply(live.lastReply).question : null;
+}
+
 /** Strips the markdown emphasis/code markers a plain-text card should not show. */
 export function plainText(s: string): string {
   return s.replace(/\*\*|__|`/g, "");
@@ -340,8 +352,9 @@ export function formatClock(iso: string): string {
 
 /**
  * What a card's activity line says: the tool a running session is waiting on,
- * or when an idle one last finished and how long that turn took. `null` for
- * every other state, which the card handles separately.
+ * the background agents it is waiting on, or when an idle one last finished
+ * and how long that turn took. `null` for every other state, which the card
+ * handles separately.
  */
 export function activity(
   live: LiveSession,
@@ -349,7 +362,11 @@ export function activity(
 ): { running: boolean; text: string } | null {
   if (live.state === "running") {
     const pending = live.pendingTool;
-    if (!pending) return { running: true, text: "Working…" };
+    if (!pending) {
+      const agents = live.subagents.filter((a) => !a.done).length;
+      if (agents === 0) return { running: true, text: "Working…" };
+      return { running: true, text: `Waiting on ${agents} agent${agents === 1 ? "" : "s"}` };
+    }
     const label = shortToolName(pending.name);
     return {
       running: true,
@@ -366,6 +383,59 @@ export function activity(
     return { running: false, text: `Finished ${clock(ended)}${worked}` };
   }
   return null;
+}
+
+/** One row of a card's conversation feed. */
+export interface FeedItem {
+  kind: "you" | "note" | "step" | "alert";
+  text: string;
+  /** The tool a `step` ran, shortened as `shortToolName` does. */
+  tool: string | null;
+}
+
+/**
+ * The conversation as a card shows it: prompts, Claude's prose and the tools
+ * it called, oldest first. A successful tool result is dropped — the call
+ * already says what was done — but a failed one stays, as an alert. There is
+ * no row cap: the card clips the oldest rows by the room it actually has.
+ *
+ * `question` is the reply's closing question when the card lifts it into its
+ * own callout; it is cut off the newest note so it is not shown twice.
+ *
+ * Roles come off the line's text prefix rather than `role`, because the live
+ * tail dresses its newest line as `working` and hides the real role.
+ */
+export function feedItems(
+  lines: readonly TranscriptLine[],
+  question: string | null = null,
+): FeedItem[] {
+  const items: FeedItem[] = [];
+  for (const line of lines) {
+    const { text } = line;
+    if (text.startsWith("> ")) {
+      items.push({ kind: "you", text: plainText(text.slice(2)), tool: null });
+    } else if (text.startsWith("* ")) {
+      const body = text.slice(2);
+      const gap = body.indexOf(" ");
+      const name = gap === -1 ? body : body.slice(0, gap);
+      const summary = gap === -1 ? "" : body.slice(gap + 1);
+      items.push({ kind: "step", text: summary, tool: shortToolName(name) });
+    } else if (text.startsWith("  ")) {
+      if (line.role === "alert") items.push({ kind: "alert", text: text.trim(), tool: null });
+    } else if (text.trim() !== "") {
+      items.push({ kind: "note", text: plainText(text), tool: null });
+    }
+  }
+
+  const last = items[items.length - 1];
+  if (question && last?.kind === "note") {
+    const q = plainText(question).split(/\s+/).join(" ");
+    if (last.text.endsWith(q)) {
+      last.text = last.text.slice(0, -q.length).trim();
+      if (last.text === "") items.pop();
+    }
+  }
+  return items;
 }
 
 // ── Grid keyboard model ───────────────────────────────────────────────────────

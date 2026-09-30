@@ -7,8 +7,8 @@ Mission control for [Claude Code](https://claude.com/claude-code). Run several s
 
 ## Features
 
-- **Overview grid** — every running session as a live tile: state, last six transcript lines, current step and plan progress, subagent count, context %, cost and diff counts. Sorted needs-you first (configurable). Permission prompts get an inline Allow/Deny that types the answer into the real TUI.
-- **Session view** — the actual Claude Code terminal, so `/mcp`, `/resume`, `/model`, plan mode and Shift+Tab all keep working. Beside it, an activity rail with the plan checklist, subagents, turn stats and files touched.
+- **Overview grid** — every running session as a live tile: state, the conversation's tail (your prompts, Claude's replies and the tools it called), running subagents, what it is doing right now, context, cost (subagents included) and diff counts. Sorted needs-you first (configurable). Permission prompts get an inline Allow/Deny that types the answer into the real TUI; an OMP session blocked on its `ask` tool shows the question.
+- **Session view** — the actual Claude Code terminal, so `/mcp`, `/resume`, `/model`, plan mode and Shift+Tab all keep working. Highlighting text copies it, whichever harness is running. Beside it, an activity rail with the plan checklist, subagents, turn stats and files touched.
 - **Resumable sessions** — Atlas spawns `claude --session-id <uuid>` and remembers it, so quitting and relaunching lets you pick a prior conversation back up with its history intact. The New Session modal offers Fresh or Resume per workspace.
 - **Changes drawer** — the session's git diff as a slide-over: file tree, unified or split, viewed-state tracking, and inline review comments you can send back to the session as a prompt.
 - **Pull requests** — open PRs across your watched repos grouped into cards, with CI and review status, All / Mine / Needs-my-review filters, and "Work on it" to check the branch out and start a session on it. Backed by the `gh` CLI.

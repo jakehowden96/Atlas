@@ -1,16 +1,19 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import type { SessionState } from "../../../types/session";
   import { formatTokens } from "../../format";
   import {
     activity,
+    feedItems,
     formatElapsed,
+    openQuestion,
     pinKey,
     plainText,
-    shortToolName,
-    splitReply,
     type SessionTile,
+    shortToolName,
   } from "../../overview";
   import { allowPendingTool, closeSession, denyPendingTool } from "../../session-actions";
+  import { subagentMeta } from "../../session-view";
   import { togglePinnedSession } from "../../stores/settings";
   import { activeTabId } from "../../stores/terminal";
   import { focusedSessionId, showView } from "../../stores/view";
@@ -49,12 +52,51 @@
   let needsYou = $derived(tile.state === "needsYou");
   let elapsed = $derived(formatElapsed(live.startedAt, now));
 
-  /** A permission prompt, as opposed to needs-you off a closing question. */
-  let permission = $derived(needsYou && live.pendingTool !== null);
-  let split = $derived(splitReply(live.lastReply));
-  let hasMessages = $derived(!!(live.lastPrompt || live.lastReply));
+  /** A permission prompt the hook flagged, as opposed to needs-you off a
+      question — a closing one, or an OMP `ask` the backend itself reports as
+      `needsYou`, which y/n does not answer. */
+  let permission = $derived(needsYou && live.state !== "needsYou" && live.pendingTool !== null);
+  let question = $derived(openQuestion(live));
+  let feed = $derived(feedItems(live.lines, question));
+  let agents = $derived(live.subagents.filter((a) => !a.done));
   let act = $derived(activity(live));
   let emptyMeta = $derived([live.model, tile.workspacePath].filter(Boolean).join(" · "));
+
+  /* The feed is bottom-anchored and clips its oldest rows by the room the card
+     has, so on a long turn the prompts are the first thing to go. The first
+     prompt says what the session is for and the newest what it is doing now;
+     either one, once clipped, is repeated above the feed. Pinning a clipped
+     prompt only shrinks the feed, which keeps it clipped, so the measurement
+     settles instead of flickering. */
+  let sumEl: HTMLDivElement | undefined = $state();
+  let promptIndices = $derived.by(() => {
+    const found: number[] = [];
+    feed.forEach((item, i) => {
+      if (item.kind === "you") found.push(i);
+    });
+    return found.length > 1 ? [found[0], found[found.length - 1]] : found;
+  });
+  let clipped: number[] = $state([]);
+  let keptPrompts = $derived(clipped.map((i) => feed[i]).filter((item) => item?.kind === "you"));
+
+  $effect(() => {
+    const el = sumEl;
+    const watched = promptIndices;
+    void feed; // any new row can push a prompt off the top
+    if (!el) return;
+    const measure = () => {
+      const top = el.getBoundingClientRect().top + Number.parseFloat(getComputedStyle(el).paddingTop);
+      const next = watched.filter((i) => {
+        const row = el.querySelector(`[data-feed="${i}"]`);
+        return row !== null && row.getBoundingClientRect().top < top;
+      });
+      if (next.join() !== untrack(() => clipped).join()) clipped = next;
+    };
+    untrack(measure);
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  });
 
   function open() {
     focusedSessionId.set(tile.atlasSessionId);
@@ -154,10 +196,20 @@
     </div>
   </div>
 
-  <!-- The transcript's last prompt and reply, in place of a terminal preview:
-       the card reads as a conversation, not a mirrored PTY. -->
-  <div class="sum">
-    {#if !hasMessages}
+  {#if keptPrompts.length > 0}
+    <div class="kept-prompts">
+      <span class="lbl">You</span>
+      {#each keptPrompts as item, i (i)}
+        <div class="you"><span>{item.text}</span></div>
+      {/each}
+    </div>
+  {/if}
+
+  <!-- The conversation's tail from the transcript, in place of a terminal
+       preview: prompts, Claude's prose and the tools it ran, newest at the
+       bottom. Older rows fall off the top as the card runs out of room. -->
+  <div class="sum" bind:this={sumEl}>
+    {#if feed.length === 0}
       {#if !tailing}
         <div class="empty">Transcript tailing is off.</div>
       {:else}
@@ -167,20 +219,42 @@
         </div>
       {/if}
     {:else}
-      {#if live.lastPrompt}
-        <div class="blk">
-          <span class="lbl">You</span>
-          <div class="you">{plainText(live.lastPrompt)}</div>
-        </div>
-      {/if}
-      {#if split.body}
-        <div class="blk">
-          <span class="lbl">Claude</span>
-          <div class="reply">{plainText(split.body)}</div>
-        </div>
-      {/if}
+      {#each feed as item, i (i)}
+        {#if item.kind === "you"}
+          <div class="blk" data-feed={i}>
+            <span class="lbl">You</span>
+            <div class="you"><span>{item.text}</span></div>
+          </div>
+        {:else}
+          {#if i === 0 || feed[i - 1].kind === "you"}<span class="lbl">Claude</span>{/if}
+          {#if item.kind === "note"}
+            <div class="reply" class:latest={i === feed.length - 1}>{item.text}</div>
+          {:else if item.kind === "step"}
+            <div class="step">
+              <span class="step-tool">{item.tool}</span>{#if item.text}<span class="step-arg"
+                  >{item.text}</span
+                >{/if}
+            </div>
+          {:else}
+            <div class="step alert">{item.text}</div>
+          {/if}
+        {/if}
+      {/each}
     {/if}
   </div>
+
+  {#if agents.length > 0}
+    <div class="agents">
+      {#each agents.slice(0, 3) as agent, i (i)}
+        <div class="agent">
+          <span class="agent-dot" aria-hidden="true"></span>
+          <span class="agent-task">{agent.task}</span>
+          <span class="agent-meta">{subagentMeta(agent, now)}</span>
+        </div>
+      {/each}
+      {#if agents.length > 3}<div class="agent-more">+{agents.length - 3} more</div>{/if}
+    </div>
+  {/if}
 
   {#if permission && live.pendingTool}
     <div class="ask permission">
@@ -190,8 +264,8 @@
       <button type="button" class="deny" onclick={deny}>Deny <kbd>n</kbd></button>
       <button type="button" class="allow" onclick={allow}>Allow <kbd>y</kbd></button>
     </div>
-  {:else if split.question}
-    <div class="ask">{plainText(split.question)}</div>
+  {:else if question}
+    <div class="ask">{plainText(question)}</div>
   {:else if needsYou}
     <div class="ask">Waiting for your input</div>
   {/if}
@@ -379,15 +453,37 @@
   }
 
   /* ── Card body ───────────────────────────────────────────────────────── */
+  /* Bottom-anchored: the newest row sits on the card's floor and older ones
+     are clipped off the top once the card is full. Overflow shows through the
+     top padding, so the mask fades exactly that band and nothing below it. */
   .sum {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    justify-content: flex-end;
+    gap: 6px;
     flex: 1;
     min-height: 0;
     overflow: hidden;
-    padding: 14px;
+    padding: 20px 14px 14px;
     font-size: var(--fs-sm);
+    mask-image: linear-gradient(to bottom, transparent, #000 20px);
+  }
+
+  .kept-prompts {
+    display: grid;
+    gap: 3px;
+    padding: 12px 14px 0;
+    font-size: var(--fs-sm);
+  }
+
+  /* Clamped rows would otherwise shrink to nothing under the column's squeeze. */
+  .sum > * {
+    flex-shrink: 0;
+  }
+
+  .sum > .blk:not(:first-child),
+  .sum > .lbl:not(:first-child) {
+    margin-top: 6px;
   }
 
   .blk {
@@ -408,10 +504,15 @@
     border-radius: var(--r-md);
     padding: 8px 10px;
     color: var(--text);
+  }
+
+  /* The clamp sits on the inner span: clamped on the padded box itself, the
+     next line bleeds into the bottom padding. */
+  .you span {
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
     overflow: hidden;
     overflow-wrap: anywhere;
   }
@@ -419,11 +520,96 @@
   .reply {
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 4;
-    line-clamp: 4;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
     overflow: hidden;
     overflow-wrap: anywhere;
     color: var(--muted);
+  }
+
+  .reply.latest {
+    -webkit-line-clamp: 6;
+    line-clamp: 6;
+    color: var(--text);
+  }
+
+  .step {
+    display: flex;
+    gap: 8px;
+    min-width: 0;
+    padding-left: 8px;
+    border-left: 2px solid var(--border2);
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    white-space: nowrap;
+  }
+
+  .step-tool {
+    flex-shrink: 0;
+    color: var(--t-tool);
+  }
+
+  .step-arg {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--muted);
+    text-overflow: ellipsis;
+  }
+
+  .step.alert {
+    overflow: hidden;
+    border-left-color: var(--danger);
+    color: var(--danger);
+    text-overflow: ellipsis;
+  }
+
+  /* ── Running subagents ───────────────────────────────────────────────── */
+  .agents {
+    display: grid;
+    flex-shrink: 0;
+    gap: 4px;
+    padding: 8px 14px;
+    border-top: 1px solid var(--border);
+    font-size: var(--fs-xs);
+  }
+
+  .agent {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  .agent-dot {
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: agentPulse 1.6s ease-in-out infinite;
+  }
+
+  @keyframes agentPulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  .agent-task {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text);
+    text-overflow: ellipsis;
+  }
+
+  .agent-meta,
+  .agent-more {
+    flex-shrink: 0;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
   }
 
   .empty {
@@ -443,6 +629,8 @@
 
   /* ── Callout ─────────────────────────────────────────────────────────── */
   .ask {
+    flex-shrink: 0;
+    margin: 0 14px 10px;
     border-left: 2px solid var(--warn);
     background: color-mix(in srgb, var(--warn) 12%, var(--surface));
     border-radius: 0 var(--r-md) var(--r-md) 0;
@@ -511,8 +699,10 @@
   .now {
     display: flex;
     align-items: center;
+    flex-shrink: 0;
     gap: 8px;
     min-width: 0;
+    padding: 0 14px 10px;
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
     color: var(--text);
@@ -529,6 +719,10 @@
     font-family: var(--font-ui);
   }
 
+  /* Deliberately not gated on prefers-reduced-motion: this is an activity
+     indicator, not decorative motion, and macOS keeps its own spinners turning
+     under Reduce Motion. Gated, a running card shows a frozen ring that reads
+     as stalled. */
   .spin {
     flex-shrink: 0;
     width: 10px;
@@ -542,12 +736,6 @@
   @keyframes tileSpin {
     to {
       transform: rotate(360deg);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .spin {
-      animation: none;
     }
   }
 
