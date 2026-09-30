@@ -14,6 +14,7 @@
 //! - a file written by a newer Atlas (higher top-level `version`) is kept once
 //!   as `<name>.json.v<N>.bak` before an older build overwrites it.
 
+use crate::error::AtlasError;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -67,17 +68,17 @@ impl StateStore {
         }
     }
 
-    fn path(&self, file: StateFile) -> Result<PathBuf, String> {
+    fn path(&self, file: StateFile) -> Result<PathBuf, AtlasError> {
         let dir = self
             .dir
             .as_ref()
-            .ok_or_else(|| "Could not resolve the home directory".to_string())?;
+            .ok_or_else(|| AtlasError::internal("Could not resolve the home directory"))?;
         Ok(dir.join(file.file_name()))
     }
 
-    pub fn load(&self, file: StateFile) -> Result<StateLoad, String> {
+    pub fn load(&self, file: StateFile) -> Result<StateLoad, AtlasError> {
         let path = self.path(file)?;
-        let _guard = self.lock.lock().map_err(|e| e.to_string())?;
+        let _guard = self.lock.lock()?;
         let text = match std::fs::read(&path) {
             Ok(bytes) => bytes,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -86,7 +87,7 @@ impl StateStore {
                     recovered: false,
                 })
             }
-            Err(e) => return Err(format!("{}: {e}", path.display())),
+            Err(e) => return Err(AtlasError::io_at(&path, &e)),
         };
         match parse_state(&text) {
             Some(contents) => Ok(StateLoad {
@@ -94,8 +95,7 @@ impl StateStore {
                 recovered: false,
             }),
             None => {
-                copy_aside(&path, &bak_path(&path, None))
-                    .map_err(|e| format!("could not back up {}: {e}", path.display()))?;
+                copy_aside(&path, &bak_path(&path, None))?;
                 log::error!(
                     "{} is not valid JSON; copied it to {} and starting from defaults",
                     path.display(),
@@ -114,49 +114,51 @@ impl StateStore {
         read_json(self.dir.as_deref()?, file)
     }
 
-    pub fn save(&self, file: StateFile, contents: &str) -> Result<(), String> {
+    pub fn save(&self, file: StateFile, contents: &str) -> Result<(), AtlasError> {
         if contents.len() > MAX_STATE_BYTES {
-            return Err(format!(
+            return Err(AtlasError::invalid_input(format!(
                 "{} would be larger than {} MiB",
                 file.file_name(),
                 MAX_STATE_BYTES / (1024 * 1024)
-            ));
+            )));
         }
         let new_version = match serde_json::from_str::<serde_json::Value>(contents) {
             Ok(value) => version_of(&value),
-            Err(e) => return Err(format!("{} is not valid JSON: {e}", file.file_name())),
+            Err(e) => {
+                return Err(AtlasError::parse(format!(
+                    "{} is not valid JSON: {e}",
+                    file.file_name()
+                )))
+            }
         };
         let path = self.path(file)?;
         let dir = path
             .parent()
-            .ok_or_else(|| "state file has no parent directory".to_string())?;
-        let _guard = self.lock.lock().map_err(|e| e.to_string())?;
-        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            .ok_or_else(|| AtlasError::internal("state file has no parent directory"))?;
+        let _guard = self.lock.lock()?;
+        std::fs::create_dir_all(dir).map_err(|e| AtlasError::io_at(dir, &e))?;
 
         match std::fs::read(&path) {
             Ok(existing) => match serde_json::from_slice::<serde_json::Value>(&existing) {
                 // The file on disk is unusable and this save would replace it.
-                Err(_) => copy_aside(&path, &bak_path(&path, None))
-                    .map_err(|e| format!("could not back up {}: {e}", path.display()))?,
+                Err(_) => copy_aside(&path, &bak_path(&path, None))?,
                 Ok(value) => {
                     let on_disk = version_of(&value);
                     if on_disk > new_version {
                         let bak = bak_path(&path, Some(on_disk));
                         // Keep the first copy: it is the newer build's own.
                         if !bak.exists() {
-                            copy_aside(&path, &bak).map_err(|e| {
-                                format!("could not back up {}: {e}", path.display())
-                            })?;
+                            copy_aside(&path, &bak)?;
                         }
                     }
                 }
             },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(format!("{}: {e}", path.display())),
+            Err(e) => return Err(AtlasError::io_at(&path, &e)),
         }
 
         crate::atomic_write::write_atomic(&path, contents.as_bytes())
-            .map_err(|e| format!("{}: {e}", path.display()))
+            .map_err(|e| AtlasError::io_at(&path, &e))
     }
 }
 
@@ -192,13 +194,13 @@ fn bak_path(path: &Path, version: Option<u64>) -> PathBuf {
     PathBuf::from(name)
 }
 
-fn copy_aside(from: &Path, to: &Path) -> std::io::Result<()> {
-    let bytes = std::fs::read(from)?;
-    crate::atomic_write::write_atomic(to, &bytes)
+fn copy_aside(from: &Path, to: &Path) -> Result<(), AtlasError> {
+    let copy = std::fs::read(from).and_then(|bytes| crate::atomic_write::write_atomic(to, &bytes));
+    copy.map_err(|e| AtlasError::io(format!("could not back up {}: {e}", from.display())))
 }
 
 #[tauri::command(async)]
-pub fn state_load(name: StateFile, store: State<'_, StateStore>) -> Result<StateLoad, String> {
+pub fn state_load(name: StateFile, store: State<'_, StateStore>) -> Result<StateLoad, AtlasError> {
     store.load(name)
 }
 
@@ -207,7 +209,7 @@ pub fn state_save(
     name: StateFile,
     contents: String,
     store: State<'_, StateStore>,
-) -> Result<(), String> {
+) -> Result<(), AtlasError> {
     store.save(name, &contents)
 }
 
@@ -308,8 +310,9 @@ mod tests {
         let s = store(&tmp);
         s.save(StateFile::Settings, r#"{"version":1}"#).unwrap();
 
-        assert!(s.save(StateFile::Settings, "{ nope").is_err());
+        let rejected = s.save(StateFile::Settings, "{ nope").unwrap_err();
 
+        assert!(matches!(rejected, AtlasError::Parse { .. }), "{rejected:?}");
         assert_eq!(read(&tmp, "settings.json"), r#"{"version":1}"#);
     }
 
