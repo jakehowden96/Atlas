@@ -51,7 +51,10 @@ const fakes = vi.hoisted(() => {
     fit = vi.fn();
   }
   class FakeLinks {
-    constructor(public handler?: (event: MouseEvent, uri: string) => void) {}
+    static instances: FakeLinks[] = [];
+    constructor(public handler?: (event: MouseEvent, uri: string) => void) {
+      FakeLinks.instances.push(this);
+    }
   }
   class FakeWebgl {
     static instances: FakeWebgl[] = [];
@@ -103,8 +106,16 @@ vi.mock("../logger", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { getPanelData, ptyKill, ptyResize, ptySpawn, ptyWrite, refreshPanel } from "../ipc";
-import { TerminalSession } from "../terminal-session";
+import {
+  getPanelData,
+  openUrl,
+  ptyKill,
+  ptyResize,
+  ptySpawn,
+  ptyWrite,
+  refreshPanel,
+} from "../ipc";
+import { parseOsc7, TerminalSession } from "../terminal-session";
 import { toasts } from "../stores/toast";
 import { addTab, tabs } from "../stores/terminal";
 import { updateSessionLabelByTabId } from "../stores/workspace";
@@ -170,14 +181,20 @@ function rejectUnobserved(fn: { mockImplementation: (impl: () => never) => unkno
   return { wasHandled: () => observed };
 }
 
+const resizeObservers: (() => void)[] = [];
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
   vi.stubGlobal("window", {
     matchMedia: () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
   });
+  resizeObservers.length = 0;
   vi.stubGlobal(
     "ResizeObserver",
     class {
+      constructor(cb: () => void) {
+        resizeObservers.push(cb);
+      }
       observe() {}
       disconnect() {}
     },
@@ -186,6 +203,7 @@ beforeEach(() => {
   vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id));
   vi.clearAllMocks();
   fakes.FakeWebgl.instances.length = 0;
+  fakes.FakeLinks.instances.length = 0;
   toasts.set([]);
   vi.mocked(ptyWrite).mockResolvedValue(undefined);
   vi.mocked(ptyResize).mockResolvedValue(undefined);
@@ -314,5 +332,103 @@ describe("TerminalSession title changes", () => {
     expect(updateSessionLabelByTabId).toHaveBeenCalledTimes(1);
     expect(updateSessionLabelByTabId).toHaveBeenCalledWith("tab-1", "Fix the login bug");
     expect(emissions).toBe(0);
+  });
+});
+
+describe("TerminalSession renderer", () => {
+  it("falls back to the DOM renderer when a WebGL context is lost", () => {
+    vi.mocked(ptySpawn).mockResolvedValue(7);
+    makeSession();
+    const [webgl] = fakes.FakeWebgl.instances;
+
+    webgl.contextLoss?.();
+
+    expect(webgl.disposed).toBe(true);
+  });
+});
+
+describe("TerminalSession links", () => {
+  function clickLink(uri: string) {
+    vi.mocked(ptySpawn).mockResolvedValue(7);
+    makeSession();
+    const [links] = fakes.FakeLinks.instances;
+    links.handler?.({} as MouseEvent, uri);
+  }
+
+  it("opens a clicked link through the validated open_url command", async () => {
+    vi.mocked(openUrl).mockResolvedValue(undefined);
+    clickLink("https://example.com/docs");
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(openUrl).toHaveBeenCalledWith("https://example.com/docs");
+    expect(get(toasts)).toHaveLength(0);
+  });
+
+  it("tells the user when open_url refuses the link, without leaking a rejection", async () => {
+    const open = rejectUnobserved(vi.mocked(openUrl), new Error("only https URLs can be opened"));
+    clickLink("http://localhost:3000");
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(open.wasHandled()).toBe(true);
+    expect(get(toasts)).toHaveLength(1);
+  });
+});
+
+describe("TerminalSession panel refresh", () => {
+  it("does not toast every poll when the working directory has vanished", async () => {
+    vi.mocked(ptySpawn).mockResolvedValue(7);
+    vi.mocked(refreshPanel).mockRejectedValue(new Error("cwd does not exist"));
+    const shown = new Set<string>();
+    const unsubscribe = toasts.subscribe((list) => {
+      for (const t of list) shown.add(t.id);
+    });
+    makeSession();
+
+    await vi.advanceTimersByTimeAsync(95_000);
+    unsubscribe();
+
+    expect(refreshPanel).toHaveBeenCalledTimes(4);
+    expect(shown.size).toBe(0);
+  });
+});
+
+describe("TerminalSession resizing", () => {
+  async function resizedCalls(visible: boolean, bursts: number) {
+    vi.mocked(ptySpawn).mockResolvedValue(7);
+    makeSession({ visible });
+    await vi.advanceTimersByTimeAsync(0);
+    vi.mocked(ptyResize).mockClear();
+    for (let i = 0; i < bursts; i++) {
+      for (const notify of resizeObservers) notify();
+      await vi.advanceTimersByTimeAsync(16);
+    }
+    await vi.advanceTimersByTimeAsync(500);
+    return vi.mocked(ptyResize).mock.calls.length;
+  }
+
+  it("tracks every resize of the terminal on screen", async () => {
+    expect(await resizedCalls(true, 10)).toBe(10);
+  });
+
+  it("settles a parked terminal once after a burst of window resizes", async () => {
+    expect(await resizedCalls(false, 10)).toBe(1);
+  });
+});
+
+describe("parseOsc7", () => {
+  it.each([
+    ["file://host/Users/x/proj", "/Users/x/proj"],
+    ["file:///Users/x/my%20dir", "/Users/x/my dir"],
+    ["file://HOST/C:/Users/x/proj", "C:/Users/x/proj"],
+    ["file:///C:/", "C:/"],
+    ["C:\\Users\\x", "C:\\Users\\x"],
+    ["/plain/path", "/plain/path"],
+    ["  /padded  ", "/padded"],
+  ])("reads %s as %s", (data, cwd) => {
+    expect(parseOsc7(data)).toBe(cwd);
+  });
+
+  it.each([[""], ["   "], ["file://host/bad%zzescape"]])("rejects %j", (data) => {
+    expect(parseOsc7(data)).toBeNull();
   });
 });

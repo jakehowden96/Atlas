@@ -3,7 +3,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel, getPanelData } from "./ipc";
+import { getPanelData, openUrl, ptyKill, ptyResize, ptySpawn, ptyWrite, refreshPanel } from "./ipc";
 import {
   activeTabId,
   setPermissionPromptVisible,
@@ -37,6 +37,31 @@ export interface TerminalSessionOptions {
  *  nobody opens still gets a shell. */
 const SPAWN_SIZE_TIMEOUT_MS = 1000;
 
+/** How long a parked (off-screen) terminal waits after its last resize before
+ *  refitting, so a window drag reflows it once rather than once per frame. */
+const HIDDEN_REFIT_DEBOUNCE_MS = 150;
+
+/**
+ * The working directory an OSC 7 report names, or `null` if it names none.
+ *
+ * Shells send `file://host/path`; the path is percent-decoded, and on Windows
+ * the drive letter arrives as `/C:/Users/x`, whose leading slash would make
+ * the path non-absolute to the backend, so it is dropped. Anything that is
+ * not a `file:` URL is taken as a raw path already — `new URL("C:\\x")` would
+ * otherwise parse as scheme `c:` and yield `\x`.
+ */
+export function parseOsc7(data: string): string | null {
+  const raw = data.trim();
+  if (raw === "") return null;
+  if (!/^file:\/\//i.test(raw)) return raw;
+  try {
+    const path = decodeURIComponent(new URL(raw).pathname);
+    return (/^\/[A-Za-z]:(\/|$)/.test(path) ? path.slice(1) : path) || null;
+  } catch {
+    return null;
+  }
+}
+
 export class TerminalSession {
   private terminal: Terminal;
   private fitAddon: FitAddon;
@@ -54,6 +79,8 @@ export class TerminalSession {
   private destroyed = false;
   private ptyWriteFailureShown = false;
   private lastTitle = "";
+  private panelRefreshFailing = false;
+  private hiddenRefitTimer: ReturnType<typeof setTimeout> | null = null;
   private unsubscribeTheme: (() => void) | null = null;
   private unsubscribeFontSize: (() => void) | null = null;
   private prefersDark: MediaQueryList | null = null;
@@ -172,14 +199,20 @@ export class TerminalSession {
 
     this.fitAddon = new FitAddon();
     this.terminal.loadAddon(this.fitAddon);
-    this.terminal.loadAddon(new WebLinksAddon());
+    this.terminal.loadAddon(new WebLinksAddon((_event, uri) => this.openLink(uri)));
 
     this.terminal.open(opts.container);
 
+    // Every tab stays mounted for the life of the app, and a webview caps live
+    // WebGL contexts (16 in Chromium/WebView2): past that the oldest context is
+    // lost and its terminal stops painting. Disposing the addon on loss drops
+    // xterm back to its DOM renderer, which is slower but never blank.
     try {
-      this.terminal.loadAddon(new WebglAddon());
-    } catch {
-      // WebGL not available, canvas renderer is fine
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => webgl.dispose());
+      this.terminal.loadAddon(webgl);
+    } catch (e) {
+      log.warn("terminal", `WebGL renderer unavailable for tab=${this.tabId}: ${e}`);
     }
 
     // After the fit addon exists — the first emission has to be able to refit.
@@ -242,19 +275,10 @@ export class TerminalSession {
     // OSC 7: CWD reporting — shells emit this when the directory changes
     // Format: file://hostname/path/to/dir
     this.terminal.parser.registerOscHandler(7, (data) => {
-      try {
-        const url = new URL(data);
-        const cwd = decodeURIComponent(url.pathname);
-        if (cwd && cwd !== this.currentCwd) {
-          this.currentCwd = cwd;
-          this.scheduleRefresh(cwd);
-        }
-      } catch {
-        const cwd = data.trim();
-        if (cwd && cwd !== this.currentCwd) {
-          this.currentCwd = cwd;
-          this.scheduleRefresh(cwd);
-        }
+      const cwd = parseOsc7(data);
+      if (cwd && cwd !== this.currentCwd) {
+        this.currentCwd = cwd;
+        this.scheduleRefresh(cwd);
       }
       return true;
     });
@@ -453,11 +477,22 @@ export class TerminalSession {
         this.flushPendingSpawn();
         return;
       }
-      // Not gated on `_visible`: the registry fills the host to whatever box
-      // holds it — the Session pane or the pane-sized parking root — so a
-      // backgrounded terminal follows a window resize the same as the visible
-      // one does, and comes back on screen already at the right geometry.
-      this.refit();
+      // Not skipped for a hidden terminal: the registry fills the host to
+      // whatever box holds it — the Session pane or the pane-sized parking
+      // root — so a backgrounded terminal follows a window resize and comes
+      // back on screen already at the right geometry. But dragging the window
+      // resizes every host each frame, and each refit reflows the buffer and
+      // SIGWINCHes a TUI that then redraws; a parked terminal settles once
+      // the burst is over instead.
+      if (this._visible) {
+        this.refit();
+        return;
+      }
+      clearTimeout(this.hiddenRefitTimer ?? undefined);
+      this.hiddenRefitTimer = setTimeout(() => {
+        this.hiddenRefitTimer = null;
+        if (!this.destroyed) this.refit();
+      }, HIDDEN_REFIT_DEBOUNCE_MS);
     });
     this.resizeObserver.observe(container);
   }
@@ -521,6 +556,17 @@ export class TerminalSession {
     });
   }
 
+  /** A link clicked in the terminal goes through `open_url`, which only opens
+   *  https URLs, rather than the addon's default `window.open`. Anything it
+   *  refuses (`http://localhost:…`, say) is reported instead of silently doing
+   *  nothing. */
+  private openLink(uri: string) {
+    openUrl(uri).catch((e) => {
+      log.warn("terminal", `open_url refused ${uri}: ${e}`);
+      showToast("Could not open the link", { type: "info", body: String(e) });
+    });
+  }
+
   private setupEnterRefresh() {
     // Refresh panel after Enter key — catches cases where OSC 7 isn't emitted
     this.terminal.onData((data) => {
@@ -548,10 +594,11 @@ export class TerminalSession {
   }
 
   private scheduleRefresh(cwd: string) {
-    if (this.refreshTimer) clearTimeout(this.refreshTimer);
+    clearTimeout(this.refreshTimer ?? undefined);
     this.refreshTimer = setTimeout(async () => {
       try {
         const data = await refreshPanel(this.tabId, cwd);
+        this.panelRefreshFailing = false;
         if (get(activeTabId) !== this.tabId) return;
 
         if (this.panelChanged(data)) {
@@ -559,8 +606,13 @@ export class TerminalSession {
           panelData.set(data);
         }
       } catch (e) {
-        log.error("terminal", `panel refresh failed for tab=${this.tabId}`, e);
-        showToast("Panel refresh failed", { body: String(e) });
+        // Every trigger here is automatic — the 30s poll, Enter, OSC 7 — so a
+        // vanished cwd would toast once per session per poll. Log the first
+        // failure of a streak and stay quiet until a refresh succeeds again.
+        if (!this.panelRefreshFailing) {
+          this.panelRefreshFailing = true;
+          log.warn("terminal", `panel refresh failed for tab=${this.tabId}: ${e}`);
+        }
       }
     }, 300);
   }
@@ -642,6 +694,7 @@ export class TerminalSession {
     this.container.removeEventListener("mouseup", this.copySelection);
     this.stopPolling();
     clearTimeout(this.refreshTimer ?? undefined);
+    clearTimeout(this.hiddenRefitTimer ?? undefined);
     if (this.ptyId !== null) this.killPty(this.ptyId);
     this.terminal?.dispose();
   }
