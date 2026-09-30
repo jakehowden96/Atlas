@@ -1,13 +1,6 @@
 /** The `notification_type`s that flag a tab as waiting on the user. */
 export type NeedsInputKind = "permission_prompt" | "elicitation_dialog";
 
-/** How a PTY's shell ended; the last message on its output channel. */
-export interface PtyExit {
-  /** Null when the status could not be collected (the shell was killed). */
-  code: number | null;
-  signal: string | null;
-}
-
 export interface TerminalTab {
   type: "terminal";
   id: string;

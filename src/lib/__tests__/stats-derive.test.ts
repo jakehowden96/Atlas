@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { DayStats, ModelStats, StatsSummary } from "../../types/stats";
+import type { DayStats } from "../../types/generated/DayStats";
+import type { ModelStats } from "../../types/generated/ModelStats";
+import type { StatsSummary } from "../../types/generated/StatsSummary";
 import {
   agoLabel,
   daySeries,

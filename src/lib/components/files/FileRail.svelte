@@ -6,7 +6,7 @@
    * Mounts and unmounts on `fileRailOpen` with the same delayed-unmount shape as
    * `session/ActivityRail.svelte`, so it slides in and out rather than blinking.
    */
-  import type { SessionState } from "../../../types/session";
+  import type { SessionState } from "../../../types/generated/SessionState";
   import {
     absolutePath,
     parseFileKey,

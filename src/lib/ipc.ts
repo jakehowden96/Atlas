@@ -1,19 +1,30 @@
 import { Channel, type InvokeArgs, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type {
-  DirList,
-  DocList,
-  DocsChangedEvent,
-  PlanEntry,
-  TextFile,
-  WriteOutcome,
-} from "../types/files";
-import type { LspStart } from "../types/lsp";
-import type { GitStatus, PanelData } from "../types/panel";
-import type { GhViewerResult, RepoPrs, WorkspaceRepo } from "../types/prs";
-import type { LiveSession, SessionUpdateEvent } from "../types/session";
-import type { ResumableSession, StatsSummary } from "../types/stats";
-import type { PtyExit } from "../types/terminal";
+import type { ClaudeInfo } from "../types/generated/ClaudeInfo";
+import type { ClaudeNotificationEvent } from "../types/generated/ClaudeNotificationEvent";
+import type { ClaudeSessionStartEvent } from "../types/generated/ClaudeSessionStartEvent";
+import type { DirList } from "../types/generated/DirList";
+import type { DocList } from "../types/generated/DocList";
+import type { DocsChangedEvent } from "../types/generated/DocsChangedEvent";
+import type { GhViewerResult } from "../types/generated/GhViewerResult";
+import type { GitStatus } from "../types/generated/GitStatus";
+import type { LiveSession } from "../types/generated/LiveSession";
+import type { LspExit } from "../types/generated/LspExit";
+import type { LspMessage } from "../types/generated/LspMessage";
+import type { LspStart } from "../types/generated/LspStart";
+import type { PanelData } from "../types/generated/PanelData";
+import type { PanelUpdateEvent } from "../types/generated/PanelUpdateEvent";
+import type { PlanEntry } from "../types/generated/PlanEntry";
+import type { PtyExit } from "../types/generated/PtyExit";
+import type { RepoPrs } from "../types/generated/RepoPrs";
+import type { ResumableSession } from "../types/generated/ResumableSession";
+import type { SessionUpdateEvent } from "../types/generated/SessionUpdateEvent";
+import type { StateFile } from "../types/generated/StateFile";
+import type { StateLoad } from "../types/generated/StateLoad";
+import type { StatsSummary } from "../types/generated/StatsSummary";
+import type { TextFile } from "../types/generated/TextFile";
+import type { WorkspaceRepo } from "../types/generated/WorkspaceRepo";
+import type { WriteOutcome } from "../types/generated/WriteOutcome";
 import { toIpcError } from "./ipc-error";
 import { log } from "./logger";
 
@@ -169,14 +180,6 @@ export async function startOmpTail(sessionUuid: string, ptyId: number): Promise<
   return call("start_omp_tail", { sessionUuid, ptyId });
 }
 
-/** What Settings › Claude Code reports about the local Claude Code install. */
-export interface ClaudeInfo {
-  binary: string | null;
-  version: string | null;
-  notificationHookInstalled: boolean;
-  sessionStartHookInstalled: boolean;
-}
-
 /** Never rejects for a missing `claude` — every field degrades instead. */
 export async function claudeInfo(): Promise<ClaudeInfo> {
   return call("claude_info");
@@ -223,21 +226,9 @@ export async function onStatsUpdate(
 export async function onPanelUpdate(
   callback: (sessionId: string, data: PanelData) => void,
 ): Promise<UnlistenFn> {
-  return listen<{ session_id: string; data: PanelData }>("panel-update", (event) => {
+  return listen<PanelUpdateEvent>("panel-update", (event) => {
     callback(event.payload.session_id, event.payload.data);
   });
-}
-
-export interface ClaudeNotification {
-  notification_type: string;
-  title: string;
-  message: string;
-  timestamp: string;
-}
-
-export interface ClaudeNotificationEvent {
-  session_id: string;
-  notification: ClaudeNotification;
 }
 
 export async function onClaudeNotification(
@@ -246,23 +237,6 @@ export async function onClaudeNotification(
   return listen<ClaudeNotificationEvent>("claude-notification", (event) => {
     callback(event.payload);
   });
-}
-
-/**
- * Claude Code's `SessionStart` hook report: which Claude session UUID is now
- * live for a tab, and why. `source` is `"startup"` or `"resume"` — where it
- * always matches the id Atlas asked for — or `"clear"` / `"compact"`, the two
- * cases where Claude Code mints one of its own mid-tab.
- */
-export interface ClaudeSessionStart {
-  claude_session_id: string;
-  source: string;
-}
-
-export interface ClaudeSessionStartEvent {
-  /** Atlas's own tab id (`ATLAS_SESSION_ID`) — constant across a rotation. */
-  session_id: string;
-  session_start: ClaudeSessionStart;
 }
 
 export async function onClaudeSessionStart(
@@ -371,23 +345,12 @@ export async function onDocsChanged(
 
 // ── Atlas state files ───────────────────────────────────────────────────────
 
-/** The two files under `~/.atlas` the backend loads and saves on the webview's
- *  behalf. A closed set: the webview never supplies a path. */
-export type StateFileName = "settings" | "workspaces";
-
-export interface StateLoad {
-  /** The file's JSON text; null when it is missing or was unusable. */
-  contents: string | null;
-  /** The file did not parse and was copied to `<name>.json.bak`. */
-  recovered: boolean;
-}
-
-export async function stateLoad(name: StateFileName): Promise<StateLoad> {
+export async function stateLoad(name: StateFile): Promise<StateLoad> {
   return call("state_load", { name });
 }
 
 /** Atomic and serialised in Rust. Rejects contents that are not JSON. */
-export async function stateSave(name: StateFileName, contents: string): Promise<void> {
+export async function stateSave(name: StateFile, contents: string): Promise<void> {
   return call("state_save", { name, contents });
 }
 
@@ -420,7 +383,7 @@ export async function lspStop(id: string): Promise<void> {
  * a fresh server.
  */
 export async function onLspExit(callback: (id: string) => void): Promise<UnlistenFn> {
-  return listen<{ id: string }>("lsp-exit", (event) => {
+  return listen<LspExit>("lsp-exit", (event) => {
     callback(event.payload.id);
   });
 }
@@ -428,7 +391,7 @@ export async function onLspExit(callback: (id: string) => void): Promise<Unliste
 export async function onLspMessage(
   callback: (id: string, message: string) => void,
 ): Promise<UnlistenFn> {
-  return listen<{ id: string; message: string }>("lsp-message", (event) => {
+  return listen<LspMessage>("lsp-message", (event) => {
     callback(event.payload.id, event.payload.message);
   });
 }

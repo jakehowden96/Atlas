@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { setupHint, setupProblem } from "../gh-setup";
-import type { GhError, RepoPrs } from "../../types/prs";
+import type { GhError } from "../../types/generated/GhError";
+import type { RepoPrs } from "../../types/generated/RepoPrs";
 
 const NOT_INSTALLED: GhError = { kind: "not_installed", message: "no gh" };
 const SIGNED_OUT: GhError = { kind: "not_authenticated", message: "run gh auth login" };

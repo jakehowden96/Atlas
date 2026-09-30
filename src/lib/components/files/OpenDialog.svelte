@@ -9,7 +9,7 @@
    */
   import { open as pickFolder } from "@tauri-apps/plugin-dialog";
   import { homeDir } from "@tauri-apps/api/path";
-  import type { DirEntry } from "../../../types/files";
+  import type { DirEntry } from "../../../types/generated/DirEntry";
   import { breadcrumbs, parentDir } from "../../files";
   import { filesGrant, listDir } from "../../ipc";
   import { log } from "../../logger";

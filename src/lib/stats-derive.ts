@@ -6,15 +6,13 @@
  * no Svelte compiler and no DOM, so nothing inside a `.svelte` file is reachable.
  */
 import { formatAgo } from "./format";
-import type {
-  DayStats,
-  ModelStats,
-  ProjectStats,
-  RangeTotals,
-  RecentSession,
-  StatsSummary,
-  WeekStats,
-} from "../types/stats";
+import type { DayStats } from "../types/generated/DayStats";
+import type { ModelStats } from "../types/generated/ModelStats";
+import type { ProjectStats } from "../types/generated/ProjectStats";
+import type { RangeTotals } from "../types/generated/RangeTotals";
+import type { RecentSession } from "../types/generated/RecentSession";
+import type { StatsSummary } from "../types/generated/StatsSummary";
+import type { WeekStats } from "../types/generated/WeekStats";
 
 export type Range = "7d" | "30d" | "all";
 

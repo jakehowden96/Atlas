@@ -1,5 +1,5 @@
 import { ghPrCheckout, gitCheckoutBranch } from "./ipc";
-import type { Pr } from "../types/prs";
+import type { Pr } from "../types/generated/Pr";
 
 /**
  * Put the working tree at `path` on the PR's code.

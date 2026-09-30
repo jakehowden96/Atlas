@@ -1,5 +1,5 @@
 import { writable } from "svelte/store";
-import type { StatsSummary } from "../../types/stats";
+import type { StatsSummary } from "../../types/generated/StatsSummary";
 import { getClaudeStats, onStatsUpdate } from "../ipc";
 import { log } from "../logger";
 import { errorMessage } from "../ipc-error";

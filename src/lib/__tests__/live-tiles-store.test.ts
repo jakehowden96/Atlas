@@ -16,7 +16,7 @@ import { liveTiles } from "../stores/liveTiles";
 import { upsertLiveSession } from "../stores/liveSessions";
 import { addTab, setTabNeedsInput, setTabReady, tabs } from "../stores/terminal";
 import { workspaces } from "../stores/workspace";
-import type { LiveSession } from "../../types/session";
+import type { LiveSession } from "../../types/generated/LiveSession";
 
 function live(sessionUuid: string): LiveSession {
   return {

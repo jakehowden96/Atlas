@@ -9,7 +9,7 @@
    * rendering and the side effects.
    */
   import { get } from "svelte/store";
-  import type { ResumableSession } from "../../../types/stats";
+  import type { ResumableSession } from "../../../types/generated/ResumableSession";
   import { homeDir } from "@tauri-apps/api/path";
   import { listResumableSessions, validateDirectory } from "../../ipc";
   import { log } from "../../logger";

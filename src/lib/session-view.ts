@@ -4,8 +4,9 @@
  * Same reasoning as `overview.ts`: the joins and the formatting live here so
  * they can be unit-tested without a Svelte compiler (README → Conventions).
  */
-import type { PanelData } from "../types/panel";
-import type { PlanItem, Subagent } from "../types/session";
+import type { PanelData } from "../types/generated/PanelData";
+import type { PlanItem } from "../types/generated/PlanItem";
+import type { Subagent } from "../types/generated/Subagent";
 import { parseDiff } from "./diff-parser";
 import { toFlat } from "./diff-view";
 import { formatElapsed } from "./overview";

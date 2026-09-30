@@ -27,7 +27,7 @@
   import { visibleWorkspaces } from "../../stores/workspace";
   import { basename, formatAgo } from "../../format";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
-  import type { Pr } from "../../../types/prs";
+  import type { Pr } from "../../../types/generated/Pr";
   import { errorMessage } from "../../ipc-error";
 
   // Track "now" so "refreshed 2m ago" ticks between polls. Fetching itself is

@@ -1,4 +1,5 @@
-import type { GhError, RepoPrs } from "../types/prs";
+import type { GhError } from "../types/generated/GhError";
+import type { RepoPrs } from "../types/generated/RepoPrs";
 
 /** What the Pull requests screen tells the user to do about a `gh` problem. */
 export interface GhSetupHint {

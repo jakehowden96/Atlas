@@ -1,6 +1,9 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { derived, get, writable, type Writable } from "svelte/store";
-import type { DirEntry, DocEntry, PlanEntry, TextFile } from "../../types/files";
+import type { DirEntry } from "../../types/generated/DirEntry";
+import type { DocEntry } from "../../types/generated/DocEntry";
+import type { PlanEntry } from "../../types/generated/PlanEntry";
+import type { TextFile } from "../../types/generated/TextFile";
 import {
   absolutePath,
   ancestorPaths,

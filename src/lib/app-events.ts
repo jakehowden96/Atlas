@@ -9,8 +9,8 @@ import {
   sendNotification,
 } from "@tauri-apps/plugin-notification";
 import { get } from "svelte/store";
+import type { ClaudeNotificationEvent } from "../types/generated/ClaudeNotificationEvent";
 import {
-  type ClaudeNotificationEvent,
   onBackToSessions,
   onClaudeNotification,
   onClaudeSessionStart,

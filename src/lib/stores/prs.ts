@@ -10,7 +10,11 @@ import { log } from "../logger";
 import { autoAddReposFromWorkspaces, prRefreshMinutes, watchedRepos } from "./settings";
 import { showToast } from "./toast";
 import { visibleWorkspaces } from "./workspace";
-import type { GhError, GhViewer, Pr, RepoPrs, WorkspaceRepo } from "../../types/prs";
+import type { GhError } from "../../types/generated/GhError";
+import type { GhViewer } from "../../types/generated/GhViewer";
+import type { Pr } from "../../types/generated/Pr";
+import type { RepoPrs } from "../../types/generated/RepoPrs";
+import type { WorkspaceRepo } from "../../types/generated/WorkspaceRepo";
 import { errorMessage } from "../ipc-error";
 
 export type PrFilter = "all" | "mine" | "review";

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { LogLevel } from "../types/generated/LogLevel";
 import { errorMessage } from "./ipc-error";
 
 /*
@@ -8,14 +9,12 @@ import { errorMessage } from "./ipc-error";
  * which itself logs.
  */
 
-type Level = "info" | "warn" | "error";
-
 function formatError(err: unknown): string {
   if (err instanceof Error) return `${err.message}${err.stack ? "\n" + err.stack : ""}`;
   return errorMessage(err);
 }
 
-function write(level: Level, scope: string, message: string) {
+function write(level: LogLevel, scope: string, message: string) {
   // A log line that cannot be delivered is dropped: there is nowhere better to
   // report that, and logging must never throw into the caller.
   invoke("log_write", { level, scope, message }).catch((e) => {

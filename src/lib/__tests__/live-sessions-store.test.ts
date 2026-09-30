@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { get } from "svelte/store";
 
 import { liveSessions, removeLiveSession, upsertLiveSession } from "../stores/liveSessions";
-import type { LiveSession } from "../../types/session";
+import type { LiveSession } from "../../types/generated/LiveSession";
 
 function session(sessionUuid: string, overrides: Partial<LiveSession> = {}): LiveSession {
   return {

@@ -10,7 +10,7 @@ vi.mock("../logger", () => ({
 
 import { get } from "svelte/store";
 import { getClaudeStats, onStatsUpdate } from "../ipc";
-import type { StatsSummary } from "../../types/stats";
+import type { StatsSummary } from "../../types/generated/StatsSummary";
 import {
   reloadStats,
   startStatsFeed,

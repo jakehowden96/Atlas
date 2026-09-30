@@ -2,7 +2,8 @@
   import { getVersion } from "@tauri-apps/api/app";
   import { get } from "svelte/store";
   import { enterLabel } from "../../platform";
-  import { claudeInfo, type ClaudeInfo } from "../../ipc";
+  import type { ClaudeInfo } from "../../../types/generated/ClaudeInfo";
+  import { claudeInfo } from "../../ipc";
   import {
     ACTION_LABELS,
     ACTIONS,

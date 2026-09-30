@@ -14,7 +14,7 @@ import {
 import { panelData } from "./stores/panel";
 import { keymap, terminalFontSize } from "./stores/settings";
 import { matchesAnyBinding } from "./keymap";
-import type { PanelData } from "../types/panel";
+import type { PanelData } from "../types/generated/PanelData";
 import { updateSessionLabelByTabId } from "./stores/workspace";
 import { get } from "svelte/store";
 import { showToast } from "./stores/toast";

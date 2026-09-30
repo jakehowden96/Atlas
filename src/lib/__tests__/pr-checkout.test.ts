@@ -7,7 +7,7 @@ vi.mock("../ipc", () => ({
 
 import { ghPrCheckout, gitCheckoutBranch } from "../ipc";
 import { checkoutPullRequest } from "../pr-checkout";
-import type { Pr } from "../../types/prs";
+import type { Pr } from "../../types/generated/Pr";
 
 function pr(overrides: Partial<Pr>): Pr {
   return {

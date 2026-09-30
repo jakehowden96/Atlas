@@ -11,7 +11,9 @@ vi.mock("../ipc", () => ({
   stopSessionTail: vi.fn(),
 }));
 
-import type { DocEntry, DocList, PlanEntry } from "../../types/files";
+import type { DocEntry } from "../../types/generated/DocEntry";
+import type { DocList } from "../../types/generated/DocList";
+import type { PlanEntry } from "../../types/generated/PlanEntry";
 import {
   absolutePath,
   ancestorPaths,

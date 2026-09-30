@@ -2,7 +2,7 @@
   import { chords } from "../../stores/settings";
   import { onDestroy } from "svelte";
   import { get } from "svelte/store";
-  import type { SessionState } from "../../../types/session";
+  import type { SessionState } from "../../../types/generated/SessionState";
   import { formatTokens } from "../../format";
   import { compareByAttention, formatElapsed, type SessionTile } from "../../overview";
   import { closeSession } from "../../session-actions";

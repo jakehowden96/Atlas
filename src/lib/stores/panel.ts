@@ -1,5 +1,5 @@
 import { writable } from "svelte/store";
-import type { PanelData } from "../../types/panel";
+import type { PanelData } from "../../types/generated/PanelData";
 import type { TouchedFile } from "../session-view";
 
 export const panelData = writable<PanelData | null>(null);

@@ -5,10 +5,11 @@
  * rather than in the components so they can be unit-tested without a Svelte
  * compiler (README → Conventions).
  */
-import type { DocEntry, PlanEntry } from "../types/files";
+import type { DocEntry } from "../types/generated/DocEntry";
+import type { PlanEntry } from "../types/generated/PlanEntry";
 import type { SessionTile } from "./overview";
 import type { TouchedFile } from "./session-view";
-import type { SessionState } from "../types/session";
+import type { SessionState } from "../types/generated/SessionState";
 import type { Workspace } from "./stores/workspace";
 
 /**

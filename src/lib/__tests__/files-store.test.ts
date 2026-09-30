@@ -26,7 +26,8 @@ vi.mock("../stores/toast", () => ({ showToast: vi.fn() }));
 import { setOpenFiles } from "../stores/settings";
 import { listDir, listWorkspaceDocs, readTextFileAt, writeTextFileAt } from "../ipc";
 import { fileKey } from "../files";
-import type { TextFile, WriteOutcome } from "../../types/files";
+import type { TextFile } from "../../types/generated/TextFile";
+import type { WriteOutcome } from "../../types/generated/WriteOutcome";
 import {
   activeFile,
   closeRequest,
