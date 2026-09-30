@@ -1,5 +1,3 @@
-import type { Terminal } from "@xterm/xterm";
-
 /** The `notification_type`s that flag a tab as waiting on the user. */
 export type NeedsInputKind = "permission_prompt" | "elicitation_dialog";
 
@@ -8,7 +6,6 @@ export interface TerminalTab {
   id: string;
   title: string;
   ptyId: number;
-  terminal: Terminal;
   cwd?: string;
   onData?: (data: string) => void;
   needsInput?: boolean;

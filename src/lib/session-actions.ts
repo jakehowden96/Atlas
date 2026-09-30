@@ -6,7 +6,6 @@
  * all drive the same code paths without a component in the middle.
  */
 import { open } from "@tauri-apps/plugin-dialog";
-import { Terminal } from "@xterm/xterm";
 import { get } from "svelte/store";
 import { ptyKill, ptyWrite, startOmpTail, startSessionTail, stopSessionTail } from "./ipc";
 import { log } from "./logger";
@@ -110,7 +109,6 @@ export async function spawnHarnessSession(
   opts?: { existingSessionId?: string; resumeSessionId?: string; harnessId?: string },
 ) {
   const tabId = crypto.randomUUID();
-  const terminal = new Terminal();
   let session: { id: string };
 
   const harness = resolveHarness(opts?.harnessId ?? get(lastHarnessId));
@@ -137,7 +135,6 @@ export async function spawnHarnessSession(
     id: tabId,
     title: "",
     ptyId: -1,
-    terminal,
     cwd: workspacePath,
     ready: false,
     harnessLabel: harness.label,

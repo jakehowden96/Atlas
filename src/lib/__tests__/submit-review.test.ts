@@ -23,7 +23,6 @@ import {
 import { tabs, activeTabId } from "../stores/terminal";
 import { toasts } from "../stores/toast";
 import type { TabItem } from "../../types/terminal";
-import type { Terminal } from "@xterm/xterm";
 
 function tab(id: string, ptyId: number): TabItem {
   return {
@@ -31,7 +30,6 @@ function tab(id: string, ptyId: number): TabItem {
     id,
     title: "",
     ptyId,
-    terminal: {} as unknown as Terminal,
   };
 }
 

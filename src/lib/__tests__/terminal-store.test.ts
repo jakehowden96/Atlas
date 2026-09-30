@@ -26,7 +26,6 @@ import {
 import { activeWorkspacePath } from "../stores/workspace";
 import { panelData } from "../stores/panel";
 import type { TabItem } from "../../types/terminal";
-import type { Terminal } from "@xterm/xterm";
 
 function makeTerminalTab(overrides: Partial<TabItem> = {}): TabItem {
   return {
@@ -34,7 +33,6 @@ function makeTerminalTab(overrides: Partial<TabItem> = {}): TabItem {
     id: overrides.id ?? crypto.randomUUID(),
     title: overrides.title ?? "",
     ptyId: -1,
-    terminal: {} as unknown as Terminal,
     ...overrides,
   };
 }

@@ -31,7 +31,6 @@ import {
   tabs,
 } from "../stores/terminal";
 import type { TabItem } from "../../types/terminal";
-import type { Terminal } from "@xterm/xterm";
 
 function tab(overrides: Partial<TabItem> = {}): TabItem {
   return {
@@ -39,7 +38,6 @@ function tab(overrides: Partial<TabItem> = {}): TabItem {
     id: "t1",
     title: "",
     ptyId: 7,
-    terminal: {} as unknown as Terminal,
     ...overrides,
   };
 }
