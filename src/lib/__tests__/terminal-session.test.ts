@@ -10,7 +10,13 @@ const fakes = vi.hoisted(() => {
     written: unknown[] = [];
     disposed = false;
     buffer = { active: { baseY: 0, cursorY: 0, getLine: () => undefined } };
-    parser = { registerOscHandler: () => undefined, registerCsiHandler: () => undefined };
+    oscHandlers = new Map<number, (data: string) => boolean>();
+    parser = {
+      registerOscHandler: (id: number, cb: (data: string) => boolean) => {
+        this.oscHandlers.set(id, cb);
+      },
+      registerCsiHandler: () => undefined,
+    };
     loadAddon() {}
     open() {}
     attachCustomKeyEventHandler() {}
@@ -89,6 +95,10 @@ vi.mock("../ipc", () => ({
   startSessionTail: vi.fn(),
   stopSessionTail: vi.fn(),
 }));
+vi.mock("../stores/workspace", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../stores/workspace")>()),
+  updateSessionLabelByTabId: vi.fn(),
+}));
 vi.mock("../logger", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -96,6 +106,8 @@ vi.mock("../logger", () => ({
 import { getPanelData, ptyKill, ptyResize, ptySpawn, ptyWrite, refreshPanel } from "../ipc";
 import { TerminalSession } from "../terminal-session";
 import { toasts } from "../stores/toast";
+import { addTab, tabs } from "../stores/terminal";
+import { updateSessionLabelByTabId } from "../stores/workspace";
 
 type SpawnOnData = (data: Uint8Array) => void;
 
@@ -279,5 +291,28 @@ describe("TerminalSession PTY lifecycle", () => {
     await vi.advanceTimersByTimeAsync(5000);
 
     expect(refreshPanel).not.toHaveBeenCalled();
+  });
+});
+
+describe("TerminalSession title changes", () => {
+  it("relabels the session once for a repeated title and leaves the tab list alone", async () => {
+    vi.mocked(ptySpawn).mockResolvedValue(7);
+    addTab({ type: "terminal", id: "tab-1", ptyId: 7 });
+    const { terminal } = makeSession();
+    await vi.advanceTimersByTimeAsync(0);
+    let emissions = 0;
+    const unsubscribe = tabs.subscribe(() => emissions++);
+    emissions = 0;
+
+    const osc2 = terminal.oscHandlers.get(2);
+    osc2?.("Fix the login bug");
+    osc2?.("Fix the login bug");
+    terminal.oscHandlers.get(0)?.("Fix the login bug");
+    await vi.advanceTimersByTimeAsync(1000);
+    unsubscribe();
+
+    expect(updateSessionLabelByTabId).toHaveBeenCalledTimes(1);
+    expect(updateSessionLabelByTabId).toHaveBeenCalledWith("tab-1", "Fix the login bug");
+    expect(emissions).toBe(0);
   });
 });

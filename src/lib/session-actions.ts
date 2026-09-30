@@ -133,7 +133,6 @@ export async function spawnHarnessSession(
   addTab({
     type: "terminal",
     id: tabId,
-    title: "",
     ptyId: -1,
     cwd: workspacePath,
     ready: false,

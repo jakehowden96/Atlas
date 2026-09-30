@@ -4,7 +4,6 @@ export type NeedsInputKind = "permission_prompt" | "elicitation_dialog";
 export interface TerminalTab {
   type: "terminal";
   id: string;
-  title: string;
   ptyId: number;
   cwd?: string;
   needsInput?: boolean;

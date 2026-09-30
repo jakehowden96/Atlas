@@ -18,7 +18,6 @@ import {
   activeTabId,
   addTab,
   removeTab,
-  setTabTitle,
   setTabReady,
   setTabNeedsInput,
   awaitTabPty,
@@ -31,7 +30,6 @@ function makeTerminalTab(overrides: Partial<TabItem> = {}): TabItem {
   return {
     type: "terminal",
     id: overrides.id ?? crypto.randomUUID(),
-    title: overrides.title ?? "",
     ptyId: -1,
     ...overrides,
   };
@@ -59,19 +57,6 @@ describe("terminal store", () => {
       addTab(makeTerminalTab({ id: "t2" }));
       expect(get(tabs)).toHaveLength(2);
       expect(get(activeTabId)).toBe("t2");
-    });
-  });
-
-  describe("addTab — standalone terminal (no workspace)", () => {
-    it("creates a valid tab without cwd", () => {
-      const tab = makeTerminalTab({ id: "standalone", title: "Terminal" });
-      addTab(tab);
-      const t = get(tabs);
-      expect(t).toHaveLength(1);
-      expect(t[0].title).toBe("Terminal");
-      expect(get(activeTabId)).toBe("standalone");
-      // cwd is not set — tab works but panel won't refresh until OSC 7
-      expect(t[0].cwd).toBeUndefined();
     });
   });
 
@@ -137,26 +122,6 @@ describe("terminal store", () => {
       removeTab("t1");
       expect(get(activeTabId)).toBe("t2");
       expect(get(activeWorkspacePath)).toBe("/b");
-    });
-  });
-
-  describe("setTabTitle", () => {
-    it("debounces title updates", () => {
-      addTab(makeTerminalTab({ id: "t1" }));
-      setTabTitle("t1", "New Title");
-      // Not updated yet (debounced 100ms)
-      expect(get(tabs)[0].title).toBe("");
-      vi.advanceTimersByTime(100);
-      expect(get(tabs)[0].title).toBe("New Title");
-    });
-
-    it("cancels previous pending update", () => {
-      addTab(makeTerminalTab({ id: "t1" }));
-      setTabTitle("t1", "First");
-      vi.advanceTimersByTime(50);
-      setTabTitle("t1", "Second");
-      vi.advanceTimersByTime(100);
-      expect(get(tabs)[0].title).toBe("Second");
     });
   });
 

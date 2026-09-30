@@ -5,7 +5,6 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel, getPanelData } from "./ipc";
 import {
-  setTabTitle,
   activeTabId,
   setPermissionPromptVisible,
   setTabNeedsInput,
@@ -54,6 +53,7 @@ export class TerminalSession {
    *  PTY output, timers — checks it before touching the disposed xterm. */
   private destroyed = false;
   private ptyWriteFailureShown = false;
+  private lastTitle = "";
   private unsubscribeTheme: (() => void) | null = null;
   private unsubscribeFontSize: (() => void) | null = null;
   private prefersDark: MediaQueryList | null = null;
@@ -228,16 +228,16 @@ export class TerminalSession {
     // later than that — a slow PSReadLine, oh-my-posh — cleared the overlay
     // while the shell still had `claude --session-id …` on screen, which is
     // the raw command people saw flash before the TUI.
-    this.terminal.parser.registerOscHandler(0, (data) => {
-      setTabTitle(this.tabId, data);
-      updateSessionLabelByTabId(this.tabId, data);
+    const onTitle = (data: string) => {
+      // Claude Code animates its title, so the same one arrives over and over.
+      if (data !== this.lastTitle) {
+        this.lastTitle = data;
+        updateSessionLabelByTabId(this.tabId, data);
+      }
       return true;
-    });
-    this.terminal.parser.registerOscHandler(2, (data) => {
-      setTabTitle(this.tabId, data);
-      updateSessionLabelByTabId(this.tabId, data);
-      return true;
-    });
+    };
+    this.terminal.parser.registerOscHandler(0, onTitle);
+    this.terminal.parser.registerOscHandler(2, onTitle);
 
     // OSC 7: CWD reporting — shells emit this when the directory changes
     // Format: file://hostname/path/to/dir

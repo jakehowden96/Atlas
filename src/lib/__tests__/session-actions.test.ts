@@ -36,7 +36,6 @@ function tab(overrides: Partial<TabItem> = {}): TabItem {
   return {
     type: "terminal",
     id: "t1",
-    title: "",
     ptyId: 7,
     ...overrides,
   };

@@ -28,7 +28,6 @@ function tab(id: string, ptyId: number): TabItem {
   return {
     type: "terminal",
     id,
-    title: "",
     ptyId,
   };
 }

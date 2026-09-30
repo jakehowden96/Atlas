@@ -11,15 +11,7 @@ export function addTab(tab: TabItem, opts?: { activate?: boolean }) {
   if (opts?.activate !== false) activeTabId.set(tab.id);
 }
 
-const titleTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
 export function removeTab(id: string) {
-  const pendingTitle = titleTimers.get(id);
-  if (pendingTitle) {
-    clearTimeout(pendingTitle);
-    titleTimers.delete(id);
-  }
-
   setPermissionPromptVisible(id, false);
 
   const wasActive = get(activeTabId) === id;
@@ -84,18 +76,6 @@ export function awaitTabPty(id: string, timeoutMs = 10_000): Promise<TabItem | n
     });
     if (settled) unsubscribe();
   });
-}
-
-export function setTabTitle(id: string, title: string) {
-  const existing = titleTimers.get(id);
-  if (existing) clearTimeout(existing);
-  titleTimers.set(
-    id,
-    setTimeout(() => {
-      titleTimers.delete(id);
-      tabs.update((t) => t.map((tab) => (tab.id === id ? { ...tab, title } : tab)));
-    }, 100),
-  );
 }
 
 export function setTabSpawnError(id: string, spawnError: string) {
