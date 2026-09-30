@@ -111,6 +111,8 @@ impl PtyManager {
         let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
 
         let (shell, shell_args) = default_shell();
+        // `CommandBuilder::new` seeds the child's environment from this process,
+        // so the shell inherits everything Atlas was launched with.
         let mut cmd = CommandBuilder::new(&shell);
         for arg in &shell_args {
             cmd.arg(arg);
@@ -118,45 +120,6 @@ impl PtyManager {
 
         if let Some(dir) = cwd {
             cmd.cwd(dir);
-        }
-
-        // Inherit safe environment variables (whitelist approach to avoid leaking secrets)
-        const SAFE_PREFIXES: &[&str] = &[
-            "HOME",
-            "USER",
-            "LOGNAME",
-            "SHELL",
-            "PATH",
-            "LANG",
-            "LC_",
-            "TERM",
-            "COLORTERM",
-            "EDITOR",
-            "VISUAL",
-            "PAGER",
-            "LESS",
-            "XDG_",
-            "SSH_AUTH_SOCK",
-            "DISPLAY",
-            "TMPDIR",
-            "TZ",
-            "HOMEBREW_",
-            "NVM_",
-            "VOLTA_",
-            "CARGO_HOME",
-            "RUSTUP_HOME",
-            "GOPATH",
-            "GOROOT",
-            "JAVA_HOME",
-            "PYENV_",
-            "FNM_",
-            "BUN_INSTALL",
-            "DENO_INSTALL",
-        ];
-        for (key, value) in std::env::vars() {
-            if SAFE_PREFIXES.iter().any(|p| key.starts_with(p)) {
-                cmd.env(key, value);
-            }
         }
 
         // A session Atlas spawns is a top-level Claude Code session. When Atlas
@@ -173,7 +136,7 @@ impl PtyManager {
 
         // Set TERM_PROGRAM so zsh/bash emit OSC 7 (CWD reporting)
         cmd.env("TERM_PROGRAM", "Atlas");
-        cmd.env("TERM_PROGRAM_VERSION", "0.1.0");
+        cmd.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
         cmd.env("TERM", "xterm-256color");
 
         // Add custom env vars (restricted to ATLAS_ prefix for security)
