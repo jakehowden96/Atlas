@@ -163,11 +163,14 @@ fn hook_installed(event: &str, marker: &str) -> bool {
 }
 
 fn notification_hook_installed() -> bool {
-    hook_installed("Notification", crate::HOOK_MARKER)
+    hook_installed("Notification", crate::claude_hook::HOOK_MARKER)
 }
 
 fn session_start_hook_installed() -> bool {
-    hook_installed("SessionStart", crate::SESSION_START_HOOK_MARKER)
+    hook_installed(
+        "SessionStart",
+        crate::claude_hook::SESSION_START_HOOK_MARKER,
+    )
 }
 
 #[tauri::command(async)]
