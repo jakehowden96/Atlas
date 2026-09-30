@@ -34,6 +34,7 @@ import {
   tabs,
 } from "./stores/terminal";
 import { basename } from "./format";
+import { isSessionUuid } from "./session-id";
 import { tabIdForSession } from "./session-view";
 import {
   activeSessionId,
@@ -104,16 +105,6 @@ function resolveHarness(harnessId: string): HarnessConfig {
  *  UUID for this spawn. */
 function resolveArgs(args: string[], claudeSessionId: string): string[] {
   return args.map((a) => (a === "{sessionId}" || a === "{resumeId}" ? claudeSessionId : a));
-}
-
-const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Session ids are spliced into a command line typed into the user's shell
- *  (`{sessionId}` / `{resumeId}`), and they arrive from places Atlas does not
- *  control — transcript file names, the SessionStart hook. Only a UUID is
- *  safe to type; anything else could carry shell syntax or a leading `--`. */
-export function isSessionUuid(id: string): boolean {
-  return SESSION_UUID.test(id);
 }
 
 /**

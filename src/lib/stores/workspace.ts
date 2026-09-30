@@ -2,6 +2,7 @@ import { writable, derived, get } from "svelte/store";
 import { stateLoad } from "../ipc";
 import { log } from "../logger";
 import { basename } from "../format";
+import { isSessionUuid } from "../session-id";
 import { createStatePersister } from "../state-persist";
 import { reportNewerState, reportStateRecovered, reportStorageFailure } from "../storage-failure";
 
@@ -93,6 +94,12 @@ const SESSION_STATUSES: WorkspaceSession["status"][] = [
   "starting",
 ];
 
+function validSessionId(id: string): string | null {
+  if (isSessionUuid(id)) return id;
+  log.warn("workspace", "dropping a stored session id that is not a UUID");
+  return null;
+}
+
 /** A session row read from disk, or null if it is not one. A row is live only
  *  within a run, so whatever Atlas was doing when it last wrote is reset. */
 function sanitizeSession(raw: unknown): WorkspaceSession | null {
@@ -106,8 +113,11 @@ function sanitizeSession(raw: unknown): WorkspaceSession | null {
     status: status === "running" || status === "starting" ? "idle" : status,
     terminalTabId: null,
     createdAt: typeof s.createdAt === "string" ? s.createdAt : "",
-    // Written by a version of Atlas that did not track Claude session ids.
-    claudeSessionId: typeof s.claudeSessionId === "string" ? s.claudeSessionId : null,
+    // Written by a version of Atlas that did not track Claude session ids, or
+    // not a UUID: the id is later typed into a shell, so anything else is
+    // dropped (the row stays, but can only be started fresh).
+    claudeSessionId:
+      typeof s.claudeSessionId === "string" ? validSessionId(s.claudeSessionId) : null,
     // Written by a version of Atlas that predates harnesses.
     harnessId: typeof s.harnessId === "string" ? s.harnessId : null,
   };
@@ -380,6 +390,7 @@ export async function rebindSessionClaudeId(
   tabId: string,
   claudeSessionId: string,
 ): Promise<boolean> {
+  if (!isSessionUuid(claudeSessionId)) return false;
   let changed = false;
   workspaces.update((ws) =>
     ws.map((w) => ({

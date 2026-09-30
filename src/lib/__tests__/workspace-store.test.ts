@@ -13,6 +13,10 @@ function mockNoFile() {
   vi.mocked(stateLoad).mockResolvedValue({ contents: null, recovered: false });
 }
 
+const OLD_ID = "11111111-1111-4111-8111-111111111111";
+const NEW_ID = "22222222-2222-4222-8222-222222222222";
+const OTHER_ID = "33333333-3333-4333-8333-333333333333";
+
 let uuidCounter = 0;
 vi.stubGlobal("crypto", {
   randomUUID: () => `uuid-${++uuidCounter}`,
@@ -209,36 +213,47 @@ describe("workspace store", () => {
   describe("rebindSessionClaudeId", () => {
     it("retags the session whose tab id matches", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-old", "claude-code");
-      const changed = await rebindSessionClaudeId("tab-1", "claude-new");
+      await addSession("/a", "test", "tab-1", OLD_ID, "claude-code");
+      const changed = await rebindSessionClaudeId("tab-1", NEW_ID);
       expect(changed).toBe(true);
-      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe("claude-new");
+      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe(NEW_ID);
+    });
+
+    it("refuses an id that is not a UUID, since it is later typed into a shell", async () => {
+      await addWorkspace("/a");
+      await addSession("/a", "test", "tab-1", OLD_ID, "claude-code");
+      vi.mocked(stateSave).mockClear();
+      for (const bad of ["x; rm -rf ~", "--dangerously", "claude-new", ""]) {
+        expect(await rebindSessionClaudeId("tab-1", bad)).toBe(false);
+      }
+      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe(OLD_ID);
+      expect(stateSave).not.toHaveBeenCalled();
     });
 
     it("is a no-op when the id already matches", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1", "claude-code");
+      await addSession("/a", "test", "tab-1", OLD_ID, "claude-code");
       vi.clearAllMocks();
-      const changed = await rebindSessionClaudeId("tab-1", "claude-1");
+      const changed = await rebindSessionClaudeId("tab-1", OLD_ID);
       expect(changed).toBe(false);
       expect(stateSave).not.toHaveBeenCalled();
     });
 
     it("leaves sessions on other tabs untouched", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "one", "tab-1", "claude-1", "claude-code");
-      await addSession("/a", "two", "tab-2", "claude-2", "claude-code");
-      await rebindSessionClaudeId("tab-1", "claude-1-new");
+      await addSession("/a", "one", "tab-1", OLD_ID, "claude-code");
+      await addSession("/a", "two", "tab-2", OTHER_ID, "claude-code");
+      await rebindSessionClaudeId("tab-1", NEW_ID);
       const sessions = get(workspaces)[0].sessions;
-      expect(sessions.find((s) => s.terminalTabId === "tab-2")?.claudeSessionId).toBe("claude-2");
+      expect(sessions.find((s) => s.terminalTabId === "tab-2")?.claudeSessionId).toBe(OTHER_ID);
     });
 
     it("does nothing when no session owns that tab id", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1", "claude-code");
-      const changed = await rebindSessionClaudeId("tab-missing", "claude-new");
+      await addSession("/a", "test", "tab-1", OLD_ID, "claude-code");
+      const changed = await rebindSessionClaudeId("tab-missing", NEW_ID);
       expect(changed).toBe(false);
-      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe("claude-1");
+      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe(OLD_ID);
     });
   });
 
@@ -272,6 +287,39 @@ describe("workspace store", () => {
   });
 
   describe("loadWorkspaces", () => {
+    it("keeps a stored UUID session id and drops one that is not a UUID", async () => {
+      const row = (id: string, claudeSessionId: string) => ({
+        id,
+        label: id,
+        status: "idle",
+        terminalTabId: null,
+        createdAt: "",
+        claudeSessionId,
+      });
+      mockFile(
+        JSON.stringify({
+          version: 1,
+          workspaces: [
+            {
+              path: "/a",
+              name: "a",
+              color: WORKSPACE_COLORS[0],
+              sessions: [
+                row("good", OLD_ID),
+                row("shell", "abc; touch /tmp/x"),
+                row("flag", "--x"),
+              ],
+            },
+          ],
+        }),
+      );
+      await loadWorkspaces();
+      const ids = Object.fromEntries(
+        get(workspaces)[0].sessions.map((s) => [s.id, s.claudeSessionId]),
+      );
+      expect(ids).toEqual({ good: OLD_ID, shell: null, flag: null });
+    });
+
     it("loads from file and resets running sessions to idle", async () => {
       mockFile(
         JSON.stringify([
@@ -335,7 +383,7 @@ describe("workspace store", () => {
                 status: "running",
                 terminalTabId: "tab-1",
                 createdAt: "",
-                claudeSessionId: "claude-1",
+                claudeSessionId: OLD_ID,
               },
             ],
           },
@@ -343,7 +391,7 @@ describe("workspace store", () => {
       );
       await loadWorkspaces();
       const session = get(workspaces)[0].sessions[0];
-      expect(session.claudeSessionId).toBe("claude-1");
+      expect(session.claudeSessionId).toBe(OLD_ID);
       expect(session.terminalTabId).toBeNull();
     });
 
