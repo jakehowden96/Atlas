@@ -175,8 +175,8 @@ describe("filterWorkspaces", () => {
   });
 
   it("scores a workspace by its newest session", () => {
-    expect(recencyOf(list[1])).toBe(Date.parse("2026-06-01T00:00:00Z"));
-    expect(recencyOf(list[2])).toBe(0);
+    expect(recencyOf(list[1]!)).toBe(Date.parse("2026-06-01T00:00:00Z"));
+    expect(recencyOf(list[2]!)).toBe(0);
   });
 });
 

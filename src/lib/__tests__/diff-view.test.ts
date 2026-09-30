@@ -142,7 +142,7 @@ describe("toSplitRows", () => {
   it("pairs removes with adds and flushes around context", () => {
     const rows = toSplitRows(makeFile("a.ts"));
     expect(rows[0]).toEqual({ kind: "hunk", header: "@@ -1,3 +1,4 @@" });
-    expect(rows[1].kind).toBe("context");
+    expect(rows[1]!.kind).toBe("context");
     // remove paired with first add, second add unpaired
     expect(rows[2]).toMatchObject({
       kind: "change",
@@ -188,7 +188,7 @@ describe("limitHunks", () => {
   it("cuts a long hunk at the limit and says how much is left", () => {
     const shown = limitHunks(fileWithLines("a.ts", 25).hunks, 10);
     expect(shown.hunks).toHaveLength(1);
-    expect(shown.hunks[0].lines).toHaveLength(10);
+    expect(shown.hunks[0]!.lines).toHaveLength(10);
     expect(shown.hidden).toBe(15);
   });
 

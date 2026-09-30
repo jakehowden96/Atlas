@@ -38,7 +38,7 @@ export function transcriptKind(h: HarnessConfig): "claude" | "omp" | null {
   return h.resumable ? "claude" : h.command === "omp" ? "omp" : null;
 }
 
-export const DEFAULT_HARNESSES: HarnessConfig[] = [
+export const DEFAULT_HARNESSES: readonly [HarnessConfig, ...HarnessConfig[]] = [
   {
     id: "claude-code",
     label: "Claude Code",

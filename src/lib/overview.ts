@@ -299,8 +299,8 @@ export function shortToolName(name: string | null): string {
   if (name === null) return "—";
   const match = name.match(/^mcp__(.+?)__(.+)$/);
   if (!match) return name;
-  const server = match[1].replace(/^claude_ai_/, "");
-  return `${server} · ${match[2]}`;
+  const server = (match[1] ?? "").replace(/^claude_ai_/, "");
+  return `${server} · ${match[2] ?? ""}`;
 }
 
 /**
@@ -317,6 +317,7 @@ export function splitReply(reply: string | null): { body: string; question: stri
     .filter((p) => p !== "");
   if (paragraphs.length === 0) return { body: "", question: null };
   const last = paragraphs[paragraphs.length - 1];
+  if (last === undefined) return { body: "", question: null };
   if (/\?[\s*_`)"'”’]*$/.test(last)) {
     return { body: paragraphs.slice(0, -1).join("\n\n"), question: last };
   }
@@ -527,7 +528,7 @@ function isRuleRow(row: string): boolean {
 
 function trimBlankTail(rows: readonly string[]): readonly string[] {
   let end = rows.length;
-  while (end > 0 && rows[end - 1].trim() === "") end--;
+  while (end > 0 && (rows[end - 1] ?? "").trim() === "") end--;
   return rows.slice(0, end);
 }
 
@@ -537,7 +538,7 @@ export function screenPreview(rows: readonly string[]): string[] {
 
   let lower = -1;
   for (let i = trimmed.length - 1; i >= floor; i--) {
-    if (!isRuleRow(trimmed[i])) continue;
+    if (!isRuleRow(trimmed[i] ?? "")) continue;
     if (lower === -1) {
       lower = i;
       continue;

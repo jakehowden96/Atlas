@@ -57,7 +57,7 @@ describe("playPing", () => {
     playPing();
     expect(started).toEqual([10]);
     expect(stopped).toHaveLength(1);
-    const length = stopped[0] - started[0];
+    const length = stopped[0]! - started[0]!;
     expect(length).toBeGreaterThan(0);
     expect(length).toBeLessThan(1);
   });

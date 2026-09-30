@@ -293,7 +293,7 @@ describe("TerminalSession PTY lifecycle", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(onSpawnError).toHaveBeenCalledTimes(1);
-    expect(String(onSpawnError.mock.calls[0][0])).toContain("no shell");
+    expect(String(onSpawnError.mock.calls[0]![0])).toContain("no shell");
     expect(onPtyReady).not.toHaveBeenCalled();
   });
 
@@ -379,7 +379,7 @@ describe("TerminalSession renderer", () => {
   it("falls back to the DOM renderer when a WebGL context is lost", () => {
     vi.mocked(ptySpawn).mockResolvedValue(7);
     makeSession();
-    const [webgl] = fakes.FakeWebgl.instances;
+    const webgl = fakes.FakeWebgl.instances[0]!;
 
     webgl.contextLoss?.();
 
@@ -391,7 +391,7 @@ describe("TerminalSession links", () => {
   function clickLink(uri: string) {
     vi.mocked(ptySpawn).mockResolvedValue(7);
     makeSession();
-    const [links] = fakes.FakeLinks.instances;
+    const links = fakes.FakeLinks.instances[0]!;
     links.handler?.({} as MouseEvent, uri);
   }
 

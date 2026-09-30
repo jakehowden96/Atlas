@@ -212,7 +212,7 @@ export function sparkSeries(byDay: Record<string, DayStats>, r: Range, today: Da
   if (fixed !== null) return daySeries(byDay, today, fixed);
   const keys = Object.keys(byDay ?? {}).sort();
   if (keys.length === 0) return [];
-  const [y, m, d] = keys[0].split("-").map(Number);
+  const [y = 0, m = 1, d = 1] = (keys[0] ?? "").split("-").map(Number);
   const first = Date.UTC(y, m - 1, d);
   const end = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
   const span = Math.round((end - first) / 86_400_000) + 1;

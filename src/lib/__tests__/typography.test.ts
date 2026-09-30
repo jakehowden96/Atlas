@@ -32,7 +32,7 @@ function fontSizesInPx(): Decl[] {
     lines.forEach((text, i) => {
       for (const pattern of SIZE_PATTERNS) {
         const m = pattern.exec(text);
-        if (m) out.push({ file, px: Number.parseFloat(m[1]), line: i + 1 });
+        if (m) out.push({ file, px: Number.parseFloat(m[1]!), line: i + 1 });
       }
     });
   }

@@ -69,7 +69,7 @@ import {
 /** The persisted object the last `stateSave` call wrote. */
 function lastWritten() {
   const calls = vi.mocked(stateSave).mock.calls;
-  return JSON.parse(calls[calls.length - 1][1] as string);
+  return JSON.parse(calls[calls.length - 1]![1] as string);
 }
 
 /** What the backend hands `loadSettings` for a file that exists. */
@@ -146,7 +146,7 @@ describe("settings store", () => {
         (t) => t.title === "Your settings file could not be read",
       );
       expect(recovered).toHaveLength(1);
-      expect(recovered[0].body).toContain("settings.json.bak");
+      expect(recovered[0]!.body).toContain("settings.json.bak");
       expect(get(enableNotifications)).toBe(true);
     });
 
@@ -314,8 +314,8 @@ describe("settings store", () => {
   describe("transcriptKind", () => {
     it("classifies each default harness", () => {
       expect(transcriptKind(DEFAULT_HARNESSES[0])).toBe("claude"); // claude-code
-      expect(transcriptKind(DEFAULT_HARNESSES[1])).toBe("omp"); // omp
-      expect(transcriptKind(DEFAULT_HARNESSES[2])).toBeNull(); // terminal
+      expect(transcriptKind(DEFAULT_HARNESSES[1]!)).toBe("omp"); // omp
+      expect(transcriptKind(DEFAULT_HARNESSES[2]!)).toBeNull(); // terminal
     });
 
     it("classifies a custom omp-shaped harness by command, not id", () => {

@@ -246,7 +246,7 @@ function persist(): Promise<void> {
 // workspace whose colour falls outside the palette is silently re-tagged on the
 // next load, so reordering or replacing them would re-colour every existing
 // user's workspaces. New hues are appended.
-export const WORKSPACE_COLORS = [
+export const WORKSPACE_COLORS: readonly [string, ...string[]] = [
   "#2fa37a",
   "#5b8def",
   "#7c6cf2",

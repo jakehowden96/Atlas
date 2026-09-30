@@ -29,57 +29,57 @@ function makeKeyEvent(overrides: Partial<KeyboardEvent> = {}): KeyboardEvent {
 describe("matchBinding", () => {
   it("accepts ⌘ and Ctrl alike", () => {
     const b = DEFAULT_KEYMAP.newSession[0];
-    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "n" }), b)).toBe(true);
-    expect(matchBinding(makeKeyEvent({ ctrlKey: true, key: "n" }), b)).toBe(true);
-    expect(matchBinding(makeKeyEvent({ key: "n" }), b)).toBe(false);
+    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "n" }), b!)).toBe(true);
+    expect(matchBinding(makeKeyEvent({ ctrlKey: true, key: "n" }), b!)).toBe(true);
+    expect(matchBinding(makeKeyEvent({ key: "n" }), b!)).toBe(false);
   });
 
   it("is case-insensitive on the key", () => {
-    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "N" }), DEFAULT_KEYMAP.jump[0])).toBe(
+    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "N" }), DEFAULT_KEYMAP.jump[0]!)).toBe(
       false,
     );
-    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "K" }), DEFAULT_KEYMAP.jump[0])).toBe(
+    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "K" }), DEFAULT_KEYMAP.jump[0]!)).toBe(
       true,
     );
   });
 
   it("rejects Alt — AltGr reports as Ctrl+Alt on a non-US layout", () => {
     const digit = makeKeyEvent({ ctrlKey: true, altKey: true, key: "@", code: "Digit2" });
-    expect(matchBinding(digit, DEFAULT_KEYMAP.tab2[0])).toBe(false);
+    expect(matchBinding(digit, DEFAULT_KEYMAP.tab2[0]!)).toBe(false);
     const backslash = makeKeyEvent({ ctrlKey: true, altKey: true, key: "\\" });
-    expect(matchBinding(backslash, DEFAULT_KEYMAP.toggleRail[0])).toBe(false);
+    expect(matchBinding(backslash, DEFAULT_KEYMAP.toggleRail[0]!)).toBe(false);
   });
 
   it("matches digits on e.code, not e.key", () => {
     // A French layout types "é" on the 2 key with the modifier held.
     const e = makeKeyEvent({ metaKey: true, key: "é", code: "Digit2" });
-    expect(matchBinding(e, DEFAULT_KEYMAP.tab2[0])).toBe(true);
-    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "2" }), DEFAULT_KEYMAP.tab2[0])).toBe(
+    expect(matchBinding(e, DEFAULT_KEYMAP.tab2[0]!)).toBe(true);
+    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "2" }), DEFAULT_KEYMAP.tab2[0]!)).toBe(
       false,
     );
   });
 
   it("honours Shift when the binding pins it, and ignores it when it does not", () => {
     const shifted = makeKeyEvent({ metaKey: true, shiftKey: true, key: "1", code: "Digit1" });
-    expect(matchBinding(shifted, DEFAULT_KEYMAP.tab1[0])).toBe(false);
+    expect(matchBinding(shifted, DEFAULT_KEYMAP.tab1[0]!)).toBe(false);
     // ⌘\ is bound without a Shift preference — Ctrl+Shift+\ still toggles it.
     const rail = makeKeyEvent({ ctrlKey: true, shiftKey: true, key: "\\" });
-    expect(matchBinding(rail, DEFAULT_KEYMAP.toggleRail[0])).toBe(true);
+    expect(matchBinding(rail, DEFAULT_KEYMAP.toggleRail[0]!)).toBe(true);
   });
 
   it("the shortcut sheet is a chord, not a bare `?`", () => {
     const b = DEFAULT_KEYMAP.shortcuts[0];
-    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "/" }), b)).toBe(true);
-    expect(matchBinding(makeKeyEvent({ ctrlKey: true, key: "/" }), b)).toBe(true);
+    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "/" }), b!)).toBe(true);
+    expect(matchBinding(makeKeyEvent({ ctrlKey: true, key: "/" }), b!)).toBe(true);
     // A modifierless binding would swallow the character in every text box.
-    expect(matchBinding(makeKeyEvent({ key: "?" }), b)).toBe(false);
+    expect(matchBinding(makeKeyEvent({ key: "?" }), b!)).toBe(false);
     expect(matchesAnyBinding(makeKeyEvent({ key: "/" }), DEFAULT_KEYMAP)).toBe(false);
   });
 
   it("mod+Escape is a binding but bare Escape is not", () => {
     const b = DEFAULT_KEYMAP.backToSessions[0];
-    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "Escape" }), b)).toBe(true);
-    expect(matchBinding(makeKeyEvent({ key: "Escape" }), b)).toBe(false);
+    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "Escape" }), b!)).toBe(true);
+    expect(matchBinding(makeKeyEvent({ key: "Escape" }), b!)).toBe(false);
     expect(matchesAnyBinding(makeKeyEvent({ key: "Escape" }), DEFAULT_KEYMAP)).toBe(false);
   });
 });
@@ -111,16 +111,16 @@ describe("findConflicts", () => {
 
 describe("formatBinding", () => {
   it("renders ⌘ on mac and Ctrl+ elsewhere", () => {
-    expect(formatBinding(DEFAULT_KEYMAP.newSession[0], true)).toBe("⌘N");
-    expect(formatBinding(DEFAULT_KEYMAP.newSession[0], false)).toBe("Ctrl+N");
-    expect(formatBinding(DEFAULT_KEYMAP.settings[0], true)).toBe("⌘,");
-    expect(formatBinding(DEFAULT_KEYMAP.toggleRail[0], false)).toBe("Ctrl+\\");
+    expect(formatBinding(DEFAULT_KEYMAP.newSession[0]!, true)).toBe("⌘N");
+    expect(formatBinding(DEFAULT_KEYMAP.newSession[0]!, false)).toBe("Ctrl+N");
+    expect(formatBinding(DEFAULT_KEYMAP.settings[0]!, true)).toBe("⌘,");
+    expect(formatBinding(DEFAULT_KEYMAP.toggleRail[0]!, false)).toBe("Ctrl+\\");
   });
 
   it("names digits by their code and spells Escape out", () => {
-    expect(formatBinding(DEFAULT_KEYMAP.tab3[0], true)).toBe("⌘3");
-    expect(formatBinding(DEFAULT_KEYMAP.backToSessions[0], true)).toBe("⌘Esc");
-    expect(formatBinding(DEFAULT_KEYMAP.backToSessions[0], false)).toBe("Ctrl+Esc");
+    expect(formatBinding(DEFAULT_KEYMAP.tab3[0]!, true)).toBe("⌘3");
+    expect(formatBinding(DEFAULT_KEYMAP.backToSessions[0]!, true)).toBe("⌘Esc");
+    expect(formatBinding(DEFAULT_KEYMAP.backToSessions[0]!, false)).toBe("Ctrl+Esc");
   });
 
   it("renders Shift", () => {
@@ -239,14 +239,14 @@ describe("mergeKeymap and the alternates a stored file predates", () => {
 describe("isReachable", () => {
   it("marks ⌘Escape unreachable on macOS only", () => {
     const cmdEscape = DEFAULT_KEYMAP.backToSessions[0];
-    expect(isReachable(cmdEscape, true)).toBe(false);
-    expect(isReachable(cmdEscape, false)).toBe(true);
+    expect(isReachable(cmdEscape!, true)).toBe(false);
+    expect(isReachable(cmdEscape!, false)).toBe(true);
   });
 
   it("leaves every other chord alone", () => {
-    expect(isReachable(DEFAULT_KEYMAP.backToSessions[1], true)).toBe(true);
-    expect(isReachable(DEFAULT_KEYMAP.newSession[0], true)).toBe(true);
-    expect(isReachable(DEFAULT_KEYMAP.tab1[0], true)).toBe(true);
+    expect(isReachable(DEFAULT_KEYMAP.backToSessions[1]!, true)).toBe(true);
+    expect(isReachable(DEFAULT_KEYMAP.newSession[0]!, true)).toBe(true);
+    expect(isReachable(DEFAULT_KEYMAP.tab1[0]!, true)).toBe(true);
   });
 });
 
@@ -262,7 +262,7 @@ describe("formatChord", () => {
   it("falls back to naming everything rather than nothing", () => {
     // A chord the platform eats, with no alternate: a wrong hint still beats a
     // blank one.
-    expect(formatChord([DEFAULT_KEYMAP.backToSessions[0]], true)).toBe("⌘Esc");
+    expect(formatChord([DEFAULT_KEYMAP.backToSessions[0]!], true)).toBe("⌘Esc");
   });
 
   it("is just the binding for a single-chord action", () => {

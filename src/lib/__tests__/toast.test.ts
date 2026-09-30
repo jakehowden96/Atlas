@@ -13,9 +13,9 @@ describe("toast store", () => {
     showToast("First");
     showToast("Second");
     const items = get(toasts);
-    dismissToast(items[0].id);
+    dismissToast(items[0]!.id);
     expect(get(toasts)).toHaveLength(1);
-    expect(get(toasts)[0].title).toBe("Second");
+    expect(get(toasts)[0]!.title).toBe("Second");
   });
 
   it("auto-dismisses an info toast after 4s", () => {
@@ -30,7 +30,7 @@ describe("toast store", () => {
   it("cancels auto-dismiss timer on manual dismiss", () => {
     showToast("Manual dismiss");
     const items = get(toasts);
-    const id = items[0].id;
+    const id = items[0]!.id;
 
     // Manually dismiss before timeout
     dismissToast(id);
@@ -70,7 +70,7 @@ describe("toast store", () => {
     it("runs the action once and removes the toast", () => {
       const run = vi.fn();
       showToast("Atlas removed", { action: { label: "Undo", run } });
-      const id = get(toasts)[0].id;
+      const id = get(toasts)[0]!.id;
 
       runToastAction(id);
       expect(run).toHaveBeenCalledTimes(1);
@@ -85,7 +85,7 @@ describe("toast store", () => {
     it("does not run the action when dismissed by the close button", () => {
       const run = vi.fn();
       showToast("Atlas removed", { action: { label: "Undo", run } });
-      dismissToast(get(toasts)[0].id);
+      dismissToast(get(toasts)[0]!.id);
       expect(get(toasts)).toHaveLength(0);
       expect(run).not.toHaveBeenCalled();
     });
@@ -112,11 +112,11 @@ describe("toast store", () => {
     expect(get(toasts)).toHaveLength(3);
 
     const items = get(toasts);
-    dismissToast(items[1].id); // dismiss "Second"
+    dismissToast(items[1]!.id); // dismiss "Second"
     const remaining = get(toasts);
     expect(remaining).toHaveLength(2);
-    expect(remaining[0].title).toBe("First");
-    expect(remaining[1].title).toBe("Third");
+    expect(remaining[0]!.title).toBe("First");
+    expect(remaining[1]!.title).toBe("Third");
   });
 
   it("keeps an error up longer than an info toast, since its body is the only detail", () => {

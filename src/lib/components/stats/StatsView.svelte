@@ -247,7 +247,7 @@
           {#each rows as row (row.label)}
             <div class="model-row" style="--cols: {models.length}">
               <span class="model-label">{row.label}</span>
-              {#each row.values as value, i (models[i][0])}
+              {#each row.values as value, i (models[i]?.[0] ?? i)}
                 <span class="num">{value}</span>
               {/each}
             </div>
@@ -387,7 +387,7 @@
             {/each}
           </div>
           <div class="heat-caption">
-            <span>{heatmap.length > 0 ? shortDate(heatmap[0].date) : ""}</span>
+            <span>{heatmap[0] ? shortDate(heatmap[0].date) : ""}</span>
             <span>
               {heatmapPeak
                 ? `peak ${shortDate(heatmapPeak.date)} · ${heatmapPeak.stats.sessions}`

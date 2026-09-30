@@ -74,7 +74,7 @@ describe("answering a permission prompt from a tile", () => {
     await denyPendingTool("t1");
 
     expect(ptyWrite).not.toHaveBeenCalled();
-    expect(get(tabs)[0].needsInput).toBe(true);
+    expect(get(tabs)[0]!.needsInput).toBe(true);
   });
 
   it("types nothing for an elicitation dialog even if the screen looks like a prompt", async () => {
@@ -95,7 +95,7 @@ describe("answering a permission prompt from a tile", () => {
     await allowPendingTool("t1");
 
     expect(ptyWrite).toHaveBeenCalledWith(7, "\r");
-    expect(get(tabs)[0].needsInput).toBe(false);
+    expect(get(tabs)[0]!.needsInput).toBe(false);
   });
 
   it("denies with Escape once the prompt is on screen", async () => {
@@ -117,7 +117,7 @@ describe("answering a permission prompt from a tile", () => {
     await expect(allowPendingTool("t1")).resolves.toBeUndefined();
 
     expect(get(toasts)).toHaveLength(1);
-    expect(get(tabs)[0].needsInput).toBe(true);
+    expect(get(tabs)[0]!.needsInput).toBe(true);
   });
 });
 
@@ -182,7 +182,7 @@ describe("session ids typed into the shell", () => {
     ).rejects.toThrow();
 
     expect(get(tabs)).toHaveLength(0);
-    expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe(UUID);
+    expect(get(workspaces)[0]!.sessions[0]!.claudeSessionId).toBe(UUID);
   });
 
   it("does not rebind a session to a non-UUID id reported by the hook", async () => {
@@ -190,7 +190,7 @@ describe("session ids typed into the shell", () => {
 
     await handleClaudeSessionStart("t1", "x; touch /tmp/pwned");
 
-    expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe(UUID);
+    expect(get(workspaces)[0]!.sessions[0]!.claudeSessionId).toBe(UUID);
   });
 
   it("rebinds to a new UUID after /clear", async () => {
@@ -198,7 +198,7 @@ describe("session ids typed into the shell", () => {
 
     await handleClaudeSessionStart("t1", OTHER_UUID);
 
-    expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe(OTHER_UUID);
+    expect(get(workspaces)[0]!.sessions[0]!.claudeSessionId).toBe(OTHER_UUID);
   });
 });
 
@@ -223,7 +223,7 @@ describe("resuming a conversation that is already open", () => {
     expect(session.id).toBe("row-1");
     expect(get(tabs).map((t) => t.id)).toEqual(["t1", "other"]);
     expect(get(activeTabId)).toBe("t1");
-    expect(get(workspaces)[0].sessions[0].terminalTabId).toBe("t1");
+    expect(get(workspaces)[0]!.sessions[0]!.terminalTabId).toBe("t1");
   });
 });
 
@@ -302,12 +302,12 @@ describe("a shell that exits on its own", () => {
 
     await handleTerminalExit("t1");
 
-    const session = get(workspaces)[0].sessions[0];
+    const session = get(workspaces)[0]!.sessions[0]!;
     expect(session.status).toBe("idle");
     // The row keeps its tab, so the tile stays put and shows why it stopped.
     expect(session.terminalTabId).toBe("t1");
     expect(get(tabs)).toHaveLength(1);
-    expect(get(tabs)[0].exited).toBe(true);
+    expect(get(tabs)[0]!.exited).toBe(true);
     expect(stopSessionTail).toHaveBeenCalledWith(UUID);
     expect(get(liveSessions).has(UUID)).toBe(false);
   });
@@ -330,7 +330,7 @@ describe("a shell that exits on its own", () => {
 
     await expect(handleTerminalExit("t1")).resolves.toBeUndefined();
 
-    expect(get(tabs)[0].exited).toBe(true);
+    expect(get(tabs)[0]!.exited).toBe(true);
     expect(stopSessionTail).not.toHaveBeenCalled();
   });
 });

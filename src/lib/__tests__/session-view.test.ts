@@ -124,7 +124,7 @@ describe("filesTouched", () => {
 
   it("names a deleted file by its old path", () => {
     const rows = filesTouched(panel(TWO_FILE_DIFF));
-    expect(rows[1].path).toBe("src/gone.ts");
+    expect(rows[1]!.path).toBe("src/gone.ts");
   });
 });
 

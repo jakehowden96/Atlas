@@ -109,8 +109,7 @@ export function buildDocTree(entries: DocEntry[]): TreeNode[] {
     const parts = entry.rel_path.split("/").filter(Boolean);
     let parent = root;
     let acc = "";
-    for (let i = 0; i < parts.length; i++) {
-      const name = parts[i];
+    for (const [i, name] of parts.entries()) {
       acc = acc ? `${acc}/${name}` : name;
       let node = byPath.get(acc);
       if (!node) {
@@ -253,9 +252,10 @@ export function breadcrumbs(path: string): Crumb[] {
   const sep = windows ? "\\" : "/";
   const parts = path.split(/[\\/]+/);
   const crumbs: Crumb[] = [];
-  let acc = windows ? `${parts[0]}\\` : "/";
+  const drive = parts[0] ?? "";
+  let acc = windows ? `${drive}\\` : "/";
 
-  crumbs.push({ label: windows ? parts[0] : "/", path: acc });
+  crumbs.push({ label: windows ? drive : "/", path: acc });
   for (const part of parts.slice(1)) {
     if (!part) continue;
     acc = acc.endsWith(sep) ? `${acc}${part}` : `${acc}${sep}${part}`;
@@ -267,7 +267,7 @@ export function breadcrumbs(path: string): Crumb[] {
 /** The directory holding `path`, or null when it is already a root. */
 export function parentDir(path: string): string | null {
   const crumbs = breadcrumbs(path);
-  return crumbs.length > 1 ? crumbs[crumbs.length - 2].path : null;
+  return crumbs[crumbs.length - 2]?.path ?? null;
 }
 
 // ---------- Sessions touching a file ----------

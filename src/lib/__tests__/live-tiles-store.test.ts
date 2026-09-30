@@ -100,7 +100,7 @@ describe("liveTiles", () => {
 
     setTabNeedsInput("t1", true, "permission_prompt");
 
-    expect(get(liveTiles)[0].state).toBe("needsYou");
+    expect(get(liveTiles)[0]!.state).toBe("needsYou");
     stop();
   });
 });

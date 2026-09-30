@@ -119,7 +119,8 @@
       return;
     }
     if (!list.some((w) => w.path === $fileWs)) {
-      fileWs.set((list.find((w) => w.path === $activeWorkspacePath) ?? list[0]).path);
+      const pick = list.find((w) => w.path === $activeWorkspacePath) ?? list[0];
+      if (pick) fileWs.set(pick.path);
     }
   });
 

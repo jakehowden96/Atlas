@@ -93,13 +93,15 @@
   function onKeydown(e: KeyboardEvent) {
     if (e.key !== "Tab") return;
     const items = tabbables();
-    if (items.length === 0) {
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (!first || !last) {
       e.preventDefault();
       panelEl?.focus();
       return;
     }
-    const edge = e.shiftKey ? items[0] : items[items.length - 1];
-    const wrapTo = e.shiftKey ? items[items.length - 1] : items[0];
+    const edge = e.shiftKey ? first : last;
+    const wrapTo = e.shiftKey ? last : first;
     const active = document.activeElement;
     if (active !== edge && panelEl?.contains(active)) return;
     e.preventDefault();

@@ -199,8 +199,8 @@ describe("renderMarkdown hardening", () => {
   });
 
   it("strips a closing hash sequence from a heading only after a space", () => {
-    expect(outline("# Title ##")[0].text).toBe("Title");
-    expect(outline("# C#")[0].text).toBe("C#");
+    expect(outline("# Title ##")[0]!.text).toBe("Title");
+    expect(outline("# C#")[0]!.text).toBe("C#");
   });
 
   it("reads a heading with a long run of spaces in linear time", () => {

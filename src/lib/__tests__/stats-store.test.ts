@@ -53,7 +53,7 @@ describe("the stats feed", () => {
     });
 
     await startStatsFeed();
-    pushes[0](summaryWith(44));
+    pushes[0]!(summaryWith(44));
 
     expect(get(statsSummary)?.totalsAll.cost).toBe(44);
   });
@@ -113,7 +113,7 @@ describe("the stats feed", () => {
     });
 
     await startStatsFeed();
-    pushes[0](at("2026-01-01T00:00:01Z", 1));
+    pushes[0]!(at("2026-01-01T00:00:01Z", 1));
 
     expect(get(statsSummary)?.totalsAll.cost).toBe(2);
   });

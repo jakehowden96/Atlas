@@ -16,11 +16,12 @@ function luminance(hex: string): number {
   const channels = [1, 3, 5]
     .map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255)
     .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
-  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  return 0.2126 * channels[0]! + 0.7152 * channels[1]! + 0.0722 * channels[2]!;
 }
 
 function contrast(a: string, b: string): number {
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  const [la, lb] = [luminance(a), luminance(b)];
+  const [hi, lo] = [Math.max(la, lb), Math.min(la, lb)];
   return (hi + 0.05) / (lo + 0.05);
 }
 
@@ -232,7 +233,7 @@ function tokenBlock(selector: string): Record<string, string> {
   }
   const out: Record<string, string> = {};
   for (const m of APP_CSS.slice(open + 1, i).matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
-    out[m[1]] = m[2].trim();
+    out[m[1]!] = m[2]!.trim();
   }
   return out;
 }
@@ -275,7 +276,7 @@ describe("app.css token blocks", () => {
     // says so — because a model's identity should not change with the theme.
     const shared = /^--model-/;
     const colours = Object.keys(LIGHT).filter(
-      (k) => /^#|^rgba?\(/.test(LIGHT[k]) && !shared.test(k),
+      (k) => /^#|^rgba?\(/.test(LIGHT[k]!) && !shared.test(k),
     );
     for (const key of colours) {
       expect(DARK_EXPLICIT, key).toHaveProperty(key);
@@ -306,7 +307,7 @@ describe("app.css token blocks", () => {
           const bg = tokens[surface];
           expect(fg, `${name} ${ink}`).toMatch(/^#[0-9a-f]{6}$/);
           expect(bg, `${name} ${surface}`).toMatch(/^#[0-9a-f]{6}$/);
-          expect(contrast(fg, bg), `${name}: ${ink} on ${surface}`).toBeGreaterThanOrEqual(
+          expect(contrast(fg!, bg!), `${name}: ${ink} on ${surface}`).toBeGreaterThanOrEqual(
             floorFor(ink),
           );
         }
@@ -318,7 +319,7 @@ describe("app.css token blocks", () => {
     const floor = (tokens: Record<string, string>) =>
       Math.min(
         ...Object.entries(ON).flatMap(([ink, surfaces]) =>
-          surfaces.map((s) => contrast(tokens[ink], tokens[s])),
+          surfaces.map((s) => contrast(tokens[ink]!, tokens[s]!)),
         ),
       );
     const light = floor(LIGHT);
@@ -330,7 +331,7 @@ describe("app.css token blocks", () => {
       Math.min(
         ...Object.entries(ON)
           .filter(([ink]) => BODY_INKS.has(ink))
-          .flatMap(([ink, surfaces]) => surfaces.map((s) => contrast(tokens[ink], tokens[s]))),
+          .flatMap(([ink, surfaces]) => surfaces.map((s) => contrast(tokens[ink]!, tokens[s]!))),
       );
     expect(bodyFloor(LIGHT)).toBeGreaterThanOrEqual(7);
     expect(bodyFloor(DARK_EXPLICIT)).toBeGreaterThanOrEqual(7);
@@ -365,7 +366,7 @@ describe("app.css token blocks", () => {
       ["light", lightXtermTheme, LIGHT],
       ["dark", darkXtermTheme, DARK_EXPLICIT],
     ] as const) {
-      expect(contrast(palette.black, tokens["--term-bg"]), name).toBeLessThan(1.5);
+      expect(contrast(palette.black, tokens["--term-bg"]!), name).toBeLessThan(1.5);
     }
   });
 
@@ -377,8 +378,8 @@ describe("app.css token blocks", () => {
       ["light", LIGHT],
       ["dark", DARK_EXPLICIT],
     ] as const) {
-      expect(contrast(tokens["--term-tint-user"], tokens["--term-bg"]), name).toBeLessThan(1.5);
-      expect(contrast(tokens["--term-tint-tool"], tokens["--term-bg"]), name).toBeLessThan(1.5);
+      expect(contrast(tokens["--term-tint-user"]!, tokens["--term-bg"]!), name).toBeLessThan(1.5);
+      expect(contrast(tokens["--term-tint-tool"]!, tokens["--term-bg"]!), name).toBeLessThan(1.5);
     }
   });
 
