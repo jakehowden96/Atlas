@@ -119,21 +119,29 @@ export function matchRepo(
   return null;
 }
 
+/** Paths whose remotes are being resolved right now. */
+const resolvingRepoPaths = new Set<string>();
+
 export async function loadWorkspaceRepos(paths: string[]): Promise<void> {
   const known = get(reposByWorkspace);
-  const missing = paths.filter((path) => !(path in known));
+  const missing = paths.filter((path) => !(path in known) && !resolvingRepoPaths.has(path));
   if (missing.length === 0) return;
-  const resolved = await Promise.all(
-    missing.map(async (path) => {
-      try {
-        return [path, await listWorkspaceRepos(path)] as const;
-      } catch (e) {
-        log.warn("prs", `list_workspace_repos failed for ${path}: ${e}`);
-        return [path, [] as WorkspaceRepo[]] as const;
-      }
-    }),
-  );
-  reposByWorkspace.update((current) => ({ ...current, ...Object.fromEntries(resolved) }));
+  for (const path of missing) resolvingRepoPaths.add(path);
+  try {
+    const resolved = await Promise.all(
+      missing.map(async (path) => {
+        try {
+          return [path, await listWorkspaceRepos(path)] as const;
+        } catch (e) {
+          log.warn("prs", `list_workspace_repos failed for ${path}: ${e}`);
+          return [path, [] as WorkspaceRepo[]] as const;
+        }
+      }),
+    );
+    reposByWorkspace.update((current) => ({ ...current, ...Object.fromEntries(resolved) }));
+  } finally {
+    for (const path of missing) resolvingRepoPaths.delete(path);
+  }
 }
 
 /**
@@ -167,16 +175,34 @@ async function loadViewer(): Promise<void> {
   }
 }
 
+/** Refreshes that have not answered yet. */
+let inFlight = 0;
+/** The newest refresh; an older one that answers after it is discarded. */
+let latestRefresh = 0;
+/** Whether the last finished refresh failed, so a run of failures toasts once. */
+let lastRefreshFailed = false;
+
 export async function refreshPrs(): Promise<void> {
+  const mine = ++latestRefresh;
+  inFlight++;
   prsLoading.set(true);
+  // No viewer means gh was missing or signed out when it was last asked; the
+  // user may have signed in since, and Mine / Needs my review depend on it.
+  if (get(prViewer) === null) void loadViewer();
   try {
-    prRepos.set(await listRepoPrs(get(effectiveWatchedRepos)));
+    const result = await listRepoPrs(get(effectiveWatchedRepos));
+    if (mine !== latestRefresh) return;
+    prRepos.set(result);
     prsLastUpdated.set(Date.now());
+    lastRefreshFailed = false;
   } catch (e) {
+    if (mine !== latestRefresh) return;
     log.error("prs", "list_repo_prs failed", e);
-    showToast("Failed to list PRs", { body: String(e) });
+    if (!lastRefreshFailed) showToast("Failed to list PRs", { body: String(e) });
+    lastRefreshFailed = true;
   } finally {
-    prsLoading.set(false);
+    inFlight--;
+    if (mine === latestRefresh) prsLoading.set(false);
   }
 }
 
@@ -186,17 +212,30 @@ export async function refreshPrs(): Promise<void> {
  */
 export function startPrPolling(): () => void {
   let timer: ReturnType<typeof setInterval> | null = null;
-  void loadViewer();
   // Resolve remotes from the shell, not just from PrsView: the auto-add union
   // has to be right before the Pull requests screen is ever opened.
   const stopSlugs = visibleWorkspaces.subscribe((ws) => {
     void loadWorkspaceRepos(ws.map((w) => w.path));
   });
+  // `effectiveWatchedRepos` hands out a new array on every recompute, and
+  // resolving a workspace's remotes recomputes it even when the list is the
+  // same; only a different list is worth another `gh pr list` fan-out.
+  let watchedKey: string | null = null;
   // Fires immediately on subscribe, which is the initial fetch.
-  const stopRepos = effectiveWatchedRepos.subscribe(() => void refreshPrs());
+  const stopRepos = effectiveWatchedRepos.subscribe((repos) => {
+    const key = JSON.stringify(repos);
+    if (key === watchedKey) return;
+    watchedKey = key;
+    void refreshPrs();
+  });
   const stopInterval = prRefreshMinutes.subscribe((minutes) => {
     if (timer) clearInterval(timer);
-    timer = setInterval(() => void refreshPrs(), Math.max(1, minutes) * 60_000);
+    timer = setInterval(
+      () => {
+        if (inFlight === 0) void refreshPrs();
+      },
+      Math.max(1, minutes) * 60_000,
+    );
   });
   return () => {
     stopSlugs();

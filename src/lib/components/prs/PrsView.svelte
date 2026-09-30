@@ -5,7 +5,6 @@
   import { spawnHarnessSession } from "../../session-actions";
   import {
     effectiveWatchedRepos,
-    loadWorkspaceRepos,
     matchesFilter,
     prFilter,
     prFilterCounts,
@@ -37,12 +36,6 @@
 
   onDestroy(() => {
     if (tick) clearInterval(tick);
-  });
-
-  // Resolve each workspace's origin remote so repo cards know where a session
-  // would start. Cached in the store, so this only shells out for new paths.
-  $effect(() => {
-    void loadWorkspaceRepos($visibleWorkspaces.map((w) => w.path));
   });
 
   const viewerLogin = $derived($prViewer?.login ?? null);
@@ -171,7 +164,13 @@
       showToast(`Could not check out ${pr.headRefName}`, { body: String(e) });
       return;
     }
-    await spawnHarnessSession(path);
+    try {
+      await spawnHarnessSession(path);
+    } catch (e) {
+      log.error("prs", `starting a session in ${path} failed`, e);
+      showToast("Could not start a session", { body: String(e) });
+      return;
+    }
     showView("session");
   }
 </script>
