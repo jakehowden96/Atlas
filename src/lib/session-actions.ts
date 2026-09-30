@@ -10,6 +10,8 @@ import { get } from "svelte/store";
 import { ptyKill, ptyWrite, startOmpTail, startSessionTail, stopSessionTail } from "./ipc";
 import { log } from "./logger";
 import { removeLiveSession } from "./stores/liveSessions";
+import { setSessionTouchedFiles } from "./stores/panel";
+import { clearForSession } from "./stores/reviewComments";
 import { showToast } from "./stores/toast";
 import {
   DEFAULT_HARNESSES,
@@ -65,7 +67,8 @@ async function endSessionTail(claudeSessionId: string | null | undefined) {
   removeLiveSession(claudeSessionId);
 }
 
-/** Kill a terminal tab's PTY, if it has one, and drop the tab. */
+/** Kill a terminal tab's PTY, if it has one, and drop the tab with the review
+ *  comments and touched-file counts kept under its id. */
 export async function closeSessionTab(tabId: string) {
   const tab = get(tabs).find((t) => t.id === tabId);
   if (tab && tab.ptyId >= 0) {
@@ -76,6 +79,8 @@ export async function closeSessionTab(tabId: string) {
     }
   }
   removeTab(tabId);
+  clearForSession(tabId);
+  setSessionTouchedFiles(tabId, []);
 }
 
 /**

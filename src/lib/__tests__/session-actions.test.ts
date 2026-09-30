@@ -24,11 +24,14 @@ import { ptyKill, ptyWrite, startSessionTail, stopSessionTail } from "../ipc";
 import {
   allowPendingTool,
   closeSession,
+  closeSessionTab,
   denyPendingTool,
   handleClaudeSessionStart,
   spawnHarnessSession,
 } from "../session-actions";
 import { liveSessions, upsertLiveSession } from "../stores/liveSessions";
+import { sessionTouchedFiles, setSessionTouchedFiles } from "../stores/panel";
+import { addComment, reviewComments } from "../stores/reviewComments";
 import { toasts } from "../stores/toast";
 import { workspaces, type WorkspaceSession } from "../stores/workspace";
 import type { LiveSession } from "../../types/session";
@@ -249,5 +252,34 @@ describe("ending a session's transcript tail", () => {
     await closing;
 
     expect(get(liveSessions).has(UUID)).toBe(false);
+  });
+});
+
+describe("closing a session's terminal tab", () => {
+  beforeEach(() => {
+    tabs.set([]);
+    vi.clearAllMocks();
+  });
+
+  it("forgets the review comments and touched files kept for that tab", async () => {
+    addTab({ type: "terminal", id: "t9", ptyId: 7 });
+    addComment(
+      "t9",
+      {
+        fileKey: "a.ts",
+        side: "+",
+        oldNum: null,
+        newNum: 1,
+        hunkHeader: "@@",
+        contentSnippet: "x",
+      },
+      "rename",
+    );
+    setSessionTouchedFiles("t9", [{ path: "a.ts", added: 1, removed: 0, repo: "" }]);
+
+    await closeSessionTab("t9");
+
+    expect(get(reviewComments).has("t9")).toBe(false);
+    expect(get(sessionTouchedFiles).has("t9")).toBe(false);
   });
 });
