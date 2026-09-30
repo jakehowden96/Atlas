@@ -273,9 +273,7 @@
             <div class="row">
               <div class="row-text">
                 <div class="row-title">System notifications</div>
-                <div class="row-desc">
-                  Notify when a session needs you and Atlas isn't focused.
-                </div>
+                <div class="row-desc">Notify when a session needs you and Atlas isn't focused.</div>
               </div>
               <Toggle
                 checked={$enableNotifications}
@@ -306,15 +304,15 @@
                   type="button"
                   onclick={() => stepFont(-0.5)}
                   disabled={$terminalFontSize <= MIN_TERMINAL_FONT_SIZE}
-                  aria-label="Smaller terminal font"
-                >−</button>
+                  aria-label="Smaller terminal font">−</button
+                >
                 <span class="stepper-value">{$terminalFontSize}</span>
                 <button
                   type="button"
                   onclick={() => stepFont(0.5)}
                   disabled={$terminalFontSize >= MAX_TERMINAL_FONT_SIZE}
-                  aria-label="Larger terminal font"
-                >+</button>
+                  aria-label="Larger terminal font">+</button
+                >
               </div>
             </div>
 
@@ -330,15 +328,13 @@
                 onChange={(id) => void setOverviewOrdering(id as OverviewOrdering)}
               />
             </div>
-
           </div>
         {:else if section === "keyboard"}
           <div class="stack">
             <p class="copy">
-              Every global chord. ⌘ and Ctrl are interchangeable, so one binding covers
-              both platforms. Recording needs the modifier held; Esc cancels. An action
-              can carry a second chord — some chords never reach the app, because the
-              OS claims them first.
+              Every global chord. ⌘ and Ctrl are interchangeable, so one binding covers both
+              platforms. Recording needs the modifier held; Esc cancels. An action can carry a
+              second chord — some chords never reach the app, because the OS claims them first.
             </p>
 
             <div class="list">
@@ -353,7 +349,8 @@
                         title={isReachable(binding)
                           ? undefined
                           : "This OS claims this chord — it never reaches Atlas."}
-                      >{formatBinding(binding)}</span>
+                        >{formatBinding(binding)}</span
+                      >
                     {/each}
                   </span>
                   <button
@@ -393,8 +390,7 @@
 
             {#if conflicts.length > 0}
               <p class="copy bad">
-                Two actions share a chord. Nothing is saved until one of the marked rows
-                changes.
+                Two actions share a chord. Nothing is saved until one of the marked rows changes.
               </p>
             {/if}
 
@@ -407,17 +403,17 @@
             </div>
 
             <p class="copy">
-              Esc on its own is not rebindable: inside a session it belongs to the Claude
-              Code TUI, and everywhere else it closes whatever is open.
-              <strong>{formatChord(draft.backToSessions)}</strong> is the way back to
-              Sessions from a focused terminal.
+              Esc on its own is not rebindable: inside a session it belongs to the Claude Code TUI,
+              and everywhere else it closes whatever is open.
+              <strong>{formatChord(draft.backToSessions)}</strong> is the way back to Sessions from a
+              focused terminal.
             </p>
           </div>
         {:else if section === "workspaces"}
           <div class="stack">
             <p class="copy">
-              A workspace is a folder Claude runs in. Colour tags sessions everywhere;
-              linking a GitHub repo lets you start sessions from its pull requests.
+              A workspace is a folder Claude runs in. Colour tags sessions everywhere; linking a
+              GitHub repo lets you start sessions from its pull requests.
             </p>
             <div class="list">
               {#each $visibleWorkspaces as ws (ws.path)}
@@ -443,7 +439,11 @@
                     </div>
                   </div>
                   <span class="ws-count">{ws.sessions.length} sessions</span>
-                  <button type="button" class="remove" onclick={() => void removeWorkspaceWithUndo(ws.path)}>
+                  <button
+                    type="button"
+                    class="remove"
+                    onclick={() => void removeWorkspaceWithUndo(ws.path)}
+                  >
                     Remove
                   </button>
                 </div>
@@ -458,8 +458,8 @@
         {:else if section === "prs"}
           <div class="stack">
             <p class="copy">
-              Repos listed on the Pull requests tab. Uses <code>gh</code>, which must be
-              installed and signed in.
+              Repos listed on the Pull requests tab. Uses <code>gh</code>, which must be installed
+              and signed in.
               {#if $prViewer}
                 <span class="ok">gh auth status: ok · @{$prViewer.login}</span>
               {:else}
@@ -475,8 +475,8 @@
                     type="button"
                     class="chip-x"
                     aria-label="Stop watching {repo}"
-                    onclick={() => removeRepo(repo)}
-                  >✕</button>
+                    onclick={() => removeRepo(repo)}>✕</button
+                  >
                 </span>
               {/each}
               <input
@@ -492,8 +492,8 @@
               <div class="row-text">
                 <div class="row-title">Auto-add repos from workspaces</div>
                 <div class="row-desc">
-                  Any workspace with a GitHub remote is watched automatically. Your own
-                  entries above are kept separately, so turning this off leaves them alone.
+                  Any workspace with a GitHub remote is watched automatically. Your own entries
+                  above are kept separately, so turning this off leaves them alone.
                 </div>
               </div>
               <Toggle
@@ -516,9 +516,9 @@
         {:else if section === "claude"}
           <div class="stack">
             <p class="copy">
-              Atlas reads Claude Code's own signals — no proxying. Two hooks are installed
-              into <code>~/.claude/settings.json</code>; everything else comes from tailing
-              the session transcript.
+              Atlas reads Claude Code's own signals — no proxying. Two hooks are installed into <code
+                >~/.claude/settings.json</code
+              >; everything else comes from tailing the session transcript.
             </p>
 
             <div class="list">
@@ -536,8 +536,8 @@
                 <span class="hook-dot" class:on={claude?.sessionStartHookInstalled}></span>
                 <span class="hook-name">SessionStart</span>
                 <span class="hook-desc">
-                  Tells Atlas when <code>/clear</code> or <code>/compact</code> moves a
-                  session to a new id, so the tail follows it.
+                  Tells Atlas when <code>/clear</code> or <code>/compact</code> moves a session to a new
+                  id, so the tail follows it.
                 </span>
                 <span class="badge" class:on={claude?.sessionStartHookInstalled}>
                   {claude?.sessionStartHookInstalled ? "installed" : "not installed"}
@@ -546,18 +546,17 @@
             </div>
 
             <p class="copy">
-              Plan, subagents, tool calls and cost are <strong>not</strong> hooks. Atlas
-              derives them by tailing <code>~/.claude/projects/**.jsonl</code>, which is
-              why no Stop, PreToolUse, PostToolUse or Subagent hooks are installed.
+              Plan, subagents, tool calls and cost are <strong>not</strong> hooks. Atlas derives
+              them by tailing <code>~/.claude/projects/**.jsonl</code>, which is why no Stop,
+              PreToolUse, PostToolUse or Subagent hooks are installed.
             </p>
 
             <div class="row">
               <div class="row-text">
                 <div class="row-title">Tail transcripts</div>
                 <div class="row-desc">
-                  Read <code>~/.claude/projects/**.jsonl</code> live for context %, tokens,
-                  cost and subagents. Off stops every running tail; tiles fall back to
-                  state and diff counts.
+                  Read <code>~/.claude/projects/**.jsonl</code> live for context %, tokens, cost and subagents.
+                  Off stops every running tail; tiles fall back to state and diff counts.
                 </div>
               </div>
               <Toggle
@@ -570,15 +569,17 @@
             <div class="row">
               <div class="row-text"><div class="row-title">Claude binary</div></div>
               <span class="mono-pill">
-                {claude?.binary ?? "not found on PATH"}{claude?.version ? ` · ${claude.version}` : ""}
+                {claude?.binary ?? "not found on PATH"}{claude?.version
+                  ? ` · ${claude.version}`
+                  : ""}
               </span>
             </div>
           </div>
         {:else}
           <div class="stack">
             <p class="copy">
-              What New Session can launch. Claude Code is the only one Atlas can resume —
-              anything else always starts fresh.
+              What New Session can launch. Claude Code is the only one Atlas can resume — anything
+              else always starts fresh.
             </p>
             <div class="list">
               {#each $harnesses as h (h.id)}
@@ -614,7 +615,9 @@
                         class="field-input"
                         value={h.label}
                         oninput={(e) =>
-                          updateHarness(h.id, { label: (e.currentTarget as HTMLInputElement).value })}
+                          updateHarness(h.id, {
+                            label: (e.currentTarget as HTMLInputElement).value,
+                          })}
                       />
                     </label>
                     <label class="field">
@@ -623,7 +626,9 @@
                         class="field-input mono"
                         value={h.command}
                         oninput={(e) =>
-                          updateHarness(h.id, { command: (e.currentTarget as HTMLInputElement).value })}
+                          updateHarness(h.id, {
+                            command: (e.currentTarget as HTMLInputElement).value,
+                          })}
                       />
                     </label>
                     <label class="field">

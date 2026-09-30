@@ -149,22 +149,19 @@ describe("tileComparator", () => {
         workspaceName: "ws",
       } as SessionTile;
       expect(pinKey(owned)).toBe("row-b");
-      expect(order([tile("a", "idle"), owned], "manual", ["row-b"])).toEqual([
-        "uuid-b",
-        "a",
-      ]);
+      expect(order([tile("a", "idle"), owned], "manual", ["row-b"])).toEqual(["uuid-b", "a"]);
       // The transcript uuid is not what the pin is stored under.
-      expect(order([tile("a", "idle"), owned], "manual", ["uuid-b"])).toEqual([
-        "a",
-        "uuid-b",
-      ]);
+      expect(order([tile("a", "idle"), owned], "manual", ["uuid-b"])).toEqual(["a", "uuid-b"]);
     });
   });
 });
 
 describe("compareByAttention", () => {
   const ordered = (states: SessionState[]) =>
-    states.map((state) => ({ state })).sort(compareByAttention).map((t) => t.state);
+    states
+      .map((state) => ({ state }))
+      .sort(compareByAttention)
+      .map((t) => t.state);
 
   it("puts needs-you first, then running/error, then idle", () => {
     expect(ordered(["idle", "running", "needsYou", "error"])).toEqual([
@@ -306,9 +303,7 @@ describe("buildTiles", () => {
 
   it("does not tile a persisted session that is not open", () => {
     const closed = [
-      workspace("/code/atlas", [
-        { id: "row-a", claudeSessionId: "uuid-a", terminalTabId: null },
-      ]),
+      workspace("/code/atlas", [{ id: "row-a", claudeSessionId: "uuid-a", terminalTabId: null }]),
     ];
     expect(buildTiles([], closed, new Map(), new Set())).toHaveLength(0);
   });
@@ -321,9 +316,7 @@ describe("buildTiles", () => {
      tile that outlives the session and opens onto whatever tab is active. */
   it("does not resurrect a closed session as an orphan tile", () => {
     const closed = [
-      workspace("/code/atlas", [
-        { id: "row-a", claudeSessionId: "uuid-a", terminalTabId: null },
-      ]),
+      workspace("/code/atlas", [{ id: "row-a", claudeSessionId: "uuid-a", terminalTabId: null }]),
     ];
     const tiles = buildTiles([live("uuid-a")], closed, new Map(), new Set());
     expect(tiles).toHaveLength(0);
@@ -370,8 +363,7 @@ describe("buildTiles", () => {
     expect(sessions.filter((s) => s.state === "needsYou")).toHaveLength(0);
 
     const tiles = buildTiles(sessions, workspaceList, new Map(), new Set(["tab-a"]));
-    const count = (state: SessionState) =>
-      tiles.filter((t) => t.state === state).length;
+    const count = (state: SessionState) => tiles.filter((t) => t.state === state).length;
     expect(count("needsYou")).toBe(1);
     expect(count("running")).toBe(0);
     expect(count("idle")).toBe(1);

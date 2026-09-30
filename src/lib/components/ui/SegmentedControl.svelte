@@ -124,7 +124,9 @@
   .seg.active {
     background: var(--surface);
     color: var(--text);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), inset 0 0 0 1px var(--border2);
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.08),
+      inset 0 0 0 1px var(--border2);
   }
 
   .count {

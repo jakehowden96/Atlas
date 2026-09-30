@@ -84,8 +84,7 @@ export function buildTiles(
       if (row.claudeSessionId) claimed.add(row.claudeSessionId);
       if (row.terminalTabId === null) continue; // persisted, not currently open
       const live =
-        (row.claudeSessionId ? liveByUuid.get(row.claudeSessionId) : undefined) ??
-        pendingLive(row);
+        (row.claudeSessionId ? liveByUuid.get(row.claudeSessionId) : undefined) ?? pendingLive(row);
       tiles.push(toTile(live, workspace, row, diffStats, needsInputTabs));
     }
   }
@@ -181,10 +180,7 @@ export function shouldClearNeedsInput(view: View, activeTabId: string): boolean 
 }
 
 /** Attention order. `Array.sort` is stable, so ties keep their arrival order. */
-export function compareByAttention(
-  a: { state: SessionState },
-  b: { state: SessionState },
-): number {
+export function compareByAttention(a: { state: SessionState }, b: { state: SessionState }): number {
   return ATTENTION_RANK[a.state] - ATTENTION_RANK[b.state];
 }
 
@@ -193,9 +189,7 @@ export function compareByWorkspace(
   a: { workspaceName: string; label: string },
   b: { workspaceName: string; label: string },
 ): number {
-  return (
-    a.workspaceName.localeCompare(b.workspaceName) || a.label.localeCompare(b.label)
-  );
+  return a.workspaceName.localeCompare(b.workspaceName) || a.label.localeCompare(b.label);
 }
 
 /** Opened order: strictly by session creation time, so the grid never

@@ -170,11 +170,7 @@ describe("tabIdForSession", () => {
 
 describe("planCounts", () => {
   it("counts completed todos against the total", () => {
-    const plan = [
-      todo("a", "completed"),
-      todo("b", "in_progress"),
-      todo("c", "pending"),
-    ];
+    const plan = [todo("a", "completed"), todo("b", "in_progress"), todo("c", "pending")];
     expect(planCounts(plan)).toEqual({ done: 1, total: 3 });
   });
 
@@ -207,10 +203,7 @@ describe("subagentMeta", () => {
   });
 
   it("prefixes the elapsed clock when the start time is known", () => {
-    const meta = subagentMeta(
-      agent({ startedAt: "2026-01-01T00:00:00Z", toolCount: 2 }),
-      now,
-    );
+    const meta = subagentMeta(agent({ startedAt: "2026-01-01T00:00:00Z", toolCount: 2 }), now);
     expect(meta).toBe("2m 10s · 2 tools");
   });
 

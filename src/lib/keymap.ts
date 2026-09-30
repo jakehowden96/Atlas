@@ -255,7 +255,9 @@ export function mergeKeymap(partial: unknown): Keymap {
        the second chord. Anything the defaults do not contain is a real
        rebinding and is honoured exactly as stored. */
     const defaults = DEFAULT_KEYMAP[action];
-    const allFromDefaults = bindings.every((b) => defaults.some((d) => signature(d) === signature(b)));
+    const allFromDefaults = bindings.every((b) =>
+      defaults.some((d) => signature(d) === signature(b)),
+    );
     merged[action] = allFromDefaults && bindings.length < defaults.length ? defaults : bindings;
   }
   return merged;

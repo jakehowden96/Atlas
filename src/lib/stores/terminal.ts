@@ -58,10 +58,7 @@ export function removeTab(id: string) {
  * a tab that never spawns is bounded by the timeout rather than an attempt
  * count that has to be kept in step with the interval.
  */
-export function awaitTabPty(
-  id: string,
-  timeoutMs = 10_000,
-): Promise<TabItem | null> {
+export function awaitTabPty(id: string, timeoutMs = 10_000): Promise<TabItem | null> {
   return new Promise((resolve) => {
     let settled = false;
     let unsubscribe: (() => void) | null = null;
@@ -89,25 +86,22 @@ export function awaitTabPty(
 export function setTabTitle(id: string, title: string) {
   const existing = titleTimers.get(id);
   if (existing) clearTimeout(existing);
-  titleTimers.set(id, setTimeout(() => {
-    titleTimers.delete(id);
-    tabs.update((t) =>
-      t.map((tab) => (tab.id === id ? { ...tab, title } : tab)),
-    );
-  }, 100));
+  titleTimers.set(
+    id,
+    setTimeout(() => {
+      titleTimers.delete(id);
+      tabs.update((t) => t.map((tab) => (tab.id === id ? { ...tab, title } : tab)));
+    }, 100),
+  );
 }
 
 export function setTabReady(id: string) {
-  tabs.update((t) =>
-    t.map((tab) => (tab.id === id ? { ...tab, ready: true } : tab)),
-  );
+  tabs.update((t) => t.map((tab) => (tab.id === id ? { ...tab, ready: true } : tab)));
 }
 
 export function setTabNeedsInput(id: string, needsInput: boolean) {
   const t = get(tabs);
   const tab = t.find((x) => x.id === id);
   if (!tab || tab.needsInput === needsInput) return;
-  tabs.update((arr) =>
-    arr.map((x) => (x.id === id ? { ...x, needsInput } : x)),
-  );
+  tabs.update((arr) => arr.map((x) => (x.id === id ? { ...x, needsInput } : x)));
 }

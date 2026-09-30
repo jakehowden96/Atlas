@@ -1147,7 +1147,11 @@ mod tests {
         let (dir, mut tail) = tail_with(&[ask]);
         assert!(tail.poll());
         assert_eq!(tail.session().state, SessionState::NeedsYou);
-        let pending = tail.session().pending_tool.as_ref().expect("ask is unanswered");
+        let pending = tail
+            .session()
+            .pending_tool
+            .as_ref()
+            .expect("ask is unanswered");
         assert_eq!(pending.name, "ask");
         assert_eq!(pending.input_summary, "Which routes default to All?");
 
@@ -1337,18 +1341,32 @@ mod tests {
         let (dir, _tail) = tail_with(&[parent]);
         let sidecar = dir.path().join("session");
         std::fs::create_dir_all(&sidecar).unwrap();
-        std::fs::write(sidecar.join("A.jsonl"), format!("{}\n", subagent_reply(1.0, 10))).unwrap();
-        std::fs::write(sidecar.join("B.jsonl"), format!("{}\n", subagent_reply(0.5, 5))).unwrap();
+        std::fs::write(
+            sidecar.join("A.jsonl"),
+            format!("{}\n", subagent_reply(1.0, 10)),
+        )
+        .unwrap();
+        std::fs::write(
+            sidecar.join("B.jsonl"),
+            format!("{}\n", subagent_reply(0.5, 5)),
+        )
+        .unwrap();
         // Not a transcript: OMP keeps tool logs in the same directory.
         std::fs::write(sidecar.join("14.bash.log"), "noise\n").unwrap();
         // B delegated in turn; its child sits in B's own directory.
         std::fs::create_dir_all(sidecar.join("B")).unwrap();
-        std::fs::write(sidecar.join("B").join("Deep.jsonl"), format!("{}\n", subagent_reply(2.0, 4)))
-            .unwrap();
+        std::fs::write(
+            sidecar.join("B").join("Deep.jsonl"),
+            format!("{}\n", subagent_reply(2.0, 4)),
+        )
+        .unwrap();
         // Tool output, not a delegating agent: never descended into.
         std::fs::create_dir_all(sidecar.join("local")).unwrap();
-        std::fs::write(sidecar.join("local").join("x.jsonl"), format!("{}\n", subagent_reply(9.0, 9)))
-            .unwrap();
+        std::fs::write(
+            sidecar.join("local").join("x.jsonl"),
+            format!("{}\n", subagent_reply(9.0, 9)),
+        )
+        .unwrap();
 
         let rec = parse_omp_session(&dir.path().join("session.jsonl")).unwrap();
         assert!((rec.cost_estimate - 3.75).abs() < 1e-9);

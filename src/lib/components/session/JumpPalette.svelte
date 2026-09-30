@@ -8,23 +8,12 @@
   import { rankJumpRows, type JumpRow } from "../../new-session";
   import { buildTiles, compareByAttention, type SessionTile } from "../../overview";
   import { openSession } from "../../session-actions";
-  import {
-    docEntries,
-    fileWs,
-    loadDocs,
-    loadPlans,
-    openFile,
-    plans,
-  } from "../../stores/files";
+  import { docEntries, fileWs, loadDocs, loadPlans, openFile, plans } from "../../stores/files";
   import { liveSessionList } from "../../stores/liveSessions";
   import { prRepos } from "../../stores/prs";
   import { tabs } from "../../stores/terminal";
   import { focusedSessionId, jumpOpen, showView } from "../../stores/view";
-  import {
-    activeWorkspacePath,
-    sessionDiffStats,
-    visibleWorkspaces,
-  } from "../../stores/workspace";
+  import { activeWorkspacePath, sessionDiffStats, visibleWorkspaces } from "../../stores/workspace";
   import Modal from "../ui/Modal.svelte";
 
   /** A `JumpRow` plus what ⏎ should do with it, so the ranking stays pure. */
@@ -49,9 +38,7 @@
   /** The rendered rows, indexed like `rows`, so the selection can be scrolled to. */
   let rowEls: HTMLButtonElement[] = [];
 
-  let needsInputTabs = $derived(
-    new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)),
-  );
+  let needsInputTabs = $derived(new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)));
   let tiles = $derived(
     [...buildTiles($liveSessionList, $visibleWorkspaces, $sessionDiffStats, needsInputTabs)].sort(
       compareByAttention,
@@ -217,9 +204,7 @@
     <div class="list" bind:this={listEl}>
       {#if rows.length === 0}
         <p class="empty">
-          {all.length === 0
-            ? "Nothing to jump to yet."
-            : `Nothing matches “${query}”.`}
+          {all.length === 0 ? "Nothing to jump to yet." : `Nothing matches “${query}”.`}
         </p>
       {:else}
         {#each rows as row, i (row.id)}

@@ -47,7 +47,14 @@ export const DEFAULT_HARNESSES: HarnessConfig[] = [
     readyMode: "altscreen",
   },
   { id: "omp", label: "omp", command: "omp", args: [], resumable: false, readyMode: "altscreen" },
-  { id: "terminal", label: "Terminal", command: "", args: [], resumable: false, readyMode: "immediate" },
+  {
+    id: "terminal",
+    label: "Terminal",
+    command: "",
+    args: [],
+    resumable: false,
+    readyMode: "immediate",
+  },
 ];
 
 export const settingsOpen = writable(false);

@@ -217,9 +217,7 @@ describe("workspace store", () => {
       await addSession("/a", "two", "tab-2", "claude-2", "claude-code");
       await rebindSessionClaudeId("tab-1", "claude-1-new");
       const sessions = get(workspaces)[0].sessions;
-      expect(sessions.find((s) => s.terminalTabId === "tab-2")?.claudeSessionId).toBe(
-        "claude-2",
-      );
+      expect(sessions.find((s) => s.terminalTabId === "tab-2")?.claudeSessionId).toBe("claude-2");
     });
 
     it("does nothing when no session owns that tab id", async () => {
@@ -270,7 +268,14 @@ describe("workspace store", () => {
             name: "a",
             color: "#e67e80",
             sessions: [
-              { id: "s1", label: "S1", status: "running", terminalTabId: null, createdAt: "", claudeSessionId: "claude-1" },
+              {
+                id: "s1",
+                label: "S1",
+                status: "running",
+                terminalTabId: null,
+                createdAt: "",
+                claudeSessionId: "claude-1",
+              },
             ],
           },
         ]),
@@ -290,7 +295,14 @@ describe("workspace store", () => {
             name: "a",
             color: "#e67e80",
             sessions: [
-              { id: "s1", label: "S1", status: "running", terminalTabId: "tab-1", createdAt: "", claudeSessionId: "claude-1" },
+              {
+                id: "s1",
+                label: "S1",
+                status: "running",
+                terminalTabId: "tab-1",
+                createdAt: "",
+                claudeSessionId: "claude-1",
+              },
             ],
           },
         ]),
@@ -328,7 +340,14 @@ describe("workspace store", () => {
             name: "a",
             color: "#e67e80",
             sessions: [
-              { id: "s1", label: "S1", status: "idle", terminalTabId: null, createdAt: "", claudeSessionId: "claude-1" },
+              {
+                id: "s1",
+                label: "S1",
+                status: "idle",
+                terminalTabId: null,
+                createdAt: "",
+                claudeSessionId: "claude-1",
+              },
             ],
           },
         ]),

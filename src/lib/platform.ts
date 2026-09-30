@@ -17,8 +17,7 @@ interface NavigatorLike {
 
 /** True on macOS. Defaults to false when there is no navigator (test env, SSR). */
 export function isMacPlatform(nav?: NavigatorLike): boolean {
-  const n =
-    nav ?? (typeof navigator !== "undefined" ? (navigator as NavigatorLike) : undefined);
+  const n = nav ?? (typeof navigator !== "undefined" ? (navigator as NavigatorLike) : undefined);
   if (!n) return false;
   return /mac/i.test(`${n.platform ?? ""} ${n.userAgent ?? ""}`);
 }

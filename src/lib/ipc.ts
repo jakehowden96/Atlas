@@ -42,11 +42,7 @@ export async function ptyWrite(id: number, data: string): Promise<void> {
   return invoke("pty_write", { id, data: Array.from(encoder.encode(data)) });
 }
 
-export async function ptyResize(
-  id: number,
-  cols: number,
-  rows: number,
-): Promise<void> {
+export async function ptyResize(id: number, cols: number, rows: number): Promise<void> {
   return invoke("pty_resize", { id, cols, rows });
 }
 
@@ -59,9 +55,7 @@ export async function getSessionDir(sessionId: string): Promise<string> {
   return invoke("get_session_dir", { sessionId });
 }
 
-export async function getPanelData(
-  sessionId: string,
-): Promise<PanelData | null> {
+export async function getPanelData(sessionId: string): Promise<PanelData | null> {
   try {
     const data = await invoke<PanelData | null>("get_panel_data", { sessionId });
     return data;
@@ -71,10 +65,7 @@ export async function getPanelData(
   }
 }
 
-export async function refreshPanel(
-  sessionId: string,
-  cwd: string,
-): Promise<PanelData | null> {
+export async function refreshPanel(sessionId: string, cwd: string): Promise<PanelData | null> {
   try {
     return await invoke("refresh_panel", { sessionId, cwd });
   } catch (e) {
@@ -237,9 +228,7 @@ export async function onClaudeSessionStart(
  * — directories included, already sorted directories-first then by name.
  * Capped at depth 8 and 2000 entries.
  */
-export async function listWorkspaceDocs(
-  workspacePath: string,
-): Promise<DocEntry[]> {
+export async function listWorkspaceDocs(workspacePath: string): Promise<DocEntry[]> {
   return invoke("list_workspace_docs", { workspacePath });
 }
 
@@ -262,10 +251,7 @@ export async function readTextFileAt(path: string): Promise<string> {
 }
 
 /** Creates parent directories for a new file. Same extension gate as above. */
-export async function writeTextFileAt(
-  path: string,
-  contents: string,
-): Promise<void> {
+export async function writeTextFileAt(path: string, contents: string): Promise<void> {
   return invoke("write_text_file_at", { path, contents });
 }
 

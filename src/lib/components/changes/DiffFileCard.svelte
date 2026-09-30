@@ -1,17 +1,7 @@
 <script lang="ts">
   import type { DiffHunk } from "../../diff-parser";
-  import {
-    cssEscape,
-    statusLetter,
-    totalLines,
-    toSplitRows,
-    type FlatFile,
-  } from "../../diff-view";
-  import {
-    anchorDomKey,
-    type ReviewAnchor,
-    type ReviewComment,
-  } from "../../stores/reviewComments";
+  import { cssEscape, statusLetter, totalLines, toSplitRows, type FlatFile } from "../../diff-view";
+  import { anchorDomKey, type ReviewAnchor, type ReviewComment } from "../../stores/reviewComments";
   import DiffCommentThread from "./DiffCommentThread.svelte";
 
   interface Props {
@@ -139,11 +129,7 @@
   {/if}
 {/snippet}
 
-<section
-  class="file-card"
-  class:viewed
-  id={"diff-file-" + cssEscape(item.key)}
->
+<section class="file-card" class:viewed id={"diff-file-" + cssEscape(item.key)}>
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <header
     class="head"
@@ -151,7 +137,7 @@
     tabindex="0"
     onclick={() => onToggleCollapsed(item.key)}
     onkeydown={(e: KeyboardEvent) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         onToggleCollapsed(item.key);
       }
@@ -192,7 +178,14 @@
             {#if row.kind === "hunk"}
               <div class="row hunk"><span class="hunk-text">{row.header}</span></div>
             {:else if row.kind === "context"}
-              {@const ctxAnchor = buildAnchor(item.key, row.hunk, " ", row.left.num, row.right.num, row.right.content)}
+              {@const ctxAnchor = buildAnchor(
+                item.key,
+                row.hunk,
+                " ",
+                row.left.num,
+                row.right.num,
+                row.right.content,
+              )}
               <div
                 class="row commentable"
                 role="button"
@@ -245,7 +238,14 @@
               {#if line.type === "hunk-header"}
                 <div class="row hunk"><span class="hunk-text">{hunk.header}</span></div>
               {:else if line.type === "add"}
-                {@const anchor = buildAnchor(item.key, hunk, "+", line.oldNum, line.newNum, line.content)}
+                {@const anchor = buildAnchor(
+                  item.key,
+                  hunk,
+                  "+",
+                  line.oldNum,
+                  line.newNum,
+                  line.content,
+                )}
                 <div
                   class="row ins commentable"
                   role="button"
@@ -260,7 +260,14 @@
                 </div>
                 {@render commentThread(anchor)}
               {:else if line.type === "remove"}
-                {@const anchor = buildAnchor(item.key, hunk, "-", line.oldNum, line.newNum, line.content)}
+                {@const anchor = buildAnchor(
+                  item.key,
+                  hunk,
+                  "-",
+                  line.oldNum,
+                  line.newNum,
+                  line.content,
+                )}
                 <div
                   class="row del commentable"
                   role="button"
@@ -275,7 +282,14 @@
                 </div>
                 {@render commentThread(anchor)}
               {:else}
-                {@const anchor = buildAnchor(item.key, hunk, " ", line.oldNum, line.newNum, line.content)}
+                {@const anchor = buildAnchor(
+                  item.key,
+                  hunk,
+                  " ",
+                  line.oldNum,
+                  line.newNum,
+                  line.content,
+                )}
                 <div
                   class="row commentable"
                   role="button"

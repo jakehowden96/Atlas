@@ -92,9 +92,7 @@
   let agentsOpen = $state(true);
   let agentsRunning = $derived(subagents.filter((a) => !a.done).length);
   let agentSummary = $derived(
-    agentsRunning > 0
-      ? `${agentsRunning}/${subagents.length} running`
-      : `${subagents.length} done`,
+    agentsRunning > 0 ? `${agentsRunning}/${subagents.length} running` : `${subagents.length} done`,
   );
   /* Same pairing as the Sessions tile: the bar reads as a proportion, the
      label as a size — `68k` is the unit the model actually meters. The bar is

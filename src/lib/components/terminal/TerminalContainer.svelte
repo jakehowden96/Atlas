@@ -89,7 +89,11 @@
   // The single placement pass — moves each tab's host to the pane or the
   // parking root. See `terminal-registry.svelte.ts`.
   $effect(() => {
-    placeTerminals($tabs.map((t) => t.id), showing, visibleTabId);
+    placeTerminals(
+      $tabs.map((t) => t.id),
+      showing,
+      visibleTabId,
+    );
   });
 </script>
 

@@ -100,19 +100,27 @@
 
   function ciPill(s: Pr["ciState"]): Pill | null {
     switch (s) {
-      case "passed":  return { label: "CI passed",  tone: "accent" };
-      case "failed":  return { label: "CI failed",  tone: "danger" };
-      case "pending": return { label: "CI pending", tone: "muted" };
-      default:        return null;
+      case "passed":
+        return { label: "CI passed", tone: "accent" };
+      case "failed":
+        return { label: "CI failed", tone: "danger" };
+      case "pending":
+        return { label: "CI pending", tone: "muted" };
+      default:
+        return null;
     }
   }
 
   function reviewPill(s: Pr["reviewState"]): Pill | null {
     switch (s) {
-      case "approved":          return { label: "Approved",           tone: "accent" };
-      case "changes_requested": return { label: "Changes requested",  tone: "danger" };
-      case "review_required":   return { label: "Review required",    tone: "warn" };
-      default:                  return null;
+      case "approved":
+        return { label: "Approved", tone: "accent" };
+      case "changes_requested":
+        return { label: "Changes requested", tone: "danger" };
+      case "review_required":
+        return { label: "Review required", tone: "warn" };
+      default:
+        return null;
     }
   }
 
@@ -177,8 +185,7 @@
     />
     <div class="spacer"></div>
     <span class="meta">
-      via gh · refreshed {$prsLoading ? "…" : lastUpdatedLabel($prsLastUpdated, now)} ·
-      every {$prRefreshMinutes}m
+      via gh · refreshed {$prsLoading ? "…" : lastUpdatedLabel($prsLastUpdated, now)} · every {$prRefreshMinutes}m
     </span>
     <button type="button" class="btn" onclick={() => refreshPrs()} disabled={$prsLoading}>
       Refresh
@@ -508,10 +515,18 @@
     white-space: nowrap;
   }
 
-  .pill-accent { color: var(--accent); }
-  .pill-danger { color: var(--danger); }
-  .pill-warn   { color: var(--warn); }
-  .pill-muted  { color: var(--muted); }
+  .pill-accent {
+    color: var(--accent);
+  }
+  .pill-danger {
+    color: var(--danger);
+  }
+  .pill-warn {
+    color: var(--warn);
+  }
+  .pill-muted {
+    color: var(--muted);
+  }
 
   .work {
     font-size: var(--fs-xs);

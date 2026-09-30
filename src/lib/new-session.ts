@@ -61,8 +61,7 @@ export function filterWorkspaces(list: Workspace[], query: string): Workspace[] 
   const needle = q.replace(/\\/g, "/");
   return sorted.filter(
     (w) =>
-      w.name.toLowerCase().includes(q) ||
-      w.path.replace(/\\/g, "/").toLowerCase().includes(needle),
+      w.name.toLowerCase().includes(q) || w.path.replace(/\\/g, "/").toLowerCase().includes(needle),
   );
 }
 
@@ -124,21 +123,14 @@ function wrap(index: number, total: number, delta: number): number {
  * workspace list is the common case. Returns the same object when nothing moved
  * so callers can assign unconditionally.
  */
-export function clampState(
-  state: NewSessionState,
-  counts: NewSessionCounts,
-): NewSessionState {
+export function clampState(state: NewSessionState, counts: NewSessionCounts): NewSessionState {
   const wsIndex = Math.min(Math.max(0, state.wsIndex), counts.workspaces);
   const resumeIndex =
-    counts.resumable === 0
-      ? 0
-      : Math.min(Math.max(0, state.resumeIndex), counts.resumable - 1);
+    counts.resumable === 0 ? 0 : Math.min(Math.max(0, state.resumeIndex), counts.resumable - 1);
   const column: NewSessionColumn =
     state.mode === "resume" && counts.resumable > 0 ? state.column : "workspaces";
   const harnessIndex =
-    counts.harnesses === 0
-      ? 0
-      : Math.min(Math.max(0, state.harnessIndex), counts.harnesses - 1);
+    counts.harnesses === 0 ? 0 : Math.min(Math.max(0, state.harnessIndex), counts.harnesses - 1);
   if (
     wsIndex === state.wsIndex &&
     resumeIndex === state.resumeIndex &&
@@ -195,10 +187,7 @@ export function setMode(
  * key that mostly does nothing. Shift+Arrow's text selection is the cheaper
  * thing to give up in a one-line filter.
  */
-export function toggleColumn(
-  state: NewSessionState,
-  counts: NewSessionCounts,
-): NewSessionState {
+export function toggleColumn(state: NewSessionState, counts: NewSessionCounts): NewSessionState {
   if (state.column === "resume") return { ...state, column: "workspaces" };
   if (state.mode !== "resume" || counts.resumable === 0) return state;
   return { ...state, column: "resume" };

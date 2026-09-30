@@ -20,10 +20,7 @@
   let meta = $derived(META[state]);
 </script>
 
-<span
-  class="pill"
-  style="--pill-colour: {meta.colour}"
->
+<span class="pill" style="--pill-colour: {meta.colour}">
   {#if state === "running"}<span class="dot"></span>{/if}
   {meta.label}
 </span>

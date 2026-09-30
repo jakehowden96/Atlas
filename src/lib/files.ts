@@ -289,7 +289,11 @@ export interface FileTouch {
  * the workspace store spell differently.
  */
 function samePath(a: string, b: string): boolean {
-  const norm = (p: string) => p.replace(/[\\/]+/g, "/").replace(/\/+$/, "").toLowerCase();
+  const norm = (p: string) =>
+    p
+      .replace(/[\\/]+/g, "/")
+      .replace(/\/+$/, "")
+      .toLowerCase();
   return norm(a) === norm(b);
 }
 
@@ -313,10 +317,7 @@ export function touchedBy(
     if (!tile.workspacePath || !tile.terminalTabId) continue;
     const files = touched.get(tile.terminalTabId);
     const hit = files?.find((f) =>
-      samePath(
-        [tile.workspacePath, f.repo, f.path].filter(Boolean).join("/"),
-        absPath,
-      ),
+      samePath([tile.workspacePath, f.repo, f.path].filter(Boolean).join("/"), absPath),
     );
     if (!hit) continue;
     out.push({
@@ -340,10 +341,7 @@ export function touchedBy(
  * enough for highlighting and for a single-file server, and honest about the
  * fact that there is no project around it.
  */
-export function editorTarget(
-  source: FileSource,
-  path: string,
-): { root: string; relative: string } {
+export function editorTarget(source: FileSource, path: string): { root: string; relative: string } {
   if (source === "plans" || source === "disk") {
     const at = path.lastIndexOf("/");
     return at <= 0

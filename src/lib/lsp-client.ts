@@ -42,10 +42,7 @@ function sessionKey(languageId: string, root: string): string {
  * server installed. Null is the ordinary case for most file types and is not
  * an error: the editor still highlights and edits, it just has no diagnostics.
  */
-export async function transportFor(
-  languageId: string,
-  root: string,
-): Promise<Transport | null> {
+export async function transportFor(languageId: string, root: string): Promise<Transport | null> {
   ensureListening();
   const key = sessionKey(languageId, root);
   let pending = starting.get(key);
@@ -61,9 +58,7 @@ export async function transportFor(
 
   return {
     send(message: string) {
-      lspSend(id, message).catch((e) =>
-        log.warn("lsp", `send to ${id} failed: ${e}`),
-      );
+      lspSend(id, message).catch((e) => log.warn("lsp", `send to ${id} failed: ${e}`));
     },
     subscribe(handler) {
       const set = handlers.get(id) ?? new Set();
@@ -81,10 +76,7 @@ export async function transportFor(
  * server. One client per pair, shared by every editor on that pair — the
  * expensive part of a language server is the indexing it does at startup.
  */
-export async function clientFor(
-  languageId: string,
-  root: string,
-): Promise<LSPClient | null> {
+export async function clientFor(languageId: string, root: string): Promise<LSPClient | null> {
   const key = sessionKey(languageId, root);
   const existing = clients.get(key);
   if (existing) return existing;

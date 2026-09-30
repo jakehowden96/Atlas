@@ -33,14 +33,14 @@
     removeWorkspaceWithUndo,
     spawnHarnessSession,
   } from "../../session-actions";
-  import { harnesses, lastHarnessId, setLastHarnessId, type HarnessConfig } from "../../stores/settings";
-  import { showToast } from "../../stores/toast";
   import {
-    focusedSessionId,
-    newSessionOpen,
-    newSessionSeed,
-    showView,
-  } from "../../stores/view";
+    harnesses,
+    lastHarnessId,
+    setLastHarnessId,
+    type HarnessConfig,
+  } from "../../stores/settings";
+  import { showToast } from "../../stores/toast";
+  import { focusedSessionId, newSessionOpen, newSessionSeed, showView } from "../../stores/view";
   import { addWorkspace, visibleWorkspaces, type Workspace } from "../../stores/workspace";
   import Modal, { closeWith } from "../ui/Modal.svelte";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
@@ -87,9 +87,7 @@
   let pickedResume = $derived<ResumableSession | null>(
     view.mode === "resume" ? (resumable[view.resumeIndex] ?? null) : null,
   );
-  let canStart = $derived(
-    selected !== null && (view.mode === "fresh" || pickedResume !== null),
-  );
+  let canStart = $derived(selected !== null && (view.mode === "fresh" || pickedResume !== null));
 
   // The id stays "fresh" — `NewSessionSeed` and the Stats view read it. Only the
   // label the user sees changed.
@@ -104,9 +102,7 @@
   ]);
 
   // Which harness the session will launch.
-  let harnessOptions = $derived<Segment[]>(
-    $harnesses.map((h) => ({ id: h.id, label: h.label })),
-  );
+  let harnessOptions = $derived<Segment[]>($harnesses.map((h) => ({ id: h.id, label: h.label })));
 
   // Plain `let`s, not `$state` — they gate effects and must not re-trigger them.
   let wasOpen = false;
@@ -358,8 +354,8 @@
               class="ws-remove"
               aria-label="Remove {ws.name}"
               title="Remove workspace"
-              onclick={() => void removeWorkspaceWithUndo(ws.path)}
-            >✕</button>
+              onclick={() => void removeWorkspaceWithUndo(ws.path)}>✕</button
+            >
           </div>
         {/each}
 
@@ -408,12 +404,7 @@
             <span class="mode-title">New / Resume</span>
             <span class="mode-hint"><kbd>tab</kbd> switches</span>
           </div>
-          <SegmentedControl
-            options={modeOptions}
-            value={view.mode}
-            onChange={chooseMode}
-            fill
-          />
+          <SegmentedControl options={modeOptions} value={view.mode} onChange={chooseMode} fill />
         </div>
 
         {#if view.mode === "resume"}
@@ -424,9 +415,7 @@
             {#if loadingResume}
               <p class="resume-empty">Reading transcripts…</p>
             {:else if resumable.length === 0}
-              <p class="resume-empty">
-                No prior sessions in this workspace yet — start a New one.
-              </p>
+              <p class="resume-empty">No prior sessions in this workspace yet — start a New one.</p>
             {:else}
               {#each resumable as row, i (row.sessionId)}
                 <button
@@ -449,9 +438,8 @@
           </div>
         {:else}
           <p class="fresh-copy">
-            Opens a new {selectedHarness?.label ?? "session"} in <span class="mono strong"
-              >{selected?.path ?? "—"}</span
-            > with Atlas hooks attached.
+            Opens a new {selectedHarness?.label ?? "session"} in
+            <span class="mono strong">{selected?.path ?? "—"}</span> with Atlas hooks attached.
           </p>
         {/if}
 

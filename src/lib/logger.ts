@@ -1,4 +1,11 @@
-import { BaseDirectory, writeTextFile, mkdir, exists, readDir, remove } from "@tauri-apps/plugin-fs";
+import {
+  BaseDirectory,
+  writeTextFile,
+  mkdir,
+  exists,
+  readDir,
+  remove,
+} from "@tauri-apps/plugin-fs";
 
 const LOG_DIR = ".atlas/logs";
 const MAX_AGE_DAYS = 7;
@@ -115,6 +122,8 @@ export const log = {
     enqueue("INFO", "logger", "Atlas started");
     await flush();
     cleanOldLogs();
-    window.addEventListener("beforeunload", () => { flush(); });
+    window.addEventListener("beforeunload", () => {
+      flush();
+    });
   },
 };

@@ -668,7 +668,11 @@ impl SessionTail {
         }
         // A subagent's requests are billed to this session but never written
         // into its transcript. Spend only: its context and tools are its own.
-        for req in self.subagent_files.values().flat_map(|c| c.requests.values()) {
+        for req in self
+            .subagent_files
+            .values()
+            .flat_map(|c| c.requests.values())
+        {
             output_tokens += req.output_tokens;
             cost_estimate += req.cost();
         }

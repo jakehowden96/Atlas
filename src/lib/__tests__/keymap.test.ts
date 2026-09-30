@@ -38,7 +38,9 @@ describe("matchBinding", () => {
     expect(matchBinding(makeKeyEvent({ metaKey: true, key: "N" }), DEFAULT_KEYMAP.jump[0])).toBe(
       false,
     );
-    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "K" }), DEFAULT_KEYMAP.jump[0])).toBe(true);
+    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "K" }), DEFAULT_KEYMAP.jump[0])).toBe(
+      true,
+    );
   });
 
   it("rejects Alt — AltGr reports as Ctrl+Alt on a non-US layout", () => {
@@ -209,9 +211,7 @@ describe("mergeKeymap and the alternates a stored file predates", () => {
 
   it("leaves a genuinely rebound action exactly as stored", () => {
     const stored = { backToSessions: [{ mod: true, shift: true, key: "b" }] };
-    expect(mergeKeymap(stored).backToSessions).toEqual([
-      { mod: true, shift: true, key: "b" },
-    ]);
+    expect(mergeKeymap(stored).backToSessions).toEqual([{ mod: true, shift: true, key: "b" }]);
   });
 });
 

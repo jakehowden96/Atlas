@@ -143,16 +143,16 @@
         class:on={$railOpen}
         title={`Toggle activity rail (${$chords.toggleRail})`}
         aria-label="Toggle activity rail"
-        onclick={() => railOpen.update((v) => !v)}
-      >▥</button>
+        onclick={() => railOpen.update((v) => !v)}>▥</button
+      >
 
       <button
         type="button"
         class="close-session"
         title={`Close session (${$chords.closeSession})`}
         aria-label="Close session"
-        onclick={endSession}
-      >✕</button>
+        onclick={endSession}>✕</button
+      >
     </header>
 
     <!-- No permission card over the terminal: Claude Code draws its own prompt

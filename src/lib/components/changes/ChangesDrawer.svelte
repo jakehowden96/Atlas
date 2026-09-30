@@ -98,9 +98,7 @@
   let base = $state<BaseView>("working");
   let data = $derived($panelData?.diff);
   let hasSeparateBase = $derived(!!data?.local_raw && data.local_raw !== data.raw);
-  let activeRaw = $derived(
-    hasSeparateBase && base === "working" ? data!.local_raw! : data?.raw,
-  );
+  let activeRaw = $derived(hasSeparateBase && base === "working" ? data!.local_raw! : data?.raw);
   let baseHint = $derived(
     hasSeparateBase
       ? "Working tree = uncommitted changes. vs main = everything since this branch left its base."
@@ -292,8 +290,8 @@
         type="button"
         class="close"
         aria-label="Close changes"
-        onclick={() => diffOpen.set(false)}
-      >✕</button>
+        onclick={() => diffOpen.set(false)}>✕</button
+      >
     </header>
 
     <div class="body">
@@ -337,14 +335,11 @@
         type="button"
         class="discard"
         disabled={commentCount === 0}
-        onclick={() => sessionId && clearForSession(sessionId)}
-      >Discard</button>
-      <button
-        type="button"
-        class="send"
-        disabled={commentCount === 0 || submitting}
-        onclick={send}
-      >{submitting ? "Sending…" : "Send to Claude"}</button>
+        onclick={() => sessionId && clearForSession(sessionId)}>Discard</button
+      >
+      <button type="button" class="send" disabled={commentCount === 0 || submitting} onclick={send}
+        >{submitting ? "Sending…" : "Send to Claude"}</button
+      >
     </footer>
   </aside>
 {/if}

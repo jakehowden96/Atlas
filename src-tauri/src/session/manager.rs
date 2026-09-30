@@ -670,7 +670,10 @@ mod tests {
 
         let inside = t0 + DEBOUNCE / 10;
         throttle.mark("a".into());
-        assert!(throttle.take_due(inside).is_empty(), "held inside the window");
+        assert!(
+            throttle.take_due(inside).is_empty(),
+            "held inside the window"
+        );
         assert_eq!(throttle.next_due(inside), Some(t0 + DEBOUNCE));
         assert_eq!(
             throttle.take_due(t0 + DEBOUNCE),

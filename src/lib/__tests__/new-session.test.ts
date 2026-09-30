@@ -148,11 +148,7 @@ describe("keyboard model", () => {
   });
 
   it("moves within the resume column when that is the focused one", () => {
-    const s = moveWithin(
-      state({ mode: "resume", column: "resume" }),
-      counts(3, 2),
-      1,
-    );
+    const s = moveWithin(state({ mode: "resume", column: "resume" }), counts(3, 2), 1);
     expect(s.resumeIndex).toBe(1);
     expect(s.wsIndex).toBe(0);
     expect(moveWithin(s, counts(3, 2), 1).resumeIndex).toBe(0);
@@ -171,12 +167,8 @@ describe("keyboard model", () => {
   });
 
   it("⌘O / Ctrl+O opens the folder picker", () => {
-    expect(handleKey({ key: "o", metaKey: true }, state(), counts(3, 0)).effect).toBe(
-      "addFolder",
-    );
-    expect(handleKey({ key: "O", ctrlKey: true }, state(), counts(3, 0)).effect).toBe(
-      "addFolder",
-    );
+    expect(handleKey({ key: "o", metaKey: true }, state(), counts(3, 0)).effect).toBe("addFolder");
+    expect(handleKey({ key: "O", ctrlKey: true }, state(), counts(3, 0)).effect).toBe("addFolder");
   });
 
   it("leaves ordinary typing to the input", () => {
@@ -327,10 +319,7 @@ describe("clampState", () => {
   });
 
   it("drops resume focus when the resume list empties", () => {
-    const s = clampState(
-      state({ mode: "resume", column: "resume", resumeIndex: 4 }),
-      counts(2, 0),
-    );
+    const s = clampState(state({ mode: "resume", column: "resume", resumeIndex: 4 }), counts(2, 0));
     expect(s.column).toBe("workspaces");
     expect(s.resumeIndex).toBe(0);
   });
@@ -424,9 +413,7 @@ describe("the keys the modal advertises", () => {
     const state = { ...INITIAL_STATE, mode: "resume" as const, column: "resume" as const };
     for (const hint of KEY_HINTS) {
       const result = handleKey(hint.probe, state, counts);
-      expect(result.handled, `${hint.keys} ${hint.label} is advertised but unhandled`).toBe(
-        true,
-      );
+      expect(result.handled, `${hint.keys} ${hint.label} is advertised but unhandled`).toBe(true);
     }
   });
 

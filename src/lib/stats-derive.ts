@@ -76,10 +76,7 @@ export function agoLabel(iso: string, now: Date): string {
  * A KPI's change against the equally-sized window before it.
  * `none` renders blank — All time has no previous period to compare with.
  */
-export type Delta =
-  | { kind: "none" }
-  | { kind: "new" }
-  | { kind: "pct"; value: number };
+export type Delta = { kind: "none" } | { kind: "new" } | { kind: "pct"; value: number };
 
 export function delta(current: number, previous: number | null): Delta {
   if (previous === null) return { kind: "none" };
@@ -194,11 +191,7 @@ const EMPTY_DAY: DayStats = {
 };
 
 /** `count` consecutive UTC days ending today, oldest first, gaps filled with zeroes. */
-export function daySeries(
-  byDay: Record<string, DayStats>,
-  today: Date,
-  count: number,
-): DayPoint[] {
+export function daySeries(byDay: Record<string, DayStats>, today: Date, count: number): DayPoint[] {
   const end = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
   const out: DayPoint[] = [];
   for (let i = count - 1; i >= 0; i--) {
@@ -212,11 +205,7 @@ export function daySeries(
  * The day window a sparkline covers. All time runs from the first day with any
  * data up to today, so the line really is the whole history rather than a tail.
  */
-export function sparkSeries(
-  byDay: Record<string, DayStats>,
-  r: Range,
-  today: Date,
-): DayPoint[] {
+export function sparkSeries(byDay: Record<string, DayStats>, r: Range, today: Date): DayPoint[] {
   const fixed = RANGE_DAYS[r];
   if (fixed !== null) return daySeries(byDay, today, fixed);
   const keys = Object.keys(byDay ?? {}).sort();
@@ -271,7 +260,9 @@ export function modelRows(models: [string, ModelStats][]): { label: string; valu
 }
 
 export function sortedModels(byModel: Record<string, ModelStats>): [string, ModelStats][] {
-  return Object.entries(byModel).sort(([a], [b]) => modelRank(a) - modelRank(b) || a.localeCompare(b));
+  return Object.entries(byModel).sort(
+    ([a], [b]) => modelRank(a) - modelRank(b) || a.localeCompare(b),
+  );
 }
 
 export function modelRank(family: string): number {

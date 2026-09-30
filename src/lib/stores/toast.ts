@@ -31,10 +31,13 @@ export function showToast(
     ...t,
     { id, title, body: opts.body, type: opts.type ?? "error", action: opts.action },
   ]);
-  const timer = setTimeout(() => {
-    timers.delete(id);
-    dismissToast(id);
-  }, opts.action ? TOAST_ACTION_DURATION_MS : TOAST_DURATION_MS);
+  const timer = setTimeout(
+    () => {
+      timers.delete(id);
+      dismissToast(id);
+    },
+    opts.action ? TOAST_ACTION_DURATION_MS : TOAST_DURATION_MS,
+  );
   timers.set(id, timer);
 }
 

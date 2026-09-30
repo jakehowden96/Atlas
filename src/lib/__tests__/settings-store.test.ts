@@ -94,9 +94,7 @@ describe("settings store", () => {
   describe("loadSettings", () => {
     it("loads enableNotifications false from file", async () => {
       vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
-        JSON.stringify({ enableNotifications: false }),
-      );
+      vi.mocked(readTextFile).mockResolvedValue(JSON.stringify({ enableNotifications: false }));
       await loadSettings();
       expect(get(enableNotifications)).toBe(false);
     });
@@ -241,9 +239,7 @@ describe("settings store", () => {
 
     it("drops a malformed entry, keeping the defaults if that empties the list", async () => {
       vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
-        JSON.stringify({ harnesses: [{ id: "bad" }] }),
-      );
+      vi.mocked(readTextFile).mockResolvedValue(JSON.stringify({ harnesses: [{ id: "bad" }] }));
       await loadSettings();
       expect(get(harnesses)).toEqual(DEFAULT_HARNESSES);
     });
@@ -322,9 +318,7 @@ describe("settings store", () => {
 
     it("ignores non-array watchedRepos in file", async () => {
       vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
-        JSON.stringify({ watchedRepos: "not-an-array" }),
-      );
+      vi.mocked(readTextFile).mockResolvedValue(JSON.stringify({ watchedRepos: "not-an-array" }));
       await loadSettings();
       expect(get(watchedRepos)).toEqual([]);
     });

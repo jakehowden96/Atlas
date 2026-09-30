@@ -371,7 +371,11 @@ export async function denyPendingTool(sessionId: string): Promise<void> {
 
 /** Native folder picker → new workspace. Returns the path, or null if cancelled. */
 export async function addWorkspaceFolder(): Promise<string | null> {
-  const selected = await open({ directory: true, multiple: false, title: "Select workspace folder" });
+  const selected = await open({
+    directory: true,
+    multiple: false,
+    title: "Select workspace folder",
+  });
   if (typeof selected !== "string") return null;
   await addWorkspace(selected);
   return selected;

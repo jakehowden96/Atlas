@@ -35,12 +35,7 @@
 </script>
 
 <aside class="tree">
-  <input
-    class="filter"
-    type="text"
-    placeholder="Filter files…"
-    bind:value={fileFilter}
-  />
+  <input class="filter" type="text" placeholder="Filter files…" bind:value={fileFilter} />
   <div class="list">
     {#each sortedChildren(tree) as node (node.path)}
       {#if matchesFilter(node, fileFilter)}
@@ -66,8 +61,8 @@
         class="name"
         class:viewed={viewedFiles.has(key)}
         title={node.path}
-        onclick={() => onSelectFile(key)}
-      >{node.name}</button>
+        onclick={() => onSelectFile(key)}>{node.name}</button
+      >
       <span class="add">+{addedByKey.get(key) ?? 0}</span>
     </div>
   {:else}

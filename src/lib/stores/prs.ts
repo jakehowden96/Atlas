@@ -11,7 +11,6 @@ import { showToast } from "./toast";
 import { visibleWorkspaces } from "./workspace";
 import type { GhViewer, Pr, RepoPrs, WorkspaceRepo } from "../../types/prs";
 
-
 export type PrFilter = "all" | "mine" | "review";
 
 export const prRepos = writable<RepoPrs[] | null>(null);

@@ -254,7 +254,7 @@ export class TerminalSession {
   private registerReadinessHandler() {
     this.terminal.parser.registerCsiHandler({ final: "h", prefix: "?" }, (params) => {
       if (params.includes(1049)) {
-        const tab = get(tabs).find(t => t.id === this.tabId);
+        const tab = get(tabs).find((t) => t.id === this.tabId);
         if (tab?.ready === false) {
           setTabReady(this.tabId);
         }
@@ -582,13 +582,17 @@ export class TerminalSession {
       requestAnimationFrame(() => {
         if (!this._visible) return;
         if (this.currentCwd) {
-          getPanelData(this.tabId).then((cached) => {
-            if (get(activeTabId) !== this.tabId) return;
-            if (this.panelChanged(cached)) {
-              this.updatePanelFingerprint(cached);
-              panelData.set(cached);
-            }
-          }).catch((e) => { log.warn("terminal", `getPanelData failed for tab=${this.tabId}: ${e}`); });
+          getPanelData(this.tabId)
+            .then((cached) => {
+              if (get(activeTabId) !== this.tabId) return;
+              if (this.panelChanged(cached)) {
+                this.updatePanelFingerprint(cached);
+                panelData.set(cached);
+              }
+            })
+            .catch((e) => {
+              log.warn("terminal", `getPanelData failed for tab=${this.tabId}: ${e}`);
+            });
           this.scheduleRefresh(this.currentCwd);
         } else {
           panelData.set(null);

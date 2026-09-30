@@ -1,10 +1,6 @@
 <script lang="ts">
   import { enterLabel } from "../../platform";
-  import {
-    anchorDomKey,
-    type ReviewAnchor,
-    type ReviewComment,
-  } from "../../stores/reviewComments";
+  import { anchorDomKey, type ReviewAnchor, type ReviewComment } from "../../stores/reviewComments";
 
   interface Props {
     anchor: ReviewAnchor;
@@ -55,8 +51,8 @@
           class="dismiss"
           title="Dismiss this comment"
           aria-label="Dismiss comment"
-          onclick={() => onDismiss(c.id)}
-        >✕</button>
+          onclick={() => onDismiss(c.id)}>✕</button
+        >
       </div>
       <div class="caption">Review comment · line {lineNum} · pending</div>
     </div>

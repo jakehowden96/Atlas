@@ -93,10 +93,14 @@ export function sortedChildren(node: TreeNode): TreeNode[] {
 // Status letter for tree icon (GitHub-style)
 export function statusLetter(t?: DiffFile["changeType"]): string {
   switch (t) {
-    case "added": return "A";
-    case "deleted": return "D";
-    case "renamed": return "R";
-    default: return "M";
+    case "added":
+      return "A";
+    case "deleted":
+      return "D";
+    case "renamed":
+      return "R";
+    default:
+      return "M";
   }
 }
 
@@ -114,8 +118,18 @@ export function totalLines(file: DiffFile): number {
 // row carries the enclosing hunk so we can build a ReviewAnchor on click.
 export type SplitRow =
   | { kind: "hunk"; header: string }
-  | { kind: "context"; hunk: DiffHunk; left: { num: number | null; content: string }; right: { num: number | null; content: string } }
-  | { kind: "change"; hunk: DiffHunk; left: { num: number | null; content: string } | null; right: { num: number | null; content: string } | null };
+  | {
+      kind: "context";
+      hunk: DiffHunk;
+      left: { num: number | null; content: string };
+      right: { num: number | null; content: string };
+    }
+  | {
+      kind: "change";
+      hunk: DiffHunk;
+      left: { num: number | null; content: string } | null;
+      right: { num: number | null; content: string } | null;
+    };
 
 export function toSplitRows(file: DiffFile): SplitRow[] {
   const rows: SplitRow[] = [];

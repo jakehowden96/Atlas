@@ -30,9 +30,7 @@
   }, 1000);
   onDestroy(() => clearInterval(clock));
 
-  let needsInputTabs = $derived(
-    new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)),
-  );
+  let needsInputTabs = $derived(new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)));
   let allTiles = $derived(
     buildTiles($liveSessionList, $visibleWorkspaces, $sessionDiffStats, needsInputTabs),
   );
@@ -290,8 +288,8 @@
         <div class="empty-title">Nothing running</div>
         <p class="empty-copy">
           Start a Claude session in one of your {$visibleWorkspaces.length}
-          workspace{$visibleWorkspaces.length === 1 ? "" : "s"}. Sessions you've run before stay listed
-          here and can be resumed.
+          workspace{$visibleWorkspaces.length === 1 ? "" : "s"}. Sessions you've run before stay
+          listed here and can be resumed.
         </p>
         <div class="empty-actions">
           <button type="button" class="primary" onclick={() => newSessionOpen.set(true)}>

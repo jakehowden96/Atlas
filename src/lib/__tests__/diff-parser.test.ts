@@ -126,9 +126,7 @@ describe("parseDiff", () => {
 
   it("tracks line numbers correctly through a hunk", () => {
     const files = parseDiff(SINGLE_FILE_DIFF);
-    const lines = files[0].hunks[0].lines.filter(
-      (l) => l.type !== "hunk-header",
-    );
+    const lines = files[0].hunks[0].lines.filter((l) => l.type !== "hunk-header");
 
     // Context line: old=24, new=24
     expect(lines[0].oldNum).toBe(24);

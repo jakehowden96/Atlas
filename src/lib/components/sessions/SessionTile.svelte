@@ -85,7 +85,8 @@
     void feed; // any new row can push a prompt off the top
     if (!el) return;
     const measure = () => {
-      const top = el.getBoundingClientRect().top + Number.parseFloat(getComputedStyle(el).paddingTop);
+      const top =
+        el.getBoundingClientRect().top + Number.parseFloat(getComputedStyle(el).paddingTop);
       const next = watched.filter((i) => {
         const row = el.querySelector(`[data-feed="${i}"]`);
         return row !== null && row.getBoundingClientRect().top < top;
@@ -259,7 +260,9 @@
   {#if permission && live.pendingTool}
     <div class="ask permission">
       <span class="wants">
-        Wants to run <span class="tool">{shortToolName(live.pendingTool.name)}</span>{#if live.pendingTool.inputSummary} · {live.pendingTool.inputSummary}{/if}
+        Wants to run <span class="tool">{shortToolName(live.pendingTool.name)}</span
+        >{#if live.pendingTool.inputSummary}
+          · {live.pendingTool.inputSummary}{/if}
       </span>
       <button type="button" class="deny" onclick={deny}>Deny <kbd>n</kbd></button>
       <button type="button" class="allow" onclick={allow}>Allow <kbd>y</kbd></button>

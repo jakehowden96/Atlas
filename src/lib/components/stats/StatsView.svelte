@@ -159,7 +159,10 @@
   }
 
   function normalise(path: string): string {
-    return path.replace(/[\\/]+$/, "").replace(/\\/g, "/").toLowerCase();
+    return path
+      .replace(/[\\/]+$/, "")
+      .replace(/\\/g, "/")
+      .toLowerCase();
   }
 
   /** Heatmap intensity: zero days sit at --surface3, busier days mix in --accent. */
@@ -352,10 +355,7 @@
             <div class="ws-row" title={path}>
               <span class="ws-name">
                 <span class="dot" style="background: {workspaceColour(path)}"></span>
-                <span
-                  class="ws-bar"
-                  style="width: {(project.sessions / projectMax) * 100}%"
-                ></span>
+                <span class="ws-bar" style="width: {(project.sessions / projectMax) * 100}%"></span>
                 <span class="ws-text">{basename(path)}</span>
               </span>
               <span class="num">{project.sessions}</span>

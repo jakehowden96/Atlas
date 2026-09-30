@@ -151,9 +151,7 @@ describe("matchLineEndings", () => {
 
 describe("buildDocTree", () => {
   it("folds the flat listing into nested nodes", () => {
-    const roots = buildDocTree(
-      listed([doc("docs", true), doc("docs/guide.md"), doc("README.md")]),
-    );
+    const roots = buildDocTree(listed([doc("docs", true), doc("docs/guide.md"), doc("README.md")]));
 
     expect(roots.map((n) => n.name)).toEqual(["docs", "README.md"]);
     expect(roots[0].isDir).toBe(true);
@@ -391,9 +389,7 @@ describe("planWorkspace", () => {
     expect(planWorkspace(plan("home-me-atlas-packages-ui-brisk-owl"), [inner, outer])).toBe(
       "/home/me/atlas/packages/ui",
     );
-    expect(planWorkspace(plan("home-me-atlas-brisk-owl"), [outer, inner])).toBe(
-      "/home/me/atlas",
-    );
+    expect(planWorkspace(plan("home-me-atlas-brisk-owl"), [outer, inner])).toBe("/home/me/atlas");
   });
 
   it("matches a posix plan whose stem kept the leading separator", () => {
@@ -432,7 +428,7 @@ describe("resolveWikilink", () => {
 });
 
 describe("breadcrumbs", () => {
-  const last = <T,>(items: T[]): T => items[items.length - 1];
+  const last = <T>(items: T[]): T => items[items.length - 1];
 
   it("walks a windows path from its drive root", () => {
     expect(breadcrumbs("C:\\Users\\me\\Notes")).toEqual([
@@ -540,8 +536,9 @@ describe("touchedBy", () => {
   });
 
   it("skips a session with no live tab and an empty path", () => {
-    expect(touchedBy("/home/me/atlas/docs/guide.md", [tile({ terminalTabId: null })], touched))
-      .toEqual([]);
+    expect(
+      touchedBy("/home/me/atlas/docs/guide.md", [tile({ terminalTabId: null })], touched),
+    ).toEqual([]);
     expect(touchedBy("", [tile({})], touched)).toEqual([]);
   });
 });

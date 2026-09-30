@@ -70,9 +70,7 @@
   // Every wikilink in the document, paired with the doc it names — an
   // unresolved one is listed greyed rather than hidden, so a typo is visible.
   let links = $derived(
-    key
-      ? wikilinks(text).map((target) => ({ target, rel: resolveWikilink(target, files) }))
-      : [],
+    key ? wikilinks(text).map((target) => ({ target, rel: resolveWikilink(target, files) })) : [],
   );
 
   let needsInputTabs = $derived(new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)));

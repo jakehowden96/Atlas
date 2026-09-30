@@ -65,7 +65,14 @@ function model(over: Partial<ModelStats> = {}): ModelStats {
 }
 
 function summary(over: Partial<StatsSummary> = {}): StatsSummary {
-  const zero = { sessions: 0, userMessages: 0, outputTokens: 0, cost: 0, peakContext: 0, subagents: 0 };
+  const zero = {
+    sessions: 0,
+    userMessages: 0,
+    outputTokens: 0,
+    cost: 0,
+    peakContext: 0,
+    subagents: 0,
+  };
   return {
     totalSessions: 0,
     totalUserMessages: 0,
@@ -136,16 +143,53 @@ describe("delta", () => {
 
 describe("range selection", () => {
   const s = summary({
-    totals7d: { sessions: 5, userMessages: 20, outputTokens: 100, cost: 46.1, peakContext: 9, subagents: 2 },
-    totalsPrev7d: { sessions: 3, userMessages: 9, outputTokens: 50, cost: 28.58, peakContext: 7, subagents: 1 },
-    totals30d: { sessions: 11, userMessages: 62, outputTokens: 900, cost: 91.75, peakContext: 12, subagents: 11 },
-    totalsPrev30d: { sessions: 0, userMessages: 0, outputTokens: 0, cost: 0, peakContext: 0, subagents: 0 },
-    totalsAll: { sessions: 11, userMessages: 62, outputTokens: 900, cost: 91.75, peakContext: 12, subagents: 11 },
+    totals7d: {
+      sessions: 5,
+      userMessages: 20,
+      outputTokens: 100,
+      cost: 46.1,
+      peakContext: 9,
+      subagents: 2,
+    },
+    totalsPrev7d: {
+      sessions: 3,
+      userMessages: 9,
+      outputTokens: 50,
+      cost: 28.58,
+      peakContext: 7,
+      subagents: 1,
+    },
+    totals30d: {
+      sessions: 11,
+      userMessages: 62,
+      outputTokens: 900,
+      cost: 91.75,
+      peakContext: 12,
+      subagents: 11,
+    },
+    totalsPrev30d: {
+      sessions: 0,
+      userMessages: 0,
+      outputTokens: 0,
+      cost: 0,
+      peakContext: 0,
+      subagents: 0,
+    },
+    totalsAll: {
+      sessions: 11,
+      userMessages: 62,
+      outputTokens: 900,
+      cost: 91.75,
+      peakContext: 12,
+      subagents: 11,
+    },
     toolUsage: { Bash: 411, PowerShell: 133, Read: 37 },
     toolErrors: { Bash: 14, PowerShell: 14 },
     toolUsage7d: { Bash: 100 },
     toolErrors7d: { Bash: 1 },
-    byProject: { "/repo/a": { sessions: 2, outputTokens: 10, userMessages: 3, cost: 36.7, subagents: 11 } },
+    byProject: {
+      "/repo/a": { sessions: 2, outputTokens: 10, userMessages: 3, cost: 36.7, subagents: 11 },
+    },
     byProject7d: {},
   });
 

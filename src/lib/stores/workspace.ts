@@ -277,11 +277,7 @@ export async function addSession(
   // Appended, not prepended: array order is insertion order under every
   // ordering mode, and "opened" ordering depends on it directly.
   workspaces.update((ws) =>
-    ws.map((w) =>
-      w.path === workspacePath
-        ? { ...w, sessions: [...w.sessions, session] }
-        : w,
-    ),
+    ws.map((w) => (w.path === workspacePath ? { ...w, sessions: [...w.sessions, session] } : w)),
   );
   activeSessionId.set(session.id);
   await persist();
@@ -338,16 +334,11 @@ export async function rebindSessionClaudeId(
   return changed;
 }
 
-export async function updateSessionStatus(
-  sessionId: string,
-  status: WorkspaceSession["status"],
-) {
+export async function updateSessionStatus(sessionId: string, status: WorkspaceSession["status"]) {
   workspaces.update((ws) =>
     ws.map((w) => ({
       ...w,
-      sessions: w.sessions.map((s) =>
-        s.id === sessionId ? { ...s, status } : s,
-      ),
+      sessions: w.sessions.map((s) => (s.id === sessionId ? { ...s, status } : s)),
     })),
   );
   await persist();
@@ -375,24 +366,27 @@ const labelTimers = new Map<string, ReturnType<typeof setTimeout>>();
 export function updateSessionLabelByTabId(tabId: string, label: string) {
   const existing = labelTimers.get(tabId);
   if (existing) clearTimeout(existing);
-  labelTimers.set(tabId, setTimeout(async () => {
-    labelTimers.delete(tabId);
-    const formatted = formatLabel(label);
-    let changed = false;
-    workspaces.update((ws) =>
-      ws.map((w) => ({
-        ...w,
-        sessions: w.sessions.map((s) => {
-          if (s.terminalTabId === tabId && s.label !== formatted) {
-            changed = true;
-            return { ...s, label: formatted };
-          }
-          return s;
-        }),
-      })),
-    );
-    if (changed) await persist();
-  }, 300));
+  labelTimers.set(
+    tabId,
+    setTimeout(async () => {
+      labelTimers.delete(tabId);
+      const formatted = formatLabel(label);
+      let changed = false;
+      workspaces.update((ws) =>
+        ws.map((w) => ({
+          ...w,
+          sessions: w.sessions.map((s) => {
+            if (s.terminalTabId === tabId && s.label !== formatted) {
+              changed = true;
+              return { ...s, label: formatted };
+            }
+            return s;
+          }),
+        })),
+      );
+      if (changed) await persist();
+    }, 300),
+  );
 }
 
 export async function removeSession(workspacePath: string, sessionId: string) {

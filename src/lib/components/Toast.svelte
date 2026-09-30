@@ -58,10 +58,9 @@
           {/if}
         </div>
         {#if toast.action}
-          <button
-            type="button"
-            class="action"
-            onclick={() => runToastAction(toast.id)}>{toast.action.label}</button>
+          <button type="button" class="action" onclick={() => runToastAction(toast.id)}
+            >{toast.action.label}</button
+          >
         {/if}
         <button type="button" class="close" onclick={() => dismissToast(toast.id)}>✕</button>
       </div>

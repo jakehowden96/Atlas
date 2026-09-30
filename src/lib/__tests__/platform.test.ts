@@ -8,16 +8,14 @@ describe("isMacPlatform", () => {
   });
 
   it("detects macOS from user agent", () => {
-    expect(
-      isMacPlatform({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" }),
-    ).toBe(true);
+    expect(isMacPlatform({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" })).toBe(
+      true,
+    );
   });
 
   it("is false on Windows and Linux", () => {
     expect(isMacPlatform({ platform: "Win32" })).toBe(false);
-    expect(
-      isMacPlatform({ userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }),
-    ).toBe(false);
+    expect(isMacPlatform({ userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" })).toBe(false);
     expect(isMacPlatform({ platform: "Linux x86_64" })).toBe(false);
   });
 

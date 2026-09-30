@@ -91,7 +91,10 @@ export async function loadSourceFiles(paths: string[]): Promise<void> {
   const next = new Map<string, DirEntry[]>();
   for (const dir of paths) {
     try {
-      next.set(dir, (await listDir(dir)).filter((entry) => entry.is_text));
+      next.set(
+        dir,
+        (await listDir(dir)).filter((entry) => entry.is_text),
+      );
     } catch (e) {
       log.error("files", `listDir failed for ${dir}`, e);
       next.set(dir, []);

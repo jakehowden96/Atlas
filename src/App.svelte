@@ -1,6 +1,10 @@
 <script lang="ts">
   import type { UnlistenFn } from "@tauri-apps/api/event";
-  import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+  import {
+    isPermissionGranted,
+    requestPermission,
+    sendNotification,
+  } from "@tauri-apps/plugin-notification";
   import { onDestroy, onMount } from "svelte";
   import { get } from "svelte/store";
   import Toast from "./lib/components/Toast.svelte";
@@ -58,9 +62,7 @@
   // "running" while its tile correctly said needs-you. The Notification hook's
   // flag is its only needs-you signal and `buildTiles` is where it is folded
   // in, so counting anywhere else is counting the wrong thing.
-  let needsInputTabs = $derived(
-    new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)),
-  );
+  let needsInputTabs = $derived(new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)));
   let statusTiles = $derived(
     buildTiles($liveSessionList, $visibleWorkspaces, $sessionDiffStats, needsInputTabs),
   );
@@ -129,7 +131,10 @@
       // showing, so the per-file counts are kept for every session too.
       setSessionTouchedFiles(sessionId, filesTouched(data));
       // Update diff badge for any session, not just the active one
-      if (data.diff && (data.diff.files_changed > 0 || data.diff.lines_added > 0 || data.diff.lines_removed > 0)) {
+      if (
+        data.diff &&
+        (data.diff.files_changed > 0 || data.diff.lines_added > 0 || data.diff.lines_removed > 0)
+      ) {
         setSessionDiffStats(sessionId, {
           filesChanged: data.diff.files_changed,
           linesAdded: data.diff.lines_added,
@@ -208,7 +213,9 @@
 
     <span class="status">
       <span class="status-dot"></span>
-      {running} running · <span class="status-needs">{needsYou} needs you</span> · {idle} idle · ${spendToday.toFixed(2)} today
+      {running} running · <span class="status-needs">{needsYou} needs you</span> · {idle} idle · ${spendToday.toFixed(
+        2,
+      )} today
     </span>
 
     <button type="button" class="jump" onclick={() => jumpOpen.set(true)}>
@@ -220,7 +227,12 @@
       + Session <span class="kbd-inline">{$chords.newSession}</span>
     </button>
 
-    <button type="button" class="gear" title={`Settings (${$chords.settings})`} onclick={() => settingsOpen.set(true)}>
+    <button
+      type="button"
+      class="gear"
+      title={`Settings (${$chords.settings})`}
+      onclick={() => settingsOpen.set(true)}
+    >
       <span class="material-symbols-outlined">settings</span>
     </button>
   </header>
@@ -265,7 +277,11 @@
   }
 
   :global(.material-symbols-outlined) {
-    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    font-variation-settings:
+      "FILL" 0,
+      "wght" 400,
+      "GRAD" 0,
+      "opsz" 24;
     font-size: 1.25rem;
     vertical-align: middle;
   }
@@ -451,5 +467,4 @@
   .view.hidden {
     display: none;
   }
-
 </style>
