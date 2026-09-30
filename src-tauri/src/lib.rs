@@ -1,3 +1,4 @@
+mod atomic_write;
 mod commands;
 pub mod hook;
 mod lsp;
@@ -238,7 +239,7 @@ fn update_claude_settings(
         );
         return;
     }
-    match std::fs::write(claude_settings_path, json) {
+    match atomic_write::write_atomic(claude_settings_path, json.as_bytes()) {
         Ok(()) => log::info!("Installed Atlas {} hook", label),
         Err(e) => log::warn!("Failed to write Claude settings: {}", e),
     }
@@ -632,6 +633,27 @@ mod tests {
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(commands(&settings), vec![NEW]);
         assert!(!dir.path().join("settings.json.atlas-bak").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_settings_file_stays_a_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("dotfiles-settings.json");
+        let link = dir.path().join("settings.json");
+        std::fs::write(&real, "{\"model\": \"opus\"}").unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        install(&link);
+
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        let settings: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&real).unwrap()).unwrap();
+        assert_eq!(commands(&settings), vec![NEW]);
+        assert_eq!(settings["model"], "opus");
     }
 
     #[test]
