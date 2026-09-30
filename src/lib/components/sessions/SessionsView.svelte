@@ -10,6 +10,7 @@
     pinnedSessions,
     settingsOpen,
     tailTranscripts,
+    type OverviewOrdering,
   } from "../../stores/settings";
   import { activeView, jumpOpen, newSessionOpen, shortcutsOpen, wsFilter } from "../../stores/view";
   import { visibleWorkspaces } from "../../stores/workspace";
@@ -224,10 +225,11 @@
     next.focus();
   }
 
-  const ORDER_LABEL: Record<string, string> = {
+  const ORDER_LABEL: Record<OverviewOrdering, string> = {
     attention: "Sorted by attention · needs-you first",
     workspace: "Grouped by workspace",
     manual: "In the order sessions started",
+    opened: "In the order sessions were opened",
   };
 
   async function addWorkspace() {

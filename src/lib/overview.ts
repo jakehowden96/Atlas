@@ -4,7 +4,7 @@
  * The join, the sort and the filter live here rather than in the components so
  * they can be unit-tested without a Svelte compiler (README → Conventions).
  */
-import type { LiveSession, PlanItem, SessionState, TranscriptLine } from "../types/session";
+import type { LiveSession, SessionState, TranscriptLine } from "../types/session";
 import type { OverviewOrdering } from "./stores/settings";
 import type { View } from "./stores/view";
 import type { DiffStats, Workspace, WorkspaceSession } from "./stores/workspace";
@@ -274,16 +274,6 @@ export function filterByWorkspace<T extends { workspacePath: string }>(
   filter: string,
 ): T[] {
   return filter === "all" ? tiles : tiles.filter((t) => t.workspacePath === filter);
-}
-
-/**
- * Fixed-width plan bar: `count` segments filled in proportion to completed
- * todos, so the bar stays 140px whatever the plan's length.
- */
-export function planSegments(plan: PlanItem[], count = 6): boolean[] {
-  const done = plan.filter((p) => p.status === "completed").length;
-  const filled = plan.length === 0 ? 0 : Math.round((done / plan.length) * count);
-  return Array.from({ length: count }, (_, i) => i < filled);
 }
 
 /** `2m 14s` under an hour, `1h 04m` above it. Empty when the start is unknown. */

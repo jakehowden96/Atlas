@@ -15,7 +15,6 @@ import {
   handleGridKey,
   openQuestion,
   pinKey,
-  planSegments,
   type SessionTile,
   screenPreview,
   shouldNotify,
@@ -97,10 +96,27 @@ describe("compareByWorkspace", () => {
 });
 
 describe("tileComparator", () => {
-  it("maps attention and workspace to their comparators", () => {
-    expect(tileComparator("attention")).toBe(compareByAttention);
-    expect(tileComparator("workspace")).toBe(compareByWorkspace);
-    expect(tileComparator("opened")).toBe(compareByOpened);
+  it("orders by attention, by workspace name, and by when the session was opened", () => {
+    const t = (id: string, state: SessionState, workspaceName: string, createdAt: string) =>
+      ({
+        sessionUuid: id,
+        atlasSessionId: "",
+        state,
+        workspaceName,
+        label: id,
+        createdAt,
+      }) as SessionTile;
+    const tiles = [
+      t("a", "idle", "zeta", "2026-01-03T00:00:00Z"),
+      t("b", "needsYou", "alpha", "2026-01-02T00:00:00Z"),
+      t("c", "running", "mid", "2026-01-01T00:00:00Z"),
+    ];
+    const sorted = (ordering: Parameters<typeof tileComparator>[0]) =>
+      [...tiles].sort(tileComparator(ordering)!).map((x) => x.sessionUuid);
+
+    expect(sorted("attention")).toEqual(["b", "c", "a"]);
+    expect(sorted("workspace")).toEqual(["b", "c", "a"]);
+    expect(sorted("opened")).toEqual(["c", "b", "a"]);
   });
 
   it("returns null for manual, leaving arrival order alone", () => {
@@ -137,8 +153,7 @@ describe("tileComparator", () => {
       expect(order(tiles, "manual", ["c", "b"])).toEqual(["b", "c", "a"]);
     });
 
-    it("hands back the plain comparator when nothing is pinned", () => {
-      expect(tileComparator("attention", new Set())).toBe(compareByAttention);
+    it("leaves manual unsorted whether or not anything is pinned", () => {
       expect(tileComparator("manual", new Set())).toBeNull();
     });
 
@@ -541,30 +556,6 @@ describe("feedItems", () => {
       tool: null,
     });
     expect(feedItems([line("> hi", "user"), line("Push it?")], "Push it?")).toHaveLength(1);
-  });
-});
-
-describe("planSegments", () => {
-  it("is empty with no plan", () => {
-    expect(planSegments([])).toEqual([false, false, false, false, false, false]);
-  });
-
-  it("fills in proportion to completed todos", () => {
-    const plan = [
-      { text: "a", status: "completed" },
-      { text: "b", status: "completed" },
-      { text: "c", status: "in_progress" },
-      { text: "d", status: "pending" },
-    ];
-    expect(planSegments(plan).filter(Boolean)).toHaveLength(3);
-  });
-
-  it("fills every segment when the plan is done", () => {
-    const plan = [
-      { text: "a", status: "completed" },
-      { text: "b", status: "completed" },
-    ];
-    expect(planSegments(plan).every(Boolean)).toBe(true);
   });
 });
 
