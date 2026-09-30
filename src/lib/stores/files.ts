@@ -58,6 +58,8 @@ export const plans = writable<PlanEntry[]>([]);
 
 /** Keys with unsaved edits, derived once rather than in each component. */
 export const dirtyFiles = derived(docs, ($docs) => new Set($docs.keys()));
+/** Keys whose file failed to load. They open read-only and cannot be saved. */
+export const unreadable = writable<Set<string>>(new Set());
 
 /** Refresh the workspace listing. A workspace that cannot be walked lists as
  *  empty rather than throwing — the tree has nowhere to show an error. */
@@ -148,6 +150,12 @@ export function closeFile(key: string): void {
     next.delete(key);
     return next;
   });
+  unreadable.update((current) => {
+    if (!current.has(key)) return current;
+    const next = new Set(current);
+    next.delete(key);
+    return next;
+  });
   if (get(activeFile) === key) activeFile.set(next[at] ?? next[at - 1] ?? "");
 }
 
@@ -173,8 +181,9 @@ function setDiskDoc(key: string, text: string) {
 }
 
 /** Read a file's text into `diskDocs` unless it is already known. A file that
- *  cannot be read opens empty with a toast rather than leaving the editor
- *  stuck on the file before it. */
+ *  cannot be read opens empty but is recorded in `unreadable`: the editor shows
+ *  it read-only and saving is refused, so the empty buffer can never replace the
+ *  real file on disk. */
 export async function loadFileText(key: string): Promise<void> {
   if (!key || get(diskDocs).has(key)) return;
   // A brand-new note is an unsaved buffer with nothing on disk to read yet.
@@ -185,6 +194,7 @@ export async function loadFileText(key: string): Promise<void> {
   } catch (e) {
     log.error("files", `read failed for ${key}`, e);
     showToast("Could not open that file", { body: String(e) });
+    unreadable.update((current) => new Set(current).add(key));
     setDiskDoc(key, "");
   }
 }
@@ -194,7 +204,7 @@ export async function loadFileText(key: string): Promise<void> {
 export async function saveActiveFile(): Promise<void> {
   const key = get(activeFile);
   const text = get(docs).get(key);
-  if (!key || text === undefined) return;
+  if (!key || text === undefined || get(unreadable).has(key)) return;
   const { source, path } = parseFileKey(key);
   // The editor hands back LF whatever the file used, so the file's own endings
   // are restored from the text it was read with.

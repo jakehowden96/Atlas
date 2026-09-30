@@ -25,6 +25,7 @@ import {
   openFiles,
   saveActiveFile,
   setDoc,
+  unreadable,
 } from "../stores/files";
 
 const key = fileKey("/ws", "big.md");
@@ -33,11 +34,20 @@ beforeEach(() => {
   vi.clearAllMocks();
   docs.set(new Map());
   diskDocs.set(new Map());
+  unreadable.set(new Set());
   openFiles.set([]);
   activeFile.set(key);
 });
 
 describe("saveActiveFile", () => {
+  it("refuses to write over a file that failed to load", async () => {
+    vi.mocked(readTextFileAt).mockRejectedValue("too big");
+    await loadFileText(key);
+    setDoc(key, "x");
+    await saveActiveFile();
+    expect(writeTextFileAt).not.toHaveBeenCalled();
+  });
+
   it("keeps an edit typed while the write was in flight", async () => {
     vi.mocked(readTextFileAt).mockResolvedValue("");
     await loadFileText(key);

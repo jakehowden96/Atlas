@@ -30,6 +30,7 @@
     plans,
     saveActiveFile,
     setDoc,
+    unreadable,
   } from "../../stores/files";
   import { fileRailOpen, openNewSession } from "../../stores/view";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
@@ -40,6 +41,7 @@
   /** The unsaved edit if there is one, else the text last read from disk. */
   let text = $derived($docs.get(key) ?? $diskDocs.get(key) ?? "");
   let dirty = $derived($dirtyFiles.has(key));
+  let unreadableFile = $derived($unreadable.has(key));
   let markdown = $derived(/\.(md|markdown)$/i.test(file.path));
   /** Preview is markdown-only, so a `.txt` always shows its source. */
   let mode = $derived(markdown ? $fileMode : "source");
@@ -186,6 +188,7 @@
           <span class="crumb" class:leaf={i === crumbs.length - 1}>{crumb}</span>
         {/each}
       </span>
+      {#if unreadableFile}<span class="pill">Read-only · could not be read</span>{/if}
       {#if dirty}<span class="pill">Unsaved</span>{/if}
 
       <div class="spacer"></div>
@@ -240,6 +243,7 @@
           path={target.relative}
           root={target.root}
           {text}
+          readOnly={unreadableFile}
           onChange={(next) => setDoc(key, next)}
         />
       {/if}

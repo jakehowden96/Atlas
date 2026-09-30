@@ -36,16 +36,23 @@
     root: string;
     /** The text to show. Echoes of this component's own edits are ignored. */
     text: string;
+    /** True for a file that could not be read. */
+    readOnly?: boolean;
     onChange: (text: string) => void;
   }
 
-  let { docKey, path, root, text, onChange }: Props = $props();
+  let { docKey, path, root, text, readOnly = false, onChange }: Props = $props();
 
   let host = $state<HTMLDivElement | undefined>();
   let view: EditorView | null = null;
   /** Swapped when the file's language changes, so the editor is built once. */
   const language = new Compartment();
   const lsp = new Compartment();
+  const access = new Compartment();
+
+  function accessFor(locked: boolean) {
+    return locked ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : [];
+  }
 
   /** True while a store update is being applied, so it is not echoed back. */
   let applying = false;
@@ -60,6 +67,7 @@
           atlasEditorTheme,
           language.of([]),
           lsp.of([]),
+          access.of(accessFor(readOnly)),
           EditorView.lineWrapping,
           EditorView.updateListener.of((update) => {
             if (!update.docChanged || applying) return;
@@ -137,6 +145,14 @@
       log.warn("lsp", `could not attach a language server to ${forPath}: ${e}`);
     }
   }
+
+  /* A file that failed to load shows as an empty buffer; typing into it would
+     only tempt a save over the real file, so it cannot be edited. */
+  $effect(() => {
+    const current = view;
+    const locked = readOnly;
+    current?.dispatch({ effects: access.reconfigure(accessFor(locked)) });
+  });
 
   onDestroy(() => {
     view?.destroy();
