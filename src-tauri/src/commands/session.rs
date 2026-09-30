@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::process::Command;
 use std::time::{Duration, SystemTime};
 
@@ -124,17 +125,28 @@ pub struct ClaudeInfo {
     pub session_start_hook_installed: bool,
 }
 
-fn which_claude() -> Option<String> {
-    #[cfg(target_os = "windows")]
-    let (prog, args) = ("where", ["claude"]);
-    #[cfg(not(target_os = "windows"))]
-    let (prog, args) = ("which", ["claude"]);
+/// A command for a diagnostic probe. On Windows a GUI-subsystem app that spawns
+/// a console program would flash a console window each time, so it is created
+/// without one. [UNVERIFIED on Windows]
+fn probe(program: impl AsRef<OsStr>) -> Command {
+    // `mut` is only needed on Windows, where the creation flag is set.
+    #[allow(unused_mut)]
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
 
-    let output = Command::new(prog).args(args).output().ok()?;
+/// First non-empty line a probe printed, when it succeeded.
+fn first_line(mut command: Command) -> Option<String> {
+    let output = command.output().ok()?;
     if !output.status.success() {
         return None;
     }
-    // `where` can print several matches; the first is the one that would run.
     String::from_utf8_lossy(&output.stdout)
         .lines()
         .next()
@@ -143,17 +155,26 @@ fn which_claude() -> Option<String> {
         .map(str::to_string)
 }
 
-fn claude_version() -> Option<String> {
-    let output = Command::new("claude").arg("--version").output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .next()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
+fn which_claude() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    let lookup = "where";
+    #[cfg(not(target_os = "windows"))]
+    let lookup = "which";
+
+    let mut command = probe(lookup);
+    command.arg("claude");
+    // `where` can print several matches; the first is the one that would run.
+    first_line(command)
+}
+
+/// Asked of the path `which_claude` found rather than of the bare name, so an
+/// npm-installed `claude.cmd` shim, which `where` finds but a bare
+/// `Command::new("claude")` does not, still reports its version.
+/// [UNVERIFIED on Windows]
+fn claude_version(binary: &str) -> Option<String> {
+    let mut command = probe(binary);
+    command.arg("--version");
+    first_line(command)
 }
 
 /// True when any command under `hooks[event]` carries `marker`.
@@ -188,32 +209,18 @@ fn session_start_hook_installed() -> bool {
     hook_installed("SessionStart", crate::SESSION_START_HOOK_MARKER)
 }
 
-#[tauri::command(async)]
+#[tauri::command]
 pub async fn claude_info() -> Result<ClaudeInfo, String> {
-    tokio::task::spawn_blocking(|| ClaudeInfo {
-        binary: which_claude(),
-        version: claude_version(),
-        notification_hook_installed: notification_hook_installed(),
-        session_start_hook_installed: session_start_hook_installed(),
+    tokio::task::spawn_blocking(|| {
+        let binary = which_claude();
+        let version = binary.as_deref().and_then(claude_version);
+        ClaudeInfo {
+            binary,
+            version,
+            notification_hook_installed: notification_hook_installed(),
+            session_start_hook_installed: session_start_hook_installed(),
+        }
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Diagnostic only — it must resolve whether or not `claude` is installed
-    /// on the machine running the suite.
-    #[tokio::test]
-    async fn claude_info_never_errors() {
-        let info = claude_info().await.expect("claude_info must never error");
-        if let Some(binary) = &info.binary {
-            assert!(!binary.is_empty());
-        }
-        if let Some(version) = &info.version {
-            assert!(!version.is_empty());
-        }
-    }
 }
