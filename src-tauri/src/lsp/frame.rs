@@ -31,26 +31,64 @@ impl FrameReader {
     pub fn push(&mut self, chunk: &[u8]) -> Vec<String> {
         self.buffer.extend_from_slice(chunk);
         let mut out = Vec::new();
-        while let Some(message) = self.take_one() {
-            out.push(message);
+        while let Some(step) = self.take_one() {
+            out.extend(step);
         }
         out
     }
 
-    fn take_one(&mut self) -> Option<String> {
-        let split = find(&self.buffer, b"\r\n\r\n")?;
-        let headers = std::str::from_utf8(&self.buffer[..split]).ok()?;
-        let length = content_length(headers)?;
+    /// Consume one frame from the front of the buffer. `None` means more bytes
+    /// are needed; `Some(None)` means a broken frame was discarded and the
+    /// next one may already be waiting; `Some(Some(m))` is a message.
+    fn take_one(&mut self) -> Option<Option<String>> {
+        let Some(split) = find(&self.buffer, b"\r\n\r\n") else {
+            if self.buffer.len() > MAX_HEADER_BYTES {
+                // Not a header block at all; waiting longer will not fix it.
+                self.buffer.clear();
+            }
+            return None;
+        };
+        let length = std::str::from_utf8(&self.buffer[..split])
+            .ok()
+            .and_then(content_length)
+            .filter(|length| *length <= MAX_BODY_BYTES);
+        let Some(length) = length else {
+            // A header block with no usable Content-Length is a broken server.
+            // Drop it, but resynchronise on a Content-Length that got glued to
+            // the front of the block by the previous frame's stray body bytes.
+            let resync = rfind_ignore_case(&self.buffer[..split], b"content-length")
+                .filter(|at| *at > 0)
+                .unwrap_or(split + 4);
+            self.buffer.drain(..resync);
+            return Some(None);
+        };
         let start = split + 4;
-        if self.buffer.len() < start + length {
+        let end = start + length;
+        if self.buffer.len() < end {
             return None;
         }
-        let body = self.buffer[start..start + length].to_vec();
-        self.buffer.drain(..start + length);
+        let body = self.buffer[start..end].to_vec();
+        self.buffer.drain(..end);
         // A body that is not UTF-8 is a broken server rather than a partial
         // read, so the frame is dropped rather than blocking the stream.
-        String::from_utf8(body).ok()
+        Some(String::from_utf8(body).ok())
     }
+}
+
+/// The largest message body accepted. Real LSP messages (whole-project
+/// diagnostics, large completion lists) stay far below this; a bigger claimed
+/// length is a corrupt header, and would otherwise stall the reader forever
+/// waiting for bytes that never come.
+const MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
+
+/// The most header bytes buffered while waiting for the blank line that ends
+/// them.
+const MAX_HEADER_BYTES: usize = 64 * 1024;
+
+fn rfind_ignore_case(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .rposition(|w| w.eq_ignore_ascii_case(needle))
 }
 
 /// The `Content-Length` value, case-insensitively, from a header block.
@@ -127,5 +165,31 @@ mod tests {
             seen.extend(r.push(&[*byte]));
         }
         assert_eq!(seen, vec![r#"{"ok":true}"#.to_string()]);
+    }
+
+    #[test]
+    fn an_absurd_content_length_does_not_panic() {
+        let mut r = FrameReader::new();
+        assert!(r
+            .push(b"Content-Length: 18446744073709551615\r\n\r\n{}")
+            .is_empty());
+        // The oversized frame is discarded, so the stream recovers.
+        assert_eq!(r.push(&frame("{}")), vec!["{}".to_string()]);
+    }
+
+    #[test]
+    fn a_header_block_without_content_length_is_skipped() {
+        let mut r = FrameReader::new();
+        assert!(r.push(b"Foo: 1\r\n\r\n").is_empty());
+        assert_eq!(r.push(&frame("{}")), vec!["{}".to_string()]);
+    }
+
+    #[test]
+    fn a_non_utf8_body_does_not_hold_back_the_next_message() {
+        let mut r = FrameReader::new();
+        let mut chunk = b"Content-Length: 2\r\n\r\n".to_vec();
+        chunk.extend_from_slice(&[0xff, 0xfe]);
+        chunk.extend_from_slice(&frame("{}"));
+        assert_eq!(r.push(&chunk), vec!["{}".to_string()]);
     }
 }
