@@ -25,7 +25,6 @@ interface TerminalProps {
   spawnError?: string;
   harnessLabel?: string;
   cwd?: string;
-  onData?: (data: string) => void;
   onPtyReady: (ptyId: number) => void;
   onSpawnError: (message: string) => void;
 }

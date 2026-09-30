@@ -77,7 +77,6 @@
         spawnError: tab.spawnError,
         harnessLabel: tab.harnessLabel,
         cwd: tab.cwd,
-        onData: tab.onData,
         onPtyReady: (ptyId: number) => handlePtyReady(tab.id, ptyId),
         onSpawnError: (message: string) => setTabSpawnError(tab.id, message),
       });

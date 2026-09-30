@@ -7,7 +7,6 @@ export interface TerminalTab {
   title: string;
   ptyId: number;
   cwd?: string;
-  onData?: (data: string) => void;
   needsInput?: boolean;
   /** Which Notification raised `needsInput`. Only a `permission_prompt` may be
    *  answered from a tile; an elicitation dialog is a different dialog. */

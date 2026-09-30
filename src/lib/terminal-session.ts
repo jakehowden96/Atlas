@@ -29,7 +29,6 @@ export interface TerminalSessionOptions {
   visible: boolean;
   onPtyReady: (ptyId: number) => void;
   cwd?: string;
-  onData?: (data: string) => void;
   /** The PTY could not be spawned; the tab has nothing to wait on. */
   onSpawnError: (message: string) => void;
 }
@@ -50,7 +49,6 @@ export class TerminalSession {
   private tabId: string;
   private _visible: boolean;
   private initialCwd?: string;
-  private externalOnData?: (data: string) => void;
   private onSpawnError: (message: string) => void;
   /** Set by `destroy()`. Every callback that can fire later — a pending spawn,
    *  PTY output, timers — checks it before touching the disposed xterm. */
@@ -136,7 +134,6 @@ export class TerminalSession {
     this.container = opts.container;
     this._visible = opts.visible;
     this.initialCwd = opts.cwd;
-    this.externalOnData = opts.onData;
     this.onSpawnError = opts.onSpawnError;
 
     this.terminal = new Terminal({
@@ -476,10 +473,6 @@ export class TerminalSession {
           // Output can trail the kill; the xterm it would land in is gone.
           if (this.destroyed) return;
           this.terminal.write(data);
-          if (this.externalOnData) {
-            const decoder = new TextDecoder();
-            this.externalOnData(decoder.decode(data));
-          }
         },
         this.initialCwd ?? undefined,
         { ATLAS_SESSION_ID: this.tabId },

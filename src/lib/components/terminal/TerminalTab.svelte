@@ -15,7 +15,6 @@
     onPtyReady: (ptyId: number) => void;
     onSpawnError: (message: string) => void;
     cwd?: string;
-    onData?: (data: string) => void;
   }
 
   let {
@@ -27,7 +26,6 @@
     onPtyReady,
     onSpawnError,
     cwd,
-    onData,
   }: Props = $props();
 
   let containerEl: HTMLDivElement;
@@ -41,7 +39,6 @@
       onPtyReady,
       onSpawnError,
       cwd,
-      onData,
     });
   });
 
