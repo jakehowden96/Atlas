@@ -16,7 +16,7 @@ import {
   sparkSeries,
   toolRows,
   todayCost,
-  utcDayKey,
+  localDayKey,
   totalsForRange,
   weekFamilies,
   weekLabel,
@@ -257,7 +257,7 @@ describe("day series", () => {
     "2026-09-05": day({ sessions: 9, cost: 12 }),
     "2026-09-08": day({ sessions: 1, cost: 2 }),
   };
-  const today = new Date("2026-09-08T13:00:00Z");
+  const today = new Date(2026, 8, 8, 13, 0, 0);
 
   it("fills gaps with zeroes and ends on today", () => {
     const week = daySeries(byDay, today, 7);
@@ -368,71 +368,30 @@ describe("agoLabel", () => {
 });
 
 describe("todayCost", () => {
-  /* The top bar used to sum `$liveSessionList`, which holds only the sessions
-     Atlas is tailing right now. Work done in Claude Code outside Atlas — or
-     before this launch — was invisible, so "today" read $0 on a day with real
-     spend. The persisted stats are the whole picture.
+  const now = new Date(2026, 8, 9, 14, 0, 0);
 
-     "Today" is the local calendar day, because that is the day the person
-     reading the number is having. The fixtures are built off `now` rather
-     than written as literals so the test does not depend on the runner's
-     timezone. */
-  const now = new Date("2026-09-09T14:00:00Z");
-
-  /** An ISO stamp at `hour` on the same local day as `now`. */
-  function sameDayAt(hour: number): string {
-    const d = new Date(now);
-    d.setHours(hour, 0, 0, 0);
-    return d.toISOString();
-  }
-
-  /** Noon on the local day before `now`. */
-  function dayBefore(): string {
-    const d = new Date(now);
-    d.setDate(d.getDate() - 1);
-    d.setHours(12, 0, 0, 0);
-    return d.toISOString();
-  }
-
-  it("sums the sessions whose last activity was today", () => {
+  /* Spend is booked per local day by the backend, so a conversation resumed
+     today adds today's turns, not the whole multi-day cost it has accrued. */
+  it("reads the cost booked on today's local day", () => {
     const s = summary({
-      recentSessions: [
-        { ...session("today-a", sameDayAt(13)), costEstimate: 2.5 },
-        { ...session("today-b", sameDayAt(9)), costEstimate: 1.25 },
-        { ...session("yesterday", dayBefore()), costEstimate: 99 },
-      ],
+      byDay: {
+        [localDayKey(now)]: day({ sessions: 1, cost: 3.5 }),
+        "2026-09-08": day({ sessions: 4, cost: 40 }),
+      },
     });
-    expect(todayCost(s, now)).toBeCloseTo(3.75);
+    expect(todayCost(s, now)).toBeCloseTo(3.5);
   });
 
-  /* `recentSessions` is the newest 50, and the busiest day in the real cache
-     on this machine had exactly 50 sessions. Once every entry in the window is
-     from today the window is a floor, not a total, so the persisted day figure
-     takes over when it is larger. */
-  it("falls back to the persisted day total when the recent window is all today", () => {
-    const s = summary({
-      recentSessions: [
-        { ...session("a", sameDayAt(13)), costEstimate: 2 },
-        { ...session("b", sameDayAt(9)), costEstimate: 2 },
-      ],
-      byDay: { [utcDayKey(now)]: day({ sessions: 40, cost: 61 }) },
-    });
-    expect(todayCost(s, now)).toBeCloseTo(61);
-  });
-
-  it("keeps the per-session sum when it is the larger of the two", () => {
-    const s = summary({
-      recentSessions: [
-        { ...session("a", sameDayAt(13)), costEstimate: 20 },
-        { ...session("old", dayBefore()), costEstimate: 5 },
-      ],
-      byDay: { [utcDayKey(now)]: day({ sessions: 1, cost: 3 }) },
-    });
-    expect(todayCost(s, now)).toBeCloseTo(20);
-  });
-
-  it("is zero with no stats loaded yet", () => {
+  it("is zero on a day with no activity, and with no stats loaded", () => {
+    expect(todayCost(summary({ byDay: { "2026-09-08": day({ cost: 9 }) } }), now)).toBe(0);
     expect(todayCost(null, now)).toBe(0);
+  });
+});
+
+describe("localDayKey", () => {
+  it("is the local calendar date, zero padded", () => {
+    expect(localDayKey(new Date(2026, 0, 5, 23, 59))).toBe("2026-01-05");
+    expect(localDayKey(new Date(2026, 11, 31, 0, 1))).toBe("2026-12-31");
   });
 });
 

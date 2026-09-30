@@ -14,7 +14,9 @@ use super::live::{
     TranscriptLine, MAX_LINES, REPLY_SUMMARY,
 };
 use crate::commands::stats::{merge_model_data, SessionRecord};
-use crate::transcript::{context_pct, jsonl_lines, model_family, ModelSessionData};
+use crate::transcript::{
+    activity_slot, context_pct, jsonl_lines, model_family, ActivityLog, ModelSessionData,
+};
 
 // ── Paths ────────────────────────────────────────────────────────────────────
 
@@ -839,6 +841,7 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
     let mut tool_name_by_id: HashMap<String, String> = HashMap::new();
     let mut subagents: u32 = 0;
     let mut by_model: HashMap<String, ModelSessionData> = HashMap::new();
+    let mut activity = ActivityLog::default();
 
     for line in jsonl_lines(reader) {
         if line.trim().is_empty() {
@@ -854,6 +857,11 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
             }
             last_timestamp = Some(ts.to_string());
         }
+
+        let slot = obj
+            .get("timestamp")
+            .and_then(|v| v.as_str())
+            .and_then(activity_slot);
 
         match obj.get("type").and_then(|v| v.as_str()).unwrap_or("") {
             "session" => {
@@ -879,6 +887,7 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
                             let text = text_blocks(msg.get("content").unwrap_or(&Value::Null));
                             if !text.is_empty() {
                                 user_messages += 1;
+                                activity.add_message(slot);
                                 user_chars += text.chars().count() as u64;
                             }
                         }
@@ -894,6 +903,7 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
                             output_tokens += usage.output;
                             cache_creation_tokens += usage.cache_write;
                             cost_estimate += usage.cost;
+                            activity.add_usage(slot, usage.output, usage.cost, usage.context());
                             peak_context = peak_context.max(usage.context());
                             if let Some(family) = &family {
                                 usage.add_to(by_model.entry(family.clone()).or_default());
@@ -971,6 +981,14 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
             output_tokens += sub_data.output_tokens;
             cache_creation_tokens += sub_data.cache_creation_tokens;
             cost_estimate += sub_data.cost_estimate;
+            // Subagent messages are not bucketed by their own time; the spend is
+            // dated to the end of the session that launched them.
+            activity.add_usage(
+                last_timestamp.as_deref().and_then(activity_slot),
+                sub_data.output_tokens,
+                sub_data.cost_estimate,
+                0,
+            );
         }
         merge_model_data(&mut by_model_subagents, sub_usage);
     }
@@ -989,6 +1007,8 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
             _ => 0,
         }
     };
+
+    let activity = activity.finish(first_timestamp.as_deref().and_then(activity_slot));
 
     Ok(SessionRecord {
         session_id,
@@ -1017,6 +1037,7 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
         by_model_subagents,
         subagent_invocations,
         harness: Some("omp".to_string()),
+        activity,
         ..Default::default()
     })
 }

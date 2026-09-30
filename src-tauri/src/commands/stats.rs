@@ -11,8 +11,9 @@ use tauri::{AppHandle, Emitter};
 use crate::session::omp;
 use crate::session::transcript::is_valid_session_uuid;
 use crate::transcript::{
-    assistant_model, jsonl_lines, line_type, model_family, request_key, requests_to_by_model,
-    tool_results, tool_uses, user_text, ModelSessionData, ReqData,
+    activity_slot, assistant_model, jsonl_lines, line_type, model_family, request_key,
+    requests_to_by_model, slot_start, tool_results, tool_uses, user_text, ActivityBucket,
+    ActivityLog, ModelSessionData, ReqData,
 };
 
 /// A "user" line can be genuinely typed by the human, or injected by a skill/hook/
@@ -91,6 +92,11 @@ pub struct SessionRecord {
     pub sidecar_mtime: u64,
     #[serde(default)]
     pub sidecar_size: u64,
+    /// Spend and messages by 15-minute period, so a multi-day session's cost
+    /// lands on the days it was incurred. Empty on a record carried forward
+    /// from before this field existed, which is then attributed to its start.
+    #[serde(default)]
+    pub activity: Vec<ActivityBucket>,
     pub title: Option<String>,
     pub cwd: Option<String>,
     pub git_branch: Option<String>,
@@ -272,15 +278,12 @@ struct WindowAcc {
 }
 
 impl WindowAcc {
-    fn add(&mut self, rec: &SessionRecord) {
+    /// What cannot be split by when it happened: the session itself, its
+    /// subagent count and its tool usage. A window holds the sessions that
+    /// *started* in it.
+    fn add_session(&mut self, rec: &SessionRecord) {
         self.totals.sessions += 1;
-        self.totals.user_messages += rec.user_messages as u64;
-        self.totals.output_tokens += rec.output_tokens;
-        self.totals.cost += rec.cost_estimate;
         self.totals.subagents += rec.subagents;
-        if rec.peak_context > self.totals.peak_context {
-            self.totals.peak_context = rec.peak_context;
-        }
         for (tool, count) in &rec.tool_calls {
             *self.tool_usage.entry(tool.clone()).or_insert(0) += count;
         }
@@ -290,10 +293,22 @@ impl WindowAcc {
         if let Some(cwd) = &rec.cwd {
             let ps = self.by_project.entry(cwd.clone()).or_default();
             ps.sessions += 1;
-            ps.output_tokens += rec.output_tokens;
-            ps.user_messages += rec.user_messages;
-            ps.cost += rec.cost_estimate;
             ps.subagents += rec.subagents;
+        }
+    }
+
+    /// What a session did in one period. A window holds the spend, tokens and
+    /// messages that *happened* in it, whichever day the session started.
+    fn add_activity(&mut self, rec: &SessionRecord, b: &ActivityBucket) {
+        self.totals.user_messages += b.user_messages as u64;
+        self.totals.output_tokens += b.output_tokens;
+        self.totals.cost += b.cost;
+        self.totals.peak_context = self.totals.peak_context.max(b.peak_context);
+        if let Some(cwd) = &rec.cwd {
+            let ps = self.by_project.entry(cwd.clone()).or_default();
+            ps.output_tokens += b.output_tokens;
+            ps.user_messages += b.user_messages;
+            ps.cost += b.cost;
         }
     }
 }
@@ -380,7 +395,7 @@ struct StatsFile {
 
 /// Parse assistant lines from any JSONL path into per-model usage data.
 /// Used for both the main session file and subagent files.
-fn parse_model_usage(path: &Path) -> HashMap<String, ModelSessionData> {
+fn parse_model_usage(path: &Path, activity: &mut ActivityLog) -> HashMap<String, ModelSessionData> {
     let file = match std::fs::File::open(path) {
         Ok(f) => f,
         Err(_) => return HashMap::new(),
@@ -413,6 +428,9 @@ fn parse_model_usage(path: &Path) -> HashMap<String, ModelSessionData> {
         entry.tool_names.extend(new_tools);
     }
 
+    for req in requests.values() {
+        activity.add_request(req);
+    }
     requests_to_by_model(requests)
 }
 
@@ -517,6 +535,7 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
     let mut last_timestamp: Option<String> = None;
     let mut user_messages: u32 = 0;
     let mut user_chars: u64 = 0;
+    let mut activity = ActivityLog::default();
     let mut tool_errors: u32 = 0;
     let mut tool_errors_by_name: HashMap<String, u32> = HashMap::new();
     // `tool_use.id` -> tool name, so an errored `tool_result` can be charged to
@@ -571,6 +590,11 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
                 if let Some(s) = user_text(&obj) {
                     if !is_meta && is_human_authored(&obj, &s) {
                         user_messages += 1;
+                        activity.add_message(
+                            obj.get("timestamp")
+                                .and_then(|v| v.as_str())
+                                .and_then(activity_slot),
+                        );
                         let chars = s.chars().count() as u64;
                         user_chars += chars;
                         pending_user_chars += chars;
@@ -631,9 +655,15 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
                     new_tools.push(tool.name.to_string());
                 }
 
-                let entry = requests
-                    .entry(req_key)
-                    .or_insert_with(|| ReqData::from_message(model, msg));
+                let slot = obj
+                    .get("timestamp")
+                    .and_then(|v| v.as_str())
+                    .and_then(activity_slot);
+                let entry = requests.entry(req_key).or_insert_with(|| {
+                    let mut req = ReqData::from_message(model, msg);
+                    req.slot = slot;
+                    req
+                });
                 entry.tool_names.extend(new_tools);
             }
             "ai-title" => {
@@ -653,6 +683,7 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
     let mut tool_calls: HashMap<String, u32> = HashMap::new();
 
     for data in requests.values() {
+        activity.add_request(data);
         let ctx = data.context();
         if ctx > peak_context {
             peak_context = ctx;
@@ -686,7 +717,7 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
     let mut subagent_invocations: HashMap<String, u32> = HashMap::new();
 
     for sub_path in &subagent_paths {
-        let sub_usage = parse_model_usage(sub_path);
+        let sub_usage = parse_model_usage(sub_path, &mut activity);
         // Attribute this invocation to the family with the most output tokens.
         if let Some(dominant) = sub_usage
             .iter()
@@ -720,6 +751,8 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
         }
     };
 
+    let activity = activity.finish(first_timestamp.as_deref().and_then(activity_slot));
+
     Ok(SessionRecord {
         session_id,
         path: path.to_string_lossy().to_string(),
@@ -747,6 +780,7 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
         by_model_subagents,
         subagent_invocations,
         harness: None,
+        activity,
         ..Default::default()
     })
 }
@@ -893,9 +927,53 @@ fn finalize_model(model_acc: &mut HashMap<String, ModelStats>) {
 }
 
 fn aggregate(records: &[SessionRecord]) -> StatsSummary {
-    let mut summary = StatsSummary::default();
-    let now = chrono::Utc::now();
-    summary.generated_at = now.to_rfc3339();
+    aggregate_at(records, chrono::Utc::now(), &chrono::Local)
+}
+
+/// The calendar day `at` falls on in `tz`, as `YYYY-MM-DD`.
+fn day_key<Tz: chrono::TimeZone>(at: chrono::DateTime<chrono::Utc>, tz: &Tz) -> String
+where
+    Tz::Offset: std::fmt::Display,
+{
+    at.with_timezone(tz).format("%Y-%m-%d").to_string()
+}
+
+/// What a record did, by period. A record without activity (one carried
+/// forward from an older file) is treated as having done everything when it
+/// started, which is the only time it has.
+fn activity_of(rec: &SessionRecord) -> std::borrow::Cow<'_, [ActivityBucket]> {
+    if !rec.activity.is_empty() {
+        return std::borrow::Cow::Borrowed(&rec.activity);
+    }
+    let slot = rec.first_timestamp.as_deref().and_then(activity_slot);
+    std::borrow::Cow::Owned(
+        slot.map(|slot| ActivityBucket {
+            slot,
+            output_tokens: rec.output_tokens,
+            cost: rec.cost_estimate,
+            user_messages: rec.user_messages,
+            peak_context: rec.peak_context,
+        })
+        .into_iter()
+        .collect(),
+    )
+}
+
+/// `aggregate` at a given instant and time zone: days (`by_day`, `by_week`) are
+/// calendar days in `tz`, so the dashboard's "today" is the user's today, and
+/// tests can pin both.
+fn aggregate_at<Tz: chrono::TimeZone>(
+    records: &[SessionRecord],
+    now: chrono::DateTime<chrono::Utc>,
+    tz: &Tz,
+) -> StatsSummary
+where
+    Tz::Offset: std::fmt::Display,
+{
+    let mut summary = StatsSummary {
+        generated_at: now.to_rfc3339(),
+        ..Default::default()
+    };
     let cutoff_30d = now - chrono::Duration::days(30);
     let cutoff_7d = now - chrono::Duration::days(7);
     // The equally-sized window immediately before each of the above.
@@ -937,22 +1015,41 @@ fn aggregate(records: &[SessionRecord]) -> StatsSummary {
         summary.total_tool_errors += rec.tool_errors;
         summary.total_subagents += rec.subagents;
 
-        win_all.add(rec);
+        win_all.add_session(rec);
         recent.push(rec);
 
-        // Per day
-        if let Some(ts) = &rec.first_timestamp {
-            let day = ts.get(..10).unwrap_or("").to_string();
-            if !day.is_empty() {
-                let ds = summary.by_day.entry(day).or_default();
-                ds.sessions += 1;
-                ds.output_tokens += rec.output_tokens;
-                ds.user_messages += rec.user_messages;
-                ds.cost += rec.cost_estimate;
-                ds.subagents += rec.subagents;
-                if rec.peak_context > ds.peak_context {
-                    ds.peak_context = rec.peak_context;
-                }
+        let started = rec
+            .first_timestamp
+            .as_deref()
+            .and_then(|ts| chrono::DateTime::parse_from_rfc3339(ts).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc));
+
+        // Per day: the session and its subagents on the day it started, the
+        // spend and messages on the days they happened.
+        if let Some(dt) = started {
+            let ds = summary.by_day.entry(day_key(dt, tz)).or_default();
+            ds.sessions += 1;
+            ds.subagents += rec.subagents;
+        }
+        for b in activity_of(rec).iter() {
+            let Some(at) = slot_start(b.slot) else {
+                continue;
+            };
+            win_all.add_activity(rec, b);
+            let ds = summary.by_day.entry(day_key(at, tz)).or_default();
+            ds.output_tokens += b.output_tokens;
+            ds.user_messages += b.user_messages;
+            ds.cost += b.cost;
+            ds.peak_context = ds.peak_context.max(b.peak_context);
+            if at >= cutoff_30d {
+                win_30d.add_activity(rec, b);
+            } else if at >= cutoff_prev_30d {
+                win_prev_30d.add_activity(rec, b);
+            }
+            if at >= cutoff_7d {
+                win_7d.add_activity(rec, b);
+            } else if at >= cutoff_prev_7d {
+                win_prev_7d.add_activity(rec, b);
             }
         }
 
@@ -963,33 +1060,28 @@ fn aggregate(records: &[SessionRecord]) -> StatsSummary {
         // Per model family — all-time always; windowed copies keyed off session start time.
         accumulate_model(&mut model_acc, rec);
         accumulate_subagent_model(&mut subagent_acc, rec);
-        let started = rec
-            .first_timestamp
-            .as_deref()
-            .and_then(|ts| chrono::DateTime::parse_from_rfc3339(ts).ok())
-            .map(|dt| dt.with_timezone(&chrono::Utc));
         if let Some(dt) = started {
             if dt >= cutoff_30d {
                 accumulate_model(&mut model_acc_30d, rec);
                 accumulate_subagent_model(&mut subagent_acc_30d, rec);
-                win_30d.add(rec);
+                win_30d.add_session(rec);
             } else if dt >= cutoff_prev_30d {
-                win_prev_30d.add(rec);
+                win_prev_30d.add_session(rec);
             }
             if dt >= cutoff_7d {
                 accumulate_model(&mut model_acc_7d, rec);
                 accumulate_subagent_model(&mut subagent_acc_7d, rec);
-                win_7d.add(rec);
+                win_7d.add_session(rec);
             } else if dt >= cutoff_prev_7d {
-                win_prev_7d.add(rec);
+                win_prev_7d.add_session(rec);
             }
         }
 
         // Per ISO week
-        if let Some(ts) = &rec.first_timestamp {
-            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts) {
+        if let Some(dt) = started {
+            {
                 use chrono::Datelike;
-                let iso = dt.iso_week();
+                let iso = dt.with_timezone(tz).iso_week();
                 let key = format!("{:04}-W{:02}", iso.year(), iso.week());
                 let ws = summary.by_week.entry(key).or_default();
                 ws.sessions += 1;
@@ -1556,7 +1648,7 @@ mod tests {
         std::fs::create_dir(&path).unwrap();
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(parse_model_usage(&path).len());
+            let _ = tx.send(parse_model_usage(&path, &mut ActivityLog::default()).len());
         });
         assert_eq!(rx.recv_timeout(Duration::from_secs(3)), Ok(0));
     }
@@ -2206,6 +2298,82 @@ mod tests {
             pending.write(t0 + Duration::from_millis(ms));
         }
         assert_eq!(pending.due_at(), Some(t0 + Coalesce::MAX_WAIT));
+    }
+
+    fn bucket(at: &str, cost: f64) -> ActivityBucket {
+        ActivityBucket {
+            slot: activity_slot(at).unwrap(),
+            output_tokens: 100,
+            cost,
+            user_messages: 1,
+            peak_context: 500,
+        }
+    }
+
+    /// 23:30 UTC on the 1st is already the 2nd for someone at UTC+10, and that
+    /// is the day their dashboard has to show.
+    #[test]
+    fn days_are_calendar_days_in_the_given_zone() {
+        let mut r = rec("a", "2026-03-01T23:30:00Z");
+        r.activity = vec![bucket("2026-03-01T23:30:00Z", 2.0)];
+        let now = chrono::DateTime::parse_from_rfc3339("2026-03-05T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+
+        let utc = aggregate_at(&[r.clone()], now, &chrono::Utc);
+        assert!(utc.by_day.contains_key("2026-03-01"));
+
+        let east = chrono::FixedOffset::east_opt(10 * 3600).unwrap();
+        let local = aggregate_at(&[r], now, &east);
+        assert!(!local.by_day.contains_key("2026-03-01"));
+        assert_eq!(local.by_day["2026-03-02"].sessions, 1);
+        assert!((local.by_day["2026-03-02"].cost - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_malformed_timestamp_makes_no_day() {
+        let mut r = rec("a", "not a timestamp");
+        r.activity = Vec::new();
+        let s = aggregate_at(&[r], chrono::Utc::now(), &chrono::Utc);
+        assert!(s.by_day.is_empty());
+    }
+
+    /// A session started eight days ago and worked on today: today's spend is
+    /// in the 7-day window and today's day bucket, the old spend is not.
+    #[test]
+    fn spend_lands_in_the_window_and_day_it_happened() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-03-10T12:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let mut r = rec("long", "2026-03-02T09:00:00Z");
+        r.cost_estimate = 15.0;
+        r.activity = vec![
+            bucket("2026-03-02T09:00:00Z", 5.0),
+            bucket("2026-03-10T11:00:00Z", 10.0),
+        ];
+        let s = aggregate_at(&[r], now, &chrono::Utc);
+
+        assert!((s.totals_all.cost - 15.0).abs() < 1e-9);
+        assert!((s.totals_7d.cost - 10.0).abs() < 1e-9);
+        assert!((s.by_day["2026-03-10"].cost - 10.0).abs() < 1e-9);
+        assert!((s.by_day["2026-03-02"].cost - 5.0).abs() < 1e-9);
+        assert_eq!(s.by_day["2026-03-02"].sessions, 1, "started that day");
+        assert_eq!(s.totals_7d.sessions, 0, "started outside the window");
+    }
+
+    #[test]
+    fn a_transcript_spanning_two_days_gets_a_bucket_per_period() {
+        let f = write_lines(&[
+            r#"{"type":"assistant","requestId":"r1","message":{"model":"claude-sonnet-4-6","content":[],"usage":{"output_tokens":100}},"timestamp":"2026-01-01T10:00:00Z"}"#,
+            r#"{"type":"assistant","requestId":"r2","message":{"model":"claude-sonnet-4-6","content":[],"usage":{"output_tokens":300}},"timestamp":"2026-01-03T10:00:00Z"}"#,
+        ]);
+        let rec = parse_session(f.path()).unwrap();
+        assert_eq!(rec.activity.len(), 2);
+        assert_eq!(
+            rec.activity.iter().map(|b| b.output_tokens).sum::<u64>(),
+            rec.output_tokens
+        );
+        assert!(rec.activity[0].slot < rec.activity[1].slot);
     }
 
     #[test]

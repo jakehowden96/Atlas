@@ -170,11 +170,13 @@ export function recentForRange(s: StatsSummary, r: Range, now: Date): RecentSess
 // ── Day series ────────────────────────────────────────────────────────────────
 
 /**
- * `byDay` keys are the UTC date prefix of each session's first timestamp, so
- * every key this module builds is a UTC date too.
+ * `byDay` keys are calendar days in the machine's local time zone, as the
+ * backend buckets them, so every key built here is a local date too.
  */
-export function utcDayKey(d: Date): string {
-  return d.toISOString().slice(0, 10);
+export function localDayKey(d: Date): string {
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${month}-${day}`;
 }
 
 export interface DayPoint {
@@ -191,12 +193,13 @@ const EMPTY_DAY: DayStats = {
   subagents: 0,
 };
 
-/** `count` consecutive UTC days ending today, oldest first, gaps filled with zeroes. */
+/** `count` consecutive local days ending today, oldest first, gaps filled with zeroes. */
 export function daySeries(byDay: Record<string, DayStats>, today: Date, count: number): DayPoint[] {
-  const end = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
   const out: DayPoint[] = [];
   for (let i = count - 1; i >= 0; i--) {
-    const date = utcDayKey(new Date(end - i * 86_400_000));
+    // Built from calendar fields, not by subtracting 24h, so a DST change
+    // cannot skip or repeat a day.
+    const date = localDayKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() - i));
     out.push({ date, stats: byDay[date] ?? EMPTY_DAY });
   }
   return out;
@@ -211,9 +214,10 @@ export function sparkSeries(byDay: Record<string, DayStats>, r: Range, today: Da
   if (fixed !== null) return daySeries(byDay, today, fixed);
   const keys = Object.keys(byDay ?? {}).sort();
   if (keys.length === 0) return [];
-  const first = Date.parse(`${keys[0]}T00:00:00Z`);
-  const end = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-  const span = Math.floor((end - first) / 86_400_000) + 1;
+  const [y, m, d] = keys[0].split("-").map(Number);
+  const first = Date.UTC(y, m - 1, d);
+  const end = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const span = Math.round((end - first) / 86_400_000) + 1;
   return daySeries(byDay, today, Math.max(1, span));
 }
 
@@ -315,37 +319,12 @@ export function weekFamilies(weeks: [string, WeekStats][]): string[] {
 
 // ── Today's spend ─────────────────────────────────────────────────────────────
 
-/** Whether `iso` falls on the same local calendar day as `now`. */
-function isSameLocalDay(iso: string | null, now: Date): boolean {
-  if (!iso) return false;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return false;
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
-}
-
 /**
  * What today has cost, across every session on disk rather than only the ones
- * Atlas happens to be tailing.
- *
- * The top bar summed `liveSessionList`, so a day spent in Claude Code outside
- * Atlas — or any work from before this launch — read as $0. `recentSessions`
- * is the persisted per-session history, refreshed by the stats watcher within
- * a second of any transcript write, and is keyed on last activity, which is
- * what "today" means for a spend figure.
+ * Atlas happens to be tailing. The backend books spend on the local day it was
+ * incurred, so a conversation resumed today contributes today's turns only, not
+ * its lifetime cost.
  */
 export function todayCost(summary: StatsSummary | null, now: Date): number {
-  if (!summary) return 0;
-  const recent = summary.recentSessions ?? [];
-  const today = recent.filter((s) => isSameLocalDay(s.lastTimestamp, now));
-  const sum = today.reduce((acc, s) => acc + s.costEstimate, 0);
-  /* The window is the newest 50. Once all of it is today it is a floor rather
-     than a total, so the persisted day bucket takes over when it is larger.
-     That bucket is keyed on each session's *first* timestamp in UTC, which is
-     why it is only ever used as the larger of the two. */
-  if (today.length < recent.length) return sum;
-  return Math.max(sum, summary.byDay?.[utcDayKey(now)]?.cost ?? 0);
+  return summary?.byDay?.[localDayKey(now)]?.cost ?? 0;
 }

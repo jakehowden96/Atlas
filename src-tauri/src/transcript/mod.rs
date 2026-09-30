@@ -174,6 +174,76 @@ pub(crate) fn context_pct(tokens: u64, model: &str) -> f64 {
     tokens as f64 / window as f64
 }
 
+// ── Activity over time ────────────────────────────────────────────────────────
+
+/// Width of one activity bucket. Every real UTC offset, and every DST shift, is a
+/// multiple of 15 minutes, so a bucket never straddles a local midnight.
+const SLOT_SECS: i64 = 15 * 60;
+
+/// The bucket a transcript timestamp (RFC 3339) falls in, as 15-minute periods
+/// since the Unix epoch.
+pub(crate) fn activity_slot(timestamp: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(timestamp)
+        .ok()
+        .map(|dt| dt.timestamp().div_euclid(SLOT_SECS))
+}
+
+/// When a bucket begins.
+pub(crate) fn slot_start(slot: i64) -> Option<chrono::DateTime<chrono::Utc>> {
+    chrono::DateTime::from_timestamp(slot.saturating_mul(SLOT_SECS), 0)
+}
+
+/// What a session did in one 15-minute period. Stored per record so usage can
+/// be attributed to the day it happened, not the day the session started.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityBucket {
+    pub slot: i64,
+    pub output_tokens: u64,
+    pub cost: f64,
+    pub user_messages: u32,
+    pub peak_context: u64,
+}
+
+/// Collects `ActivityBucket`s while a transcript is parsed. Work whose line had
+/// no usable timestamp lands on `fallback` in `finish` (the session's start).
+#[derive(Default)]
+pub(crate) struct ActivityLog(std::collections::BTreeMap<Option<i64>, ActivityBucket>);
+
+impl ActivityLog {
+    pub fn add_usage(&mut self, slot: Option<i64>, output_tokens: u64, cost: f64, context: u64) {
+        let bucket = self.0.entry(slot).or_default();
+        bucket.output_tokens += output_tokens;
+        bucket.cost += cost;
+        bucket.peak_context = bucket.peak_context.max(context);
+    }
+
+    pub fn add_request(&mut self, req: &ReqData) {
+        self.add_usage(req.slot, req.output_tokens, req.cost(), req.context());
+    }
+
+    pub fn add_message(&mut self, slot: Option<i64>) {
+        self.0.entry(slot).or_default().user_messages += 1;
+    }
+
+    pub fn finish(self, fallback: Option<i64>) -> Vec<ActivityBucket> {
+        let mut merged: std::collections::BTreeMap<i64, ActivityBucket> =
+            std::collections::BTreeMap::new();
+        for (slot, bucket) in self.0 {
+            let Some(slot) = slot.or(fallback) else {
+                continue;
+            };
+            let into = merged.entry(slot).or_default();
+            into.slot = slot;
+            into.output_tokens += bucket.output_tokens;
+            into.cost += bucket.cost;
+            into.user_messages += bucket.user_messages;
+            into.peak_context = into.peak_context.max(bucket.peak_context);
+        }
+        merged.into_values().collect()
+    }
+}
+
 // ── Per-request accumulation ──────────────────────────────────────────────────
 
 /// Largest token count taken from a transcript field. No real request comes
@@ -200,6 +270,9 @@ pub(crate) struct ReqData {
     pub cache_create: u64,
     pub output_tokens: u64,
     pub tool_names: Vec<String>,
+    /// `activity_slot` of the line the request was first seen on; set by the
+    /// bulk parsers, which bucket spend by when it happened.
+    pub slot: Option<i64>,
 }
 
 impl ReqData {
@@ -214,6 +287,7 @@ impl ReqData {
             cache_create: field("cache_creation_input_tokens"),
             output_tokens: field("output_tokens"),
             tool_names: Vec::new(),
+            slot: None,
         }
     }
 
