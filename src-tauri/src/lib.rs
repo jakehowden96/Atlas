@@ -450,7 +450,6 @@ pub fn run() -> std::process::ExitCode {
     let live_sessions = LiveSessionManager::new();
 
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())

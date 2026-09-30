@@ -5,7 +5,6 @@
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
-    "shell:allow-open",
     "dialog:allow-open",
     "dialog:allow-save",
     {
