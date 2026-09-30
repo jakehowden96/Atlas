@@ -1,61 +1,81 @@
+use crate::error::AtlasError;
+
 // --- Input validation ---
 
 /// Session IDs are UUIDs or Atlas-generated tab ids and become directory names
 /// and the `ATLAS_SESSION_ID` env value, so only plain ASCII is allowed: a
 /// non-ASCII letter has composed and decomposed spellings that name different
 /// directories on macOS.
-pub(crate) fn validate_session_id(id: &str) -> Result<(), String> {
+pub(crate) fn validate_session_id(id: &str) -> Result<(), AtlasError> {
     const MAX_LEN: usize = 128;
     if id.is_empty() {
-        return Err("Session ID cannot be empty".to_string());
+        return Err(AtlasError::invalid_input("Session ID cannot be empty"));
     }
     if id.len() > MAX_LEN {
-        return Err(format!("Session ID longer than {MAX_LEN} characters"));
+        return Err(AtlasError::invalid_input(format!(
+            "Session ID longer than {MAX_LEN} characters"
+        )));
     }
     if !id
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     {
-        return Err("Session ID contains invalid characters".to_string());
+        return Err(AtlasError::invalid_input(
+            "Session ID contains invalid characters",
+        ));
     }
     Ok(())
 }
 
-pub(crate) fn validate_cwd(cwd: &str) -> Result<(), String> {
+pub(crate) fn validate_cwd(cwd: &str) -> Result<(), AtlasError> {
     if cwd.is_empty() {
-        return Err("Working directory cannot be empty".to_string());
+        return Err(AtlasError::invalid_input(
+            "Working directory cannot be empty",
+        ));
     }
     let path = std::path::Path::new(cwd);
     if !path.is_absolute() {
-        return Err("Working directory must be an absolute path".to_string());
+        return Err(AtlasError::invalid_input(
+            "Working directory must be an absolute path",
+        ));
     }
     if !path.is_dir() {
-        return Err(format!("Working directory does not exist: {}", cwd));
+        return Err(AtlasError::not_found(format!(
+            "Working directory does not exist: {cwd}"
+        )));
     }
     Ok(())
 }
 
-pub(crate) fn validate_branch_name(branch: &str) -> Result<(), String> {
+pub(crate) fn validate_branch_name(branch: &str) -> Result<(), AtlasError> {
     if branch.is_empty() {
-        return Err("Branch name cannot be empty".to_string());
+        return Err(AtlasError::invalid_input("Branch name cannot be empty"));
     }
     if branch.starts_with('-') {
-        return Err("Branch name cannot start with '-'".to_string());
+        return Err(AtlasError::invalid_input(
+            "Branch name cannot start with '-'",
+        ));
     }
     if branch.contains("..") {
-        return Err("Branch name cannot contain '..'".to_string());
+        return Err(AtlasError::invalid_input("Branch name cannot contain '..'"));
     }
     if branch.ends_with(".lock") {
-        return Err("Branch name cannot end with '.lock'".to_string());
+        return Err(AtlasError::invalid_input(
+            "Branch name cannot end with '.lock'",
+        ));
     }
     let invalid_chars = [' ', '~', '^', ':', '?', '*', '[', '\\', '\x7f'];
     for ch in invalid_chars {
         if branch.contains(ch) {
-            return Err(format!("Branch name contains invalid character '{}'", ch));
+            return Err(AtlasError::invalid_input(format!(
+                "Branch name contains invalid character '{ch}'"
+            )));
         }
     }
     if branch.bytes().any(|b| b < 0x20 || b == 0x7f) {
-        return Err("Branch name contains control characters".to_string());
+        return Err(AtlasError::invalid_input(
+            "Branch name contains control characters",
+        ));
     }
     Ok(())
 }

@@ -30,6 +30,7 @@
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
   import DiffFileCard from "./DiffFileCard.svelte";
   import DiffFileTree from "./DiffFileTree.svelte";
+  import { errorMessage } from "../../ipc-error";
 
   interface Props {
     /** Bound to `diffOpen`. The drawer unmounts itself once the exit run ends. */
@@ -85,7 +86,7 @@
       })
       .catch((e) => {
         // A background refresh should not toast, but it should leave a trace.
-        log.warn("changes", `panel refresh failed for tab=${id}: ${e}`);
+        log.warn("changes", `panel refresh failed for tab=${id}: ${errorMessage(e)}`);
       });
   });
 

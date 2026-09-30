@@ -38,6 +38,7 @@
   import { openFiles, sources } from "../../stores/file-tabs";
   import { openDialogOpen } from "../../stores/view";
   import { activeWorkspacePath, visibleWorkspaces } from "../../stores/workspace";
+  import { errorMessage } from "../../ipc-error";
 
   /** The tree filter. Matches on file and folder names, not on file contents. */
   let query = $state("");
@@ -137,9 +138,13 @@
     const ws = $fileWs;
     void loadDocs(ws);
     if (!ws) return;
-    startDocsWatch(ws).catch((e) => log.warn("files", `startDocsWatch failed for ${ws}: ${e}`));
+    startDocsWatch(ws).catch((e) =>
+      log.warn("files", `startDocsWatch failed for ${ws}: ${errorMessage(e)}`),
+    );
     return () => {
-      stopDocsWatch(ws).catch((e) => log.warn("files", `stopDocsWatch failed for ${ws}: ${e}`));
+      stopDocsWatch(ws).catch((e) =>
+        log.warn("files", `stopDocsWatch failed for ${ws}: ${errorMessage(e)}`),
+      );
     };
   });
 
@@ -160,7 +165,7 @@
         if (stopped) fn();
         else unlisten = fn;
       })
-      .catch((e) => log.warn("files", `could not listen for doc changes: ${e}`));
+      .catch((e) => log.warn("files", `could not listen for doc changes: ${errorMessage(e)}`));
     return () => {
       stopped = true;
       unlisten?.();

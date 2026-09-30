@@ -1,5 +1,5 @@
 <script module lang="ts">
-  /** Matches `SessionState` in `src/types/session.ts` (`needsYou` → `needs`). */
+  /** Matches `SessionState` in `src/types/generated/SessionState.ts` (`needsYou` → `needs`). */
   export type PillState = "running" | "needs" | "idle" | "error";
 </script>
 

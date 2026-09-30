@@ -14,6 +14,7 @@ use super::live::{
     TranscriptLine, MAX_LINES, REPLY_SUMMARY,
 };
 use crate::commands::stats::{merge_model_data, SessionRecord};
+use crate::error::AtlasError;
 use crate::transcript::{
     activity_slot, context_pct, jsonl_lines, model_family, ActivityLog, ModelSessionData,
 };
@@ -813,7 +814,7 @@ fn file_mtime_size(path: &Path) -> (u64, u64) {
 /// Parse one OMP session transcript into the same `SessionRecord` shape
 /// `commands::stats::parse_session` builds for Claude Code, one pass, so the
 /// dashboard can fold both harnesses into one set of totals.
-pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
+pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, AtlasError> {
     let (mtime, size) = file_mtime_size(path);
     let mut session_id = path
         .file_stem()
@@ -821,7 +822,7 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
         .unwrap_or("")
         .to_string();
 
-    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let file = std::fs::File::open(path).map_err(|e| AtlasError::io_at(path, &e))?;
     let reader = std::io::BufReader::new(file);
 
     let mut title: Option<String> = None;

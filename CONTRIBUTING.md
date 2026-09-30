@@ -18,6 +18,7 @@ CI runs exactly these; run them locally first.
 # repo root
 pnpm check && pnpm lint && pnpm format:check && pnpm test && pnpm build
 node scripts/check-versions.mjs
+node scripts/check-generated.mjs
 
 # src-tauri/
 cargo fmt --check
@@ -31,8 +32,13 @@ cargo test
 
 - One logical change per commit; the message says why.
 - A bug fix comes with a test that fails without it.
-- The IPC contract is three files that change together: `src-tauri/src/commands/*`,
-  `src/lib/ipc.ts` and `src/types/*`.
+- The IPC contract is `src-tauri/src/commands/*` and `src/lib/ipc.ts`. Every type that
+  crosses it derives `TS` with `#[ts(export)]`; `cargo test` (in `src-tauri/`) writes the
+  TypeScript to `src/types/generated/`, which is committed and never hand-edited.
+  `node scripts/check-generated.mjs` regenerates it from scratch and fails if the tree differs.
+- A command rejects with `AtlasError` (`src-tauri/src/error.rs`); the webview sees an
+  `IpcError` with its `kind` and `message` (`src/lib/ipc-error.ts`). Branch on `kind`, never
+  on message text.
 - The app version lives in `package.json`, `src-tauri/Cargo.toml` and
   `src-tauri/tauri.conf.json`; `scripts/check-versions.mjs` fails if they differ.
 - Windows is a supported target but is only exercised by CI; say so in a PR when you change

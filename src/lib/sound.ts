@@ -1,4 +1,5 @@
 import { log } from "./logger";
+import { errorMessage } from "./ipc-error";
 
 /** One context for the app's lifetime: browsers cap how many can exist, and a
  *  new one per ping would also start suspended each time. */
@@ -34,6 +35,6 @@ export function playPing(): void {
     osc.start(now);
     osc.stop(now + PING_SECONDS);
   } catch (e) {
-    log.warn("sound", `could not play the needs-you ping: ${e}`);
+    log.warn("sound", `could not play the needs-you ping: ${errorMessage(e)}`);
   }
 }

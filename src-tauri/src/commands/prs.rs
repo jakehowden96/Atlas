@@ -1,4 +1,5 @@
 use super::proc::no_window;
+use crate::error::AtlasError;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::process::{Command, ExitStatus, Output, Stdio};
@@ -6,11 +7,35 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{OnceCell, Semaphore};
 use tokio::task::JoinSet;
+use ts_rs::TS;
+
+/// The combined state of a pull request's checks.
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, TS)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum CiState {
+    Passed,
+    Failed,
+    Pending,
+    None,
+}
+
+/// Where a pull request stands with its reviewers.
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, TS)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewState {
+    Approved,
+    ChangesRequested,
+    ReviewRequired,
+    None,
+}
 
 /// One open pull request. We over-fetch from gh and then collapse the noisy
 /// `statusCheckRollup` / `reviewDecision` / `comments` fields into small
 /// scalars the UI can switch on directly.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct Pr {
     pub number: u64,
@@ -24,10 +49,8 @@ pub struct Pr {
     /// nothing about which commit a local branch of that name points at.
     pub is_cross_repository: bool,
     pub head_ref_name: String,
-    /// "passed" | "failed" | "pending" | "none"
-    pub ci_state: String,
-    /// "approved" | "changes_requested" | "review_required" | "none"
-    pub review_state: String,
+    pub ci_state: CiState,
+    pub review_state: ReviewState,
     /// Logins of individually requested reviewers. Team requests carry no
     /// login and are dropped — "Needs my review" matches the viewer's login.
     pub review_request_logins: Vec<String>,
@@ -60,7 +83,8 @@ struct RawPr {
     comments: Vec<serde_json::Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(export)]
 pub struct PrAuthor {
     #[serde(default)]
     pub login: String,
@@ -69,9 +93,9 @@ pub struct PrAuthor {
 /// Collapse `gh`'s mixed StatusContext + CheckRun rollup into a single state.
 /// Any failure dominates; otherwise any in-progress means pending; otherwise
 /// if every check is good it's "passed"; an empty rollup is "none".
-fn rollup_ci_state(checks: &[serde_json::Value]) -> &'static str {
+fn rollup_ci_state(checks: &[serde_json::Value]) -> CiState {
     if checks.is_empty() {
-        return "none";
+        return CiState::None;
     }
     let mut any_pending = false;
     let mut any_success = false;
@@ -80,7 +104,9 @@ fn rollup_ci_state(checks: &[serde_json::Value]) -> &'static str {
         // StatusContext: state="SUCCESS"/"FAILURE"/"ERROR"/"PENDING"
         if let Some(conclusion) = c.get("conclusion").and_then(|v| v.as_str()) {
             match conclusion {
-                "FAILURE" | "TIMED_OUT" | "ACTION_REQUIRED" | "STARTUP_FAILURE" => return "failed",
+                "FAILURE" | "TIMED_OUT" | "ACTION_REQUIRED" | "STARTUP_FAILURE" => {
+                    return CiState::Failed
+                }
                 "CANCELLED" => {}
                 "SUCCESS" => any_success = true,
                 "NEUTRAL" | "SKIPPED" => {}
@@ -96,7 +122,7 @@ fn rollup_ci_state(checks: &[serde_json::Value]) -> &'static str {
             }
         } else if let Some(state) = c.get("state").and_then(|v| v.as_str()) {
             match state {
-                "FAILURE" | "ERROR" => return "failed",
+                "FAILURE" | "ERROR" => return CiState::Failed,
                 "PENDING" | "EXPECTED" => any_pending = true,
                 "SUCCESS" => any_success = true,
                 _ => {}
@@ -104,20 +130,20 @@ fn rollup_ci_state(checks: &[serde_json::Value]) -> &'static str {
         }
     }
     if any_pending {
-        "pending"
+        CiState::Pending
     } else if any_success {
-        "passed"
+        CiState::Passed
     } else {
-        "none"
+        CiState::None
     }
 }
 
-fn map_review(decision: &str) -> &'static str {
+fn map_review(decision: &str) -> ReviewState {
     match decision {
-        "APPROVED" => "approved",
-        "CHANGES_REQUESTED" => "changes_requested",
-        "REVIEW_REQUIRED" => "review_required",
-        _ => "none",
+        "APPROVED" => ReviewState::Approved,
+        "CHANGES_REQUESTED" => ReviewState::ChangesRequested,
+        "REVIEW_REQUIRED" => ReviewState::ReviewRequired,
+        _ => ReviewState::None,
     }
 }
 
@@ -143,8 +169,8 @@ fn flatten(raw: RawPr) -> Pr {
         is_draft: raw.is_draft,
         is_cross_repository: raw.is_cross_repository,
         head_ref_name: raw.head_ref_name,
-        ci_state: rollup_ci_state(&raw.status_check_rollup).to_string(),
-        review_state: map_review(&raw.review_decision).to_string(),
+        ci_state: rollup_ci_state(&raw.status_check_rollup),
+        review_state: map_review(&raw.review_decision),
         review_request_logins: review_request_logins(&raw.review_requests),
         comments_count: raw.comments.len() as u32,
     }
@@ -153,7 +179,8 @@ fn flatten(raw: RawPr) -> Pr {
 /// Why a `gh` call produced nothing. The first two are things the user fixes
 /// outside Atlas (install, sign in), so the UI shows the fix rather than gh's
 /// raw output.
-#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, TS)]
+#[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum GhErrorKind {
     /// No `gh` on PATH.
@@ -166,7 +193,8 @@ pub enum GhErrorKind {
     Failed,
 }
 
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, TS)]
+#[ts(export)]
 pub struct GhError {
     pub kind: GhErrorKind,
     pub message: String,
@@ -181,9 +209,23 @@ impl GhError {
     }
 }
 
+/// A `gh` failure that a command (unlike the PR list) has to reject with.
+impl From<GhError> for AtlasError {
+    fn from(error: GhError) -> Self {
+        match error.kind {
+            GhErrorKind::NotInstalled => AtlasError::tool_missing("gh", error.message),
+            GhErrorKind::TimedOut => AtlasError::timeout("gh", error.message),
+            GhErrorKind::NotAuthenticated | GhErrorKind::Failed => {
+                AtlasError::tool_failed("gh", error.message)
+            }
+        }
+    }
+}
+
 /// Per-repo result. `error` describes a failed `gh` call so the UI can show
 /// "this one repo broke" without poisoning the whole snapshot.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, TS)]
+#[ts(export)]
 pub struct RepoPrs {
     pub repo: String,
     pub prs: Vec<Pr>,
@@ -194,26 +236,34 @@ pub struct RepoPrs {
 /// constraints (letters, digits, dot, underscore, hyphen) — keeps stray shell
 /// metacharacters out of the `--repo` argument even though we never go through
 /// a shell.
-pub(crate) fn validate_repo_slug(slug: &str) -> Result<(), String> {
+pub(crate) fn validate_repo_slug(slug: &str) -> Result<(), AtlasError> {
     if slug.is_empty() {
-        return Err("Repo slug cannot be empty".to_string());
+        return Err(AtlasError::invalid_input("Repo slug cannot be empty"));
     }
     let parts: Vec<&str> = slug.split('/').collect();
     if parts.len() != 2 {
-        return Err(format!("Expected owner/repo, got '{}'", slug));
+        return Err(AtlasError::invalid_input(format!(
+            "Expected owner/repo, got '{slug}'"
+        )));
     }
     for part in &parts {
         if *part == "." || *part == ".." {
-            return Err(format!("Invalid path segment in '{}'", slug));
+            return Err(AtlasError::invalid_input(format!(
+                "Invalid path segment in '{slug}'"
+            )));
         }
         if part.is_empty() {
-            return Err(format!("Empty owner or repo in '{}'", slug));
+            return Err(AtlasError::invalid_input(format!(
+                "Empty owner or repo in '{slug}'"
+            )));
         }
         if !part
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
         {
-            return Err(format!("Invalid characters in '{}'", slug));
+            return Err(AtlasError::invalid_input(format!(
+                "Invalid characters in '{slug}'"
+            )));
         }
     }
     Ok(())
@@ -329,7 +379,9 @@ fn run_gh(
 }
 
 fn fetch_one(program: &str, repo: &str) -> RepoPrs {
-    let result = validate_repo_slug(repo).map_err(GhError::failed).and_then(|()| {
+    let result = validate_repo_slug(repo)
+        .map_err(|e| GhError::failed(e.message()))
+        .and_then(|()| {
         let stdout = run_gh(
             program,
             None,
@@ -368,7 +420,7 @@ fn fetch_one(program: &str, repo: &str) -> RepoPrs {
 /// failures land in `error` rather than propagating, so the UI can render the
 /// partial snapshot. Order of the returned vec matches the input order.
 #[tauri::command(async)]
-pub async fn list_repo_prs(repos: Vec<String>) -> Result<Vec<RepoPrs>, String> {
+pub async fn list_repo_prs(repos: Vec<String>) -> Result<Vec<RepoPrs>, AtlasError> {
     if repos.is_empty() {
         return Ok(vec![]);
     }
@@ -381,8 +433,8 @@ pub async fn list_repo_prs(repos: Vec<String>) -> Result<Vec<RepoPrs>, String> {
             let result = match permits.acquire_owned().await {
                 Ok(_permit) => tokio::task::spawn_blocking(move || fetch_one("gh", &repo))
                     .await
-                    .map_err(|e| format!("Task join error: {}", e)),
-                Err(e) => Err(format!("Task join error: {}", e)),
+                    .map_err(AtlasError::from),
+                Err(e) => Err(AtlasError::internal(format!("gh semaphore closed: {e}"))),
             };
             (index, result)
         });
@@ -390,7 +442,7 @@ pub async fn list_repo_prs(repos: Vec<String>) -> Result<Vec<RepoPrs>, String> {
 
     let mut results: Vec<Option<RepoPrs>> = Vec::new();
     while let Some(joined) = set.join_next().await {
-        let (index, result) = joined.map_err(|e| format!("Task join error: {}", e))?;
+        let (index, result) = joined?;
         let repo_prs = result?;
         if results.len() <= index {
             results.resize_with(index + 1, || None);
@@ -402,13 +454,15 @@ pub async fn list_repo_prs(repos: Vec<String>) -> Result<Vec<RepoPrs>, String> {
 }
 
 /// The signed-in GitHub user, as reported by `gh`.
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, TS)]
+#[ts(export)]
 pub struct GhViewer {
     pub login: String,
 }
 
 /// The answer to "who is signed in": the user, or why there is none.
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, TS)]
+#[ts(export)]
 pub struct GhViewerResult {
     pub viewer: Option<GhViewer>,
     pub error: Option<GhError>,
@@ -448,13 +502,11 @@ fn fetch_viewer_login(program: &str) -> Result<String, GhError> {
 /// `gh` missing or signed out is not an error: the result says which, so the
 /// screen can show the fix and degrade to All-only meanwhile.
 #[tauri::command(async)]
-pub async fn gh_viewer() -> Result<GhViewerResult, String> {
+pub async fn gh_viewer() -> Result<GhViewerResult, AtlasError> {
     if let Some(viewer) = VIEWER.get() {
         return Ok(GhViewerResult::signed_in(viewer));
     }
-    let login = tokio::task::spawn_blocking(|| fetch_viewer_login("gh"))
-        .await
-        .map_err(|e| format!("Task join error: {}", e))?;
+    let login = tokio::task::spawn_blocking(|| fetch_viewer_login("gh")).await?;
     Ok(match login {
         Ok(login) => {
             let viewer = GhViewer { login };
@@ -471,10 +523,10 @@ pub async fn gh_viewer() -> Result<GhViewerResult, String> {
 /// A checkout fetches the PR's commits, which a large repo can take a while over.
 const GH_CHECKOUT_TIMEOUT: Duration = Duration::from_secs(120);
 
-fn checkout_pr(program: &str, cwd: &str, number: u64, repo: &str) -> Result<(), GhError> {
-    validate_repo_slug(repo).map_err(GhError::failed)?;
+fn checkout_pr(program: &str, cwd: &str, number: u64, repo: &str) -> Result<(), AtlasError> {
+    validate_repo_slug(repo)?;
     if number == 0 {
-        return Err(GhError::failed("Pull request numbers start at 1"));
+        return Err(AtlasError::invalid_input("Pull request numbers start at 1"));
     }
     // A branch of our own naming: the default is the PR's head branch name,
     // which for a fork is whatever the fork called it (`main` is common) and
@@ -493,8 +545,8 @@ fn checkout_pr(program: &str, cwd: &str, number: u64, repo: &str) -> Result<(), 
             "--branch",
             &branch,
         ],
-    )
-    .map(|_| ())
+    )?;
+    Ok(())
 }
 
 /// Check a pull request out into the repo at `cwd` with `gh pr checkout`.
@@ -503,12 +555,9 @@ fn checkout_pr(program: &str, cwd: &str, number: u64, repo: &str) -> Result<(), 
 /// works for fork PRs whose branch name only exists in the fork (or collides
 /// with a local branch that is something else).
 #[tauri::command(async)]
-pub async fn gh_pr_checkout(cwd: String, number: u64, repo: String) -> Result<(), String> {
+pub async fn gh_pr_checkout(cwd: String, number: u64, repo: String) -> Result<(), AtlasError> {
     super::validate::validate_cwd(&cwd)?;
-    tokio::task::spawn_blocking(move || checkout_pr("gh", &cwd, number, &repo))
-        .await
-        .map_err(|e| format!("Task join error: {}", e))?
-        .map_err(|e| e.message)
+    tokio::task::spawn_blocking(move || checkout_pr("gh", &cwd, number, &repo)).await?
 }
 
 /// The platform's "open this in the default handler" launcher.
@@ -540,9 +589,9 @@ fn browser_launcher(url: &str) -> Command {
 
 /// The scheme check is the guard against launching arbitrary handlers: only
 /// `https://` URLs may be opened.
-fn check_open_url(url: &str) -> Result<(), String> {
+fn check_open_url(url: &str) -> Result<(), AtlasError> {
     if !url.starts_with("https://") {
-        return Err("Only https:// URLs are allowed".to_string());
+        return Err(AtlasError::invalid_input("Only https:// URLs are allowed"));
     }
     // `cmd /C start` re-parses its command line, so a shell metacharacter in
     // the URL would escape argument quoting on Windows. The other launchers
@@ -551,7 +600,9 @@ fn check_open_url(url: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
         if url.contains(['&', '|', '^', '<', '>', '"', '%']) {
-            return Err("URL contains characters that cannot be passed to the shell".to_string());
+            return Err(AtlasError::invalid_input(
+                "URL contains characters that cannot be passed to the shell",
+            ));
         }
     }
     Ok(())
@@ -559,22 +610,24 @@ fn check_open_url(url: &str) -> Result<(), String> {
 
 /// Open an external URL in the user's default browser.
 #[tauri::command(async)]
-pub async fn open_url(url: String) -> Result<(), String> {
+pub async fn open_url(url: String) -> Result<(), AtlasError> {
     check_open_url(&url)?;
     tokio::task::spawn_blocking(move || {
-        browser_launcher(&url)
+        let mut launcher = browser_launcher(&url);
+        let tool = launcher.get_program().to_string_lossy().into_owned();
+        let status = launcher
             .status()
-            .map_err(|e| format!("Failed to open URL: {}", e))
-            .and_then(|status| {
-                if status.success() {
-                    Ok(())
-                } else {
-                    Err(format!("URL launcher exited with status {}", status))
-                }
-            })
+            .map_err(|e| AtlasError::tool_failed(&tool, format!("Failed to open URL: {e}")))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(AtlasError::tool_failed(
+                &tool,
+                format!("URL launcher exited with status {status}"),
+            ))
+        }
     })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+    .await?
 }
 
 #[cfg(test)]
@@ -624,7 +677,7 @@ mod tests {
 
     #[test]
     fn rollup_none_when_empty() {
-        assert_eq!(rollup_ci_state(&[]), "none");
+        assert_eq!(rollup_ci_state(&[]), CiState::None);
     }
 
     #[test]
@@ -634,41 +687,59 @@ mod tests {
             check("COMPLETED", "FAILURE"),
             check("COMPLETED", "SUCCESS"),
         ];
-        assert_eq!(rollup_ci_state(&checks), "failed");
+        assert_eq!(rollup_ci_state(&checks), CiState::Failed);
     }
 
     #[test]
     fn rollup_pending_when_queued() {
         let checks = vec![check("COMPLETED", "SUCCESS"), check("QUEUED", "")];
-        assert_eq!(rollup_ci_state(&checks), "pending");
+        assert_eq!(rollup_ci_state(&checks), CiState::Pending);
     }
 
     #[test]
     fn rollup_passed_when_all_success() {
         let checks = vec![check("COMPLETED", "SUCCESS"), check("COMPLETED", "SUCCESS")];
-        assert_eq!(rollup_ci_state(&checks), "passed");
+        assert_eq!(rollup_ci_state(&checks), CiState::Passed);
     }
 
     #[test]
     fn rollup_skipped_neutral_dont_count() {
         let checks = vec![check("COMPLETED", "SKIPPED"), check("COMPLETED", "NEUTRAL")];
-        assert_eq!(rollup_ci_state(&checks), "none");
+        assert_eq!(rollup_ci_state(&checks), CiState::None);
     }
 
     #[test]
     fn rollup_handles_status_context() {
-        assert_eq!(rollup_ci_state(&[ctx("SUCCESS")]), "passed");
-        assert_eq!(rollup_ci_state(&[ctx("PENDING")]), "pending");
-        assert_eq!(rollup_ci_state(&[ctx("FAILURE")]), "failed");
+        assert_eq!(rollup_ci_state(&[ctx("SUCCESS")]), CiState::Passed);
+        assert_eq!(rollup_ci_state(&[ctx("PENDING")]), CiState::Pending);
+        assert_eq!(rollup_ci_state(&[ctx("FAILURE")]), CiState::Failed);
+    }
+
+    /// The UI switches on these exact words (`ciState === "failed"`).
+    #[test]
+    fn states_serialise_as_the_words_the_ui_switches_on() {
+        assert_eq!(serde_json::json!(CiState::Passed), "passed");
+        assert_eq!(serde_json::json!(CiState::None), "none");
+        assert_eq!(
+            serde_json::json!(ReviewState::ChangesRequested),
+            "changes_requested"
+        );
+        assert_eq!(
+            serde_json::json!(ReviewState::ReviewRequired),
+            "review_required"
+        );
     }
 
     #[test]
     fn map_review_states() {
-        assert_eq!(map_review("APPROVED"), "approved");
-        assert_eq!(map_review("CHANGES_REQUESTED"), "changes_requested");
-        assert_eq!(map_review("REVIEW_REQUIRED"), "review_required");
-        assert_eq!(map_review(""), "none");
-        assert_eq!(map_review("anything-else"), "none");
+        assert_eq!(map_review("APPROVED"), ReviewState::Approved);
+        assert_eq!(
+            map_review("CHANGES_REQUESTED"),
+            ReviewState::ChangesRequested
+        );
+        assert_eq!(map_review("REVIEW_REQUIRED"), ReviewState::ReviewRequired);
+        assert_eq!(map_review(""), ReviewState::None);
+        assert_eq!(map_review("anything-else"), ReviewState::None);
     }
 
     #[test]
@@ -848,26 +919,27 @@ mod tests {
         let bin = tempfile::tempdir().unwrap();
         let gh = fake_gh(bin.path(), 4);
         let error = checkout_pr(&gh, bin.path().to_str().unwrap(), 1, "o/r").unwrap_err();
-        assert_eq!(error.kind, GhErrorKind::NotAuthenticated);
+        assert!(
+            matches!(&error, AtlasError::ToolFailed { tool, .. } if tool == "gh"),
+            "{error:?}"
+        );
     }
 
     #[test]
     fn a_checkout_rejects_a_bad_slug_or_number_before_running_gh() {
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().to_str().unwrap();
-        assert_eq!(
-            checkout_pr(NO_SUCH_GH, cwd, 1, "--upload-pack=x/y")
-                .unwrap_err()
-                .kind,
-            GhErrorKind::Failed
-        );
-        assert_eq!(
-            checkout_pr(NO_SUCH_GH, cwd, 0, "o/r").unwrap_err().kind,
-            GhErrorKind::Failed
-        );
-        assert_eq!(
-            checkout_pr(NO_SUCH_GH, cwd, 1, "o/r").unwrap_err().kind,
-            GhErrorKind::NotInstalled
-        );
+        assert!(matches!(
+            checkout_pr(NO_SUCH_GH, cwd, 1, "--upload-pack=x/y"),
+            Err(AtlasError::InvalidInput { .. })
+        ));
+        assert!(matches!(
+            checkout_pr(NO_SUCH_GH, cwd, 0, "o/r"),
+            Err(AtlasError::InvalidInput { .. })
+        ));
+        assert!(matches!(
+            checkout_pr(NO_SUCH_GH, cwd, 1, "o/r"),
+            Err(AtlasError::ToolMissing { .. })
+        ));
     }
 }

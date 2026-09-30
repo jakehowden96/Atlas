@@ -4,6 +4,7 @@ import { clearForSession, reviewComments } from "../stores/reviewComments";
 import { hasLivePty, tabs } from "../stores/terminal";
 import { showToast } from "../stores/toast";
 import { formatReviewPrompt } from "./formatPrompt";
+import { errorMessage } from "../ipc-error";
 
 /**
  * Send one session's pending review comments to its Claude PTY as a single
@@ -41,7 +42,6 @@ export async function submitReview(sessionId: string): Promise<void> {
       type: "info",
     });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    showToast("Failed to submit review", { body: msg });
+    showToast("Failed to submit review", { body: errorMessage(e) });
   }
 }

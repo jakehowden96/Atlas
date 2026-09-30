@@ -9,7 +9,7 @@
    */
   import { open as pickFolder } from "@tauri-apps/plugin-dialog";
   import { homeDir } from "@tauri-apps/api/path";
-  import type { DirEntry } from "../../../types/files";
+  import type { DirEntry } from "../../../types/generated/DirEntry";
   import { breadcrumbs, parentDir } from "../../files";
   import { filesGrant, listDir } from "../../ipc";
   import { log } from "../../logger";
@@ -17,6 +17,7 @@
   import { addSource, fileWs, openFile } from "../../stores/files";
   import { openDialogOpen } from "../../stores/view";
   import Modal from "../ui/Modal.svelte";
+  import { errorMessage } from "../../ipc-error";
 
   let dir = $state("");
   let entries = $state<DirEntry[]>([]);
@@ -57,7 +58,7 @@
       log.error("files", `listDir failed for ${dir || path}`, e);
       entries = [];
       truncated = false;
-      error = String(e);
+      error = errorMessage(e);
     }
   }
 
@@ -83,7 +84,7 @@
       openDialogOpen.set(false);
     } catch (e) {
       log.error("files", "add folder to Files failed", e);
-      showToast("Could not add that folder", { body: String(e) });
+      showToast("Could not add that folder", { body: errorMessage(e) });
     }
   }
 </script>

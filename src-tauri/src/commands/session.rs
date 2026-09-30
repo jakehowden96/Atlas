@@ -5,13 +5,15 @@ use std::time::{Duration, SystemTime};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
+use crate::error::AtlasError;
 use crate::pty::manager::PtyManager;
 use crate::session::manager::{LiveSessionManager, SessionUpdateEvent};
 use crate::session::omp;
 use crate::session::transcript::{find_transcript, is_valid_session_uuid};
+use ts_rs::TS;
 
-fn invalid_session_id(session_uuid: &str) -> String {
-    format!("invalid session id: {session_uuid:?}")
+fn invalid_session_id(session_uuid: &str) -> AtlasError {
+    AtlasError::invalid_input(format!("invalid session id: {session_uuid:?}"))
 }
 
 /// Start tailing a session's transcript. Further changes arrive as
@@ -30,7 +32,7 @@ pub async fn start_session_tail(
     session_uuid: String,
     app: AppHandle,
     manager: State<'_, LiveSessionManager>,
-) -> Result<(), String> {
+) -> Result<(), AtlasError> {
     if !is_valid_session_uuid(&session_uuid) {
         return Err(invalid_session_id(&session_uuid));
     }
@@ -44,8 +46,7 @@ pub async fn start_session_tail(
         let path = find_transcript(&uuid)?;
         manager.start_if_pending(&uuid, path)
     })
-    .await
-    .map_err(|e| e.to_string())?;
+    .await?;
 
     if let Some(session) = session {
         let _ = app.emit(
@@ -63,7 +64,7 @@ pub async fn start_session_tail(
 pub fn stop_session_tail(
     session_uuid: String,
     manager: State<'_, LiveSessionManager>,
-) -> Result<(), String> {
+) -> Result<(), AtlasError> {
     manager.stop(&session_uuid)
 }
 
@@ -80,23 +81,22 @@ pub async fn start_omp_tail(
     app: AppHandle,
     manager: State<'_, LiveSessionManager>,
     ptys: State<'_, PtyManager>,
-) -> Result<(), String> {
+) -> Result<(), AtlasError> {
     if !is_valid_session_uuid(&session_uuid) {
         return Err(invalid_session_id(&session_uuid));
     }
     let tty = ptys
         .tty_name(pty_id)
-        .ok_or_else(|| format!("no tty for pty {pty_id}"))?;
-    let agent_dir =
-        omp::agent_dir().ok_or_else(|| "could not determine home directory".to_string())?;
+        .ok_or_else(|| AtlasError::not_found(format!("no tty for pty {pty_id}")))?;
+    let agent_dir = omp::agent_dir()
+        .ok_or_else(|| AtlasError::internal("could not determine home directory"))?;
     let breadcrumb = omp::breadcrumb_path(&agent_dir, &tty);
     let since = SystemTime::now() - Duration::from_secs(2);
 
     let manager = manager.inner().clone();
     let uuid = session_uuid.clone();
-    let session = tokio::task::spawn_blocking(move || manager.watch_omp(&uuid, breadcrumb, since))
-        .await
-        .map_err(|e| e.to_string())?;
+    let session =
+        tokio::task::spawn_blocking(move || manager.watch_omp(&uuid, breadcrumb, since)).await?;
 
     if let Some(session) = session {
         let _ = app.emit(
@@ -112,7 +112,8 @@ pub async fn start_omp_tail(
 
 /// What Settings › Claude Code reports. Every field degrades to `None`/`false`
 /// rather than erroring: the section is diagnostic, not load-bearing.
-#[derive(Debug, Serialize, Default)]
+#[derive(Debug, Serialize, Default, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeInfo {
     /// Absolute path to the `claude` binary, if it is on PATH.
@@ -178,8 +179,8 @@ fn claude_version(binary: &str) -> Option<String> {
 }
 
 #[tauri::command]
-pub async fn claude_info() -> Result<ClaudeInfo, String> {
-    tokio::task::spawn_blocking(|| {
+pub async fn claude_info() -> Result<ClaudeInfo, AtlasError> {
+    Ok(tokio::task::spawn_blocking(|| {
         let binary = which_claude();
         let version = binary.as_deref().and_then(claude_version);
         ClaudeInfo {
@@ -189,6 +190,5 @@ pub async fn claude_info() -> Result<ClaudeInfo, String> {
             session_start_hook_installed: crate::claude_hook::session_start_installed(),
         }
     })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))
+    .await?)
 }

@@ -4,7 +4,9 @@
  * The join, the sort and the filter live here rather than in the components so
  * they can be unit-tested without a Svelte compiler (README → Conventions).
  */
-import type { LiveSession, SessionState, TranscriptLine } from "../types/session";
+import type { LiveSession } from "../types/generated/LiveSession";
+import type { SessionState } from "../types/generated/SessionState";
+import type { TranscriptLine } from "../types/generated/TranscriptLine";
 import type { OverviewOrdering } from "./stores/settings";
 import type { View } from "./stores/view";
 import type { DiffStats, Workspace, WorkspaceSession } from "./stores/workspace";

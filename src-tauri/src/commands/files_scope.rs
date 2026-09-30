@@ -23,6 +23,7 @@
 //! outside the folders the user opened. The content security policy is what
 //! keeps hostile script out of the webview in the first place.
 
+use crate::error::AtlasError;
 use crate::state::{read_json, StateFile};
 use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
@@ -130,49 +131,60 @@ impl FilesScope {
     /// symlinks followed, the rest appended) when it lies inside an allowed
     /// root and is not denied. Callers use the returned path, not the one they
     /// passed, so a symlink swapped in afterwards cannot redirect the access.
-    pub fn resolve(&self, path: &str) -> Result<PathBuf, String> {
+    pub fn resolve(&self, path: &str) -> Result<PathBuf, AtlasError> {
         let path = Path::new(path);
         if !path.is_absolute() {
-            return Err(format!("Path must be absolute: {}", path.display()));
+            return Err(AtlasError::invalid_input(format!(
+                "Path must be absolute: {}",
+                path.display()
+            )));
         }
         if path.components().any(|c| c == Component::ParentDir) {
-            return Err(format!("Path must not contain '..': {}", path.display()));
+            return Err(AtlasError::invalid_input(format!(
+                "Path must not contain '..': {}",
+                path.display()
+            )));
         }
-        let resolved = resolve_lenient(path).map_err(|e| format!("{}: {}", path.display(), e))?;
+        let resolved = resolve_lenient(path).map_err(|e| AtlasError::io_at(path, &e))?;
         if self.is_denied(&resolved) {
-            return Err(format!(
+            return Err(AtlasError::forbidden(format!(
                 "Atlas does not open its own state or Claude Code's settings: {}",
                 path.display()
-            ));
+            )));
         }
         if !self.roots().iter().any(|root| resolved.starts_with(root)) {
-            return Err(format!(
+            return Err(AtlasError::forbidden(format!(
                 "Not inside a workspace or a folder added to Files: {}",
                 path.display()
-            ));
+            )));
         }
         Ok(resolved)
     }
 
     /// Allow a folder the user just picked in the native dialog, for this run.
     /// The choice is persisted separately (as a workspace or a file source).
-    pub fn grant(&self, path: &str) -> Result<(), String> {
+    pub fn grant(&self, path: &str) -> Result<(), AtlasError> {
         let path = Path::new(path);
         if !path.is_absolute() {
-            return Err(format!("Path must be absolute: {}", path.display()));
+            return Err(AtlasError::invalid_input(format!(
+                "Path must be absolute: {}",
+                path.display()
+            )));
         }
-        let canonical =
-            std::fs::canonicalize(path).map_err(|e| format!("{}: {}", path.display(), e))?;
+        let canonical = std::fs::canonicalize(path).map_err(|e| AtlasError::io_at(path, &e))?;
         if !canonical.is_dir() {
-            return Err(format!("Not a folder: {}", path.display()));
+            return Err(AtlasError::invalid_input(format!(
+                "Not a folder: {}",
+                path.display()
+            )));
         }
         if self.is_denied(&canonical) {
-            return Err(format!(
+            return Err(AtlasError::forbidden(format!(
                 "Atlas does not open its own state: {}",
                 path.display()
-            ));
+            )));
         }
-        let mut granted = self.granted.lock().map_err(|e| e.to_string())?;
+        let mut granted = self.granted.lock()?;
         if !granted.contains(&canonical) {
             granted.push(canonical);
         }
@@ -215,7 +227,7 @@ fn resolve_lenient(path: &Path) -> std::io::Result<PathBuf> {
 
 /// Register a folder the user picked in the native dialog.
 #[tauri::command]
-pub fn files_grant(path: String, scope: State<'_, FilesScope>) -> Result<(), String> {
+pub fn files_grant(path: String, scope: State<'_, FilesScope>) -> Result<(), AtlasError> {
     scope.grant(&path)
 }
 
@@ -265,6 +277,30 @@ mod tests {
             .resolve(&s(&home.path().join(".claude/plans/p.md")))
             .is_ok());
         assert!(scope.resolve(&s(&other.path().join("c.md"))).is_err());
+    }
+
+    #[test]
+    fn refusals_are_forbidden_for_policy_and_invalid_input_for_malformed_paths() {
+        let (home, scope) = fixture();
+        let outside = TempDir::new().unwrap();
+        write_state(
+            &home,
+            "workspaces.json",
+            &serde_json::json!({ "workspaces": [{ "path": s(home.path()) }] }).to_string(),
+        );
+
+        let not_in_scope = scope.resolve(&s(&outside.path().join("c.md")));
+        assert!(matches!(not_in_scope, Err(AtlasError::Forbidden { .. })));
+        let denied = scope.resolve(&s(&home.path().join(".atlas/settings.json")));
+        assert!(matches!(denied, Err(AtlasError::Forbidden { .. })));
+        assert!(matches!(
+            scope.resolve("notes/a.md"),
+            Err(AtlasError::InvalidInput { .. })
+        ));
+        assert!(matches!(
+            scope.resolve(&s(&home.path().join("a/../../b.md"))),
+            Err(AtlasError::InvalidInput { .. })
+        ));
     }
 
     #[test]

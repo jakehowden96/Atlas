@@ -1,7 +1,10 @@
+use crate::error::AtlasError;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct PanelData {
     pub version: u32,
     pub timestamp: String,
@@ -13,7 +16,8 @@ pub struct PanelData {
     pub issue: Option<PanelIssue>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum PanelIssue {
     /// No `git` on PATH, so no directory can be diffed.
@@ -21,7 +25,8 @@ pub enum PanelIssue {
 }
 
 /// What a size cap left out of a diff.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Truncation {
     /// Files present in the shown text (the last may be cut part-way).
     pub shown_files: u32,
@@ -30,7 +35,8 @@ pub struct Truncation {
     pub shown_bytes: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, TS)]
+#[ts(export)]
 pub struct DiffData {
     /// A single repo's diff. Empty when `projects` is set: the per-repo diffs
     /// live only there, so a multi-repo panel does not carry them twice.
@@ -70,7 +76,8 @@ impl DiffData {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, TS)]
+#[ts(export)]
 pub struct ProjectDiff {
     pub name: String,
     pub raw: String,
@@ -81,19 +88,22 @@ pub struct ProjectDiff {
     pub truncated: Option<Truncation>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct GitStatus {
     pub has_unstaged: bool,
     pub has_staged: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct PanelUpdateEvent {
     pub session_id: String,
     pub data: PanelData,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ClaudeNotification {
     pub notification_type: String,
     pub title: String,
@@ -101,7 +111,8 @@ pub struct ClaudeNotification {
     pub timestamp: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ClaudeNotificationEvent {
     pub session_id: String,
     pub notification: ClaudeNotification,
@@ -112,13 +123,15 @@ pub struct ClaudeNotificationEvent {
 /// it always matches the id Atlas already asked for — or `"clear"` /
 /// `"compact"`, the two cases where Claude Code mints a session UUID of its
 /// own mid-tab that Atlas never chose and has to catch up with.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ClaudeSessionStart {
     pub claude_session_id: String,
     pub source: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ClaudeSessionStartEvent {
     /// Atlas's own tab id (`ATLAS_SESSION_ID`) — constant for the tab's whole
     /// life, unlike `claude_session_id`.
@@ -126,7 +139,8 @@ pub struct ClaudeSessionStartEvent {
     pub session_start: ClaudeSessionStart,
 }
 
-pub fn sessions_dir() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "Could not determine home directory".to_string())?;
+pub fn sessions_dir() -> Result<PathBuf, AtlasError> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| AtlasError::internal("Could not determine home directory"))?;
     Ok(home.join(".atlas").join("sessions"))
 }

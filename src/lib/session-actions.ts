@@ -53,6 +53,7 @@ import {
   updateSessionStatus,
   workspaces,
 } from "./stores/workspace";
+import { errorMessage } from "./ipc-error";
 
 /** Guards against double-spawning while a session is still starting. */
 const spawningSessionIds = new Set<string>();
@@ -66,7 +67,7 @@ async function endSessionTail(claudeSessionId: string | null | undefined) {
   try {
     await stopSessionTail(claudeSessionId);
   } catch (e) {
-    log.warn("session", `stopSessionTail failed for ${claudeSessionId}: ${e}`);
+    log.warn("session", `stopSessionTail failed for ${claudeSessionId}: ${errorMessage(e)}`);
   }
   removeLiveSession(claudeSessionId);
 }
@@ -79,7 +80,7 @@ export async function closeSessionTab(tabId: string) {
     try {
       await ptyKill(tab.ptyId);
     } catch (e) {
-      log.warn("session", `ptyKill failed for tab ${tabId}: ${e}`);
+      log.warn("session", `ptyKill failed for tab ${tabId}: ${errorMessage(e)}`);
     }
   }
   removeTab(tabId);
@@ -234,7 +235,7 @@ export async function spawnHarnessSession(
         await ptyWrite(current.ptyId, cmd);
       } catch (e) {
         log.error("session", `launch command write failed for tab ${tabId}`, e);
-        showToast(`Could not start ${harness.label}`, { body: String(e) });
+        showToast(`Could not start ${harness.label}`, { body: errorMessage(e) });
         updateSessionStatus(session.id, "error");
         return;
       }
@@ -246,11 +247,14 @@ export async function spawnHarnessSession(
         const kind = transcriptKind(harness);
         if (kind === "claude") {
           startSessionTail(claudeSessionId).catch((e) =>
-            log.warn("session", `startSessionTail failed for ${claudeSessionId}: ${e}`),
+            log.warn(
+              "session",
+              `startSessionTail failed for ${claudeSessionId}: ${errorMessage(e)}`,
+            ),
           );
         } else if (kind === "omp") {
           startOmpTail(claudeSessionId, current.ptyId).catch((e) =>
-            log.warn("session", `startOmpTail failed for ${claudeSessionId}: ${e}`),
+            log.warn("session", `startOmpTail failed for ${claudeSessionId}: ${errorMessage(e)}`),
           );
         }
       }
@@ -297,7 +301,7 @@ export async function handleClaudeSessionStart(tabId: string, claudeSessionId: s
   await endSessionTail(previous);
   if (get(tailTranscripts)) {
     startSessionTail(claudeSessionId).catch((e) =>
-      log.warn("session", `startSessionTail failed for ${claudeSessionId}: ${e}`),
+      log.warn("session", `startSessionTail failed for ${claudeSessionId}: ${errorMessage(e)}`),
     );
   }
 }
@@ -334,7 +338,7 @@ export function openSession(workspacePath: string, sessionId: string) {
     })
       .catch((e) => {
         log.error("session", `openSession failed for ${session.id}`, e);
-        showToast("Could not open the session", { body: String(e) });
+        showToast("Could not open the session", { body: errorMessage(e) });
       })
       .finally(() => spawningSessionIds.delete(session.id));
   }
@@ -446,7 +450,7 @@ async function answerPendingTool(sessionId: string, keystroke: string): Promise<
     await ptyWrite(tab.ptyId, keystroke);
   } catch (e) {
     log.error("session", `answerPendingTool: ptyWrite failed for tab ${sessionId}`, e);
-    showToast("Could not answer the prompt", { body: String(e) });
+    showToast("Could not answer the prompt", { body: errorMessage(e) });
     return;
   }
   setTabNeedsInput(sessionId, false);

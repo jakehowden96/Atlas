@@ -26,12 +26,15 @@ use tauri::{AppHandle, Emitter};
 use super::live::{LiveSession, SessionTail};
 use super::omp::{self, OmpTail};
 use crate::commands::stats::claude_projects_dir;
+use crate::error::AtlasError;
+use ts_rs::TS;
 
 /// Per-session gap between emits. Short enough to feel live, long enough that a
 /// burst of appends within one Claude turn collapses into one update.
 const DEBOUNCE: Duration = Duration::from_millis(250);
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct SessionUpdateEvent {
     pub session_uuid: String,
     pub session: LiveSession,
@@ -288,22 +291,22 @@ impl LiveSessionManager {
     }
 
     /// Register a session to be tailed as soon as its transcript appears.
-    pub fn expect(&self, session_uuid: &str) -> Result<(), String> {
-        let mut pending = self.pending.lock().map_err(|e| e.to_string())?;
+    pub fn expect(&self, session_uuid: &str) -> Result<(), AtlasError> {
+        let mut pending = self.pending.lock()?;
         pending.insert(session_uuid.to_string());
         Ok(())
     }
 
     /// Forget a session. Its pending registration and OMP watch go first, so a
     /// start or a resolve racing with this sees it gone and does not re-add a tail.
-    pub fn stop(&self, session_uuid: &str) -> Result<(), String> {
+    pub fn stop(&self, session_uuid: &str) -> Result<(), AtlasError> {
         if let Ok(mut pending) = self.pending.lock() {
             pending.remove(session_uuid);
         }
         if let Ok(mut watches) = self.omp_watches.lock() {
             watches.remove(session_uuid);
         }
-        let mut tails = self.tails.lock().map_err(|e| e.to_string())?;
+        let mut tails = self.tails.lock()?;
         tails.remove(session_uuid);
         Ok(())
     }
@@ -354,11 +357,11 @@ impl LiveSessionManager {
     /// The live state of a tracked session. Test-only: the UI never polls it,
     /// updates arrive as `session-update` events.
     #[cfg(test)]
-    pub fn get(&self, session_uuid: &str) -> Result<Option<LiveSession>, String> {
+    pub fn get(&self, session_uuid: &str) -> Result<Option<LiveSession>, AtlasError> {
         let Some(tracked) = self.tracked(session_uuid) else {
             return Ok(None);
         };
-        let tail = tracked.tail.lock().map_err(|e| e.to_string())?;
+        let tail = tracked.tail.lock()?;
         Ok(Some(tail.session().clone()))
     }
 
@@ -454,9 +457,9 @@ pub struct LiveWatcher(
 pub fn start_live_watcher(
     app_handle: AppHandle,
     manager: LiveSessionManager,
-) -> Result<LiveWatcher, String> {
+) -> Result<LiveWatcher, AtlasError> {
     let projects_dir = claude_projects_dir()?;
-    std::fs::create_dir_all(&projects_dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&projects_dir).map_err(|e| AtlasError::io_at(&projects_dir, &e))?;
 
     let (tx, rx) = mpsc::channel();
 
@@ -470,12 +473,9 @@ pub fn start_live_watcher(
             Err(e) => log::warn!("live session watcher error: {}", e),
         },
         notify::Config::default().with_poll_interval(Duration::from_millis(250)),
-    )
-    .map_err(|e| e.to_string())?;
+    )?;
 
-    watcher
-        .watch(&projects_dir, RecursiveMode::Recursive)
-        .map_err(|e| e.to_string())?;
+    watcher.watch(&projects_dir, RecursiveMode::Recursive)?;
 
     // OMP is optional. A failure to watch its directory must not take Claude
     // tailing down with it, and a directory that does not exist yet is added

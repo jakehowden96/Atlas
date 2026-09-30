@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyDiffMessage, truncationNotice } from "../diff-truncation";
-import type { DiffData, PanelData } from "../../types/panel";
+import type { DiffData } from "../../types/generated/DiffData";
+import type { PanelData } from "../../types/generated/PanelData";
 
 const CUT = { shown_files: 2, total_files: 9, shown_bytes: 2048 };
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import type { LiveSession, SessionState, TranscriptLine } from "../../types/session";
+import type { LiveSession } from "../../types/generated/LiveSession";
+import type { SessionState } from "../../types/generated/SessionState";
+import type { TranscriptLine } from "../../types/generated/TranscriptLine";
 import {
   activity,
   buildTiles,

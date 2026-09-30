@@ -1,5 +1,5 @@
 import { derived, writable } from "svelte/store";
-import type { LiveSession } from "../../types/session";
+import type { LiveSession } from "../../types/generated/LiveSession";
 
 /** Live state of every session Atlas is currently tailing, keyed by session UUID. */
 export const liveSessions = writable<Map<string, LiveSession>>(new Map());

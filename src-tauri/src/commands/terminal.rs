@@ -3,6 +3,7 @@ use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::State;
 
 use super::panel::cleanup_session_analysis;
+use crate::error::AtlasError;
 use crate::pty::manager::PtyManager;
 
 #[tauri::command(async)]
@@ -13,7 +14,7 @@ pub fn pty_spawn(
     cwd: Option<String>,
     env_vars: Option<HashMap<String, String>>,
     on_data: Channel<InvokeResponseBody>,
-) -> Result<u32, String> {
+) -> Result<u32, AtlasError> {
     manager.spawn(cols, rows, cwd, env_vars, on_data)
 }
 
@@ -22,7 +23,7 @@ pub fn pty_spawn(
 /// order they were sent. An `async` command would be scheduled onto the
 /// runtime's threads and two keystrokes could overtake each other.
 #[tauri::command]
-pub fn pty_write(manager: State<'_, PtyManager>, id: u32, data: Vec<u8>) -> Result<(), String> {
+pub fn pty_write(manager: State<'_, PtyManager>, id: u32, data: Vec<u8>) -> Result<(), AtlasError> {
     manager.write(id, data)
 }
 
@@ -32,7 +33,7 @@ pub fn pty_resize(
     id: u32,
     cols: u16,
     rows: u16,
-) -> Result<(), String> {
+) -> Result<(), AtlasError> {
     manager.resize(id, cols, rows)
 }
 
@@ -41,7 +42,7 @@ pub fn pty_kill(
     manager: State<'_, PtyManager>,
     id: u32,
     session_id: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), AtlasError> {
     manager.kill(id)?;
     if let Some(sid) = session_id {
         cleanup_session_analysis(&sid);

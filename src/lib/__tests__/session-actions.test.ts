@@ -32,7 +32,7 @@ import {
   workspaces,
   type WorkspaceSession,
 } from "../stores/workspace";
-import type { LiveSession } from "../../types/session";
+import type { LiveSession } from "../../types/generated/LiveSession";
 import {
   activeTabId,
   addTab,

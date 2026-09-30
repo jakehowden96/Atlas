@@ -19,6 +19,7 @@ use crate::transcript::{
     assistant_model, context_pct, line_type, request_key, tool_results, tool_uses, user_text,
     ReqData,
 };
+use ts_rs::TS;
 
 /// Transcript lines kept for the session view. The design shows the tail of the
 /// conversation, not its whole history.
@@ -40,8 +41,6 @@ const NOTE_SUMMARY: usize = 600;
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
-/// The serde mirror of the `SessionState` union in `src/types/session.ts`.
-///
 /// Claude Code's tail only ever constructs `Running` and `Idle` — its
 /// `finalize` picks between them from the transcript, which cannot see a
 /// permission prompt; `buildTiles` in `overview.ts` folds that needs-you in
@@ -49,7 +48,8 @@ const NOTE_SUMMARY: usize = 600;
 /// `ask` tool is in the transcript, so `omp::OmpTail` sets `NeedsYou` itself
 /// while one is unanswered. `Error` is produced entirely on the frontend:
 /// `pendingLive` maps a workspace row whose `status` is `"error"`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub enum SessionState {
     Running,
@@ -60,7 +60,8 @@ pub enum SessionState {
 
 /// Maps to the design's terminal line colours: `User`/`Note` → `--t-user`,
 /// `Step`/`Working` → `--t-step`, `Tool` → `--t-tool`, `Alert` → `--t-warn`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub enum LineRole {
     User,
@@ -71,7 +72,8 @@ pub enum LineRole {
     Alert,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptLine {
     pub role: LineRole,
@@ -79,7 +81,8 @@ pub struct TranscriptLine {
     pub timestamp: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanItem {
     pub text: String,
@@ -87,7 +90,8 @@ pub struct PlanItem {
     pub status: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct Subagent {
     pub task: String,
@@ -103,14 +107,16 @@ pub struct Subagent {
     pub done: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingTool {
     pub name: String,
     pub input_summary: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct LiveSession {
     pub session_uuid: String,

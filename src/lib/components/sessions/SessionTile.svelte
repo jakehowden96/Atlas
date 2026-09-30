@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import type { SessionState } from "../../../types/session";
+  import type { SessionState } from "../../../types/generated/SessionState";
   import { formatTokens } from "../../format";
   import {
     activity,

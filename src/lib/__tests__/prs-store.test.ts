@@ -26,7 +26,8 @@ import {
 } from "../stores/prs";
 import { toasts } from "../stores/toast";
 import { prRefreshMinutes, watchedRepos } from "../stores/settings";
-import type { Pr, RepoPrs } from "../../types/prs";
+import type { Pr } from "../../types/generated/Pr";
+import type { RepoPrs } from "../../types/generated/RepoPrs";
 
 const NO_VIEWER = { viewer: null, error: null };
 

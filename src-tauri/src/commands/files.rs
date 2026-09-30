@@ -7,6 +7,7 @@
 
 use super::files_scope::FilesScope;
 use super::validate::validate_cwd;
+use crate::error::AtlasError;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
@@ -15,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, State};
+use ts_rs::TS;
 
 /// The extensions the Files screen shows and edits.
 ///
@@ -62,20 +64,23 @@ const DEBOUNCE: Duration = Duration::from_millis(300);
 
 /// A workspace's documents. `truncated` says the walk hit a cap (entry count,
 /// visit count or depth), so the tree is incomplete.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, TS)]
+#[ts(export)]
 pub struct DocList {
     pub entries: Vec<DocEntry>,
     pub truncated: bool,
 }
 
 /// One folder's children; `truncated` says there were more than were returned.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, TS)]
+#[ts(export)]
 pub struct DirList {
     pub entries: Vec<DirEntry>,
     pub truncated: bool,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, TS)]
+#[ts(export)]
 pub struct DocEntry {
     /// Forward-slash path relative to the workspace root — the tree key.
     pub rel_path: String,
@@ -91,7 +96,8 @@ pub struct DocEntry {
 /// milliseconds since the Unix epoch. The editor hands that time back on save
 /// (`write_text_file_at`'s `expected_mtime`) so an edit made by someone else in
 /// between is noticed instead of overwritten.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, TS)]
+#[ts(export)]
 pub struct TextFile {
     pub contents: String,
     pub mtime: u64,
@@ -99,7 +105,8 @@ pub struct TextFile {
 
 /// How a save ended. A file that changed on disk since it was read is a normal
 /// outcome the editor resolves with the user, not an error.
-#[derive(Debug, PartialEq, serde::Serialize)]
+#[derive(Debug, PartialEq, serde::Serialize, TS)]
+#[ts(export)]
 #[serde(
     tag = "kind",
     rename_all = "camelCase",
@@ -113,7 +120,8 @@ pub enum WriteOutcome {
     Conflict { disk_mtime: Option<u64> },
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, TS)]
+#[ts(export)]
 pub struct PlanEntry {
     pub path: String,
     pub name: String,
@@ -121,7 +129,8 @@ pub struct PlanEntry {
 }
 
 /// One child of a browsed directory, for the Open… dialog.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, TS)]
+#[ts(export)]
 pub struct DirEntry {
     pub name: String,
     /// Absolute.
@@ -260,12 +269,13 @@ fn walk_docs(root: &Path, limits: &Limits) -> DocList {
 pub async fn list_workspace_docs(
     workspace_path: String,
     scope: State<'_, FilesScope>,
-) -> Result<DocList, String> {
+) -> Result<DocList, AtlasError> {
     validate_cwd(&workspace_path)?;
     scope.resolve(&workspace_path)?;
-    tokio::task::spawn_blocking(move || Ok(walk_docs(Path::new(&workspace_path), &WALK_LIMITS)))
-        .await
-        .map_err(|e| format!("Task join error: {}", e))?
+    Ok(
+        tokio::task::spawn_blocking(move || walk_docs(Path::new(&workspace_path), &WALK_LIMITS))
+            .await?,
+    )
 }
 
 /// Every child of `dir`, one level deep and unfiltered.
@@ -273,8 +283,8 @@ pub async fn list_workspace_docs(
 /// `walk_docs` recurses and keeps only documents, which is the wrong shape for
 /// a folder browser: the Open… dialog lists what is really in the folder and
 /// greys out what it cannot open, so the folder looks like itself.
-fn list_children(dir: &Path) -> Result<DirList, String> {
-    let read_dir = std::fs::read_dir(dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
+fn list_children(dir: &Path) -> Result<DirList, AtlasError> {
+    let read_dir = std::fs::read_dir(dir).map_err(|e| AtlasError::io_at(dir, &e))?;
 
     let mut entries: Vec<DirEntry> = Vec::new();
     let mut truncated = false;
@@ -314,18 +324,16 @@ fn list_children(dir: &Path) -> Result<DirList, String> {
 
 /// The contents of one directory, for the Open… dialog's browser.
 #[tauri::command(async)]
-pub async fn list_dir(path: String, scope: State<'_, FilesScope>) -> Result<DirList, String> {
+pub async fn list_dir(path: String, scope: State<'_, FilesScope>) -> Result<DirList, AtlasError> {
     validate_cwd(&path)?;
     scope.resolve(&path)?;
-    tokio::task::spawn_blocking(move || list_children(Path::new(&path)))
-        .await
-        .map_err(|e| format!("Task join error: {}", e))?
+    tokio::task::spawn_blocking(move || list_children(Path::new(&path))).await?
 }
 
-fn claude_plans_dir() -> Result<PathBuf, String> {
+fn claude_plans_dir() -> Result<PathBuf, AtlasError> {
     dirs::home_dir()
         .map(|h| h.join(".claude").join("plans"))
-        .ok_or_else(|| "Could not resolve the home directory".to_string())
+        .ok_or_else(|| AtlasError::internal("Could not resolve the home directory"))
 }
 
 /// The `.md` files directly inside `dir`. `name` is the file stem, because the
@@ -333,12 +341,12 @@ fn claude_plans_dir() -> Result<PathBuf, String> {
 /// (`c-users-me-github-atlas-atl-curried-thacker.md`), not a session id.
 /// Matching a plan to a workspace happens in the frontend, where the workspace
 /// list lives.
-fn list_plans_in(dir: &Path) -> Result<Vec<PlanEntry>, String> {
+fn list_plans_in(dir: &Path) -> Result<Vec<PlanEntry>, AtlasError> {
     let read_dir = match std::fs::read_dir(dir) {
         Ok(r) => r,
         // A fresh install has no plans directory.
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(format!("{}: {}", dir.display(), e)),
+        Err(e) => return Err(AtlasError::io_at(dir, &e)),
     };
 
     let mut plans: Vec<PlanEntry> = Vec::new();
@@ -371,22 +379,25 @@ fn list_plans_in(dir: &Path) -> Result<Vec<PlanEntry>, String> {
 }
 
 #[tauri::command(async)]
-pub fn list_claude_plans() -> Result<Vec<PlanEntry>, String> {
+pub fn list_claude_plans() -> Result<Vec<PlanEntry>, AtlasError> {
     list_plans_in(&claude_plans_dir()?)
 }
 
 /// Absolute, and one of the document extensions — the Files screen is documents
 /// only.
-fn validate_doc_path(path: &str) -> Result<PathBuf, String> {
+fn validate_doc_path(path: &str) -> Result<PathBuf, AtlasError> {
     let path = PathBuf::from(path);
     if !path.is_absolute() {
-        return Err(format!("Path must be absolute: {}", path.display()));
+        return Err(AtlasError::invalid_input(format!(
+            "Path must be absolute: {}",
+            path.display()
+        )));
     }
     if !is_doc_file(&path) {
-        return Err(format!(
+        return Err(AtlasError::invalid_input(format!(
             "Not a file type the Files screen can open: {}",
             path.display()
-        ));
+        )));
     }
     Ok(path)
 }
@@ -394,42 +405,43 @@ fn validate_doc_path(path: &str) -> Result<PathBuf, String> {
 /// The scoped, canonical path for a document: a document extension, inside an
 /// allowed root, not denied. The extension is checked on the resolved path as
 /// well, so a `.md` symlink cannot expose a file that is not a document.
-fn resolve_doc(scope: &FilesScope, path: &str) -> Result<PathBuf, String> {
+fn resolve_doc(scope: &FilesScope, path: &str) -> Result<PathBuf, AtlasError> {
     validate_doc_path(path)?;
     let resolved = scope.resolve(path)?;
     if !is_doc_file(&resolved) {
-        return Err(format!(
+        return Err(AtlasError::invalid_input(format!(
             "Not a file type the Files screen can open: {}",
             resolved.display()
-        ));
+        )));
     }
     Ok(resolved)
 }
 
-fn read_file(scope: &FilesScope, path: &str) -> Result<TextFile, String> {
+fn read_file(scope: &FilesScope, path: &str) -> Result<TextFile, AtlasError> {
     let path = resolve_doc(scope, path)?;
-    let file = std::fs::File::open(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
+    let file = std::fs::File::open(&path).map_err(|e| AtlasError::io_at(&path, &e))?;
     // A `.md` symlink to `/dev/zero` reports length 0, so check the handle is
     // a regular file, and cap the read itself rather than trusting a size that
     // can change between stat and read.
-    let metadata = file
-        .metadata()
-        .map_err(|e| format!("{}: {}", path.display(), e))?;
+    let metadata = file.metadata().map_err(|e| AtlasError::io_at(&path, &e))?;
     if !metadata.is_file() {
-        return Err(format!("{} is not a regular file", path.display()));
+        return Err(AtlasError::invalid_input(format!(
+            "{} is not a regular file",
+            path.display()
+        )));
     }
     let mut bytes = Vec::new();
     file.take(MAX_READ_BYTES + 1)
         .read_to_end(&mut bytes)
-        .map_err(|e| format!("{}: {}", path.display(), e))?;
+        .map_err(|e| AtlasError::io_at(&path, &e))?;
     if bytes.len() as u64 > MAX_READ_BYTES {
-        return Err(format!(
+        return Err(AtlasError::invalid_input(format!(
             "{} is larger than 2 MB — the editor opens files up to 2 MB",
             path.display()
-        ));
+        )));
     }
     let contents = String::from_utf8(bytes)
-        .map_err(|_| format!("{} is not a UTF-8 text file", path.display()))?;
+        .map_err(|_| AtlasError::parse(format!("{} is not a UTF-8 text file", path.display())))?;
     Ok(TextFile {
         contents,
         mtime: mtime_ms(&metadata),
@@ -437,7 +449,10 @@ fn read_file(scope: &FilesScope, path: &str) -> Result<TextFile, String> {
 }
 
 #[tauri::command(async)]
-pub fn read_text_file_at(path: String, scope: State<'_, FilesScope>) -> Result<TextFile, String> {
+pub fn read_text_file_at(
+    path: String,
+    scope: State<'_, FilesScope>,
+) -> Result<TextFile, AtlasError> {
     read_file(&scope, &path)
 }
 
@@ -503,13 +518,16 @@ fn write_file(
     path: &str,
     contents: &str,
     expected_mtime: Option<u64>,
-) -> Result<WriteOutcome, String> {
+) -> Result<WriteOutcome, AtlasError> {
     // Already canonical: a symlinked file is written through to its target
     // rather than replaced by a regular file.
     let target = resolve_doc(scope, path)?;
-    let parent = target
-        .parent()
-        .ok_or_else(|| format!("Path has no parent directory: {}", target.display()))?;
+    let parent = target.parent().ok_or_else(|| {
+        AtlasError::invalid_input(format!(
+            "Path has no parent directory: {}",
+            target.display()
+        ))
+    })?;
 
     if let Some(expected) = expected_mtime {
         match std::fs::metadata(&target) {
@@ -522,15 +540,15 @@ fn write_file(
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(WriteOutcome::Conflict { disk_mtime: None })
             }
-            Err(e) => return Err(format!("{}: {}", target.display(), e)),
+            Err(e) => return Err(AtlasError::io_at(&target, &e)),
         }
     }
 
     // New notes land in directories that may not exist yet.
-    std::fs::create_dir_all(parent).map_err(|e| format!("{}: {}", parent.display(), e))?;
+    std::fs::create_dir_all(parent).map_err(|e| AtlasError::io_at(parent, &e))?;
 
-    write_atomically(&target, contents).map_err(|e| format!("{}: {}", target.display(), e))?;
-    let meta = std::fs::metadata(&target).map_err(|e| format!("{}: {}", target.display(), e))?;
+    write_atomically(&target, contents).map_err(|e| AtlasError::io_at(&target, &e))?;
+    let meta = std::fs::metadata(&target).map_err(|e| AtlasError::io_at(&target, &e))?;
     Ok(WriteOutcome::Saved {
         mtime: mtime_ms(&meta),
     })
@@ -542,7 +560,7 @@ pub fn write_text_file_at(
     contents: String,
     expected_mtime: Option<u64>,
     scope: State<'_, FilesScope>,
-) -> Result<WriteOutcome, String> {
+) -> Result<WriteOutcome, AtlasError> {
     write_file(&scope, &path, &contents, expected_mtime)
 }
 
@@ -551,7 +569,7 @@ pub fn write_text_file_at(
 /// workspace whose every session fails to spawn. It reads nothing, so it needs
 /// no file scope.
 #[tauri::command]
-pub fn validate_directory(path: String) -> Result<(), String> {
+pub fn validate_directory(path: String) -> Result<(), AtlasError> {
     validate_cwd(&path)
 }
 
@@ -560,7 +578,8 @@ pub fn validate_directory(path: String) -> Result<(), String> {
 #[derive(Default)]
 pub struct DocsWatchers(Mutex<HashMap<String, RecommendedWatcher>>);
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 struct DocsChangedEvent {
     workspace_path: String,
@@ -595,7 +614,7 @@ fn watched_rel_path(roots: &[PathBuf], path: &Path) -> Option<String> {
 fn spawn_docs_watcher(
     app: AppHandle,
     workspace_path: String,
-) -> Result<RecommendedWatcher, String> {
+) -> Result<RecommendedWatcher, AtlasError> {
     let root = PathBuf::from(&workspace_path);
     // Both spellings of the root — see `watched_rel_path`. The raw one is kept
     // first because it is what the Windows backend reports.
@@ -614,12 +633,9 @@ fn spawn_docs_watcher(
             }
         },
         notify::Config::default().with_poll_interval(Duration::from_millis(500)),
-    )
-    .map_err(|e| e.to_string())?;
+    )?;
 
-    watcher
-        .watch(&root, RecursiveMode::Recursive)
-        .map_err(|e| e.to_string())?;
+    watcher.watch(&root, RecursiveMode::Recursive)?;
 
     std::thread::spawn(move || {
         // Path -> when it was last touched. A path is announced once it has
@@ -683,11 +699,11 @@ pub fn start_docs_watch(
     app: AppHandle,
     watchers: State<'_, DocsWatchers>,
     scope: State<'_, FilesScope>,
-) -> Result<(), String> {
+) -> Result<(), AtlasError> {
     validate_cwd(&workspace_path)?;
     scope.resolve(&workspace_path)?;
     let key = watch_key(&workspace_path);
-    let mut watchers = watchers.0.lock().map_err(|e| e.to_string())?;
+    let mut watchers = watchers.0.lock()?;
     if watchers.contains_key(&key) {
         return Ok(());
     }
@@ -700,8 +716,8 @@ pub fn start_docs_watch(
 pub fn stop_docs_watch(
     workspace_path: String,
     watchers: State<'_, DocsWatchers>,
-) -> Result<(), String> {
-    let mut watchers = watchers.0.lock().map_err(|e| e.to_string())?;
+) -> Result<(), AtlasError> {
+    let mut watchers = watchers.0.lock()?;
     watchers.remove(&watch_key(&workspace_path));
     Ok(())
 }
@@ -995,7 +1011,7 @@ mod tests {
         let dir = tmp.path().join("notes.md");
         std::fs::create_dir(&dir).unwrap();
         let err = read_file(&scope, &dir.to_string_lossy()).unwrap_err();
-        assert!(err.contains("not a regular file"), "{err}");
+        assert!(matches!(err, AtlasError::InvalidInput { .. }), "{err:?}");
     }
 
     #[cfg(unix)]
@@ -1090,7 +1106,7 @@ mod tests {
         let binary = tmp.path().join("bin.md");
         std::fs::write(&binary, [0xff, 0xfe, 0x00]).unwrap();
         let err = read_file(&scope, &binary.to_string_lossy()).unwrap_err();
-        assert!(err.contains("UTF-8"), "{err}");
+        assert!(matches!(err, AtlasError::Parse { .. }), "{err:?}");
     }
 
     #[cfg(unix)]

@@ -1,4 +1,5 @@
-import type { DiffData, PanelData } from "../types/panel";
+import type { DiffData } from "../types/generated/DiffData";
+import type { PanelData } from "../types/generated/PanelData";
 import { formatBytes } from "./format";
 
 const encoder = new TextEncoder();

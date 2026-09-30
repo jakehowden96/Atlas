@@ -1,4 +1,5 @@
-import { stateSave, type StateFileName } from "./ipc";
+import type { StateFile } from "../types/generated/StateFile";
+import { stateSave } from "./ipc";
 
 export interface StatePersister {
   /**
@@ -23,7 +24,7 @@ export interface StatePersister {
  * is what makes coalescing latest-wins.
  */
 export function createStatePersister(
-  name: StateFileName,
+  name: StateFile,
   snapshot: () => unknown,
   onError: (error: unknown) => void,
 ): StatePersister {

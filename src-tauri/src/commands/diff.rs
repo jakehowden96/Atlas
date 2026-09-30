@@ -1,4 +1,5 @@
 use super::git::{git_cmd, git_raw, git_raw_capped};
+use crate::error::AtlasError;
 use crate::panel::types::Truncation;
 use std::fs;
 use std::io::Read;
@@ -162,7 +163,7 @@ fn git_diff_args<'a>(extra: &[&'a str]) -> Vec<&'a str> {
     args
 }
 
-fn git_diff(git_root: &str, extra: &[&str]) -> Result<TrackedDiff, String> {
+fn git_diff(git_root: &str, extra: &[&str]) -> Result<TrackedDiff, AtlasError> {
     let mut patch_extra = vec!["--unified=3"];
     patch_extra.extend_from_slice(extra);
     let args = git_diff_args(&patch_extra);

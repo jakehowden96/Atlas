@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import type { PanelData } from "../../types/panel";
-import type { PlanItem, Subagent } from "../../types/session";
+import type { PanelData } from "../../types/generated/PanelData";
+import type { PlanItem } from "../../types/generated/PlanItem";
+import type { Subagent } from "../../types/generated/Subagent";
 import {
   filesTouched,
   groupFilesByRepo,

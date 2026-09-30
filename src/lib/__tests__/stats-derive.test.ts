@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { DayStats, ModelStats, StatsSummary } from "../../types/stats";
+import type { DayStats } from "../../types/generated/DayStats";
+import type { ModelStats } from "../../types/generated/ModelStats";
+import type { StatsSummary } from "../../types/generated/StatsSummary";
 import {
   agoLabel,
   daySeries,
@@ -37,7 +39,6 @@ function day(over: Partial<DayStats> = {}): DayStats {
 function model(over: Partial<ModelStats> = {}): ModelStats {
   return {
     sessions: 0,
-    assistantMsgs: 0,
     userMessages: 0,
     outputTokens: 0,
     cacheCreationTokens: 0,
@@ -48,19 +49,12 @@ function model(over: Partial<ModelStats> = {}): ModelStats {
     totalSubagents: 0,
     peakContextMax: 0,
     userChars: 0,
-    msgsPerSession: 0,
     toolsPerSession: 0,
     errorRate: 0,
-    costPerSession: 0,
-    outputPerSession: 0,
     avgDurationSecs: 0,
     avgMessageChars: 0,
     subagentsPerSession: 0,
-    avgOutputPerMsg: 0,
     costPerKOutput: 0,
-    subagentPromptChars: 0,
-    subagentPromptCount: 0,
-    avgSubagentPromptChars: 0,
     ...over,
   };
 }
@@ -75,23 +69,9 @@ function summary(over: Partial<StatsSummary> = {}): StatsSummary {
     subagents: 0,
   };
   return {
-    totalSessions: 0,
-    totalUserMessages: 0,
-    totalAssistantMessages: 0,
-    peakContextOverall: 0,
-    avgPeakContext: 0,
-    totalOutputTokens: 0,
-    totalCacheCreationTokens: 0,
-    totalCostEstimate: 0,
-    totalToolErrors: 0,
-    totalSubagents: 0,
-    errorRate: 0,
     byModel: {},
     byModel30d: {},
     byModel7d: {},
-    byModelSubagents: {},
-    byModelSubagents30d: {},
-    byModelSubagents7d: {},
     toolUsage: {},
     toolErrors: {},
     toolUsage30d: {},
@@ -109,7 +89,6 @@ function summary(over: Partial<StatsSummary> = {}): StatsSummary {
     totalsPrev30d: { ...zero },
     totals7d: { ...zero },
     totalsPrev7d: { ...zero },
-    versions: [],
     generatedAt: "2026-09-08T00:00:00Z",
     ...over,
   };

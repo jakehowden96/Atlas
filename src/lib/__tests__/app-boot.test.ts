@@ -31,8 +31,8 @@ vi.mock("@tauri-apps/plugin-notification", () => ({
 }));
 import { isPermissionGranted, sendNotification } from "@tauri-apps/plugin-notification";
 import { bootApp } from "../app-boot";
+import type { ClaudeNotificationEvent } from "../../types/generated/ClaudeNotificationEvent";
 import {
-  type ClaudeNotificationEvent,
   onBackToSessions,
   onClaudeNotification,
   onClaudeSessionStart,

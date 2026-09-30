@@ -9,8 +9,8 @@ import {
   sendNotification,
 } from "@tauri-apps/plugin-notification";
 import { get } from "svelte/store";
+import type { ClaudeNotificationEvent } from "../types/generated/ClaudeNotificationEvent";
 import {
-  type ClaudeNotificationEvent,
   onBackToSessions,
   onClaudeNotification,
   onClaudeSessionStart,
@@ -28,6 +28,7 @@ import { enableNotifications, soundOnNeedsYou } from "./stores/settings";
 import { activeTabId, setTabNeedsInput } from "./stores/terminal";
 import { activeView, showView } from "./stores/view";
 import { setSessionDiffStats } from "./stores/workspace";
+import { errorMessage } from "./ipc-error";
 
 /** `notification_type`s that block on the user. `idle_prompt` is left out: it
  *  fires when Claude finishes and returns to its prompt, which needs nothing. */
@@ -57,7 +58,7 @@ async function handleNotification(event: ClaudeNotificationEvent) {
       });
     }
   } catch (e) {
-    log.warn("app", `notification failed: ${e}`);
+    log.warn("app", `notification failed: ${errorMessage(e)}`);
   }
 }
 

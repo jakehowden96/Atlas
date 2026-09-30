@@ -1,5 +1,6 @@
 use super::types::*;
 use crate::commands::validate::validate_session_id;
+use crate::error::AtlasError;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
@@ -70,9 +71,9 @@ fn emit_panel(handle: &AppHandle, session_id: String, path: &Path) {
     }
 }
 
-pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String> {
+pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, AtlasError> {
     let sessions = sessions_dir()?;
-    std::fs::create_dir_all(&sessions).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&sessions).map_err(|e| AtlasError::io_at(&sessions, &e))?;
 
     let (tx, rx) = mpsc::channel();
 
@@ -83,12 +84,9 @@ pub fn start_watcher(app_handle: AppHandle) -> Result<RecommendedWatcher, String
             }
         },
         notify::Config::default().with_poll_interval(Duration::from_millis(500)),
-    )
-    .map_err(|e| e.to_string())?;
+    )?;
 
-    watcher
-        .watch(&sessions, RecursiveMode::Recursive)
-        .map_err(|e| e.to_string())?;
+    watcher.watch(&sessions, RecursiveMode::Recursive)?;
 
     // Process events in a background thread
     let handle = app_handle.clone();

@@ -2,7 +2,8 @@
   import { getVersion } from "@tauri-apps/api/app";
   import { get } from "svelte/store";
   import { enterLabel } from "../../platform";
-  import { claudeInfo, type ClaudeInfo } from "../../ipc";
+  import type { ClaudeInfo } from "../../../types/generated/ClaudeInfo";
+  import { claudeInfo } from "../../ipc";
   import {
     ACTION_LABELS,
     ACTIONS,
@@ -61,6 +62,7 @@
   import Modal from "../ui/Modal.svelte";
   import SegmentedControl from "../ui/SegmentedControl.svelte";
   import Toggle from "../ui/Toggle.svelte";
+  import { errorMessage } from "../../ipc-error";
 
   type Section = "general" | "keyboard" | "workspaces" | "prs" | "claude" | "harnesses";
 
@@ -118,20 +120,23 @@
     try {
       await setClaudeHookEnabled(enabled);
     } catch (e) {
-      log.warn("settings", `could not ${enabled ? "install" : "remove"} the Claude hooks: ${e}`);
+      log.warn(
+        "settings",
+        `could not ${enabled ? "install" : "remove"} the Claude hooks: ${errorMessage(e)}`,
+      );
       showToast(
         enabled
           ? "Could not install the Claude Code hooks"
           : "Could not remove the Claude Code hooks",
         {
-          body: String(e),
+          body: errorMessage(e),
         },
       );
     }
     try {
       claude = await claudeInfo();
     } catch (e) {
-      log.warn("settings", `claude_info failed: ${e}`);
+      log.warn("settings", `claude_info failed: ${errorMessage(e)}`);
     }
   }
 
@@ -142,8 +147,8 @@
       await setLspTrusted(path, trusted);
       if (!trusted) await stopServersFor(path);
     } catch (e) {
-      log.warn("settings", `could not change language servers for ${path}: ${e}`);
-      showToast("Could not change language servers", { body: String(e) });
+      log.warn("settings", `could not change language servers for ${path}: ${errorMessage(e)}`);
+      showToast("Could not change language servers", { body: errorMessage(e) });
     }
   }
 
@@ -159,14 +164,14 @@
       .then((info) => (claude = info))
       .catch((e) => {
         claudeError = true;
-        log.warn("settings", `claude_info failed: ${e}`);
+        log.warn("settings", `claude_info failed: ${errorMessage(e)}`);
       });
   });
 
   $effect(() => {
     getVersion()
       .then((v) => (appVersion = v))
-      .catch((e) => log.warn("settings", `could not read the app version: ${e}`));
+      .catch((e) => log.warn("settings", `could not read the app version: ${errorMessage(e)}`));
   });
 
   // A fresh draft on every open, so an abandoned conflict does not linger.
@@ -237,7 +242,7 @@
   function addFolder() {
     addWorkspaceFolder().catch((e) => {
       log.error("settings", "add folder failed", e);
-      showToast("Could not add that folder", { body: String(e) });
+      showToast("Could not add that folder", { body: errorMessage(e) });
     });
   }
 

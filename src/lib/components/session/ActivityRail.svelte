@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { PlanEntry } from "../../../types/files";
+  import type { PlanEntry } from "../../../types/generated/PlanEntry";
   import { planWorkspace } from "../../files";
   import { formatTokens } from "../../format";
   import type { SessionTile } from "../../overview";
