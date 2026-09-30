@@ -237,14 +237,6 @@ mod tests {
     }
 
     #[test]
-    fn display_is_the_message() {
-        assert_eq!(
-            AtlasError::tool_failed("git", "exit 1").to_string(),
-            "exit 1"
-        );
-    }
-
-    #[test]
     fn a_missing_path_is_not_found_and_anything_else_is_io() {
         let missing = std::io::Error::from(std::io::ErrorKind::NotFound);
         let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);

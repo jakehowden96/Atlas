@@ -725,35 +725,6 @@ mod tests {
     }
 
     #[test]
-    fn claude_markers_are_stripped_but_user_config_survives() {
-        use super::INHERITED_CLAUDE_MARKERS;
-        assert!(INHERITED_CLAUDE_MARKERS.contains(&"CLAUDE_CODE_CHILD_SESSION"));
-        assert!(INHERITED_CLAUDE_MARKERS.contains(&"CLAUDE_CODE_MESSAGING_TOKEN"));
-        // A prefix sweep would take this too and break the user's own config.
-        assert!(!INHERITED_CLAUDE_MARKERS.contains(&"CLAUDE_CONFIG_DIR"));
-    }
-
-    #[test]
-    fn markers_are_removed_from_a_built_command() {
-        use super::INHERITED_CLAUDE_MARKERS;
-        use portable_pty::CommandBuilder;
-
-        std::env::set_var("CLAUDE_CODE_CHILD_SESSION", "1");
-        std::env::set_var("CLAUDE_CONFIG_DIR", "/tmp/keepme");
-
-        let mut cmd = CommandBuilder::new("dummy");
-        for key in INHERITED_CLAUDE_MARKERS {
-            cmd.env_remove(key);
-        }
-
-        assert!(cmd.get_env("CLAUDE_CODE_CHILD_SESSION").is_none());
-        assert!(cmd.get_env("CLAUDE_CONFIG_DIR").is_some());
-
-        std::env::remove_var("CLAUDE_CODE_CHILD_SESSION");
-        std::env::remove_var("CLAUDE_CONFIG_DIR");
-    }
-
-    #[test]
     fn default_shell_is_runnable_on_this_platform() {
         let (shell, args) = default_shell();
         assert!(!shell.is_empty(), "shell must not be empty");

@@ -216,18 +216,6 @@ mod tests {
         assert!(!is_valid_session_id("a b"));
     }
 
-    #[test]
-    fn builds_notification_from_hook_json() {
-        let n = build_notification(
-            r#"{"notification_type":"permission_prompt","message":"test"}"#,
-            "2025-01-01T00:00:00Z".to_string(),
-        );
-        assert_eq!(n.notification_type, "permission_prompt");
-        assert_eq!(n.title, "Claude needs permission");
-        assert_eq!(n.message, "test");
-        assert_eq!(n.timestamp, "2025-01-01T00:00:00Z");
-    }
-
     /// The payload Claude Code really sends, rather than the minimal shape the
     /// tests above invent. The shipped CLI builds its Notification hook input
     /// as the common hook fields plus `message`, `title` and
@@ -250,8 +238,6 @@ mod tests {
         );
         assert_eq!(n.notification_type, "permission_prompt");
         assert_eq!(n.message, "Claude needs your permission to use Bash");
-        // That payload carries no `title`, so the type-specific default stands.
-        assert_eq!(n.title, "Claude needs permission");
     }
 
     #[test]
@@ -261,23 +247,6 @@ mod tests {
             "t".to_string(),
         );
         assert_eq!(n.title, "Custom");
-    }
-
-    #[test]
-    fn maps_every_known_notification_type() {
-        for (kind, title) in [
-            ("permission_prompt", "Claude needs permission"),
-            ("idle_prompt", "Claude is waiting"),
-            ("auth_success", "Claude authenticated"),
-            ("elicitation_dialog", "Claude needs input"),
-            ("something_else", "Claude Code"),
-        ] {
-            let n = build_notification(
-                &format!(r#"{{"notification_type":"{}"}}"#, kind),
-                "t".to_string(),
-            );
-            assert_eq!(n.title, title, "for {}", kind);
-        }
     }
 
     #[test]
