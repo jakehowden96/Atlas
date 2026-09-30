@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getVersion } from "@tauri-apps/api/app";
   import { get } from "svelte/store";
   import { enterLabel } from "../../platform";
   import { claudeInfo, type ClaudeInfo } from "../../ipc";
@@ -10,12 +11,14 @@
     formatBinding,
     formatChord,
     isReachable,
+    mergeKeymap,
     parseBindingFromEvent,
     type Action,
     type Binding,
     type Keymap,
   } from "../../keymap";
   import { log } from "../../logger";
+  import { showToast } from "../../stores/toast";
   import { addWorkspaceFolder, removeWorkspaceWithUndo } from "../../session-actions";
   import { prViewer, repoSlugsByWorkspace } from "../../stores/prs";
   import {
@@ -92,6 +95,9 @@
   let section = $state<Section>("general");
   let repoDraft = $state("");
   let claude = $state<ClaudeInfo | null>(null);
+  /** Set when `claude_info` itself failed, which is not the same as "not installed". */
+  let claudeError = $state(false);
+  let appVersion = $state("");
   /** Which harness's inline form is open. */
   let editingHarnessId = $state<string | null>(null);
   /* The keymap is edited as a draft so a clash can be shown before it is
@@ -108,9 +114,19 @@
   // Atlas is running.
   $effect(() => {
     if (!$settingsOpen) return;
+    claudeError = false;
     claudeInfo()
       .then((info) => (claude = info))
-      .catch((e) => log.warn("settings", `claude_info failed: ${e}`));
+      .catch((e) => {
+        claudeError = true;
+        log.warn("settings", `claude_info failed: ${e}`);
+      });
+  });
+
+  $effect(() => {
+    getVersion()
+      .then((v) => (appVersion = v))
+      .catch((e) => log.warn("settings", `could not read the app version: ${e}`));
   });
 
   // A fresh draft on every open, so an abandoned conflict does not linger.
@@ -160,13 +176,29 @@
 
   /** Drop an action's alternate, leaving its primary alone. */
   function clearAlt(action: Action) {
-    applyChords(action, [draft[action][0]]);
+    const primary = draft[action][0];
+    if (primary) applyChords(action, [primary]);
+  }
+
+  /** Whether dropping the alternate would still be there after a restart.
+   *  `mergeKeymap` restores an alternate the defaults ship with when the stored
+   *  list is only a subset of them, so for those the button would lie. */
+  function altDroppable(action: Action): boolean {
+    const primary = draft[action][0];
+    return !!primary && mergeKeymap({ [action]: [primary] })[action].length === 1;
   }
 
   function resetAll() {
     draft = { ...DEFAULT_KEYMAP };
     recording = null;
     void resetKeymap();
+  }
+
+  function addFolder() {
+    addWorkspaceFolder().catch((e) => {
+      log.error("settings", "add folder failed", e);
+      showToast("Could not add that folder", { body: String(e) });
+    });
   }
 
   function close() {
@@ -244,7 +276,7 @@
         </button>
       {/each}
       <div class="nav-spacer"></div>
-      <div class="version">Atlas 2.0.0 · ~/.atlas</div>
+      <div class="version">Atlas {appVersion} · ~/.atlas</div>
     </nav>
 
     <div class="pane">
@@ -363,9 +395,11 @@
                     {isRecording(action, 0) ? "Press a chord…" : "Record"}
                   </button>
                   {#if draft[action].length > 1}
-                    <button type="button" class="key-btn" onclick={() => clearAlt(action)}>
-                      Drop alt
-                    </button>
+                    {#if altDroppable(action)}
+                      <button type="button" class="key-btn" onclick={() => clearAlt(action)}>
+                        Drop alt
+                      </button>
+                    {/if}
                   {:else}
                     <button
                       type="button"
@@ -448,7 +482,7 @@
                   </button>
                 </div>
               {/each}
-              <button type="button" class="add-row" onclick={() => void addWorkspaceFolder()}>
+              <button type="button" class="add-row" onclick={addFolder}>
                 <span class="add-glyph"></span>
                 Add workspace…
                 <span class="add-hint">or drop a folder anywhere in Atlas</span>
@@ -569,7 +603,8 @@
             <div class="row">
               <div class="row-text"><div class="row-title">Claude binary</div></div>
               <span class="mono-pill">
-                {claude?.binary ?? "not found on PATH"}{claude?.version
+                {claude?.binary ??
+                  (claudeError ? "could not read claude" : "not found on PATH")}{claude?.version
                   ? ` · ${claude.version}`
                   : ""}
               </span>
@@ -614,7 +649,7 @@
                       <input
                         class="field-input"
                         value={h.label}
-                        oninput={(e) =>
+                        onchange={(e) =>
                           updateHarness(h.id, {
                             label: (e.currentTarget as HTMLInputElement).value,
                           })}
@@ -625,7 +660,7 @@
                       <input
                         class="field-input mono"
                         value={h.command}
-                        oninput={(e) =>
+                        onchange={(e) =>
                           updateHarness(h.id, {
                             command: (e.currentTarget as HTMLInputElement).value,
                           })}
@@ -636,7 +671,7 @@
                       <input
                         class="field-input mono"
                         value={h.args.join(" ")}
-                        oninput={(e) =>
+                        onchange={(e) =>
                           updateHarness(h.id, {
                             args: parseHarnessArgs((e.currentTarget as HTMLInputElement).value),
                           })}

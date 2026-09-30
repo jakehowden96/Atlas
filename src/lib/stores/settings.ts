@@ -156,11 +156,14 @@ function isValidHarness(v: unknown): v is HarnessConfig {
 export const MIN_TERMINAL_FONT_SIZE = 8;
 export const MAX_TERMINAL_FONT_SIZE = 24;
 
+let dirEnsured = false;
 async function ensureDir() {
+  if (dirEnsured) return;
   const dirExists = await exists(SETTINGS_DIR, { baseDir: BaseDirectory.Home });
   if (!dirExists) {
     await mkdir(SETTINGS_DIR, { baseDir: BaseDirectory.Home });
   }
+  dirEnsured = true;
 }
 
 /**
