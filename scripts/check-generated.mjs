@@ -9,8 +9,9 @@
 //   node scripts/check-generated.mjs
 import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const dir = "src/types/generated";
 
 rmSync(`${root}${dir}`, { recursive: true, force: true });
