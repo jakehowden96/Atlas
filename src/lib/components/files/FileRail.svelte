@@ -47,14 +47,17 @@
 
   let visible = $state(false);
   let closing = $state(false);
+  /** Cancelled on reopen, or a stale exit would hide a rail that is open. */
+  let exitTimer: ReturnType<typeof setTimeout> | undefined;
 
   $effect(() => {
     if ($fileRailOpen) {
+      clearTimeout(exitTimer);
       visible = true;
       closing = false;
     } else if (visible && !closing) {
       closing = true;
-      closeWith(() => {
+      exitTimer = closeWith(() => {
         visible = false;
         closing = false;
       }, EXIT_MS);

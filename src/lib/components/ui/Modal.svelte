@@ -6,8 +6,8 @@
    * closing flag, paint the exit keyframes, and only then clear the state that
    * unmounts the node. Clearing it immediately makes the exit frame flicker.
    */
-  export function closeWith(after: () => void, ms = 200): void {
-    setTimeout(after, ms);
+  export function closeWith(after: () => void, ms = 200): ReturnType<typeof setTimeout> {
+    return setTimeout(after, ms);
   }
 </script>
 
@@ -37,9 +37,13 @@
   let panelEl = $state<HTMLDivElement | null>(null);
   /** Whatever had focus when the modal opened, so closing can hand it back. */
   let restoreTo: HTMLElement | null = null;
+  /** The pending unmount. A reopen inside the exit window must cancel it, or it
+   *  would fire later and hide a modal that is meant to be open. */
+  let exitTimer: ReturnType<typeof setTimeout> | undefined;
 
   $effect(() => {
     if (open) {
+      clearTimeout(exitTimer);
       if (!visible) restoreTo = document.activeElement as HTMLElement | null;
       visible = true;
       closing = false;
@@ -50,7 +54,7 @@
       const back = restoreTo;
       restoreTo = null;
       if (back?.isConnected) back.focus();
-      closeWith(() => {
+      exitTimer = closeWith(() => {
         visible = false;
         closing = false;
       }, EXIT_MS);
