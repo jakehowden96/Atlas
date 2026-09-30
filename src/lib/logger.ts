@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { errorMessage } from "./ipc-error";
 
 /*
  * Frontend log lines go to the backend's log sink (`log_write`), so there is one
@@ -11,7 +12,7 @@ type Level = "info" | "warn" | "error";
 
 function formatError(err: unknown): string {
   if (err instanceof Error) return `${err.message}${err.stack ? "\n" + err.stack : ""}`;
-  return String(err);
+  return errorMessage(err);
 }
 
 function write(level: Level, scope: string, message: string) {

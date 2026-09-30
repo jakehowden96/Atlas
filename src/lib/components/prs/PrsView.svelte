@@ -28,6 +28,7 @@
   import { basename, formatAgo } from "../../format";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
   import type { Pr } from "../../../types/prs";
+  import { errorMessage } from "../../ipc-error";
 
   // Track "now" so "refreshed 2m ago" ticks between polls. Fetching itself is
   // owned by the store, so the badge stays live with this view unmounted.
@@ -137,7 +138,7 @@
   }
 
   function openPr(pr: Pr) {
-    openUrl(pr.url).catch((e) => showToast("Failed to open PR", { body: String(e) }));
+    openUrl(pr.url).catch((e) => showToast("Failed to open PR", { body: errorMessage(e) }));
   }
 
   /**
@@ -169,14 +170,14 @@
       await checkoutPullRequest(path, repo, pr);
     } catch (e) {
       log.error("prs", `checkout of #${pr.number} in ${path} failed`, e);
-      showToast(`Could not check out #${pr.number}`, { body: String(e) });
+      showToast(`Could not check out #${pr.number}`, { body: errorMessage(e) });
       return;
     }
     try {
       await spawnHarnessSession(path);
     } catch (e) {
       log.error("prs", `starting a session in ${path} failed`, e);
-      showToast("Could not start a session", { body: String(e) });
+      showToast("Could not start a session", { body: errorMessage(e) });
       return;
     }
     showView("session");

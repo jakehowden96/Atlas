@@ -1,4 +1,5 @@
 import { showToast } from "./stores/toast";
+import { errorMessage } from "./ipc-error";
 
 /** Failure classes already announced this run, as `<file>:<action>`. */
 const announced = new Set<string>();
@@ -19,8 +20,8 @@ export function reportStorageFailure(
   showToast(action === "load" ? `Could not read your ${file}` : `Could not save your ${file}`, {
     body:
       action === "load"
-        ? `Starting with defaults. ${String(error)}`
-        : `Changes may be lost when Atlas closes. ${String(error)}`,
+        ? `Starting with defaults. ${errorMessage(error)}`
+        : `Changes may be lost when Atlas closes. ${errorMessage(error)}`,
   });
 }
 

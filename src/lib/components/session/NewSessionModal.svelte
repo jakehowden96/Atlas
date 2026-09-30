@@ -48,6 +48,7 @@
   import { addWorkspace, visibleWorkspaces, type Workspace } from "../../stores/workspace";
   import Modal, { closeWith } from "../ui/Modal.svelte";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
+  import { errorMessage } from "../../ipc-error";
 
   let query = $state("");
   let nav = $state<NewSessionState>({ ...INITIAL_STATE });
@@ -162,8 +163,8 @@
         if (index >= 0) nav = { ...nav, mode: "resume", column: "resume", resumeIndex: index };
       })
       .catch((e) => {
-        log.warn("session", `listResumableSessions failed for ${path}: ${e}`);
-        if (loadedFor === path) resumeError = String(e);
+        log.warn("session", `listResumableSessions failed for ${path}: ${errorMessage(e)}`);
+        if (loadedFor === path) resumeError = errorMessage(e);
       })
       .finally(() => {
         if (loadedFor === path) loadingResume = false;
@@ -258,8 +259,8 @@
       const path = await addWorkspaceFolder();
       if (path) selectPath(path);
     } catch (e) {
-      log.warn("session", `add workspace failed: ${e}`);
-      showToast("Could not add that folder", { body: String(e) });
+      log.warn("session", `add workspace failed: ${errorMessage(e)}`);
+      showToast("Could not add that folder", { body: errorMessage(e) });
     }
   }
 
@@ -285,7 +286,7 @@
     } catch (e) {
       log.error("session", `failed to start a session in ${ws.path}`, e);
       showToast("Could not start a session", {
-        body: `Nothing spawned in ${ws.name}. ${String(e)}`,
+        body: `Nothing spawned in ${ws.name}. ${errorMessage(e)}`,
       });
     }
   }

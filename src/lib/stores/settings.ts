@@ -17,6 +17,7 @@ import { openFiles, sources } from "./file-tabs";
 import { liveSessions } from "./liveSessions";
 import { tabs } from "./terminal";
 import { workspaces } from "./workspace";
+import { errorMessage } from "../ipc-error";
 
 export type OverviewOrdering = "attention" | "workspace" | "manual" | "opened";
 export type PrRefreshMinutes = 1 | 3 | 10;
@@ -436,7 +437,7 @@ export async function setTailTranscripts(value: boolean) {
           await startOmpTail(uuid, ptyId);
         }
       } catch (e) {
-        log.warn("settings", `start tail failed for ${uuid}: ${e}`);
+        log.warn("settings", `start tail failed for ${uuid}: ${errorMessage(e)}`);
       }
     }
     await persistSettings();
@@ -451,7 +452,7 @@ export async function setTailTranscripts(value: boolean) {
     try {
       await stopSessionTail(uuid);
     } catch (e) {
-      log.warn("settings", `stopSessionTail failed for ${uuid}: ${e}`);
+      log.warn("settings", `stopSessionTail failed for ${uuid}: ${errorMessage(e)}`);
     }
   }
 }

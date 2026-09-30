@@ -11,6 +11,7 @@ import { autoAddReposFromWorkspaces, prRefreshMinutes, watchedRepos } from "./se
 import { showToast } from "./toast";
 import { visibleWorkspaces } from "./workspace";
 import type { GhError, GhViewer, Pr, RepoPrs, WorkspaceRepo } from "../../types/prs";
+import { errorMessage } from "../ipc-error";
 
 export type PrFilter = "all" | "mine" | "review";
 
@@ -140,7 +141,7 @@ export async function loadWorkspaceRepos(paths: string[]): Promise<void> {
         try {
           return [path, await listWorkspaceRepos(path)] as const;
         } catch (e) {
-          log.warn("prs", `list_workspace_repos failed for ${path}: ${e}`);
+          log.warn("prs", `list_workspace_repos failed for ${path}: ${errorMessage(e)}`);
           return [path, [] as WorkspaceRepo[]] as const;
         }
       }),
@@ -180,7 +181,7 @@ async function loadViewer(): Promise<void> {
     // gh_viewer reports a missing gh in its result rather than rejecting, so
     // this is a broken IPC channel — still not worth a toast, the screen
     // degrades to All-only.
-    log.warn("prs", `gh_viewer failed: ${e}`);
+    log.warn("prs", `gh_viewer failed: ${errorMessage(e)}`);
     prViewer.set(null);
     prViewerError.set(null);
   }
@@ -209,7 +210,7 @@ export async function refreshPrs(): Promise<void> {
   } catch (e) {
     if (mine !== latestRefresh) return;
     log.error("prs", "list_repo_prs failed", e);
-    if (!lastRefreshFailed) showToast("Failed to list PRs", { body: String(e) });
+    if (!lastRefreshFailed) showToast("Failed to list PRs", { body: errorMessage(e) });
     lastRefreshFailed = true;
   } finally {
     inFlight--;

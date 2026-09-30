@@ -21,6 +21,7 @@ import { showToast } from "./stores/toast";
 import { activeBlockTints, activeXtermTheme, themeMode } from "./theme";
 import { classifyRows, detectPermissionPrompt, screenPreview, type RowBlock } from "./overview";
 import { log } from "./logger";
+import { errorMessage } from "./ipc-error";
 
 export interface TerminalSessionOptions {
   tabId: string;
@@ -130,7 +131,7 @@ export class TerminalSession {
     setTimeout(() => {
       if (this.destroyed || !this.terminal.hasSelection()) return;
       writeText(this.terminal.getSelection()).catch((e) =>
-        log.warn("terminal", `copy-on-select failed: ${e}`),
+        log.warn("terminal", `copy-on-select failed: ${errorMessage(e)}`),
       );
     }, 0);
   };
@@ -158,7 +159,7 @@ export class TerminalSession {
     this.fitAddon.fit();
     if (this.ptyId !== null && !this.exited) {
       ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows).catch((e) =>
-        log.warn("terminal", `ptyResize failed for tab=${this.tabId}: ${e}`),
+        log.warn("terminal", `ptyResize failed for tab=${this.tabId}: ${errorMessage(e)}`),
       );
     }
   }
@@ -220,7 +221,7 @@ export class TerminalSession {
       webgl.onContextLoss(() => webgl.dispose());
       this.terminal.loadAddon(webgl);
     } catch (e) {
-      log.warn("terminal", `WebGL renderer unavailable for tab=${this.tabId}: ${e}`);
+      log.warn("terminal", `WebGL renderer unavailable for tab=${this.tabId}: ${errorMessage(e)}`);
     }
 
     // After the fit addon exists — the first emission has to be able to refit.
@@ -526,8 +527,8 @@ export class TerminalSession {
     } catch (e) {
       log.error("terminal", `spawnPty failed for tab=${this.tabId}`, e);
       if (this.destroyed) return;
-      showToast("Failed to spawn terminal", { body: String(e) });
-      this.onSpawnError(String(e));
+      showToast("Failed to spawn terminal", { body: errorMessage(e) });
+      this.onSpawnError(errorMessage(e));
       return;
     }
 
@@ -575,10 +576,10 @@ export class TerminalSession {
   private writeToPty(data: string) {
     if (this.ptyId === null || this.exited) return;
     ptyWrite(this.ptyId, data).catch((e) => {
-      log.warn("terminal", `ptyWrite failed for tab=${this.tabId}: ${e}`);
+      log.warn("terminal", `ptyWrite failed for tab=${this.tabId}: ${errorMessage(e)}`);
       if (this.ptyWriteFailureShown) return;
       this.ptyWriteFailureShown = true;
-      showToast("Terminal is no longer running", { body: String(e) });
+      showToast("Terminal is no longer running", { body: errorMessage(e) });
     });
   }
 
@@ -588,8 +589,8 @@ export class TerminalSession {
    *  nothing. */
   private openLink(uri: string) {
     openUrl(uri).catch((e) => {
-      log.warn("terminal", `open_url refused ${uri}: ${e}`);
-      showToast("Could not open the link", { type: "info", body: String(e) });
+      log.warn("terminal", `open_url refused ${uri}: ${errorMessage(e)}`);
+      showToast("Could not open the link", { type: "info", body: errorMessage(e) });
     });
   }
 
@@ -637,7 +638,7 @@ export class TerminalSession {
         // failure of a streak and stay quiet until a refresh succeeds again.
         if (!this.panelRefreshFailing) {
           this.panelRefreshFailing = true;
-          log.warn("terminal", `panel refresh failed for tab=${this.tabId}: ${e}`);
+          log.warn("terminal", `panel refresh failed for tab=${this.tabId}: ${errorMessage(e)}`);
         }
       }
     }, 300);
@@ -697,7 +698,7 @@ export class TerminalSession {
               }
             })
             .catch((e) => {
-              log.warn("terminal", `getPanelData failed for tab=${this.tabId}: ${e}`);
+              log.warn("terminal", `getPanelData failed for tab=${this.tabId}: ${errorMessage(e)}`);
             });
           this.scheduleRefresh(this.currentCwd);
         } else {
@@ -727,7 +728,7 @@ export class TerminalSession {
 
   private killPty(ptyId: number) {
     ptyKill(ptyId, this.tabId).catch((e) =>
-      log.warn("terminal", `ptyKill failed for tab=${this.tabId}: ${e}`),
+      log.warn("terminal", `ptyKill failed for tab=${this.tabId}: ${errorMessage(e)}`),
     );
   }
 }

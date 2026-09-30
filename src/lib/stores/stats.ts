@@ -2,6 +2,7 @@ import { writable } from "svelte/store";
 import type { StatsSummary } from "../../types/stats";
 import { getClaudeStats, onStatsUpdate } from "../ipc";
 import { log } from "../logger";
+import { errorMessage } from "../ipc-error";
 
 /**
  * The one copy of the persisted Claude stats.
@@ -40,7 +41,7 @@ export async function reloadStats(): Promise<void> {
     statsError.set(null);
   } catch (e) {
     log.error("stats", "getClaudeStats failed", e);
-    statsError.set(e instanceof Error ? e.message : String(e));
+    statsError.set(errorMessage(e));
   } finally {
     statsLoading.set(false);
   }

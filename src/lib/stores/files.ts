@@ -22,6 +22,7 @@ import { openFiles, sources } from "./file-tabs";
 import { setFileSources, setOpenFiles } from "./settings";
 import { showToast } from "./toast";
 import { showView } from "./view";
+import { errorMessage } from "../ipc-error";
 
 /** Workspace path whose documents the tree column is showing. */
 export const fileWs = writable<string>("");
@@ -93,7 +94,7 @@ export async function loadDocs(workspacePath: string): Promise<void> {
     listError.set("");
   } catch (e) {
     log.error("files", `listWorkspaceDocs failed for ${workspacePath}`, e);
-    listError.set(`Could not list ${workspacePath}: ${String(e)}`);
+    listError.set(`Could not list ${workspacePath}: ${errorMessage(e)}`);
     docEntries.set([]);
     docsTruncated.set(false);
   }
@@ -105,7 +106,7 @@ export async function loadPlans(): Promise<void> {
     plans.set(await listClaudePlans());
   } catch (e) {
     log.error("files", "listClaudePlans failed", e);
-    listError.set(`Could not list Claude plans: ${String(e)}`);
+    listError.set(`Could not list Claude plans: ${errorMessage(e)}`);
     plans.set([]);
   }
 }
@@ -126,7 +127,7 @@ export async function loadSourceFiles(paths: string[]): Promise<void> {
       if (listing.truncated) cut.add(dir);
     } catch (e) {
       log.error("files", `listDir failed for ${dir}`, e);
-      listError.set(`Could not list ${dir}: ${String(e)}`);
+      listError.set(`Could not list ${dir}: ${errorMessage(e)}`);
       next.set(dir, []);
     }
   }
@@ -223,7 +224,7 @@ export async function loadFileText(key: string): Promise<void> {
     diskMtimes.set(key, file.mtime);
   } catch (e) {
     log.error("files", `read failed for ${key}`, e);
-    showToast("Could not open that file", { body: String(e) });
+    showToast("Could not open that file", { body: errorMessage(e) });
     setMember(unreadable, key, true);
     setDiskDoc(key, "");
   }
@@ -277,7 +278,7 @@ async function saveFile(key: string): Promise<void> {
     if (get(docs).get(key) === text) dropDoc(key);
   } catch (e) {
     log.error("files", `save failed for ${key}`, e);
-    showToast("Could not save", { body: String(e) });
+    showToast("Could not save", { body: errorMessage(e) });
   }
 }
 
@@ -342,7 +343,7 @@ function ensureQuitGuard(): void {
     })
     .catch((e) => {
       quitGuarded = false;
-      log.warn("files", `could not guard window close: ${e}`);
+      log.warn("files", `could not guard window close: ${errorMessage(e)}`);
     });
 }
 
@@ -363,7 +364,7 @@ export async function handleExternalChange(workspacePath: string, relPath: strin
     latest = await readTextFileAt(absolutePath(workspacePath, relPath));
   } catch (e) {
     // Deleted or unreadable now: keep what the editor has rather than blanking it.
-    log.warn("files", `re-read failed for ${key}: ${e}`);
+    log.warn("files", `re-read failed for ${key}: ${errorMessage(e)}`);
     return;
   }
   if (latest.contents === known) {
@@ -390,7 +391,7 @@ export async function reloadFromDisk(key: string): Promise<void> {
     diskMtimes.set(key, file.mtime);
   } catch (e) {
     log.error("files", `reload failed for ${key}`, e);
-    showToast("Could not reload that file", { body: String(e) });
+    showToast("Could not reload that file", { body: errorMessage(e) });
     return;
   }
   dropDoc(key);

@@ -10,6 +10,7 @@ import { writable } from "svelte/store";
 import { pathToFileUri } from "./files";
 import { lspSend, lspStart, lspStop, onLspExit, onLspMessage } from "./ipc";
 import { log } from "./logger";
+import { errorMessage } from "./ipc-error";
 
 export interface Transport {
   send(message: string): void;
@@ -106,7 +107,7 @@ export async function transportFor(languageId: string, root: string): Promise<Tr
         return null;
       })
       .catch((e) => {
-        log.info("lsp", `no language server for ${languageId}: ${e}`);
+        log.info("lsp", `no language server for ${languageId}: ${errorMessage(e)}`);
         starting.delete(key);
         return null;
       });
@@ -117,7 +118,9 @@ export async function transportFor(languageId: string, root: string): Promise<Tr
 
   return {
     send(message: string) {
-      lspSend(id, message).catch((e) => log.warn("lsp", `send to ${id} failed: ${e}`));
+      lspSend(id, message).catch((e) =>
+        log.warn("lsp", `send to ${id} failed: ${errorMessage(e)}`),
+      );
     },
     subscribe(handler) {
       const set = handlers.get(id) ?? new Set();
@@ -165,7 +168,7 @@ export async function stopServersFor(root: string): Promise<void> {
     try {
       await lspStop(id);
     } catch (e) {
-      log.warn("lsp", `could not stop ${id}: ${e}`);
+      log.warn("lsp", `could not stop ${id}: ${errorMessage(e)}`);
     }
   }
 }

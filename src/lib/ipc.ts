@@ -1,4 +1,4 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { Channel, type InvokeArgs, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   DirList,
@@ -14,7 +14,21 @@ import type { GhViewerResult, RepoPrs, WorkspaceRepo } from "../types/prs";
 import type { LiveSession, SessionUpdateEvent } from "../types/session";
 import type { ResumableSession, StatsSummary } from "../types/stats";
 import type { PtyExit } from "../types/terminal";
+import { toIpcError } from "./ipc-error";
 import { log } from "./logger";
+
+/**
+ * `invoke`, with every rejection turned into an `IpcError`. Backend commands
+ * reject with an `AtlasError`; anything else (a plugin, a string) becomes
+ * kind `unknown`. Nothing outside this file calls `invoke` for a command.
+ */
+async function call<T>(command: string, args?: InvokeArgs): Promise<T> {
+  try {
+    return await invoke<T>(command, args);
+  } catch (e) {
+    throw toIpcError(e);
+  }
+}
 
 /** What the PTY's output channel carries: raw bytes, then one exit message. */
 type PtyMessage = ArrayBuffer | { exit: PtyExit };
@@ -43,7 +57,7 @@ export async function ptySpawn(
 
   log.info("ipc", `ptySpawn cols=${cols} rows=${rows} cwd=${cwd ?? "default"}`);
   try {
-    const id = await invoke<number>("pty_spawn", {
+    const id = await call<number>("pty_spawn", {
       cols,
       rows,
       cwd: cwd ?? null,
@@ -61,21 +75,21 @@ export async function ptySpawn(
 const encoder = new TextEncoder();
 
 export async function ptyWrite(id: number, data: string): Promise<void> {
-  return invoke("pty_write", { id, data: Array.from(encoder.encode(data)) });
+  return call("pty_write", { id, data: Array.from(encoder.encode(data)) });
 }
 
 export async function ptyResize(id: number, cols: number, rows: number): Promise<void> {
-  return invoke("pty_resize", { id, cols, rows });
+  return call("pty_resize", { id, cols, rows });
 }
 
 export async function ptyKill(id: number, sessionId?: string): Promise<void> {
   log.info("ipc", `ptyKill id=${id} sessionId=${sessionId ?? "none"}`);
-  return invoke("pty_kill", { id, sessionId: sessionId ?? null });
+  return call("pty_kill", { id, sessionId: sessionId ?? null });
 }
 
 export async function getPanelData(sessionId: string): Promise<PanelData | null> {
   try {
-    const data = await invoke<PanelData | null>("get_panel_data", { sessionId });
+    const data = await call<PanelData | null>("get_panel_data", { sessionId });
     return data;
   } catch (e) {
     log.error("ipc", `getPanelData failed for ${sessionId}`, e);
@@ -85,7 +99,7 @@ export async function getPanelData(sessionId: string): Promise<PanelData | null>
 
 export async function refreshPanel(sessionId: string, cwd: string): Promise<PanelData | null> {
   try {
-    return await invoke("refresh_panel", { sessionId, cwd });
+    return await call("refresh_panel", { sessionId, cwd });
   } catch (e) {
     log.error("ipc", `refreshPanel failed for ${sessionId}`, e);
     throw e;
@@ -93,11 +107,11 @@ export async function refreshPanel(sessionId: string, cwd: string): Promise<Pane
 }
 
 export async function getGitStatus(cwd: string): Promise<GitStatus> {
-  return invoke("get_git_status", { cwd });
+  return call("get_git_status", { cwd });
 }
 
 export async function gitCheckoutBranch(cwd: string, branch: string): Promise<void> {
-  return invoke("git_checkout_branch", { cwd, branch });
+  return call("git_checkout_branch", { cwd, branch });
 }
 
 /**
@@ -105,11 +119,11 @@ export async function gitCheckoutBranch(cwd: string, branch: string): Promise<vo
  * otherwise the git repos one directory inside it.
  */
 export async function listWorkspaceRepos(workspacePath: string): Promise<WorkspaceRepo[]> {
-  return invoke("list_workspace_repos", { workspacePath });
+  return call("list_workspace_repos", { workspacePath });
 }
 
 export async function listRepoPrs(repos: string[]): Promise<RepoPrs[]> {
-  return invoke("list_repo_prs", { repos });
+  return call("list_repo_prs", { repos });
 }
 
 /**
@@ -118,7 +132,7 @@ export async function listRepoPrs(repos: string[]): Promise<RepoPrs[]> {
  * to All-only.
  */
 export async function ghViewer(): Promise<GhViewerResult> {
-  return invoke("gh_viewer");
+  return call("gh_viewer");
 }
 
 /**
@@ -126,11 +140,11 @@ export async function ghViewer(): Promise<GhViewerResult> {
  * fetches the PR's own commits — the only way to reach a fork's branch.
  */
 export async function ghPrCheckout(cwd: string, number: number, repo: string): Promise<void> {
-  return invoke("gh_pr_checkout", { cwd, number, repo });
+  return call("gh_pr_checkout", { cwd, number, repo });
 }
 
 export async function openUrl(url: string): Promise<void> {
-  return invoke("open_url", { url });
+  return call("open_url", { url });
 }
 
 /**
@@ -139,11 +153,11 @@ export async function openUrl(url: string): Promise<void> {
  */
 export async function startSessionTail(sessionUuid: string): Promise<void> {
   log.info("ipc", `startSessionTail ${sessionUuid}`);
-  return invoke("start_session_tail", { sessionUuid });
+  return call("start_session_tail", { sessionUuid });
 }
 
 export async function stopSessionTail(sessionUuid: string): Promise<void> {
-  return invoke("stop_session_tail", { sessionUuid });
+  return call("stop_session_tail", { sessionUuid });
 }
 
 /**
@@ -152,7 +166,7 @@ export async function stopSessionTail(sessionUuid: string): Promise<void> {
  */
 export async function startOmpTail(sessionUuid: string, ptyId: number): Promise<void> {
   log.info("ipc", `startOmpTail ${sessionUuid} ptyId=${ptyId}`);
-  return invoke("start_omp_tail", { sessionUuid, ptyId });
+  return call("start_omp_tail", { sessionUuid, ptyId });
 }
 
 /** What Settings › Claude Code reports about the local Claude Code install. */
@@ -165,7 +179,7 @@ export interface ClaudeInfo {
 
 /** Never rejects for a missing `claude` — every field degrades instead. */
 export async function claudeInfo(): Promise<ClaudeInfo> {
-  return invoke("claude_info");
+  return call("claude_info");
 }
 
 /**
@@ -174,7 +188,7 @@ export async function claudeInfo(): Promise<ClaudeInfo> {
  * rejects — leaving the file exactly as it was — when that file does not parse.
  */
 export async function setClaudeHook(enabled: boolean): Promise<void> {
-  return invoke("set_claude_hook", { enabled });
+  return call("set_claude_hook", { enabled });
 }
 
 export async function onSessionUpdate(
@@ -186,7 +200,7 @@ export async function onSessionUpdate(
 }
 
 export async function getClaudeStats(): Promise<StatsSummary> {
-  return invoke("get_claude_stats");
+  return call("get_claude_stats");
 }
 
 /**
@@ -195,7 +209,7 @@ export async function getClaudeStats(): Promise<StatsSummary> {
  * interactive picker with no machine-readable output.
  */
 export async function listResumableSessions(cwd: string): Promise<ResumableSession[]> {
-  return invoke("list_resumable_sessions", { cwd });
+  return call("list_resumable_sessions", { cwd });
 }
 
 export async function onStatsUpdate(
@@ -266,12 +280,12 @@ export async function onClaudeSessionStart(
  * `truncated` says a cap cut the walk short.
  */
 export async function listWorkspaceDocs(workspacePath: string): Promise<DocList> {
-  return invoke("list_workspace_docs", { workspacePath });
+  return call("list_workspace_docs", { workspacePath });
 }
 
 /** `~/.claude/plans/*.md`; empty — never rejects — when there are none. */
 export async function listClaudePlans(): Promise<PlanEntry[]> {
-  return invoke("list_claude_plans");
+  return call("list_claude_plans");
 }
 
 /**
@@ -281,7 +295,7 @@ export async function listClaudePlans(): Promise<PlanEntry[]> {
  * there were more.
  */
 export async function listDir(path: string): Promise<DirList> {
-  return invoke("list_dir", { path });
+  return call("list_dir", { path });
 }
 
 /**
@@ -290,12 +304,12 @@ export async function listDir(path: string): Promise<DirList> {
  * (as a workspace or a file source) is what keeps it allowed after a restart.
  */
 export async function filesGrant(path: string): Promise<void> {
-  return invoke("files_grant", { path });
+  return call("files_grant", { path });
 }
 
 /** Rejects a path that is not an existing absolute directory; reads nothing. */
 export async function validateDirectory(path: string): Promise<void> {
-  return invoke("validate_directory", { path });
+  return call("validate_directory", { path });
 }
 
 /**
@@ -306,7 +320,7 @@ export async function validateDirectory(path: string): Promise<void> {
  * Rejects anything whose extension the Files screen cannot open.
  */
 export async function readTextFileAt(path: string): Promise<TextFile> {
-  return invoke("read_text_file_at", { path });
+  return call("read_text_file_at", { path });
 }
 
 /**
@@ -323,7 +337,7 @@ export async function writeTextFileAt(
   contents: string,
   expectedMtime: number | null,
 ): Promise<WriteOutcome> {
-  return invoke("write_text_file_at", { path, contents, expectedMtime });
+  return call("write_text_file_at", { path, contents, expectedMtime });
 }
 
 /**
@@ -332,11 +346,11 @@ export async function writeTextFileAt(
  */
 export async function startDocsWatch(workspacePath: string): Promise<void> {
   log.info("ipc", `startDocsWatch ${workspacePath}`);
-  return invoke("start_docs_watch", { workspacePath });
+  return call("start_docs_watch", { workspacePath });
 }
 
 export async function stopDocsWatch(workspacePath: string): Promise<void> {
-  return invoke("stop_docs_watch", { workspacePath });
+  return call("stop_docs_watch", { workspacePath });
 }
 
 /**
@@ -369,12 +383,12 @@ export interface StateLoad {
 }
 
 export async function stateLoad(name: StateFileName): Promise<StateLoad> {
-  return invoke("state_load", { name });
+  return call("state_load", { name });
 }
 
 /** Atomic and serialised in Rust. Rejects contents that are not JSON. */
 export async function stateSave(name: StateFileName, contents: string): Promise<void> {
-  return invoke("state_save", { name, contents });
+  return call("state_save", { name, contents });
 }
 
 // ── Language servers ────────────────────────────────────────────────────────
@@ -387,17 +401,17 @@ export async function stateSave(name: StateFileName, contents: string): Promise<
  * ordinary case for most file types and is not a failure.
  */
 export async function lspStart(languageId: string, root: string): Promise<LspStart> {
-  return invoke<LspStart>("lsp_start", { languageId, root });
+  return call<LspStart>("lsp_start", { languageId, root });
 }
 
 /** Relay one JSON-RPC message. Framing happens on the Rust side. */
 export async function lspSend(id: string, message: string): Promise<void> {
-  return invoke("lsp_send", { id, message });
+  return call("lsp_send", { id, message });
 }
 
 /** Stop a server and forget its session. Idempotent. */
 export async function lspStop(id: string): Promise<void> {
-  return invoke("lsp_stop", { id });
+  return call("lsp_stop", { id });
 }
 
 /**

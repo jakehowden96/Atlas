@@ -29,6 +29,7 @@
   import { basicSetup } from "codemirror";
   import { onDestroy, untrack } from "svelte";
   import { log } from "../../logger";
+  import { errorMessage } from "../../ipc-error";
 
   interface Props {
     /** Stable identity of the document — a new value rebuilds the editor. */
@@ -150,7 +151,7 @@
       });
       log.info("lsp", `attached ${languageId} to ${forPath}`);
     } catch (e) {
-      log.warn("lsp", `could not attach a language server to ${forPath}: ${e}`);
+      log.warn("lsp", `could not attach a language server to ${forPath}: ${errorMessage(e)}`);
     }
   }
 
@@ -170,7 +171,7 @@
       // Resolves once the choice is on disk: the backend reads it from there.
       await setLspTrusted(root, true);
     } catch (e) {
-      log.warn("lsp", `could not enable language servers for ${root}: ${e}`);
+      log.warn("lsp", `could not enable language servers for ${root}: ${errorMessage(e)}`);
       return;
     }
     if (target && target === view) void attachServer(target, path, root);
