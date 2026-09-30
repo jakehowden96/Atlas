@@ -67,7 +67,7 @@ fn write_notification(
     std::fs::create_dir_all(&dir)?;
     let json = serde_json::to_string(notification)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    std::fs::write(dir.join("notification.json"), json)
+    crate::atomic_write::write_atomic(&dir.join("notification.json"), json.as_bytes())
 }
 
 /// The `session_id` and `source` of a `SessionStart` hook payload. `None`
@@ -98,7 +98,7 @@ fn write_session_start(
     std::fs::create_dir_all(&dir)?;
     let json = serde_json::to_string(session_start)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    std::fs::write(dir.join("session-id.json"), json)
+    crate::atomic_write::write_atomic(&dir.join("session-id.json"), json.as_bytes())
 }
 
 /// Shared setup for every `atlas hook <kind>` entry point: validates
@@ -310,6 +310,29 @@ mod tests {
             written,
             r#"{"notification_type":"permission_prompt","title":"Claude needs permission","message":"test","timestamp":"2025-01-01T00:00:00Z"}"#
         );
+    }
+
+    /// The watcher reads and deletes the file the moment it appears, so it must
+    /// appear whole and nothing else may be left beside it.
+    #[test]
+    fn one_shot_files_replace_atomically_and_leave_nothing_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = dir.path().join("tab-1");
+        let n = build_notification("{}", "t".to_string());
+        write_notification(dir.path(), "tab-1", &n).unwrap();
+        write_notification(dir.path(), "tab-1", &n).unwrap();
+        let s = ClaudeSessionStart {
+            claude_session_id: "id".to_string(),
+            source: "clear".to_string(),
+        };
+        write_session_start(dir.path(), "tab-1", &s).unwrap();
+
+        let mut names: Vec<_> = std::fs::read_dir(&session)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["notification.json", "session-id.json"]);
     }
 
     #[test]

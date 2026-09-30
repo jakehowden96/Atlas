@@ -1,20 +1,13 @@
 use portable_pty::{Child, MasterPty};
 use std::io::Write;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 pub struct PtySession {
     pub master: Mutex<Box<dyn MasterPty + Send>>,
     pub child: Mutex<Box<dyn Child + Send + Sync>>,
     pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
 }
-
-// SAFETY: PtySession fields are all wrapped in `Mutex`, which provides interior
-// mutability with exclusive access guarantees. `MasterPty` is `Send` but not `Sync`;
-// since every access goes through `Mutex::lock()` (which ensures only one thread
-// touches the inner value at a time), the composite type is safe to share across
-// threads. The same reasoning applies to `Box<dyn Write + Send>` in `writer`.
-// Invariant: no code path accesses the inner values without first acquiring the lock.
-unsafe impl Sync for PtySession {}
 
 impl PtySession {
     pub fn write(&self, data: &[u8]) -> Result<(), String> {
@@ -37,7 +30,30 @@ impl PtySession {
     }
 
     pub fn kill(&self) -> Result<(), String> {
-        let mut child = self.child.lock().map_err(|e| e.to_string())?;
-        child.kill().map_err(|e| e.to_string())
+        self.child
+            .lock()
+            .map_err(|e| e.to_string())?
+            .kill()
+            .map_err(|e| e.to_string())?;
+        self.reap(Duration::from_secs(1));
+        Ok(())
+    }
+
+    /// Collect the shell's exit status so it does not linger as a zombie
+    /// (dropping a child never waits). Polls for at most `timeout`, because the
+    /// shell may still be winding down when the PTY reaches EOF.
+    pub fn reap(&self, timeout: Duration) {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let Ok(mut child) = self.child.lock() else {
+                return;
+            };
+            match child.try_wait() {
+                Ok(None) if Instant::now() < deadline => {}
+                _ => return,
+            }
+            drop(child);
+            std::thread::sleep(Duration::from_millis(20));
+        }
     }
 }
