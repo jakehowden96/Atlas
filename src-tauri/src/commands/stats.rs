@@ -97,6 +97,12 @@ pub struct SessionRecord {
     /// from before this field existed, which is then attributed to its start.
     #[serde(default)]
     pub activity: Vec<ActivityBucket>,
+    /// Hashes of the assistant requests and user lines this record counted
+    /// (`line_key`). A resumed or forked session's file starts with copies of
+    /// earlier lines; whichever record counted a line first owns it, and later
+    /// files skip it, so the same request is not billed twice.
+    #[serde(default)]
+    pub request_ids: Vec<u64>,
     pub title: Option<String>,
     pub cwd: Option<String>,
     pub git_branch: Option<String>,
@@ -512,7 +518,28 @@ fn subagent_files(transcript: &Path, session_id: &str) -> Vec<PathBuf> {
     files
 }
 
+/// A 64-bit FNV-1a hash of a line's identity, `tag` telling assistant requests
+/// (`a`) from user lines (`u`) apart. Hand-rolled because the value is stored in
+/// stats.json and `DefaultHasher` makes no promise of staying the same.
+fn line_key(tag: u8, key: &str) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in std::iter::once(tag).chain(key.bytes()) {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    hash
+}
+
 pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
+    parse_session_skipping(path, &|_| false)
+}
+
+/// `parse_session`, not counting a user line or assistant request whose
+/// `line_key` `is_foreign` says another session already counted.
+fn parse_session_skipping(
+    path: &Path,
+    is_foreign: &dyn Fn(u64) -> bool,
+) -> Result<SessionRecord, String> {
     let (mtime, size) = file_mtime_size(path);
     let session_id = path
         .file_stem()
@@ -536,6 +563,7 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
     let mut user_messages: u32 = 0;
     let mut user_chars: u64 = 0;
     let mut activity = ActivityLog::default();
+    let mut owned: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
     let mut tool_errors: u32 = 0;
     let mut tool_errors_by_name: HashMap<String, u32> = HashMap::new();
     // `tool_use.id` -> tool name, so an errored `tool_result` can be charged to
@@ -564,6 +592,21 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
             Ok(v) => v,
             Err(_) => continue,
         };
+
+        let identity = match line_type(&obj) {
+            "assistant" => request_key(&obj).map(|k| line_key(b'a', &k)),
+            "user" => obj
+                .get("uuid")
+                .and_then(|v| v.as_str())
+                .map(|k| line_key(b'u', k)),
+            _ => None,
+        };
+        if let Some(id) = identity {
+            if is_foreign(id) {
+                continue;
+            }
+            owned.insert(id);
+        }
 
         // Metadata present on many line types
         if let Some(ts) = obj.get("timestamp").and_then(|v| v.as_str()) {
@@ -781,6 +824,7 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
         subagent_invocations,
         harness: None,
         activity,
+        request_ids: owned.into_iter().collect(),
         ..Default::default()
     })
 }
@@ -1304,6 +1348,17 @@ fn recompute_in(
     if let Some(omp_dir) = omp_dir.filter(|dir| dir.exists()) {
         session_files.extend(collect_omp_session_files(omp_dir));
     }
+    // Oldest first, so when a resumed or forked file repeats an earlier file's
+    // lines the earlier one is the one that counts them.
+    session_files.sort_by_cached_key(|path| (file_mtime_size(path).0, path.clone()));
+
+    // Which record counted each request or user line, seeded from everything
+    // already cached (a record about to be re-parsed keeps its own lines).
+    let mut owners: HashMap<u64, String> = cache
+        .values()
+        .flat_map(|r| r.request_ids.iter().map(|id| (*id, r.path.clone())))
+        .collect();
+
     let mut records: Vec<SessionRecord> = Vec::with_capacity(session_files.len());
     // Whether anything differs from what stats.json already holds.
     let mut changed = false;
@@ -1332,10 +1387,11 @@ fn recompute_in(
         let parsed = if is_omp {
             omp::parse_omp_session(path)
         } else {
-            parse_session(path)
+            parse_session_skipping(path, &|id| owners.get(&id).is_some_and(|p| *p != path_str))
         };
         match parsed {
             Ok(mut rec) => {
+                owners.extend(rec.request_ids.iter().map(|id| (*id, path_str.clone())));
                 // Taken before the parse, so a subagent write during it makes
                 // the next pass re-parse instead of being missed.
                 rec.sidecar_mtime = sidecar_mtime;
@@ -2374,6 +2430,36 @@ mod tests {
             rec.output_tokens
         );
         assert!(rec.activity[0].slot < rec.activity[1].slot);
+    }
+
+    /// A resumed session's file starts with copies of the earlier file's lines
+    /// (same requestIds and uuids); each request must be counted once.
+    #[test]
+    fn lines_copied_into_a_resumed_transcript_are_counted_once() {
+        let tree = Tree::new();
+        let user = r#"{"type":"user","uuid":"u1","message":{"role":"user","content":"hello"},"timestamp":"2026-01-01T00:00:00Z","cwd":"/tmp"}"#;
+        let reply = |id: &str, out: u32| {
+            format!(
+                r#"{{"type":"assistant","uuid":"x-{id}","requestId":"{id}","message":{{"model":"claude-sonnet-4-6","content":[],"usage":{{"output_tokens":{out}}}}},"timestamp":"2026-01-01T00:00:01Z","cwd":"/tmp"}}"#
+            )
+        };
+        let original = tree.session("p", "a", &[user, &reply("r1", 100)]);
+        std::fs::File::options()
+            .write(true)
+            .open(original)
+            .unwrap()
+            .set_modified(std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000))
+            .unwrap();
+        // The fork: the original's lines again, then one new request.
+        tree.session("p", "b", &[user, &reply("r1", 100), &reply("r2", 50)]);
+
+        let summary = tree.recompute();
+
+        assert_eq!(summary.total_output_tokens, 150, "r1 once, r2 once");
+        assert_eq!(summary.total_user_messages, 1, "the copied prompt once");
+
+        // Stable across a second pass that reuses the cache.
+        assert_eq!(tree.recompute().total_output_tokens, 150);
     }
 
     #[test]
