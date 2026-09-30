@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => windowApi }))
 vi.mock("../stores/toast", () => ({ showToast: vi.fn() }));
 
 import { setOpenFiles } from "../stores/settings";
-import { readTextFileAt, writeTextFileAt } from "../ipc";
+import { listWorkspaceDocs, readTextFileAt, writeTextFileAt } from "../ipc";
 import { fileKey } from "../files";
 import {
   activeFile,
@@ -35,6 +35,8 @@ import {
   handleExternalChange,
   reloadFromDisk,
   keepMine,
+  listError,
+  loadDocs,
   diskDocs,
   docs,
   loadFileText,
@@ -241,5 +243,17 @@ describe("quitting with unsaved edits", () => {
     vi.mocked(writeTextFileAt).mockRejectedValue(new Error("denied"));
     await resolveCloseRequest("save");
     expect(windowApi.destroy).not.toHaveBeenCalled();
+  });
+});
+
+describe("listing failures", () => {
+  it("reports why the tree is empty, and clears it once a listing works", async () => {
+    vi.mocked(listWorkspaceDocs).mockRejectedValueOnce("permission denied");
+    await loadDocs("/ws");
+    expect(get(listError)).toContain("permission denied");
+
+    vi.mocked(listWorkspaceDocs).mockResolvedValueOnce([]);
+    await loadDocs("/ws");
+    expect(get(listError)).toBe("");
   });
 });

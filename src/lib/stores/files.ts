@@ -65,8 +65,15 @@ export const unreadable = writable<Set<string>>(new Set());
 /** Keys with unsaved edits whose file changed on disk underneath them. */
 export const conflicts = writable<Set<string>>(new Set());
 
+/** Why the tree is empty when a listing failed; `""` when the last one worked. */
+export const listError = writable("");
+
+/** The backend stops walking a workspace at this many entries
+ *  (`MAX_ENTRIES` in `commands/files.rs`), so a list this long is cut short. */
+export const DOC_LIST_LIMIT = 2000;
+
 /** Refresh the workspace listing. A workspace that cannot be walked lists as
- *  empty rather than throwing — the tree has nowhere to show an error. */
+ *  empty and sets `listError`, which the tree shows. */
 export async function loadDocs(workspacePath: string): Promise<void> {
   if (!workspacePath) {
     docEntries.set([]);
@@ -74,8 +81,10 @@ export async function loadDocs(workspacePath: string): Promise<void> {
   }
   try {
     docEntries.set(await listWorkspaceDocs(workspacePath));
+    listError.set("");
   } catch (e) {
     log.error("files", `listWorkspaceDocs failed for ${workspacePath}`, e);
+    listError.set(`Could not list ${workspacePath}: ${String(e)}`);
     docEntries.set([]);
   }
 }
@@ -86,6 +95,7 @@ export async function loadPlans(): Promise<void> {
     plans.set(await listClaudePlans());
   } catch (e) {
     log.error("files", "listClaudePlans failed", e);
+    listError.set(`Could not list Claude plans: ${String(e)}`);
     plans.set([]);
   }
 }
@@ -103,6 +113,7 @@ export async function loadSourceFiles(paths: string[]): Promise<void> {
       );
     } catch (e) {
       log.error("files", `listDir failed for ${dir}`, e);
+      listError.set(`Could not list ${dir}: ${String(e)}`);
       next.set(dir, []);
     }
   }

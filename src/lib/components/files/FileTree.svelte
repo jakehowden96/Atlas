@@ -18,10 +18,12 @@
   import {
     activeFile,
     dirtyFiles,
+    DOC_LIST_LIMIT,
     docEntries,
     expanded,
     fileWs,
     handleExternalChange,
+    listError,
     loadDocs,
     loadPlans,
     loadSourceFiles,
@@ -260,7 +262,12 @@
     </section>
   </div>
 
-  <div class="footer">{myPlans.length} plans · {docCount} docs</div>
+  {#if $listError}<p class="list-error" role="alert">{$listError}</p>{/if}
+  <div class="footer">
+    {myPlans.length} plans · {docCount} docs{$docEntries.length >= DOC_LIST_LIMIT
+      ? " · list truncated"
+      : ""}
+  </div>
 </aside>
 
 {#snippet diskRow(path: string, name: string, depth: number)}
@@ -555,6 +562,14 @@
     height: 6px;
     border-radius: 50%;
     background: var(--text);
+  }
+
+  .list-error {
+    margin: 0;
+    padding: 6px 12px;
+    color: var(--warn);
+    font-size: var(--fs-2xs);
+    word-break: break-word;
   }
 
   .footer {

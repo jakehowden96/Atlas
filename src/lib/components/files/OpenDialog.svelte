@@ -13,6 +13,7 @@
   import { breadcrumbs, parentDir } from "../../files";
   import { listDir } from "../../ipc";
   import { log } from "../../logger";
+  import { showToast } from "../../stores/toast";
   import { addSource, fileWs, openFile } from "../../stores/files";
   import { openDialogOpen } from "../../stores/view";
   import Modal from "../ui/Modal.svelte";
@@ -45,12 +46,12 @@
    */
   async function navigate(target: string | null) {
     const path = target ?? dir ?? "";
-    dir = path || $fileWs || (await homeDir());
     try {
+      dir = path || $fileWs || (await homeDir());
       entries = await listDir(dir);
       error = "";
     } catch (e) {
-      log.error("files", `listDir failed for ${dir}`, e);
+      log.error("files", `listDir failed for ${dir || path}`, e);
       entries = [];
       error = String(e);
     }
@@ -75,6 +76,7 @@
       openDialogOpen.set(false);
     } catch (e) {
       log.error("files", "add folder to Files failed", e);
+      showToast("Could not add that folder", { body: String(e) });
     }
   }
 </script>
