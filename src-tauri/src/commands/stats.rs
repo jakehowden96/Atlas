@@ -9,6 +9,7 @@ use std::time::{Duration, Instant, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
 
 use crate::session::omp;
+use crate::session::transcript::is_valid_session_uuid;
 use crate::transcript::{
     assistant_model, jsonl_lines, line_type, model_family, request_key, requests_to_by_model,
     tool_results, tool_uses, user_text, ModelSessionData, ReqData,
@@ -1290,7 +1291,12 @@ fn resumable_for_cwd(records: &[SessionRecord], cwd: &str) -> Vec<ResumableSessi
     let mut matched: Vec<&SessionRecord> = records
         .iter()
         .filter(|r| {
-            r.harness.is_none() && r.cwd.as_deref().is_some_and(|c| normalize_path(c) == want)
+            r.harness.is_none()
+                // The id is typed into the user's shell as `--resume <id>`, so
+                // only the uuid shape Claude Code writes is offered: a transcript
+                // named `x;touch pwned` must not appear as a session.
+                && is_valid_session_uuid(&r.session_id)
+                && r.cwd.as_deref().is_some_and(|c| normalize_path(c) == want)
         })
         .collect();
     matched.sort_by(|a, b| b.last_timestamp.cmp(&a.last_timestamp));
@@ -1825,7 +1831,10 @@ mod tests {
     fn recent_sessions_are_newest_first_capped_and_carry_no_transcript_path() {
         let mut records: Vec<SessionRecord> = (0..60)
             .map(|i| {
-                let mut r = rec(&format!("s{i:02}"), "2026-01-01T00:00:00Z");
+                let mut r = rec(
+                    &format!("{i:08x}-0000-4000-8000-000000000000"),
+                    "2026-01-01T00:00:00Z",
+                );
                 r.last_timestamp = Some(format!("2026-02-{:02}T00:00:00Z", (i % 28) + 1));
                 r
             })
@@ -2244,16 +2253,31 @@ mod tests {
         assert_ne!(normalize_path("/repo/Atlas"), normalize_path("/repo/atlas"));
     }
 
+    const SID: &str = "550e8400-e29b-41d4-a716-446655440000";
+
+    /// A transcript file name is untrusted input to a shell command line.
+    #[test]
+    fn resumable_offers_only_uuid_shaped_ids() {
+        let records = vec![
+            rec_in(SID, "2026-01-01T00:00:00Z", "/repo/atlas"),
+            rec_in("x;touch pwned", "2026-01-02T00:00:00Z", "/repo/atlas"),
+            rec_in("--dangerously-skip", "2026-01-03T00:00:00Z", "/repo/atlas"),
+        ];
+        let found = resumable_for_cwd(&records, "/repo/atlas");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].session_id, SID);
+    }
+
     #[test]
     fn resumable_matches_a_workspace_whose_separators_differ_from_the_transcript() {
-        let records = vec![rec_in("a", "2026-01-01T00:00:00Z", r"C:\repo\atlas")];
+        let records = vec![rec_in(SID, "2026-01-01T00:00:00Z", r"C:\repo\atlas")];
         let found = resumable_for_cwd(&records, "C:/repo/atlas/");
         assert_eq!(
             found.len(),
             1,
             "backslash cwd matches a forward-slash workspace"
         );
-        assert_eq!(found[0].session_id, "a");
+        assert_eq!(found[0].session_id, SID);
     }
 
     #[test]
@@ -2261,7 +2285,7 @@ mod tests {
         let mut records = Vec::new();
         for i in 0..30 {
             records.push(rec_in(
-                &format!("s{i:02}"),
+                &format!("{i:08x}-0000-4000-8000-000000000000"),
                 &format!("2026-01-{:02}T00:00:00Z", i + 1),
                 "/repo/atlas",
             ));
@@ -2270,7 +2294,10 @@ mod tests {
 
         let found = resumable_for_cwd(&records, "/repo/atlas");
         assert_eq!(found.len(), RESUMABLE_LIMIT, "capped at 25");
-        assert_eq!(found[0].session_id, "s29", "newest first");
+        assert_eq!(
+            found[0].session_id, "0000001d-0000-4000-8000-000000000000",
+            "newest first"
+        );
         assert!(
             found.iter().all(|r| r.session_id != "other"),
             "another workspace's sessions never leak in",
@@ -2284,7 +2311,7 @@ mod tests {
 
     #[test]
     fn resumable_is_empty_for_a_workspace_with_no_history() {
-        let records = vec![rec_in("a", "2026-01-01T00:00:00Z", "/repo/atlas")];
+        let records = vec![rec_in(SID, "2026-01-01T00:00:00Z", "/repo/atlas")];
         assert!(resumable_for_cwd(&records, "/repo/brand-new").is_empty());
     }
 
