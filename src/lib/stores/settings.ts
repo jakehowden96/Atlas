@@ -1,5 +1,5 @@
 import { derived, writable, get } from "svelte/store";
-import { startOmpTail, startSessionTail, stopSessionTail, stateLoad } from "../ipc";
+import { setClaudeHook, startOmpTail, startSessionTail, stopSessionTail, stateLoad } from "../ipc";
 import {
   ACTIONS,
   DEFAULT_KEYMAP,
@@ -81,6 +81,10 @@ export const tailTranscripts = writable(true);
 /** Overview tiles the user pinned, by `pinKey`. Pinned tiles sort above every
     other tile whatever the ordering is. */
 export const pinnedSessions = writable<string[]>([]);
+/** Keep Atlas's `Notification` and `SessionStart` hooks in
+    `~/.claude/settings.json`. On by default; the backend reads this at launch
+    (from `settings.json`) to decide whether to install them. */
+export const claudeHook = writable(true);
 /** Workspace paths the user turned language servers on for. Off by default: a
     server runs the workspace's own code, so the backend starts none for a path
     that is not listed here (it reads this list from `settings.json` itself). */
@@ -126,6 +130,7 @@ interface PersistedSettings {
   openFiles?: string[];
   fileSources?: string[];
   lspTrustedWorkspaces?: string[];
+  claudeHook?: boolean;
   /** One binding per action in files written before alternates existed;
    *  a list since. `mergeKeymap` reads both. */
   keymap?: Partial<Record<Action, Binding | Binding[]>>;
@@ -220,6 +225,7 @@ export async function loadSettings() {
       autoAddReposFromWorkspaces.set(data.autoAddReposFromWorkspaces);
     }
     if (typeof data.tailTranscripts === "boolean") tailTranscripts.set(data.tailTranscripts);
+    if (typeof data.claudeHook === "boolean") claudeHook.set(data.claudeHook);
     if (Array.isArray(data.pinnedSessions)) {
       pinnedSessions.set(data.pinnedSessions.filter((id) => typeof id === "string"));
     }
@@ -278,6 +284,7 @@ const persister = createStatePersister(
     openFiles: get(openFiles),
     fileSources: get(sources),
     lspTrustedWorkspaces: get(lspTrustedWorkspaces),
+    claudeHook: get(claudeHook),
     keymap: get(keymap),
   }),
   (e) => {
@@ -362,6 +369,18 @@ export async function setOpenFiles(keys: string[]) {
 
 export async function setFileSources(paths: string[]) {
   sources.set(paths);
+  await persistSettings();
+}
+
+/**
+ * Install or remove Atlas's hooks in `~/.claude/settings.json`, then remember
+ * the choice. The change is made first and the preference saved only if it
+ * worked, so the switch never claims a state the file is not in; a rejection
+ * (the file does not parse, or cannot be written) reaches the caller.
+ */
+export async function setClaudeHookEnabled(enabled: boolean) {
+  await setClaudeHook(enabled);
+  claudeHook.set(enabled);
   await persistSettings();
 }
 

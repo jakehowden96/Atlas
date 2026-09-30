@@ -138,48 +138,13 @@ fn claude_version() -> Option<String> {
         .map(str::to_string)
 }
 
-/// True when any command under `hooks[event]` carries `marker`.
-fn hook_installed(event: &str, marker: &str) -> bool {
-    let Some(path) = dirs::home_dir().map(|h| h.join(".claude").join("settings.json")) else {
-        return false;
-    };
-    let Ok(raw) = std::fs::read_to_string(path) else {
-        return false;
-    };
-    let Ok(settings) = serde_json::from_str::<serde_json::Value>(&raw) else {
-        return false;
-    };
-    settings["hooks"][event].as_array().is_some_and(|entries| {
-        entries.iter().any(|entry| {
-            entry["hooks"].as_array().is_some_and(|inner| {
-                inner.iter().any(|hook| {
-                    hook.get("command")
-                        .and_then(|c| c.as_str())
-                        .is_some_and(|c| c.contains(marker))
-                })
-            })
-        })
-    })
-}
-
-fn notification_hook_installed() -> bool {
-    hook_installed("Notification", crate::claude_hook::HOOK_MARKER)
-}
-
-fn session_start_hook_installed() -> bool {
-    hook_installed(
-        "SessionStart",
-        crate::claude_hook::SESSION_START_HOOK_MARKER,
-    )
-}
-
 #[tauri::command(async)]
 pub async fn claude_info() -> Result<ClaudeInfo, String> {
     tokio::task::spawn_blocking(|| ClaudeInfo {
         binary: which_claude(),
         version: claude_version(),
-        notification_hook_installed: notification_hook_installed(),
-        session_start_hook_installed: session_start_hook_installed(),
+        notification_hook_installed: crate::claude_hook::notification_installed(),
+        session_start_hook_installed: crate::claude_hook::session_start_installed(),
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))

@@ -7,10 +7,10 @@ use crate::atomic_write;
 /// Identifies Atlas's own entry in `hooks.Notification`. The command is
 /// `"<exe>" hook notification`, so the argv tail is the part that is stable
 /// across install locations and platforms.
-pub(crate) const HOOK_MARKER: &str = "hook notification";
+const HOOK_MARKER: &str = "hook notification";
 
 /// Identifies Atlas's own entry in `hooks.SessionStart`, the same way.
-pub(crate) const SESSION_START_HOOK_MARKER: &str = "hook session-start";
+const SESSION_START_HOOK_MARKER: &str = "hook session-start";
 
 /// The now-deleted `scripts/atlas-notify-hook.sh` entry, removed on upgrade so
 /// users do not end up running both.
@@ -166,107 +166,207 @@ fn back_up_claude_settings(path: &std::path::Path) -> std::io::Result<()> {
     std::fs::copy(path, backup).map(|_| ())
 }
 
+/// Serialises Atlas's own read-modify-writes of the file, so the launch install
+/// and a Settings toggle cannot interleave. (Claude Code writes it too, and
+/// nothing can lock that out.)
+static SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Read-modify-write `~/.claude/settings.json`, applying `merge` and writing
-/// back only when it reports a change. Shared by every hook installer.
+/// back only when it reports a change. Returns whether the file was written.
 ///
-/// A file that cannot be read or parsed is never touched: the failure is
-/// logged at error level and the hook is simply not installed.
+/// A file that cannot be read or parsed is never touched: that is an `Err`
+/// describing why, and the hooks are left exactly as they were. The parent
+/// directory is created only when there is something to write, so removing the
+/// hooks never conjures up `~/.claude`.
 fn update_claude_settings(
     claude_settings_path: &std::path::Path,
     merge: impl FnOnce(&mut serde_json::Value) -> bool,
-    label: &str,
-) {
-    let mut settings = match read_claude_settings(claude_settings_path) {
-        Ok(settings) => settings,
-        Err(reason) => {
-            log::error!(
-                "{} {} — leaving it untouched, so the Atlas {} hook is not installed",
-                claude_settings_path.display(),
-                reason,
-                label
-            );
-            return;
-        }
-    };
+) -> Result<bool, String> {
+    let _guard = SETTINGS_LOCK.lock().map_err(|e| e.to_string())?;
+    let mut settings = read_claude_settings(claude_settings_path)
+        .map_err(|reason| format!("{} {}", claude_settings_path.display(), reason))?;
 
     if !merge(&mut settings) {
-        log::info!("Atlas {} hook already installed", label);
-        return;
+        return Ok(false);
     }
 
-    let mut json = match serde_json::to_string_pretty(&settings) {
-        Ok(json) => json,
-        Err(e) => {
-            log::warn!("Failed to serialize Claude settings: {}", e);
-            return;
-        }
-    };
+    let mut json = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Failed to serialize Claude settings: {e}"))?;
     json.push('\n');
     if let Some(parent) = claude_settings_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+        std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     }
-    if let Err(e) = back_up_claude_settings(claude_settings_path) {
-        log::error!(
-            "Could not back up {} — leaving it untouched: {}",
-            claude_settings_path.display(),
-            e
-        );
-        return;
-    }
-    match atomic_write::write_atomic(claude_settings_path, json.as_bytes()) {
-        Ok(()) => log::info!("Installed Atlas {} hook", label),
-        Err(e) => log::warn!("Failed to write Claude settings: {}", e),
-    }
-}
-
-/// Install the Atlas notification hook into ~/.claude/settings.json
-/// so Claude Code notifies Atlas when it needs input.
-fn install_notification_hook(command: &str) {
-    let Some(path) = claude_settings_path() else {
-        return;
-    };
-    update_claude_settings(
-        &path,
-        |settings| merge_notification_hook(settings, command),
-        "notification",
-    );
+    back_up_claude_settings(claude_settings_path).map_err(|e| {
+        format!(
+            "Could not back up {} — leaving it untouched: {e}",
+            claude_settings_path.display()
+        )
+    })?;
+    atomic_write::write_atomic(claude_settings_path, json.as_bytes())
+        .map_err(|e| format!("Failed to write {}: {e}", claude_settings_path.display()))?;
+    Ok(true)
 }
 
 fn claude_settings_path() -> Option<std::path::PathBuf> {
     dirs::home_dir().map(|h| h.join(".claude").join("settings.json"))
 }
 
-/// Install the Atlas session-start hook into ~/.claude/settings.json so Atlas
-/// hears the real session id whenever Claude Code rotates to a new one —
-/// `/clear` and `/compact` both do, and only this hook says so.
-fn install_session_start_hook(command: &str) {
-    let Some(path) = claude_settings_path() else {
-        return;
-    };
-    update_claude_settings(
-        &path,
-        |settings| merge_hook(settings, "SessionStart", SESSION_START_HOOK_MARKER, command),
-        "session-start",
+/// Make `settings` carry Atlas's two hooks, pointing at `notification` and
+/// `session_start`: `Notification` so Claude Code tells Atlas when it needs
+/// input, `SessionStart` so Atlas hears the real session id whenever Claude
+/// Code rotates to a new one (`/clear` and `/compact` both do, and only this
+/// hook says so). Both merges always run. True when `settings` changed.
+fn merge_atlas_hooks(
+    settings: &mut serde_json::Value,
+    notification: &str,
+    session_start: &str,
+) -> bool {
+    let notification_changed = merge_notification_hook(settings, notification);
+    let session_changed = merge_hook(
+        settings,
+        "SessionStart",
+        SESSION_START_HOOK_MARKER,
+        session_start,
     );
+    notification_changed || session_changed
 }
 
-/// Install both hooks at launch, pointing at this executable — `current_exe()`
-/// resolves in both dev and bundled builds.
-pub(crate) fn install_at_launch() {
-    match notification_hook_command() {
-        Ok(command) => install_notification_hook(&command),
-        Err(e) => log::warn!(
-            "Could not resolve the Atlas executable — notification hook not installed: {}",
-            e
-        ),
+/// Drop Atlas's entries from `hooks[event]`: commands with the exact shape
+/// Atlas installs (`is_atlas_command`), never a user's own hook that merely
+/// mentions the marker. A wrapper left with no commands goes too, then the
+/// event's array if it was emptied, then `hooks` if removing that emptied it —
+/// but only structure this removal emptied; an `{}` or `[]` the user left
+/// there is theirs. True when anything was removed.
+fn remove_hook(settings: &mut serde_json::Value, event: &str, marker: &str) -> bool {
+    let Some(hooks) = settings.get_mut("hooks").and_then(|h| h.as_object_mut()) else {
+        return false;
+    };
+    let Some(entries) = hooks.get_mut(event).and_then(|e| e.as_array_mut()) else {
+        return false;
+    };
+
+    let mut removed = false;
+    entries.retain_mut(|entry| {
+        let Some(inner) = entry.get_mut("hooks").and_then(|h| h.as_array_mut()) else {
+            return true;
+        };
+        let before = inner.len();
+        inner.retain(|hook| !is_atlas_command(hook_command_str(hook), marker));
+        if inner.len() == before {
+            return true;
+        }
+        removed = true;
+        !inner.is_empty()
+    });
+    if removed && entries.is_empty() {
+        hooks.remove(event);
+        if hooks.is_empty() {
+            if let Some(root) = settings.as_object_mut() {
+                root.remove("hooks");
+            }
+        }
     }
-    match session_start_hook_command() {
-        Ok(command) => install_session_start_hook(&command),
-        Err(e) => log::warn!(
-            "Could not resolve the Atlas executable — session-start hook not installed: {}",
-            e
-        ),
+    removed
+}
+
+/// Remove every hook Atlas installed. True when `settings` changed.
+fn remove_atlas_hooks(settings: &mut serde_json::Value) -> bool {
+    // Both run; `||` would skip the second removal after the first succeeded.
+    let notification = remove_hook(settings, "Notification", HOOK_MARKER);
+    let session_start = remove_hook(settings, "SessionStart", SESSION_START_HOOK_MARKER);
+    notification || session_start
+}
+
+/// True when `settings` has an Atlas-shaped command under `hooks[event]`.
+fn has_atlas_hook(settings: &serde_json::Value, event: &str, marker: &str) -> bool {
+    settings["hooks"][event].as_array().is_some_and(|entries| {
+        entries.iter().any(|entry| {
+            entry["hooks"].as_array().is_some_and(|inner| {
+                inner
+                    .iter()
+                    .any(|h| is_atlas_command(hook_command_str(h), marker))
+            })
+        })
+    })
+}
+
+/// Whether `~/.claude/settings.json` carries Atlas's hook for `event`; what
+/// Settings › Claude Code reports. An unreadable or unparseable file reports
+/// false.
+fn is_installed(event: &str, marker: &str) -> bool {
+    let Some(path) = claude_settings_path() else {
+        return false;
+    };
+    read_claude_settings(&path).is_ok_and(|settings| has_atlas_hook(&settings, event, marker))
+}
+
+pub(crate) fn notification_installed() -> bool {
+    is_installed("Notification", HOOK_MARKER)
+}
+
+pub(crate) fn session_start_installed() -> bool {
+    is_installed("SessionStart", SESSION_START_HOOK_MARKER)
+}
+
+/// Install (`enabled`) or remove Atlas's hooks in the settings file at `path`.
+/// Returns whether the file changed. Removing from a missing file does nothing.
+fn apply(
+    path: &std::path::Path,
+    enabled: bool,
+    notification: &str,
+    session_start: &str,
+) -> Result<bool, String> {
+    update_claude_settings(path, |settings| {
+        if enabled {
+            merge_atlas_hooks(settings, notification, session_start)
+        } else {
+            remove_atlas_hooks(settings)
+        }
+    })
+}
+
+/// Set up the hooks as the user's `claudeHook` setting says, at launch: install
+/// (pointing at this executable — `current_exe()` resolves in both dev and
+/// bundled builds) when on, nothing when off. Failures are logged, never fatal.
+pub(crate) fn sync_at_launch(enabled: bool) {
+    if !enabled {
+        log::info!("Claude Code hook is turned off in Settings; not installing it");
+        return;
     }
+    match set_hooks(true) {
+        Ok(true) => log::info!("Installed Atlas Claude Code hooks"),
+        Ok(false) => log::info!("Atlas Claude Code hooks already installed"),
+        Err(e) => log::error!("Atlas Claude Code hooks not installed: {e}"),
+    }
+}
+
+fn set_hooks(enabled: bool) -> Result<bool, String> {
+    let path = claude_settings_path().ok_or("Could not resolve the home directory")?;
+    let (notification, session_start) = if enabled {
+        (
+            notification_hook_command()
+                .map_err(|e| format!("Could not resolve the Atlas executable: {e}"))?,
+            session_start_hook_command()
+                .map_err(|e| format!("Could not resolve the Atlas executable: {e}"))?,
+        )
+    } else {
+        (String::new(), String::new())
+    };
+    apply(&path, enabled, &notification, &session_start)
+}
+
+/// Settings › Claude Code's switch. Installs or removes Atlas's hooks in
+/// `~/.claude/settings.json`; nothing else in that file is touched, and a file
+/// that does not parse is left exactly as it is and reported as an error.
+#[tauri::command(async)]
+pub fn set_claude_hook(enabled: bool) -> Result<(), String> {
+    set_hooks(enabled).map(|changed| {
+        log::info!(
+            "Atlas Claude Code hooks {}{}",
+            if enabled { "installed" } else { "removed" },
+            if changed { "" } else { " (no change needed)" }
+        );
+    })
 }
 
 #[cfg(test)]
@@ -466,8 +566,8 @@ mod tests {
         assert!(command.contains(SESSION_START_HOOK_MARKER));
     }
 
-    fn install(path: &std::path::Path) {
-        update_claude_settings(path, |s| merge_notification_hook(s, NEW), "notification");
+    fn install(path: &std::path::Path) -> Result<bool, String> {
+        update_claude_settings(path, |s| merge_notification_hook(s, NEW))
     }
 
     #[test]
@@ -477,7 +577,7 @@ mod tests {
         let original = "{ \"model\": \"opus\", }";
         std::fs::write(&path, original).unwrap();
 
-        install(&path);
+        assert!(install(&path).is_err());
 
         assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
     }
@@ -489,7 +589,7 @@ mod tests {
         let original = [b'{', 0xff, 0xfe, b'}'];
         std::fs::write(&path, original).unwrap();
 
-        install(&path);
+        assert!(install(&path).is_err());
 
         assert_eq!(std::fs::read(&path).unwrap(), original);
     }
@@ -499,7 +599,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("settings.json");
 
-        install(&path);
+        install(&path).unwrap();
 
         let settings: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
@@ -516,7 +616,7 @@ mod tests {
         std::fs::write(&real, "{\"model\": \"opus\"}").unwrap();
         std::os::unix::fs::symlink(&real, &link).unwrap();
 
-        install(&link);
+        install(&link).unwrap();
 
         assert!(std::fs::symlink_metadata(&link)
             .unwrap()
@@ -534,7 +634,7 @@ mod tests {
         let path = dir.path().join("settings.json");
         std::fs::write(&path, "{\n  \"zeta\": 1,\n  \"alpha\": 2\n}\n").unwrap();
 
-        install(&path);
+        install(&path).unwrap();
 
         let written = std::fs::read_to_string(&path).unwrap();
         assert!(written.ends_with("}\n"), "{written:?}");
@@ -552,22 +652,186 @@ mod tests {
         let original = "{\"model\": \"opus\"}";
         std::fs::write(&path, original).unwrap();
 
-        install(&path);
+        install(&path).unwrap();
         assert_eq!(std::fs::read_to_string(&backup).unwrap(), original);
 
         // A later change must not overwrite the pre-Atlas backup.
-        update_claude_settings(
-            &path,
-            |s| {
-                merge_hook(
-                    s,
-                    "SessionStart",
-                    SESSION_START_HOOK_MARKER,
-                    NEW_SESSION_START,
-                )
-            },
-            "session-start",
-        );
+        update_claude_settings(&path, |s| {
+            merge_hook(
+                s,
+                "SessionStart",
+                SESSION_START_HOOK_MARKER,
+                NEW_SESSION_START,
+            )
+        })
+        .unwrap();
         assert_eq!(std::fs::read_to_string(&backup).unwrap(), original);
+    }
+
+    /// A settings file as a user with their own hooks might have it, in the
+    /// exact form Atlas writes back (pretty, trailing newline), so an
+    /// install-then-remove round trip can be compared byte for byte.
+    fn users_file() -> String {
+        let value = serde_json::json!({
+            "model": "opus",
+            "hooks": {
+                "PreToolUse": [
+                    { "matcher": "Bash", "hooks": [{ "type": "command", "command": "echo pre" }] }
+                ],
+                "Notification": [
+                    { "matcher": "", "hooks": [
+                        { "type": "command", "command": "notify-send claude" },
+                        { "type": "command", "command": "my-wrapper hook notification --verbose" }
+                    ] }
+                ]
+            },
+            "env": { "A": "1" }
+        });
+        let mut text = serde_json::to_string_pretty(&value).unwrap();
+        text.push('\n');
+        text
+    }
+
+    fn parse(path: &std::path::Path) -> serde_json::Value {
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn installing_twice_changes_nothing_and_removing_restores_the_users_file_exactly() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let original = users_file();
+        std::fs::write(&path, &original).unwrap();
+
+        assert!(apply(&path, true, NEW, NEW_SESSION_START).unwrap());
+        let installed = std::fs::read_to_string(&path).unwrap();
+        assert_ne!(installed, original);
+        assert!(!apply(&path, true, NEW, NEW_SESSION_START).unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), installed);
+
+        assert!(apply(&path, false, "", "").unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        assert!(!apply(&path, false, "", "").unwrap());
+    }
+
+    #[test]
+    fn removal_takes_only_atlas_shaped_commands_out_of_a_shared_wrapper() {
+        let mut settings = serde_json::json!({
+            "hooks": { "Notification": [{
+                "matcher": "",
+                "hooks": [
+                    { "type": "command", "command": "notify-send claude" },
+                    { "type": "command", "command": NEW },
+                    { "type": "command", "command": "my-wrapper hook notification --verbose" },
+                ]
+            }]}
+        });
+
+        assert!(remove_atlas_hooks(&mut settings));
+
+        // The user's two commands stay in the wrapper they were in — including
+        // the one that merely mentions Atlas's marker.
+        assert_eq!(
+            commands(&settings),
+            vec![
+                "notify-send claude",
+                "my-wrapper hook notification --verbose"
+            ]
+        );
+    }
+
+    #[test]
+    fn removal_prunes_the_structure_it_emptied_and_only_that() {
+        let mut settings = serde_json::json!({
+            "hooks": {
+                "Stop": [],
+                "Notification": [{ "matcher": "", "hooks": [{ "type": "command", "command": NEW }] }],
+                "SessionStart": [{ "matcher": "", "hooks": [{ "type": "command", "command": NEW_SESSION_START }] }],
+            }
+        });
+
+        assert!(remove_atlas_hooks(&mut settings));
+
+        // Both emptied events are gone; `Stop` was already empty and is the
+        // user's, so it and the object holding it stay.
+        assert_eq!(settings, serde_json::json!({ "hooks": { "Stop": [] } }));
+    }
+
+    #[test]
+    fn removal_drops_hooks_entirely_when_atlas_was_all_it_held() {
+        let mut settings = serde_json::json!({ "model": "opus" });
+        merge_atlas_hooks(&mut settings, NEW, NEW_SESSION_START);
+        assert!(remove_atlas_hooks(&mut settings));
+        assert_eq!(settings, serde_json::json!({ "model": "opus" }));
+    }
+
+    #[test]
+    fn removal_with_nothing_installed_is_not_a_change() {
+        let mut settings = serde_json::json!({
+            "hooks": { "Notification": [{ "matcher": "", "hooks": [{ "type": "command", "command": "mine" }] }] }
+        });
+        let before = settings.clone();
+        assert!(!remove_atlas_hooks(&mut settings));
+        assert_eq!(settings, before);
+        assert!(!remove_atlas_hooks(&mut serde_json::json!({})));
+        assert!(!remove_atlas_hooks(
+            &mut serde_json::json!({ "hooks": "nope" })
+        ));
+    }
+
+    #[test]
+    fn removing_from_a_missing_file_writes_nothing_and_creates_no_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let claude_dir = dir.path().join(".claude");
+        let path = claude_dir.join("settings.json");
+
+        assert!(!apply(&path, false, "", "").unwrap());
+
+        assert!(!claude_dir.exists());
+    }
+
+    #[test]
+    fn installing_creates_the_directory_only_because_it_is_writing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".claude").join("settings.json");
+
+        assert!(apply(&path, true, NEW, NEW_SESSION_START).unwrap());
+
+        assert_eq!(commands(&parse(&path)), vec![NEW]);
+    }
+
+    #[test]
+    fn removal_never_touches_a_file_it_cannot_parse() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let original = "{ \"model\": \"opus\", \"hooks\": ";
+        std::fs::write(&path, original).unwrap();
+
+        let err = apply(&path, false, "", "").unwrap_err();
+
+        assert!(err.contains("not valid JSON"), "{err}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        assert!(!dir.path().join("settings.json.atlas-bak").exists());
+    }
+
+    #[test]
+    fn the_installed_status_counts_only_atlas_shaped_commands() {
+        let mut settings = serde_json::json!({
+            "hooks": { "Notification": [{ "matcher": "", "hooks": [
+                { "type": "command", "command": "my-wrapper hook notification --verbose" }
+            ] }] }
+        });
+        assert!(!has_atlas_hook(&settings, "Notification", HOOK_MARKER));
+
+        merge_atlas_hooks(&mut settings, NEW, NEW_SESSION_START);
+        assert!(has_atlas_hook(&settings, "Notification", HOOK_MARKER));
+        assert!(has_atlas_hook(
+            &settings,
+            "SessionStart",
+            SESSION_START_HOOK_MARKER
+        ));
+
+        remove_atlas_hooks(&mut settings);
+        assert!(!has_atlas_hook(&settings, "Notification", HOOK_MARKER));
     }
 }

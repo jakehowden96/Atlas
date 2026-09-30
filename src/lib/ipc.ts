@@ -149,6 +149,15 @@ export async function claudeInfo(): Promise<ClaudeInfo> {
   return invoke("claude_info");
 }
 
+/**
+ * Install (`true`) or remove (`false`) Atlas's two hooks in
+ * `~/.claude/settings.json`. Only Atlas's own entries are added or removed;
+ * rejects — leaving the file exactly as it was — when that file does not parse.
+ */
+export async function setClaudeHook(enabled: boolean): Promise<void> {
+  return invoke("set_claude_hook", { enabled });
+}
+
 export async function onSessionUpdate(
   callback: (sessionUuid: string, session: LiveSession) => void,
 ): Promise<UnlistenFn> {

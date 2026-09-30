@@ -7,6 +7,7 @@ vi.mock("../ipc", () => ({
   stopSessionTail: vi.fn(),
   stateLoad: vi.fn(),
   stateSave: vi.fn(),
+  setClaudeHook: vi.fn(),
 }));
 
 vi.mock("../logger", () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
@@ -14,6 +15,7 @@ vi.mock("../logger", () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(
 import { DEFAULT_KEYMAP } from "../keymap";
 import {
   autoAddReposFromWorkspaces,
+  claudeHook,
   DEFAULT_HARNESSES,
   enableNotifications,
   harnesses,
@@ -27,6 +29,7 @@ import {
   prRefreshMinutes,
   resetKeymap,
   setAutoAddReposFromWorkspaces,
+  setClaudeHookEnabled,
   setEnableNotifications,
   setFileSources,
   setHarnesses,
@@ -54,7 +57,14 @@ import { tabs } from "../stores/terminal";
 import { themeMode } from "../theme";
 import { workspaces } from "../stores/workspace";
 import { toasts } from "../stores/toast";
-import { startOmpTail, startSessionTail, stopSessionTail, stateLoad, stateSave } from "../ipc";
+import {
+  setClaudeHook,
+  startOmpTail,
+  startSessionTail,
+  stopSessionTail,
+  stateLoad,
+  stateSave,
+} from "../ipc";
 
 /** The persisted object the last `stateSave` call wrote. */
 function lastWritten() {
@@ -101,6 +111,7 @@ describe("settings store", () => {
     openFiles.set([]);
     sources.set([]);
     lspTrustedWorkspaces.set([]);
+    claudeHook.set(true);
     keymap.set({ ...DEFAULT_KEYMAP });
     vi.clearAllMocks();
   });
@@ -603,6 +614,47 @@ describe("migrateSettings", () => {
 
   it.each([null, "text", 3, [1, 2]])("reads %j as an empty settings file", (raw) => {
     expect(migrateSettings(raw)).toEqual({ data: {}, newerThanKnown: false });
+  });
+});
+
+describe("Claude Code hook opt-out", () => {
+  beforeEach(() => {
+    claudeHook.set(true);
+    vi.mocked(stateSave).mockReset();
+    vi.mocked(stateSave).mockResolvedValue(undefined);
+    vi.mocked(setClaudeHook).mockReset();
+  });
+
+  it("is on until the user turns it off", () => {
+    expect(get(claudeHook)).toBe(true);
+  });
+
+  it("removes the hooks first, then remembers the choice", async () => {
+    const order: string[] = [];
+    vi.mocked(setClaudeHook).mockImplementation(async () => void order.push("hooks"));
+    vi.mocked(stateSave).mockImplementation(async () => void order.push("save"));
+
+    await setClaudeHookEnabled(false);
+
+    expect(setClaudeHook).toHaveBeenCalledWith(false);
+    expect(order).toEqual(["hooks", "save"]);
+    expect(get(claudeHook)).toBe(false);
+    expect(lastWritten().claudeHook).toBe(false);
+  });
+
+  it("neither flips the switch nor saves when the hooks could not be changed", async () => {
+    vi.mocked(setClaudeHook).mockRejectedValue(new Error("settings.json is not valid JSON"));
+
+    await expect(setClaudeHookEnabled(false)).rejects.toThrow("not valid JSON");
+
+    expect(get(claudeHook)).toBe(true);
+    expect(stateSave).not.toHaveBeenCalled();
+  });
+
+  it("restores an off switch on load", async () => {
+    mockFile(JSON.stringify({ claudeHook: false }));
+    await loadSettings();
+    expect(get(claudeHook)).toBe(false);
   });
 });
 

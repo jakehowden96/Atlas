@@ -24,6 +24,7 @@
   import { prViewer, repoSlugsByWorkspace } from "../../stores/prs";
   import {
     autoAddReposFromWorkspaces,
+    claudeHook,
     enableNotifications,
     harnesses,
     keymap,
@@ -34,6 +35,7 @@
     prRefreshMinutes,
     resetKeymap,
     setAutoAddReposFromWorkspaces,
+    setClaudeHookEnabled,
     setEnableNotifications,
     setHarnesses,
     setKeymap,
@@ -109,6 +111,29 @@
   /** Which chord slot is listening: index 0 is the action's primary, 1 its
    *  alternate. Null when nothing is being recorded. */
   let recording = $state<{ action: Action; index: number } | null>(null);
+
+  /** Install or remove the hooks, then refresh the installed badges from the
+   *  file itself rather than assuming the change landed. */
+  async function setHook(enabled: boolean) {
+    try {
+      await setClaudeHookEnabled(enabled);
+    } catch (e) {
+      log.warn("settings", `could not ${enabled ? "install" : "remove"} the Claude hooks: ${e}`);
+      showToast(
+        enabled
+          ? "Could not install the Claude Code hooks"
+          : "Could not remove the Claude Code hooks",
+        {
+          body: String(e),
+        },
+      );
+    }
+    try {
+      claude = await claudeInfo();
+    } catch (e) {
+      log.warn("settings", `claude_info failed: ${e}`);
+    }
+  }
 
   /** Language servers run a workspace's own code, so they are opt-in per
    *  workspace; turning them off also stops any that are running. */
@@ -580,6 +605,25 @@
                 >~/.claude/settings.json</code
               >; everything else comes from tailing the session transcript.
             </p>
+
+            <div class="row">
+              <div class="row-text">
+                <div class="row-title">Install Atlas's hooks</div>
+                <div class="row-desc">
+                  On by default. Off removes only Atlas's two entries from <code
+                    >~/.claude/settings.json</code
+                  >
+                  and keeps them out; your own hooks and settings are never touched. Without them a session
+                  that needs you is not flagged from its prompt, and <code>/clear</code> and
+                  <code>/compact</code> are not followed.
+                </div>
+              </div>
+              <Toggle
+                checked={$claudeHook}
+                label="Install Atlas's hooks"
+                onChange={(v) => void setHook(v)}
+              />
+            </div>
 
             <div class="list">
               <div class="list-row hook-row">

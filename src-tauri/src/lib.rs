@@ -257,6 +257,7 @@ pub fn run() -> std::process::ExitCode {
         .invoke_handler(tauri::generate_handler![
             state::state_load,
             state::state_save,
+            claude_hook::set_claude_hook,
             commands::frontend_log::log_write,
             lsp::lsp_start,
             lsp::lsp_send,
@@ -338,7 +339,14 @@ pub fn run() -> std::process::ExitCode {
                 }
             });
 
-            claude_hook::install_at_launch();
+            // Off by user choice in Settings › Claude Code; on when the setting
+            // has never been written.
+            let hook_enabled = app
+                .state::<state::StateStore>()
+                .read_json(state::StateFile::Settings)
+                .and_then(|s| s.get("claudeHook").and_then(|v| v.as_bool()))
+                .unwrap_or(true);
+            claude_hook::sync_at_launch(hook_enabled);
 
             Ok(())
         })
