@@ -10,6 +10,5 @@ fn main() -> ExitCode {
         return atlas_lib::hook::run_hook(args.next().unwrap_or_default().as_str());
     }
 
-    atlas_lib::run();
-    ExitCode::SUCCESS
+    atlas_lib::run()
 }

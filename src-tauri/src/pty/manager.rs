@@ -4,6 +4,7 @@ use std::io::Read;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
+use std::time::Duration;
 use tauri::ipc::Channel;
 
 use super::session::PtySession;
@@ -174,9 +175,13 @@ impl PtyManager {
         let session_id = id;
         thread::spawn(move || {
             let mut buf = [0u8; 8192];
+            let mut reached_eof = false;
             loop {
                 match reader.read(&mut buf) {
-                    Ok(0) => break,
+                    Ok(0) => {
+                        reached_eof = true;
+                        break;
+                    }
                     Ok(n) => {
                         let data = buf[..n].to_vec();
                         if on_data.send(data).is_err() {
@@ -186,9 +191,14 @@ impl PtyManager {
                     Err(_) => break,
                 }
             }
-            // Clean up the session when the reader exits
-            if let Ok(mut sessions) = sessions.write() {
-                sessions.remove(&session_id);
+            // Clean up the session when the reader exits, and reap a shell that
+            // exited on its own so it does not stay a zombie until Atlas quits.
+            let removed = sessions
+                .write()
+                .ok()
+                .and_then(|mut sessions| sessions.remove(&session_id));
+            if let (true, Some(session)) = (reached_eof, removed) {
+                session.reap(Duration::from_secs(2));
             }
         });
 
@@ -220,6 +230,24 @@ impl PtyManager {
         Ok(())
     }
 
+    /// Kill every shell, in parallel so that quitting with several tabs open
+    /// costs one kill grace period rather than one per tab. Called on app exit.
+    pub fn kill_all(&self) {
+        let drained: Vec<PtySession> = match self.sessions.write() {
+            Ok(mut sessions) => sessions.drain().map(|(_, session)| session).collect(),
+            Err(_) => return,
+        };
+        thread::scope(|scope| {
+            for session in &drained {
+                scope.spawn(move || {
+                    if let Err(e) = session.kill() {
+                        log::warn!("Could not kill a terminal on exit: {}", e);
+                    }
+                });
+            }
+        });
+    }
+
     /// The tty device a session's shell runs on, e.g. `/dev/ttys001` — the
     /// breadcrumb OMP keys its own terminal-session files by.
     pub fn tty_name(&self, id: u32) -> Option<String> {
@@ -232,7 +260,58 @@ impl PtyManager {
 
 #[cfg(test)]
 mod tests {
-    use super::default_shell;
+    use super::{default_shell, PtyManager};
+
+    /// A live PTY session running `sleep`, inserted without a frontend channel.
+    #[cfg(unix)]
+    fn sleeping_session(manager: &PtyManager, id: u32) {
+        use crate::pty::session::PtySession;
+        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+        use std::sync::{Arc, Mutex};
+
+        let pair = native_pty_system().openpty(PtySize::default()).unwrap();
+        let mut cmd = CommandBuilder::new("sleep");
+        cmd.arg("60");
+        let child = pair.slave.spawn_command(cmd).unwrap();
+        let writer = pair.master.take_writer().unwrap();
+        manager.sessions.write().unwrap().insert(
+            id,
+            PtySession {
+                master: Mutex::new(pair.master),
+                child: Mutex::new(child),
+                writer: Arc::new(Mutex::new(writer)),
+            },
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn kill_all_stops_every_shell_and_forgets_them() {
+        let manager = PtyManager::new();
+        sleeping_session(&manager, 1);
+        sleeping_session(&manager, 2);
+        let pids: Vec<u32> = manager
+            .sessions
+            .read()
+            .unwrap()
+            .values()
+            .map(|s| s.child.lock().unwrap().process_id().unwrap())
+            .collect();
+
+        manager.kill_all();
+
+        assert!(manager.sessions.read().unwrap().is_empty());
+        for pid in pids {
+            // Signal 0 probes for existence; a reaped process is gone (ESRCH).
+            let alive = std::process::Command::new("kill")
+                .args(["-0", &pid.to_string()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success();
+            assert!(!alive, "pid {pid} survived kill_all");
+        }
+    }
 
     #[test]
     fn claude_markers_are_stripped_but_user_config_survives() {

@@ -46,6 +46,19 @@ impl LspManager {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Kill every running server. Called on app exit, so a language server
+    /// (rust-analyzer can hold gigabytes) never outlives Atlas.
+    pub fn stop_all(&self) {
+        let Ok(mut sessions) = self.sessions.lock() else {
+            return;
+        };
+        for (id, mut session) in sessions.drain() {
+            let _ = session.child.kill();
+            let _ = session.child.wait();
+            log::info!("stopped language server {} on exit", id);
+        }
+    }
 }
 
 /// The session id for a workspace and language. Deriving it rather than handing

@@ -326,7 +326,7 @@ fn extend_path_for_gui_launch() {
     }
 }
 
-pub fn run() {
+pub fn run() -> std::process::ExitCode {
     setup_logging();
     extend_path_for_gui_launch();
 
@@ -334,7 +334,7 @@ pub fn run() {
     let lsp_manager = lsp::LspManager::new();
     let live_sessions = LiveSessionManager::new();
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -469,8 +469,24 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .unwrap_or_else(|e| log::error!("Tauri application error: {}", e));
+        .build(tauri::generate_context!());
+    let app = match app {
+        Ok(app) => app,
+        Err(e) => {
+            log::error!("Tauri application error: {}", e);
+            return std::process::ExitCode::FAILURE;
+        }
+    };
+    app.run(|app, event| {
+        // Nothing else stops the shells and language servers on quit:
+        // background jobs survive the PTY hangup, and on Windows the
+        // shell's children depend on ConPTY teardown.
+        if let tauri::RunEvent::Exit = event {
+            app.state::<PtyManager>().kill_all();
+            app.state::<lsp::LspManager>().stop_all();
+        }
+    });
+    std::process::ExitCode::SUCCESS
 }
 
 #[cfg(test)]

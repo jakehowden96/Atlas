@@ -1,6 +1,7 @@
 use portable_pty::{Child, MasterPty};
 use std::io::Write;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 pub struct PtySession {
     pub master: Mutex<Box<dyn MasterPty + Send>>,
@@ -29,7 +30,30 @@ impl PtySession {
     }
 
     pub fn kill(&self) -> Result<(), String> {
-        let mut child = self.child.lock().map_err(|e| e.to_string())?;
-        child.kill().map_err(|e| e.to_string())
+        self.child
+            .lock()
+            .map_err(|e| e.to_string())?
+            .kill()
+            .map_err(|e| e.to_string())?;
+        self.reap(Duration::from_secs(1));
+        Ok(())
+    }
+
+    /// Collect the shell's exit status so it does not linger as a zombie
+    /// (dropping a child never waits). Polls for at most `timeout`, because the
+    /// shell may still be winding down when the PTY reaches EOF.
+    pub fn reap(&self, timeout: Duration) {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let Ok(mut child) = self.child.lock() else {
+                return;
+            };
+            match child.try_wait() {
+                Ok(None) if Instant::now() < deadline => {}
+                _ => return,
+            }
+            drop(child);
+            std::thread::sleep(Duration::from_millis(20));
+        }
     }
 }
