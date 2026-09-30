@@ -1,8 +1,16 @@
 <script lang="ts">
   import { get } from "svelte/store";
   import { parseDiff, type DiffFile } from "../../diff-parser";
-  import { cssEscape, dedupeKeys, toFlat, type FlatFile } from "../../diff-view";
+  import {
+    cssEscape,
+    dedupeKeys,
+    overBudgetKeys,
+    toFlat,
+    TOTAL_LINE_BUDGET,
+    type FlatFile,
+  } from "../../diff-view";
   import { refreshPanel } from "../../ipc";
+  import { log } from "../../logger";
   import { enterLabel } from "../../platform";
   import { submitReview } from "../../review/submitReview";
   import { panelData } from "../../stores/panel";
@@ -74,8 +82,9 @@
       .then((fresh) => {
         if (fresh && get(activeTabId) === id) panelData.set(fresh);
       })
-      .catch(() => {
-        // `refreshPanel` already logs; a background refresh should not toast.
+      .catch((e) => {
+        // A background refresh should not toast, but it should leave a trace.
+        log.warn("changes", `panel refresh failed for tab=${id}: ${e}`);
       });
   });
 
@@ -156,15 +165,26 @@
   let addedTotal = $derived(flatFiles.reduce((n, f) => n + f.addedCount, 0));
   let removedTotal = $derived(flatFiles.reduce((n, f) => n + f.removedCount, 0));
 
-  // ── Viewed state ──────────────────────────────────────────────────────────
+  // Files past the drawer's line budget start collapsed, like an oversized one.
+  let overBudget = $derived(overBudgetKeys(flatFiles, TOTAL_LINE_BUDGET));
+
+  // ── Viewed / collapse state ───────────────────────────────────────────────
+  // Both belong to one diff of one checkout, so both reset when either
+  // changes. The previous key concatenated `cwd` and the whole diff text on
+  // every panel update just to compare it; comparing the two values directly
+  // allocates nothing.
   let viewedFiles: Set<string> = $state(new Set());
-  let lastViewedResetKey = "";
+  let resetCwd = "";
+  let resetRaw = "";
 
   $effect(() => {
-    const resetKey = cwd + "\0" + (data?.raw ?? "");
-    if (resetKey !== lastViewedResetKey) {
-      lastViewedResetKey = resetKey;
+    const raw = data?.raw ?? "";
+    if (cwd !== resetCwd || raw !== resetRaw) {
+      resetCwd = cwd;
+      resetRaw = raw;
       viewedFiles = new Set();
+      userCollapsed = new Set();
+      expandedFiles = new Set();
     }
   });
 
@@ -184,16 +204,6 @@
   let diffMode = $state<"split" | "unified">("unified");
   let userCollapsed: Set<string> = $state(new Set());
   let expandedFiles: Set<string> = $state(new Set());
-  let lastCollapseResetKey = "";
-
-  $effect(() => {
-    const resetKey = cwd + "\0" + (data?.raw ?? "");
-    if (resetKey !== lastCollapseResetKey) {
-      lastCollapseResetKey = resetKey;
-      userCollapsed = new Set();
-      expandedFiles = new Set();
-    }
-  });
 
   function toggleUserCollapsed(key: string) {
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -351,6 +361,7 @@
     viewed={viewedFiles.has(item.key)}
     userCollapsed={userCollapsed.has(item.key)}
     expanded={expandedFiles.has(item.key)}
+    overBudget={overBudget.has(item.key)}
     {commentsByAnchorKey}
     {composerKey}
     onToggleViewed={toggleViewed}
