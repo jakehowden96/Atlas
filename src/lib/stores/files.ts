@@ -205,7 +205,9 @@ export async function saveActiveFile(): Promise<void> {
     // it the moment the unsaved edit is dropped — and the next save can still
     // see which endings the file has.
     setDiskDoc(key, out);
-    dropDoc(key);
+    // Keystrokes that landed while the write was in flight are not on disk;
+    // dropping the doc would lose them. They stay as a fresh unsaved edit.
+    if (get(docs).get(key) === text) dropDoc(key);
   } catch (e) {
     log.error("files", `save failed for ${key}`, e);
     showToast("Could not save", { body: String(e) });
