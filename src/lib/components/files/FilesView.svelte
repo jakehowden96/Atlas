@@ -4,6 +4,7 @@
   import FileRail from "./FileRail.svelte";
   import FileTree from "./FileTree.svelte";
   import OpenDialog from "./OpenDialog.svelte";
+  import UnsavedDialog from "./UnsavedDialog.svelte";
 </script>
 
 <div class="files">
@@ -13,6 +14,7 @@
 </div>
 
 <OpenDialog />
+<UnsavedDialog />
 
 <style>
   .files {

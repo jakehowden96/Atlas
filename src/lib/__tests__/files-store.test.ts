@@ -13,13 +13,25 @@ vi.mock("../stores/settings", () => ({
   setFileSources: vi.fn(),
   setOpenFiles: vi.fn(),
 }));
+type CloseHandler = (e: { preventDefault: () => void }) => void;
+/** The guard registers once per module load, so the handler outlives each test's mock reset. */
+let closeHandler: CloseHandler | undefined;
+const windowApi = vi.hoisted(() => ({
+  onCloseRequested: vi.fn(),
+  destroy: vi.fn(),
+}));
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => windowApi }));
 vi.mock("../stores/toast", () => ({ showToast: vi.fn() }));
 
+import { setOpenFiles } from "../stores/settings";
 import { readTextFileAt, writeTextFileAt } from "../ipc";
 import { fileKey } from "../files";
 import {
   activeFile,
+  closeRequest,
   conflicts,
+  requestCloseFile,
+  resolveCloseRequest,
   handleExternalChange,
   reloadFromDisk,
   keepMine,
@@ -40,6 +52,11 @@ beforeEach(() => {
   diskDocs.set(new Map());
   unreadable.set(new Set());
   conflicts.set(new Set());
+  closeRequest.set(null);
+  windowApi.onCloseRequested.mockImplementation(async (handler: CloseHandler) => {
+    closeHandler = handler;
+    return () => {};
+  });
   openFiles.set([]);
   activeFile.set(key);
 });
@@ -145,5 +162,84 @@ describe("external changes to an open file", () => {
     expect(get(docs).has(noteKey)).toBe(false);
     expect(get(diskDocs).get(noteKey)).toBe("theirs");
     expect(get(conflicts).size).toBe(0);
+  });
+});
+
+describe("closing a tab with unsaved edits", () => {
+  const tab = fileKey("/ws", "n.md");
+
+  beforeEach(async () => {
+    openFiles.set([tab]);
+    activeFile.set(tab);
+    vi.mocked(readTextFileAt).mockResolvedValue("disk");
+    await loadFileText(tab);
+  });
+
+  it("closes a clean tab straight away", () => {
+    requestCloseFile(tab);
+    expect(setOpenFiles).toHaveBeenLastCalledWith([]);
+    expect(get(closeRequest)).toBeNull();
+  });
+
+  it("asks first and keeps the edit when the user cancels", async () => {
+    setDoc(tab, "typed");
+    requestCloseFile(tab);
+    expect(get(closeRequest)).toEqual({ kind: "tab", key: tab });
+    expect(setOpenFiles).not.toHaveBeenCalled();
+
+    await resolveCloseRequest("cancel");
+    expect(setOpenFiles).not.toHaveBeenCalled();
+    expect(get(docs).get(tab)).toBe("typed");
+  });
+
+  it("discards the edit on request", async () => {
+    setDoc(tab, "typed");
+    requestCloseFile(tab);
+    await resolveCloseRequest("discard");
+    expect(setOpenFiles).toHaveBeenLastCalledWith([]);
+    expect(writeTextFileAt).not.toHaveBeenCalled();
+  });
+
+  it("saves before closing, and stays open if the save fails", async () => {
+    setDoc(tab, "typed");
+    requestCloseFile(tab);
+    vi.mocked(writeTextFileAt).mockRejectedValue(new Error("denied"));
+    await resolveCloseRequest("save");
+    expect(setOpenFiles).not.toHaveBeenCalled();
+
+    requestCloseFile(tab);
+    vi.mocked(writeTextFileAt).mockResolvedValue(undefined);
+    await resolveCloseRequest("save");
+    expect(writeTextFileAt).toHaveBeenLastCalledWith("/ws/n.md", "typed");
+    expect(setOpenFiles).toHaveBeenLastCalledWith([]);
+  });
+});
+
+describe("quitting with unsaved edits", () => {
+  const tab = fileKey("/ws", "q.md");
+
+  async function guard() {
+    setDoc(tab, "typed");
+    await vi.waitFor(() => expect(closeHandler).toBeDefined());
+    return closeHandler as CloseHandler;
+  }
+
+  it("blocks the window close and asks, then quits on discard", async () => {
+    const handler = await guard();
+    const event = { preventDefault: vi.fn() };
+    handler(event);
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(get(closeRequest)).toEqual({ kind: "quit" });
+
+    await resolveCloseRequest("discard");
+    expect(windowApi.destroy).toHaveBeenCalled();
+  });
+
+  it("does not quit when saving one of the files fails", async () => {
+    const handler = await guard();
+    handler({ preventDefault: vi.fn() });
+    vi.mocked(writeTextFileAt).mockRejectedValue(new Error("denied"));
+    await resolveCloseRequest("save");
+    expect(windowApi.destroy).not.toHaveBeenCalled();
   });
 });

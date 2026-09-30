@@ -1,3 +1,4 @@
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { derived, get, writable, type Writable } from "svelte/store";
 import type { DirEntry, DocEntry, PlanEntry } from "../../types/files";
 import {
@@ -19,6 +20,7 @@ import { log } from "../logger";
 import type { OutlineItem } from "../markdown";
 import { setFileSources, setOpenFiles } from "./settings";
 import { showToast } from "./toast";
+import { showView } from "./view";
 
 /** Workspace path whose documents the tree column is showing. */
 export const fileWs = writable<string>("");
@@ -158,6 +160,7 @@ export function closeFile(key: string): void {
 }
 
 export function setDoc(key: string, text: string): void {
+  ensureQuitGuard();
   docs.update((current) => {
     const next = new Map(current);
     next.set(key, text);
@@ -200,7 +203,11 @@ export async function loadFileText(key: string): Promise<void> {
 /** Write the active file's pending edit to disk. A failed write keeps the edit,
  *  so the only thing lost is the save. */
 export async function saveActiveFile(): Promise<void> {
-  const key = get(activeFile);
+  await saveFile(get(activeFile));
+}
+
+/** Write one file's pending edit to disk. */
+async function saveFile(key: string): Promise<void> {
   const text = get(docs).get(key);
   if (!key || text === undefined || get(unreadable).has(key)) return;
   if (get(conflicts).has(key)) {
@@ -238,6 +245,60 @@ function setMember(store: Writable<Set<string>>, key: string, present: boolean) 
     else next.delete(key);
     return next;
   });
+}
+
+/** What the unsaved-changes dialog is asking about: one tab, or quitting Atlas. */
+export type CloseRequest = { kind: "tab"; key: string } | { kind: "quit" };
+export const closeRequest = writable<CloseRequest | null>(null);
+
+/** Close a tab, asking first if it holds unsaved edits. */
+export function requestCloseFile(key: string): void {
+  if (get(dirtyFiles).has(key)) closeRequest.set({ kind: "tab", key });
+  else closeFile(key);
+}
+
+/** Act on the user's answer to the unsaved-changes dialog. A save that fails
+ *  leaves the file dirty, and then nothing closes — the edit is never traded
+ *  for the exit. */
+export async function resolveCloseRequest(choice: "save" | "discard" | "cancel"): Promise<void> {
+  const request = get(closeRequest);
+  closeRequest.set(null);
+  if (!request || choice === "cancel") return;
+  if (request.kind === "tab") {
+    if (choice === "save") {
+      await saveFile(request.key);
+      if (get(dirtyFiles).has(request.key)) return;
+    }
+    closeFile(request.key);
+    return;
+  }
+  if (choice === "save") {
+    for (const key of get(dirtyFiles)) await saveFile(key);
+    if (get(dirtyFiles).size > 0) return;
+  }
+  await getCurrentWindow().destroy();
+}
+
+let quitGuarded = false;
+
+/** Intercept the window's close while any file has unsaved edits. Registered on
+ *  the first edit rather than at startup, so it costs nothing until it matters.
+ *  Unedited windows close as before: the handler only prevents when dirty. */
+function ensureQuitGuard(): void {
+  if (quitGuarded) return;
+  quitGuarded = true;
+  getCurrentWindow()
+    .onCloseRequested((event) => {
+      if (get(dirtyFiles).size === 0) return;
+      event.preventDefault();
+      // The dialog lives in the Files view; bring it up wherever the user is.
+      showView("files");
+      closeRequest.set({ kind: "quit" });
+    })
+    .catch((e) => {
+      quitGuarded = false;
+      log.warn("files", `could not guard window close: ${e}`);
+    });
 }
 
 /**

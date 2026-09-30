@@ -16,7 +16,6 @@
   import { chords } from "../../stores/settings";
   import {
     activeFile,
-    closeFile,
     conflicts,
     dirtyFiles,
     diskDocs,
@@ -29,6 +28,7 @@
     openFiles,
     outlineJump,
     plans,
+    requestCloseFile,
     keepMine,
     reloadFromDisk,
     saveActiveFile,
@@ -179,7 +179,7 @@
             type="button"
             class="tab-close"
             aria-label="Close {basename(f.path)}"
-            onclick={() => closeFile(tab)}>✕</button
+            onclick={() => requestCloseFile(tab)}>✕</button
           >
         </div>
       {/each}
