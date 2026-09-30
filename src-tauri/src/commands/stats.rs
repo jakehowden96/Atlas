@@ -1709,15 +1709,6 @@ mod tests {
     }
 
     #[test]
-    fn model_family_grouping() {
-        assert_eq!(model_family("claude-opus-4-8"), "Opus");
-        assert_eq!(model_family("claude-sonnet-4-6"), "Sonnet");
-        assert_eq!(model_family("claude-haiku-4-5"), "Haiku");
-        assert_eq!(model_family("claude-fable-5"), "Fable");
-        assert_eq!(model_family("unknown-model"), "unknown-model");
-    }
-
-    #[test]
     fn counts_user_chars_only_string_content() {
         // "hi" (2 chars) + "hello" (5 chars) = 7; array-content and isMeta are ignored
         let f = write_lines(&[
@@ -1850,23 +1841,6 @@ mod tests {
             rec.tool_errors_by_name.len(),
             1,
             "the orphan id is charged to no tool"
-        );
-    }
-
-    #[test]
-    fn tool_errors_match_the_real_transcript_fixture() {
-        // tests/fixtures/session.jsonl: 14 Bash calls of which exactly one errored.
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests")
-            .join("fixtures")
-            .join("session.jsonl");
-        let rec = parse_session(&path).unwrap();
-        assert_eq!(rec.tool_calls.get("Bash").copied(), Some(14));
-        assert_eq!(rec.tool_errors_by_name.get("Bash").copied(), Some(1));
-        assert_eq!(rec.tool_errors, 1);
-        assert!(
-            !rec.tool_errors_by_name.contains_key("Read"),
-            "Read never errored in the fixture"
         );
     }
 

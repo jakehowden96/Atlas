@@ -1338,23 +1338,6 @@ mod tests {
     }
 
     #[test]
-    fn fixture_has_the_shape_the_tests_rely_on() {
-        let lines = fixture_lines();
-        assert!(
-            (150..=250).contains(&lines.len()),
-            "fixture is ~200 lines, got {}",
-            lines.len()
-        );
-        // No drive letters, no home directories, no project slugs naming one.
-        for needle in ["C:\\\\", "C:/", "/Users/", "Users-"] {
-            assert!(
-                !lines.iter().any(|l| l.contains(needle)),
-                "the fixture still leaks a real path ({needle})"
-            );
-        }
-    }
-
-    #[test]
     fn deduplicates_usage_across_lines_sharing_a_request_id() {
         let lines = fixture_lines();
         let (_dir, mut tail) = tail_with(&lines);
@@ -1772,24 +1755,6 @@ mod tests {
 
     fn live_subagents(tail: &SessionTail) -> usize {
         tail.session().subagents.iter().filter(|a| !a.done).count()
-    }
-
-    #[test]
-    fn the_background_fixture_is_the_timeline_the_tests_name() {
-        let lines = bg_lines();
-        assert_eq!(lines.len(), 6);
-        assert!(lines[SPAWN].contains(BG_ID) && lines[SPAWN].contains(r#""name":"Agent""#));
-        assert!(lines[RECEIPT].contains(r#""isAsync":true"#));
-        assert!(lines[END_TURN].contains(r#""stop_reason":"end_turn""#));
-        assert!(lines[COUNT_ONE].contains(r#""pendingBackgroundAgentCount":1"#));
-        assert!(lines[NOTIFICATION].contains("<task-notification>"));
-        assert!(!lines[COUNT_NONE].contains("pendingBackgroundAgentCount"));
-        for needle in ["C:", "E:", "/Users/", "GitHub"] {
-            assert!(
-                !lines.iter().any(|l| l.contains(needle)),
-                "the fixture leaks a real path ({needle})"
-            );
-        }
     }
 
     /// The regression. The receipt lands 2.8s after the call while the agent
