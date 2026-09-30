@@ -112,6 +112,51 @@ export function totalLines(file: DiffFile): number {
   return file.hunks.reduce((sum, h) => sum + h.lines.length, 0);
 }
 
+// ---------- Render limits ----------
+// Every diff line is an interactive row, so the DOM cost of a big diff is
+// per line. These bound what is mounted without hiding anything permanently.
+
+/** A file longer than this starts collapsed behind a "Show N lines" button. */
+export const MAX_VISIBLE_LINES = 500;
+/** Rows an expanded card mounts at a time; "Show more" adds another page. */
+export const ROW_PAGE = 1500;
+/** Lines the drawer mounts across its expanded files before collapsing the rest. */
+export const TOTAL_LINE_BUDGET = 5000;
+
+/** The first `limit` lines of `hunks`, and how many lines that leaves out. */
+export function limitHunks(
+  hunks: DiffHunk[],
+  limit: number,
+): { hunks: DiffHunk[]; hidden: number } {
+  const total = hunks.reduce((sum, h) => sum + h.lines.length, 0);
+  if (total <= limit) return { hunks, hidden: 0 };
+  const kept: DiffHunk[] = [];
+  let room = limit;
+  for (const hunk of hunks) {
+    if (room <= 0) break;
+    kept.push(hunk.lines.length <= room ? hunk : { ...hunk, lines: hunk.lines.slice(0, room) });
+    room -= hunk.lines.length;
+  }
+  return { hunks: kept, hidden: total - limit };
+}
+
+/**
+ * Files that would push the drawer past `budget` mounted lines, so they start
+ * collapsed like an oversized file does. The first file always fits; a file
+ * already collapsed for its size costs nothing and is not counted.
+ */
+export function overBudgetKeys(items: FlatFile[], budget: number): Set<string> {
+  const over = new Set<string>();
+  let spent = 0;
+  for (const item of items) {
+    const lines = totalLines(item.file);
+    if (lines > MAX_VISIBLE_LINES) continue;
+    if (spent > 0 && spent + lines > budget) over.add(item.key);
+    else spent += lines;
+  }
+  return over;
+}
+
 // ---------- Split view ----------
 
 // Build paired lines for split view: align add/remove rows. Each non-hunk

@@ -1,6 +1,15 @@
 <script lang="ts">
   import type { DiffHunk } from "../../diff-parser";
-  import { cssEscape, statusLetter, totalLines, toSplitRows, type FlatFile } from "../../diff-view";
+  import {
+    cssEscape,
+    limitHunks,
+    MAX_VISIBLE_LINES,
+    ROW_PAGE,
+    statusLetter,
+    totalLines,
+    toSplitRows,
+    type FlatFile,
+  } from "../../diff-view";
   import { anchorDomKey, type ReviewAnchor, type ReviewComment } from "../../stores/reviewComments";
   import DiffCommentThread from "./DiffCommentThread.svelte";
 
@@ -10,6 +19,7 @@
     viewed: boolean;
     userCollapsed: boolean;
     expanded: boolean;
+    overBudget: boolean;
     commentsByAnchorKey: Map<string, ReviewComment[]>;
     composerKey: string | null;
     onToggleViewed: (key: string) => void;
@@ -22,6 +32,7 @@
   }
 
   let {
+    overBudget,
     item,
     diffMode,
     viewed,
@@ -40,12 +51,21 @@
 
   // userCollapsed: the user clicked the header to hide the file
   // expanded: the user clicked "Show N lines" to override the size-based auto-collapse
-  const MAX_VISIBLE_LINES = 500;
+  // overBudget: earlier files already fill the drawer's line budget
   let collapsed = $derived(
-    userCollapsed || (totalLines(item.file) > MAX_VISIBLE_LINES && !expanded),
+    userCollapsed || ((totalLines(item.file) > MAX_VISIBLE_LINES || overBudget) && !expanded),
   );
 
   let splitRows = $derived(toSplitRows(item.file));
+
+  // Even expanded, a file mounts one page of rows at a time: each row is an
+  // interactive element, and a generated file can have tens of thousands.
+  let rowLimit = $state(ROW_PAGE);
+  let shown = $derived(limitHunks(item.file.hunks, rowLimit));
+  let splitShown = $derived(splitRows.slice(0, rowLimit));
+  let hiddenRows = $derived(
+    diffMode === "split" ? Math.max(0, splitRows.length - rowLimit) : shown.hidden,
+  );
 
   /* One tab stop per card, and ↑/↓ move it — the same roving shape the Sessions
      grid uses. A tab stop per diff line would put hundreds of them between the
@@ -57,9 +77,9 @@
 
   let rowIds = $derived.by(() => {
     if (diffMode === "split") {
-      return splitRows.flatMap((row, i) => (row.kind === "hunk" ? [] : [`s${i}`]));
+      return splitShown.flatMap((row, i) => (row.kind === "hunk" ? [] : [`s${i}`]));
     }
-    return item.file.hunks.flatMap((hunk, hi) =>
+    return shown.hunks.flatMap((hunk, hi) =>
       hunk.lines.flatMap((line, li) => (line.type === "hunk-header" ? [] : [`u${hi}-${li}`])),
     );
   });
@@ -174,7 +194,7 @@
         onfocusin={onRowsFocusIn}
       >
         {#if diffMode === "split"}
-          {#each splitRows as row, ri (ri)}
+          {#each splitShown as row, ri (ri)}
             {#if row.kind === "hunk"}
               <div class="row hunk"><span class="hunk-text">{row.header}</span></div>
             {:else if row.kind === "context"}
@@ -233,7 +253,7 @@
             {/if}
           {/each}
         {:else}
-          {#each item.file.hunks as hunk, hi (hi)}
+          {#each shown.hunks as hunk, hi (hi)}
             {#each hunk.lines as line, li (li)}
               {#if line.type === "hunk-header"}
                 <div class="row hunk"><span class="hunk-text">{hunk.header}</span></div>
@@ -308,6 +328,11 @@
           {/each}
         {/if}
       </div>
+      {#if hiddenRows > 0}
+        <button type="button" class="expand-btn more" onclick={() => (rowLimit += ROW_PAGE)}>
+          Show {Math.min(ROW_PAGE, hiddenRows)} more lines ({hiddenRows} hidden)
+        </button>
+      {/if}
     </div>
   {/if}
 </section>

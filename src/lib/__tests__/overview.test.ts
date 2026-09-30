@@ -5,6 +5,7 @@ import {
   activity,
   buildTiles,
   classifyRows,
+  detectPermissionPrompt,
   compareByAttention,
   compareByOpened,
   compareByWorkspace,
@@ -14,9 +15,9 @@ import {
   handleGridKey,
   openQuestion,
   pinKey,
-  planSegments,
   type SessionTile,
   screenPreview,
+  shouldNotify,
   shortToolName,
   splitReply,
   tileComparator,
@@ -95,10 +96,27 @@ describe("compareByWorkspace", () => {
 });
 
 describe("tileComparator", () => {
-  it("maps attention and workspace to their comparators", () => {
-    expect(tileComparator("attention")).toBe(compareByAttention);
-    expect(tileComparator("workspace")).toBe(compareByWorkspace);
-    expect(tileComparator("opened")).toBe(compareByOpened);
+  it("orders by attention, by workspace name, and by when the session was opened", () => {
+    const t = (id: string, state: SessionState, workspaceName: string, createdAt: string) =>
+      ({
+        sessionUuid: id,
+        atlasSessionId: "",
+        state,
+        workspaceName,
+        label: id,
+        createdAt,
+      }) as SessionTile;
+    const tiles = [
+      t("a", "idle", "zeta", "2026-01-03T00:00:00Z"),
+      t("b", "needsYou", "alpha", "2026-01-02T00:00:00Z"),
+      t("c", "running", "mid", "2026-01-01T00:00:00Z"),
+    ];
+    const sorted = (ordering: Parameters<typeof tileComparator>[0]) =>
+      [...tiles].sort(tileComparator(ordering)!).map((x) => x.sessionUuid);
+
+    expect(sorted("attention")).toEqual(["b", "c", "a"]);
+    expect(sorted("workspace")).toEqual(["b", "c", "a"]);
+    expect(sorted("opened")).toEqual(["c", "b", "a"]);
   });
 
   it("returns null for manual, leaving arrival order alone", () => {
@@ -135,8 +153,7 @@ describe("tileComparator", () => {
       expect(order(tiles, "manual", ["c", "b"])).toEqual(["b", "c", "a"]);
     });
 
-    it("hands back the plain comparator when nothing is pinned", () => {
-      expect(tileComparator("attention", new Set())).toBe(compareByAttention);
+    it("leaves manual unsorted whether or not anything is pinned", () => {
       expect(tileComparator("manual", new Set())).toBeNull();
     });
 
@@ -542,30 +559,6 @@ describe("feedItems", () => {
   });
 });
 
-describe("planSegments", () => {
-  it("is empty with no plan", () => {
-    expect(planSegments([])).toEqual([false, false, false, false, false, false]);
-  });
-
-  it("fills in proportion to completed todos", () => {
-    const plan = [
-      { text: "a", status: "completed" },
-      { text: "b", status: "completed" },
-      { text: "c", status: "in_progress" },
-      { text: "d", status: "pending" },
-    ];
-    expect(planSegments(plan).filter(Boolean)).toHaveLength(3);
-  });
-
-  it("fills every segment when the plan is done", () => {
-    const plan = [
-      { text: "a", status: "completed" },
-      { text: "b", status: "completed" },
-    ];
-    expect(planSegments(plan).every(Boolean)).toBe(true);
-  });
-});
-
 describe("formatElapsed", () => {
   const start = Date.parse("2026-01-01T00:00:00.000Z");
 
@@ -735,5 +728,85 @@ describe("classifyRows", () => {
     ];
     const preview = screenPreview(rows);
     expect(classifyRows(preview).length).toBe(preview.length);
+  });
+});
+
+describe("detectPermissionPrompt", () => {
+  const bash = [
+    "⏺ Bash(git push origin main)",
+    "",
+    " Bash command",
+    "",
+    "   git push origin main",
+    "   Push the branch",
+    "",
+    " Do you want to proceed?",
+    " ❯ 1. Yes",
+    "   2. Yes, and don't ask again for git push commands in /work/atlas",
+    "   3. No, and tell Claude what to do differently (esc)",
+    "",
+  ];
+
+  it("recognises the tool-permission list with the first option highlighted", () => {
+    expect(detectPermissionPrompt(bash)).toBe(true);
+  });
+
+  it("recognises the list inside the dialog's box border", () => {
+    const boxed = bash.map((row) => (row ? `│ ${row.padEnd(70)} │` : row));
+    expect(detectPermissionPrompt(boxed)).toBe(true);
+  });
+
+  it("does not offer Allow once the cursor moved off the first option", () => {
+    const moved = bash.map((row) =>
+      row.replace("❯ 1. Yes", "  1. Yes").replace("  3. No", "❯ 3. No"),
+    );
+    expect(detectPermissionPrompt(moved)).toBe(false);
+  });
+
+  it("reads an ordinary screen as no prompt", () => {
+    expect(
+      detectPermissionPrompt([
+        "> fix the bug",
+        "⏺ Done.",
+        "",
+        "─".repeat(40),
+        "> ",
+        "─".repeat(40),
+      ]),
+    ).toBe(false);
+    expect(detectPermissionPrompt([])).toBe(false);
+  });
+
+  it("reads an elicitation-style form as no prompt", () => {
+    const form = ["Server needs some information", "", " Name: ", " ❯ Continue", "   Cancel"];
+    expect(detectPermissionPrompt(form)).toBe(false);
+  });
+
+  it("ignores a prompt that has scrolled far above the bottom of the screen", () => {
+    const later = [...bash, ...Array.from({ length: 30 }, (_, i) => `⏺ output line ${i}`)];
+    expect(detectPermissionPrompt(later)).toBe(false);
+  });
+
+  it("needs the No option below Yes, not just the question and Yes", () => {
+    expect(detectPermissionPrompt(bash.slice(0, 9))).toBe(false);
+  });
+});
+
+describe("shouldNotify", () => {
+  it("is quiet only when that very prompt is on screen in the focused window", () => {
+    expect(shouldNotify("t1", "t1", "session", true)).toBe(false);
+  });
+
+  it("notifies for a session that is not the active tab", () => {
+    expect(shouldNotify("t2", "t1", "session", true)).toBe(true);
+  });
+
+  it("notifies when the active tab's terminal is not the screen being shown", () => {
+    expect(shouldNotify("t1", "t1", "sessions", true)).toBe(true);
+    expect(shouldNotify("t1", "t1", "prs", true)).toBe(true);
+  });
+
+  it("notifies when another application has focus, even for the active tab", () => {
+    expect(shouldNotify("t1", "t1", "session", false)).toBe(true);
   });
 });

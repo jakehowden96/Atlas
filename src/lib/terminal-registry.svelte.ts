@@ -4,7 +4,7 @@
  *
  * `TerminalContainer`'s `{#each $tabs as tab (tab.id)}` used to own every
  * tab's DOM node, and `$tabs` gets a new array reference on almost every
- * tab-level change (title, ready, needsInput…) — so if a node were just
+ * tab-level change (ready, needsInput…) — so if a node were just
  * `appendChild`'d somewhere else, Svelte's keyed reconciliation would yank it
  * back on the next re-run. Mounting each tab once with Svelte 5's imperative
  * `mount()`/`unmount()`, into a host `<div>` no `{#each}` ever manages, means
@@ -22,10 +22,11 @@ interface TerminalProps {
   tabId: string;
   visible: boolean;
   ready: boolean;
+  spawnError?: string;
   harnessLabel?: string;
   cwd?: string;
-  onData?: (data: string) => void;
   onPtyReady: (ptyId: number) => void;
+  onSpawnError: (message: string) => void;
 }
 
 interface Entry {

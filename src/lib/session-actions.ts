@@ -6,11 +6,12 @@
  * all drive the same code paths without a component in the middle.
  */
 import { open } from "@tauri-apps/plugin-dialog";
-import { Terminal } from "@xterm/xterm";
 import { get } from "svelte/store";
 import { ptyKill, ptyWrite, startOmpTail, startSessionTail, stopSessionTail } from "./ipc";
 import { log } from "./logger";
 import { removeLiveSession } from "./stores/liveSessions";
+import { setSessionTouchedFiles } from "./stores/panel";
+import { clearForSession } from "./stores/reviewComments";
 import { showToast } from "./stores/toast";
 import {
   DEFAULT_HARNESSES,
@@ -25,6 +26,8 @@ import {
   activeTabId,
   addTab,
   awaitTabPty,
+  canAnswerPermission,
+  permissionPromptTabs,
   removeTab,
   setTabNeedsInput,
   setTabReady,
@@ -50,16 +53,22 @@ import {
 /** Guards against double-spawning while a session is still starting. */
 const spawningSessionIds = new Set<string>();
 
-/** Drop a session's transcript tail and its live state once its PTY is gone. */
-function endSessionTail(claudeSessionId: string | null | undefined) {
+/** Drop a session's transcript tail and its live state once its PTY is gone.
+ *  The live entry goes after the tail has stopped: an update already computed
+ *  when the stop was requested still lands first, and removing before it would
+ *  let it re-insert a session nothing will ever remove. */
+async function endSessionTail(claudeSessionId: string | null | undefined) {
   if (!claudeSessionId) return;
+  try {
+    await stopSessionTail(claudeSessionId);
+  } catch (e) {
+    log.warn("session", `stopSessionTail failed for ${claudeSessionId}: ${e}`);
+  }
   removeLiveSession(claudeSessionId);
-  stopSessionTail(claudeSessionId).catch((e) =>
-    log.warn("session", `stopSessionTail failed for ${claudeSessionId}: ${e}`),
-  );
 }
 
-/** Kill a terminal tab's PTY, if it has one, and drop the tab. */
+/** Kill a terminal tab's PTY, if it has one, and drop the tab with the review
+ *  comments and touched-file counts kept under its id. */
 export async function closeSessionTab(tabId: string) {
   const tab = get(tabs).find((t) => t.id === tabId);
   if (tab && tab.ptyId >= 0) {
@@ -70,6 +79,8 @@ export async function closeSessionTab(tabId: string) {
     }
   }
   removeTab(tabId);
+  clearForSession(tabId);
+  setSessionTouchedFiles(tabId, []);
 }
 
 /**
@@ -93,6 +104,16 @@ function resolveArgs(args: string[], claudeSessionId: string): string[] {
   return args.map((a) => (a === "{sessionId}" || a === "{resumeId}" ? claudeSessionId : a));
 }
 
+const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Session ids are spliced into a command line typed into the user's shell
+ *  (`{sessionId}` / `{resumeId}`), and they arrive from places Atlas does not
+ *  control — transcript file names, the SessionStart hook. Only a UUID is
+ *  safe to type; anything else could carry shell syntax or a leading `--`. */
+export function isSessionUuid(id: string): boolean {
+  return SESSION_UUID.test(id);
+}
+
 /**
  * Spawn a terminal tab in the given workspace directory and launch a harness
  * in it — Claude Code, `omp`, or a bare Terminal with nothing typed.
@@ -107,12 +128,33 @@ export async function spawnHarnessSession(
   workspacePath: string,
   opts?: { existingSessionId?: string; resumeSessionId?: string; harnessId?: string },
 ) {
-  const tabId = crypto.randomUUID();
-  const terminal = new Terminal();
-  let session: { id: string };
-
   const harness = resolveHarness(opts?.harnessId ?? get(lastHarnessId));
   const resumeSessionId = opts?.resumeSessionId;
+  if (resumeSessionId !== undefined && !isSessionUuid(resumeSessionId)) {
+    throw new Error("The session id is not a valid UUID, so it cannot be resumed.");
+  }
+
+  // Resuming a conversation that already has a live tab would start a second
+  // claude on the same transcript and orphan the first PTY (no row would point
+  // at it any more). Show the open one instead.
+  if (opts?.existingSessionId) {
+    const owned = get(workspaces)
+      .flatMap((w) => w.sessions)
+      .find((s) => s.id === opts.existingSessionId);
+    const openTab = owned?.terminalTabId
+      ? get(tabs).find((t) => t.id === owned.terminalTabId)
+      : undefined;
+    if (owned && openTab && !openTab.spawnError) {
+      activeTabId.set(openTab.id);
+      focusedSessionId.set(owned.id);
+      return { id: owned.id };
+    }
+    // A tab left on its spawn-error card is dead; replace it.
+    if (openTab) await closeSessionTab(openTab.id);
+  }
+
+  const tabId = crypto.randomUUID();
+  let session: { id: string };
   const claudeSessionId = resumeSessionId ?? crypto.randomUUID();
 
   if (opts?.existingSessionId) {
@@ -133,9 +175,7 @@ export async function spawnHarnessSession(
   addTab({
     type: "terminal",
     id: tabId,
-    title: "",
     ptyId: -1,
-    terminal,
     cwd: workspacePath,
     ready: false,
     harnessLabel: harness.label,
@@ -144,7 +184,17 @@ export async function spawnHarnessSession(
   // The PTY is spawned by the TerminalSession this tab mounts, so its id lands
   // on the tab a moment later; wait for it rather than for a clock.
   void awaitTabPty(tabId).then((tab) => {
-    if (!tab) return;
+    if (!tab) {
+      // Closed while waiting, or the shell never came up: the second case
+      // leaves a tab on "Starting…" (or its error card) and a row that would
+      // otherwise read `starting` forever.
+      const stuck = get(tabs).find((t) => t.id === tabId);
+      if (stuck) {
+        updateSessionStatus(session.id, "error");
+        if (!stuck.spawnError) showToast("Terminal failed to start", { type: "error" });
+      }
+      return;
+    }
 
     // Terminal: nothing to type, and nothing shaped like a TUI to wait on —
     // no 300ms delay for a shell prompt, no 5s alt-screen fallback.
@@ -161,12 +211,19 @@ export async function spawnHarnessSession(
        it. `submitReview.ts` already writes "\r" for the same reason. */
     const cmd = `${harness.command}${args.length > 0 ? ` ${args.join(" ")}` : ""}\r`;
     // Small delay to let the shell prompt render.
-    setTimeout(() => {
+    setTimeout(async () => {
       // Re-check: the tab may have been closed during the delay,
       // in which case its PTY is dead and the write must be skipped.
       const current = get(tabs).find((t) => t.id === tabId);
       if (!current || current.ptyId < 0) return;
-      ptyWrite(current.ptyId, cmd);
+      try {
+        await ptyWrite(current.ptyId, cmd);
+      } catch (e) {
+        log.error("session", `launch command write failed for tab ${tabId}`, e);
+        showToast(`Could not start ${harness.label}`, { body: String(e) });
+        updateSessionStatus(session.id, "error");
+        return;
+      }
       updateSessionStatus(session.id, "running");
       // Tail the session's own transcript for structured live state — which
       // command depends on the harness, and a bare Terminal has none at all —
@@ -210,6 +267,10 @@ export async function spawnHarnessSession(
  * one Claude Code walked away from.
  */
 export async function handleClaudeSessionStart(tabId: string, claudeSessionId: string) {
+  if (!isSessionUuid(claudeSessionId)) {
+    log.warn("session", `ignoring SessionStart with a malformed session id for tab ${tabId}`);
+    return;
+  }
   const session = get(workspaces)
     .flatMap((w) => w.sessions)
     .find((s) => s.terminalTabId === tabId);
@@ -219,7 +280,7 @@ export async function handleClaudeSessionStart(tabId: string, claudeSessionId: s
   const rebound = await rebindSessionClaudeId(tabId, claudeSessionId);
   if (!rebound) return;
 
-  endSessionTail(previous);
+  await endSessionTail(previous);
   if (get(tailTranscripts)) {
     startSessionTail(claudeSessionId).catch((e) =>
       log.warn("session", `startSessionTail failed for ${claudeSessionId}: ${e}`),
@@ -256,7 +317,12 @@ export function openSession(workspacePath: string, sessionId: string) {
       existingSessionId: session.id,
       resumeSessionId: session.claudeSessionId ?? undefined,
       harnessId: session.harnessId ?? "claude-code",
-    }).finally(() => spawningSessionIds.delete(session.id));
+    })
+      .catch((e) => {
+        log.error("session", `openSession failed for ${session.id}`, e);
+        showToast("Could not open the session", { body: String(e) });
+      })
+      .finally(() => spawningSessionIds.delete(session.id));
   }
 }
 
@@ -270,7 +336,7 @@ export async function closeSession(sessionId: string) {
   if (!session) return;
 
   if (session.terminalTabId) await closeSessionTab(session.terminalTabId);
-  endSessionTail(session.claudeSessionId);
+  await endSessionTail(session.claudeSessionId);
   await detachSession(sessionId);
 
   // Unconditional, matching `backToSessions`: gating this on `focusedSessionId`
@@ -279,6 +345,16 @@ export async function closeSession(sessionId: string) {
   // the store, and the gate then silently skips the return to Sessions.
   focusedSessionId.set("");
   showView("sessions");
+}
+
+/** `closeSession` for a tab that only knows its own id — the error card a
+ *  failed spawn leaves behind. A tab no session row owns is just dropped. */
+export async function closeSessionForTab(tabId: string) {
+  const session = get(workspaces)
+    .flatMap((w) => w.sessions)
+    .find((s) => s.terminalTabId === tabId);
+  if (session) await closeSession(session.id);
+  else await closeSessionTab(tabId);
 }
 
 /**
@@ -322,21 +398,18 @@ export async function removeWorkspaceWithUndo(workspacePath: string) {
  * shows the terminal itself, and the floating card that used to answer for you
  * sat on top of the very prompt it was describing.
  *
- * ⚠ ASSUMPTION — NOT verified against a live TUI. This build environment has
- * no GUI, so `pnpm tauri dev` could not be run to watch what the prompt does.
- * Claude Code's permission prompt is an arrow-key selection list whose first
- * option ("Yes") is highlighted by default, so we send a bare CR to accept the
- * highlighted default and ESC to dismiss. The design prototype's toast copy
- * ("Typed 'y' into the session for you") would only be right if the prompt
- * were a plain y/n confirm, which it is not.
+ * Nothing is typed unless `canAnswerPermission` holds: the Notification hook
+ * flagged a `permission_prompt` for the tab AND `TerminalSession` reads a
+ * permission list with "Yes" highlighted off the terminal's own screen right
+ * now. The hook flag alone goes stale the moment the user answers in the
+ * terminal, and CR / ESC typed into anything but that list submit whatever is
+ * in the input box or interrupt the turn.
  *
- * TO CONFIRM OR REFUTE: run `pnpm tauri dev` with skip-permissions off, make
- * Claude run a `Bash` command, then click Allow.
- *   - Claude proceeds            → CR is right, keep as is.
- *   - Nothing happens            → the prompt is a y/n confirm; use "y" / "n".
- *   - Allow works, Deny does not → ESC is not wired; deny becomes two
- *     "\x1b[B" (ArrowDown) presses plus "\r" to pick "No, and tell Claude
- *     what to do differently".
+ * ⚠ The prompt layout `detectPermissionPrompt` reads, and CR / ESC as the
+ * accept / dismiss keys, were written from Claude Code's documented arrow-key
+ * list and have not been checked against a live TUI in this build environment.
+ * A layout the detector does not recognise therefore offers no Allow / Deny
+ * at all; the prompt is still answerable in the terminal itself.
  */
 
 /** Accept the highlighted default option. */
@@ -351,11 +424,17 @@ const PERMISSION_DENY = "\x1b";
  */
 async function answerPendingTool(sessionId: string, keystroke: string): Promise<void> {
   const tab = get(tabs).find((t) => t.id === sessionId);
-  if (!tab || tab.ptyId < 0) {
-    log.warn("session", `answerPendingTool: no live PTY for tab ${sessionId}`);
+  if (!canAnswerPermission(tab, get(permissionPromptTabs))) {
+    log.warn("session", `answerPendingTool: no permission prompt on screen for tab ${sessionId}`);
     return;
   }
-  await ptyWrite(tab.ptyId, keystroke);
+  try {
+    await ptyWrite(tab.ptyId, keystroke);
+  } catch (e) {
+    log.error("session", `answerPendingTool: ptyWrite failed for tab ${sessionId}`, e);
+    showToast("Could not answer the prompt", { body: String(e) });
+    return;
+  }
   setTabNeedsInput(sessionId, false);
 }
 

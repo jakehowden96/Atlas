@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
+import { get } from "svelte/store";
 
 vi.mock("../ipc", () => ({
   ghViewer: vi.fn(),
@@ -16,17 +17,23 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
   exists: vi.fn(),
 }));
 
-import { ghViewer, listRepoPrs } from "../ipc";
+import { ghViewer, listRepoPrs, listWorkspaceRepos } from "../ipc";
 import {
   isMine,
   matchesFilter,
+  loadWorkspaceRepos,
   matchRepo,
   needsAttention,
   needsMyReview,
+  prRepos,
+  prViewer,
+  refreshPrs,
+  reposByWorkspace,
   startPrPolling,
 } from "../stores/prs";
+import { toasts } from "../stores/toast";
 import { prRefreshMinutes, watchedRepos } from "../stores/settings";
-import type { Pr } from "../../types/prs";
+import type { Pr, RepoPrs } from "../../types/prs";
 
 function pr(overrides: Partial<Pr> = {}): Pr {
   return {
@@ -157,18 +164,19 @@ describe("pr polling", () => {
     vi.useRealTimers();
   });
 
-  it("fetches once immediately, then on the configured interval", () => {
+  it("fetches once immediately, then on the configured interval", async () => {
     stop = startPrPolling();
     expect(listRepoPrs).toHaveBeenCalledTimes(1);
-    vi.advanceTimersByTime(3 * 60_000);
+    await vi.advanceTimersByTimeAsync(3 * 60_000);
     expect(listRepoPrs).toHaveBeenCalledTimes(2);
   });
 
-  it("re-arms the timer when the interval setting changes", () => {
+  it("re-arms the timer when the interval setting changes", async () => {
     stop = startPrPolling();
+    await vi.advanceTimersByTimeAsync(0);
     vi.mocked(listRepoPrs).mockClear();
     prRefreshMinutes.set(1);
-    vi.advanceTimersByTime(60_000);
+    await vi.advanceTimersByTimeAsync(60_000);
     expect(listRepoPrs).toHaveBeenCalledTimes(1);
   });
 
@@ -225,5 +233,136 @@ describe("matchRepo", () => {
   it("ignores a repo with no remote", () => {
     const noRemote = { "/home/me/scratch": [{ path: "/home/me/scratch", slug: null }] };
     expect(matchRepo(noRemote, "jake/atlas")).toBe(null);
+  });
+});
+
+describe("pr refresh", () => {
+  let stop: (() => void) | null = null;
+
+  function repoPrs(repo: string): RepoPrs[] {
+    return [{ repo, prs: [pr()], error: null }];
+  }
+
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    vi.mocked(ghViewer).mockReset();
+    vi.mocked(ghViewer).mockResolvedValue(null);
+    vi.mocked(listRepoPrs).mockReset();
+    vi.mocked(listRepoPrs).mockResolvedValue([]);
+    vi.mocked(listWorkspaceRepos).mockReset();
+    vi.mocked(listWorkspaceRepos).mockResolvedValue([]);
+    watchedRepos.set([]);
+    prRefreshMinutes.set(3);
+    reposByWorkspace.set({});
+    prRepos.set(null);
+    // The store remembers whether its last refresh failed; start from a good one.
+    await refreshPrs();
+    vi.mocked(listRepoPrs).mockClear();
+    vi.mocked(ghViewer).mockClear();
+    prRepos.set(null);
+    prViewer.set(null);
+    toasts.set([]);
+  });
+
+  afterEach(() => {
+    stop?.();
+    stop = null;
+    vi.useRealTimers();
+  });
+
+  it("does not refetch when only the resolved workspace remotes changed", async () => {
+    stop = startPrPolling();
+    await vi.advanceTimersByTimeAsync(0);
+    vi.mocked(listRepoPrs).mockClear();
+
+    reposByWorkspace.set({ "/w": [] });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(listRepoPrs).not.toHaveBeenCalled();
+  });
+
+  it("keeps the newest result when an older request answers last", async () => {
+    let answerFirst: (value: RepoPrs[]) => void = () => {};
+    vi.mocked(listRepoPrs)
+      .mockReturnValueOnce(
+        new Promise<RepoPrs[]>((resolve) => {
+          answerFirst = resolve;
+        }),
+      )
+      .mockResolvedValueOnce(repoPrs("new/repo"));
+
+    const first = refreshPrs();
+    await refreshPrs();
+    answerFirst(repoPrs("old/repo"));
+    await first;
+
+    expect(get(prRepos)?.[0].repo).toBe("new/repo");
+  });
+
+  it("does not start another poll while one is still in flight", async () => {
+    let answer: (value: RepoPrs[]) => void = () => {};
+    vi.mocked(listRepoPrs).mockReturnValue(
+      new Promise<RepoPrs[]>((resolve) => {
+        answer = resolve;
+      }),
+    );
+    stop = startPrPolling();
+    vi.mocked(listRepoPrs).mockClear();
+
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(listRepoPrs).not.toHaveBeenCalled();
+
+    answer([]);
+    await vi.advanceTimersByTimeAsync(3 * 60_000);
+    expect(listRepoPrs).toHaveBeenCalledTimes(1);
+  });
+
+  it("toasts a failing poll once, not on every interval", async () => {
+    vi.mocked(listRepoPrs).mockRejectedValue(new Error("gh: not found"));
+    const shown = new Set<string>();
+    const unsubscribe = toasts.subscribe((list) => {
+      for (const t of list) shown.add(t.id);
+    });
+    stop = startPrPolling();
+
+    await vi.advanceTimersByTimeAsync(3 * 3 * 60_000);
+    unsubscribe();
+
+    expect(listRepoPrs).toHaveBeenCalledTimes(4);
+    expect(shown.size).toBe(1);
+  });
+
+  it("toasts again after a success followed by a new failure", async () => {
+    vi.mocked(listRepoPrs)
+      .mockRejectedValueOnce(new Error("down"))
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error("down again"));
+    const shown = new Set<string>();
+    const unsubscribe = toasts.subscribe((list) => {
+      for (const t of list) shown.add(t.id);
+    });
+    stop = startPrPolling();
+
+    await vi.advanceTimersByTimeAsync(2 * 3 * 60_000 + 1000);
+    unsubscribe();
+
+    expect(shown.size).toBe(2);
+  });
+
+  it("picks the viewer up on a later poll once gh is signed in", async () => {
+    stop = startPrPolling();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(get(prViewer)).toBeNull();
+
+    vi.mocked(ghViewer).mockResolvedValue({ login: "octocat" });
+    await vi.advanceTimersByTimeAsync(3 * 60_000);
+
+    expect(get(prViewer)?.login).toBe("octocat");
+  });
+
+  it("asks git for a workspace's remotes once when two callers race", async () => {
+    await Promise.all([loadWorkspaceRepos(["/w"]), loadWorkspaceRepos(["/w"])]);
+
+    expect(listWorkspaceRepos).toHaveBeenCalledTimes(1);
   });
 });

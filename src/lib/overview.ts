@@ -4,7 +4,7 @@
  * The join, the sort and the filter live here rather than in the components so
  * they can be unit-tested without a Svelte compiler (README → Conventions).
  */
-import type { LiveSession, PlanItem, SessionState, TranscriptLine } from "../types/session";
+import type { LiveSession, SessionState, TranscriptLine } from "../types/session";
 import type { OverviewOrdering } from "./stores/settings";
 import type { View } from "./stores/view";
 import type { DiffStats, Workspace, WorkspaceSession } from "./stores/workspace";
@@ -179,6 +179,25 @@ export function shouldClearNeedsInput(view: View, activeTabId: string): boolean 
   return view === "session" && activeTabId !== "";
 }
 
+/**
+ * Whether a needs-input event deserves an OS notification.
+ *
+ * Not when the user is already looking at that very prompt: its tab is the
+ * active one, the Session view is showing it, and the window has focus. Any
+ * other combination — a different tab, another screen, or another app in
+ * front — is exactly when the event would otherwise go unseen. Gating on the
+ * active tab alone stayed silent for a lone session even with Atlas in the
+ * background.
+ */
+export function shouldNotify(
+  sessionId: string,
+  activeTabId: string,
+  view: View,
+  windowFocused: boolean,
+): boolean {
+  return sessionId !== activeTabId || view !== "session" || !windowFocused;
+}
+
 /** Attention order. `Array.sort` is stable, so ties keep their arrival order. */
 export function compareByAttention(a: { state: SessionState }, b: { state: SessionState }): number {
   return ATTENTION_RANK[a.state] - ATTENTION_RANK[b.state];
@@ -255,16 +274,6 @@ export function filterByWorkspace<T extends { workspacePath: string }>(
   filter: string,
 ): T[] {
   return filter === "all" ? tiles : tiles.filter((t) => t.workspacePath === filter);
-}
-
-/**
- * Fixed-width plan bar: `count` segments filled in proportion to completed
- * todos, so the bar stays 140px whatever the plan's length.
- */
-export function planSegments(plan: PlanItem[], count = 6): boolean[] {
-  const done = plan.filter((p) => p.status === "completed").length;
-  const filled = plan.length === 0 ? 0 : Math.round((done / plan.length) * count);
-  return Array.from({ length: count }, (_, i) => i < filled);
 }
 
 /** `2m 14s` under an hour, `1h 04m` above it. Empty when the start is unknown. */
@@ -583,4 +592,36 @@ export function classifyRows(rows: readonly string[]): RowBlock[] {
     }
   }
   return out;
+}
+
+/** How far up from the bottom of the screen the prompt is searched for. */
+const PERMISSION_SEARCH_ROWS = 20;
+/** Rows may sit inside the dialog's box border. */
+const BOX_EDGE = "[\\s│┃|]*";
+const PERMISSION_QUESTION = /\bDo you want to\b/;
+const PERMISSION_YES_SELECTED = new RegExp(`^${BOX_EDGE}[❯>›]\\s*1\\.\\s+Yes\\b`);
+const PERMISSION_NO_OPTION = new RegExp(`^${BOX_EDGE}[❯>›]?\\s*\\d\\.\\s+No\\b`);
+
+/**
+ * Whether a Claude Code tool-permission prompt is what the screen shows right
+ * now, with its first option ("Yes") highlighted — so that a bare Enter
+ * accepts exactly the option a tile's Allow means.
+ *
+ * Detection is positive-only: the question line, the highlighted `1. Yes`
+ * and a `No` option must all be present, in that order, near the bottom of
+ * the screen. Anything the check does not recognise — a different TUI, a
+ * prompt whose wording Claude Code changed, a cursor moved off the first
+ * option — reads as "no prompt", and a tile then offers no shortcut rather
+ * than typing into a screen it cannot vouch for. The expected layout is
+ * Claude Code's `Do you want to proceed?` / `❯ 1. Yes` / `2. Yes, and …` /
+ * `3. No, and tell Claude …` list; it has not been checked against a live
+ * TUI on every release.
+ */
+export function detectPermissionPrompt(rows: readonly string[]): boolean {
+  const tail = trimBlankTail(rows).slice(-PERMISSION_SEARCH_ROWS);
+  const question = tail.findIndex((row) => PERMISSION_QUESTION.test(row));
+  if (question === -1) return false;
+  const yes = tail.findIndex((row, i) => i > question && PERMISSION_YES_SELECTED.test(row));
+  if (yes === -1) return false;
+  return tail.some((row, i) => i > yes && PERMISSION_NO_OPTION.test(row));
 }

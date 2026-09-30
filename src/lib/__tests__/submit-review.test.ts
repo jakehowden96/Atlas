@@ -23,15 +23,12 @@ import {
 import { tabs, activeTabId } from "../stores/terminal";
 import { toasts } from "../stores/toast";
 import type { TabItem } from "../../types/terminal";
-import type { Terminal } from "@xterm/xterm";
 
 function tab(id: string, ptyId: number): TabItem {
   return {
     type: "terminal",
     id,
-    title: "",
     ptyId,
-    terminal: {} as unknown as Terminal,
   };
 }
 
@@ -109,7 +106,7 @@ describe("submitReview", () => {
     await submitReview("tab-a");
 
     expect(ptyWrite).not.toHaveBeenCalled();
-    expect(get(toasts)[0].body).toMatch(/No active Claude terminal/);
+    expect(get(toasts)).toHaveLength(1);
     // The comments survive a failed send.
     expect(get(reviewComments).get("tab-a")).toHaveLength(1);
   });

@@ -3,8 +3,14 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel, getPanelData } from "./ipc";
-import { setTabTitle, activeTabId, setTabNeedsInput, setTabReady, tabs } from "./stores/terminal";
+import { getPanelData, openUrl, ptyKill, ptyResize, ptySpawn, ptyWrite, refreshPanel } from "./ipc";
+import {
+  activeTabId,
+  setPermissionPromptVisible,
+  setTabNeedsInput,
+  setTabReady,
+  tabs,
+} from "./stores/terminal";
 import { panelData } from "./stores/panel";
 import { keymap, terminalFontSize } from "./stores/settings";
 import { matchesAnyBinding } from "./keymap";
@@ -13,7 +19,7 @@ import { updateSessionLabelByTabId } from "./stores/workspace";
 import { get } from "svelte/store";
 import { showToast } from "./stores/toast";
 import { activeBlockTints, activeXtermTheme, themeMode } from "./theme";
-import { classifyRows, screenPreview, type RowBlock } from "./overview";
+import { classifyRows, detectPermissionPrompt, screenPreview, type RowBlock } from "./overview";
 import { log } from "./logger";
 
 export interface TerminalSessionOptions {
@@ -22,13 +28,39 @@ export interface TerminalSessionOptions {
   visible: boolean;
   onPtyReady: (ptyId: number) => void;
   cwd?: string;
-  onData?: (data: string) => void;
+  /** The PTY could not be spawned; the tab has nothing to wait on. */
+  onSpawnError: (message: string) => void;
 }
 
 /** How long a terminal waits for its container to be laid out before spawning
  *  the PTY anyway. Long enough to cover a view switch, short enough that a tab
  *  nobody opens still gets a shell. */
 const SPAWN_SIZE_TIMEOUT_MS = 1000;
+
+/** How long a parked (off-screen) terminal waits after its last resize before
+ *  refitting, so a window drag reflows it once rather than once per frame. */
+const HIDDEN_REFIT_DEBOUNCE_MS = 150;
+
+/**
+ * The working directory an OSC 7 report names, or `null` if it names none.
+ *
+ * Shells send `file://host/path`; the path is percent-decoded, and on Windows
+ * the drive letter arrives as `/C:/Users/x`, whose leading slash would make
+ * the path non-absolute to the backend, so it is dropped. Anything that is
+ * not a `file:` URL is taken as a raw path already — `new URL("C:\\x")` would
+ * otherwise parse as scheme `c:` and yield `\x`.
+ */
+export function parseOsc7(data: string): string | null {
+  const raw = data.trim();
+  if (raw === "") return null;
+  if (!/^file:\/\//i.test(raw)) return raw;
+  try {
+    const path = decodeURIComponent(new URL(raw).pathname);
+    return (/^\/[A-Za-z]:(\/|$)/.test(path) ? path.slice(1) : path) || null;
+  } catch {
+    return null;
+  }
+}
 
 export class TerminalSession {
   private terminal: Terminal;
@@ -41,7 +73,14 @@ export class TerminalSession {
   private tabId: string;
   private _visible: boolean;
   private initialCwd?: string;
-  private externalOnData?: (data: string) => void;
+  private onSpawnError: (message: string) => void;
+  /** Set by `destroy()`. Every callback that can fire later — a pending spawn,
+   *  PTY output, timers — checks it before touching the disposed xterm. */
+  private destroyed = false;
+  private ptyWriteFailureShown = false;
+  private lastTitle = "";
+  private panelRefreshFailing = false;
+  private hiddenRefitTimer: ReturnType<typeof setTimeout> | null = null;
   private unsubscribeTheme: (() => void) | null = null;
   private unsubscribeFontSize: (() => void) | null = null;
   private prefersDark: MediaQueryList | null = null;
@@ -82,7 +121,7 @@ export class TerminalSession {
       mouseup, which fires after this one bubbles through the container. */
   private copySelection = () => {
     setTimeout(() => {
-      if (!this.terminal.hasSelection()) return;
+      if (this.destroyed || !this.terminal.hasSelection()) return;
       writeText(this.terminal.getSelection()).catch((e) =>
         log.warn("terminal", `copy-on-select failed: ${e}`),
       );
@@ -111,7 +150,9 @@ export class TerminalSession {
     if (!this.hasSize()) return;
     this.fitAddon.fit();
     if (this.ptyId !== null) {
-      ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
+      ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows).catch((e) =>
+        log.warn("terminal", `ptyResize failed for tab=${this.tabId}: ${e}`),
+      );
     }
   }
 
@@ -120,7 +161,7 @@ export class TerminalSession {
     this.container = opts.container;
     this._visible = opts.visible;
     this.initialCwd = opts.cwd;
-    this.externalOnData = opts.onData;
+    this.onSpawnError = opts.onSpawnError;
 
     this.terminal = new Terminal({
       cursorBlink: true,
@@ -158,14 +199,20 @@ export class TerminalSession {
 
     this.fitAddon = new FitAddon();
     this.terminal.loadAddon(this.fitAddon);
-    this.terminal.loadAddon(new WebLinksAddon());
+    this.terminal.loadAddon(new WebLinksAddon((_event, uri) => this.openLink(uri)));
 
     this.terminal.open(opts.container);
 
+    // Every tab stays mounted for the life of the app, and a webview caps live
+    // WebGL contexts (16 in Chromium/WebView2): past that the oldest context is
+    // lost and its terminal stops painting. Disposing the addon on loss drops
+    // xterm back to its DOM renderer, which is slower but never blank.
     try {
-      this.terminal.loadAddon(new WebglAddon());
-    } catch {
-      // WebGL not available, canvas renderer is fine
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => webgl.dispose());
+      this.terminal.loadAddon(webgl);
+    } catch (e) {
+      log.warn("terminal", `WebGL renderer unavailable for tab=${this.tabId}: ${e}`);
     }
 
     // After the fit addon exists — the first emission has to be able to refit.
@@ -214,33 +261,24 @@ export class TerminalSession {
     // later than that — a slow PSReadLine, oh-my-posh — cleared the overlay
     // while the shell still had `claude --session-id …` on screen, which is
     // the raw command people saw flash before the TUI.
-    this.terminal.parser.registerOscHandler(0, (data) => {
-      setTabTitle(this.tabId, data);
-      updateSessionLabelByTabId(this.tabId, data);
+    const onTitle = (data: string) => {
+      // Claude Code animates its title, so the same one arrives over and over.
+      if (data !== this.lastTitle) {
+        this.lastTitle = data;
+        updateSessionLabelByTabId(this.tabId, data);
+      }
       return true;
-    });
-    this.terminal.parser.registerOscHandler(2, (data) => {
-      setTabTitle(this.tabId, data);
-      updateSessionLabelByTabId(this.tabId, data);
-      return true;
-    });
+    };
+    this.terminal.parser.registerOscHandler(0, onTitle);
+    this.terminal.parser.registerOscHandler(2, onTitle);
 
     // OSC 7: CWD reporting — shells emit this when the directory changes
     // Format: file://hostname/path/to/dir
     this.terminal.parser.registerOscHandler(7, (data) => {
-      try {
-        const url = new URL(data);
-        const cwd = decodeURIComponent(url.pathname);
-        if (cwd && cwd !== this.currentCwd) {
-          this.currentCwd = cwd;
-          this.scheduleRefresh(cwd);
-        }
-      } catch {
-        const cwd = data.trim();
-        if (cwd && cwd !== this.currentCwd) {
-          this.currentCwd = cwd;
-          this.scheduleRefresh(cwd);
-        }
+      const cwd = parseOsc7(data);
+      if (cwd && cwd !== this.currentCwd) {
+        this.currentCwd = cwd;
+        this.scheduleRefresh(cwd);
       }
       return true;
     });
@@ -288,6 +326,7 @@ export class TerminalSession {
       const line = buffer.getLine(buffer.baseY + i);
       plain.push(line?.translateToString(true) ?? "");
     }
+    setPermissionPromptVisible(this.tabId, detectPermissionPrompt(plain));
     this.paintRowTints(plain);
   }
 
@@ -438,59 +477,94 @@ export class TerminalSession {
         this.flushPendingSpawn();
         return;
       }
-      // Not gated on `_visible`: the registry fills the host to whatever box
-      // holds it — the Session pane or the pane-sized parking root — so a
-      // backgrounded terminal follows a window resize the same as the visible
-      // one does, and comes back on screen already at the right geometry.
-      this.refit();
+      // Not skipped for a hidden terminal: the registry fills the host to
+      // whatever box holds it — the Session pane or the pane-sized parking
+      // root — so a backgrounded terminal follows a window resize and comes
+      // back on screen already at the right geometry. But dragging the window
+      // resizes every host each frame, and each refit reflows the buffer and
+      // SIGWINCHes a TUI that then redraws; a parked terminal settles once
+      // the burst is over instead.
+      if (this._visible) {
+        this.refit();
+        return;
+      }
+      clearTimeout(this.hiddenRefitTimer ?? undefined);
+      this.hiddenRefitTimer = setTimeout(() => {
+        this.hiddenRefitTimer = null;
+        if (!this.destroyed) this.refit();
+      }, HIDDEN_REFIT_DEBOUNCE_MS);
     });
     this.resizeObserver.observe(container);
   }
 
   private async spawnPty(onPtyReady: (ptyId: number) => void) {
     log.info("terminal", `spawnPty tab=${this.tabId} cwd=${this.initialCwd ?? "default"}`);
+    let ptyId: number;
     try {
-      this.ptyId = await ptySpawn(
+      ptyId = await ptySpawn(
         this.terminal.cols,
         this.terminal.rows,
         (data) => {
+          // Output can trail the kill; the xterm it would land in is gone.
+          if (this.destroyed) return;
           this.terminal.write(data);
-          if (this.externalOnData) {
-            const decoder = new TextDecoder();
-            this.externalOnData(decoder.decode(data));
-          }
         },
         this.initialCwd ?? undefined,
         { ATLAS_SESSION_ID: this.tabId },
       );
-      log.info("terminal", `spawnPty success: ptyId=${this.ptyId}`);
-      onPtyReady(this.ptyId);
-      // Seed cwd from the spawn arg so the diff panel populates without
-      // waiting for OSC 7 (not all shells emit it). OSC 7 will still
-      // overwrite this when the user `cd`s.
-      if (this.initialCwd && !this.currentCwd) {
-        this.currentCwd = this.initialCwd;
-        this.scheduleRefresh(this.initialCwd);
-      }
     } catch (e) {
       log.error("terminal", `spawnPty failed for tab=${this.tabId}`, e);
+      if (this.destroyed) return;
       showToast("Failed to spawn terminal", { body: String(e) });
+      this.onSpawnError(String(e));
       return;
     }
 
+    // The tab was closed while the spawn was in flight: nothing owns this
+    // shell any more, so it would live until the app quits.
+    if (this.destroyed) {
+      this.killPty(ptyId);
+      return;
+    }
+
+    this.ptyId = ptyId;
+    log.info("terminal", `spawnPty success: ptyId=${ptyId}`);
+    onPtyReady(ptyId);
+    // Seed cwd from the spawn arg so the diff panel populates without
+    // waiting for OSC 7 (not all shells emit it). OSC 7 will still
+    // overwrite this when the user `cd`s.
+    if (this.initialCwd && !this.currentCwd) {
+      this.currentCwd = this.initialCwd;
+      this.scheduleRefresh(this.initialCwd);
+    }
+
     this.terminal.onData((data) => {
-      if (this.ptyId !== null) {
-        ptyWrite(this.ptyId, data);
-      }
+      this.writeToPty(data);
       setTabNeedsInput(this.tabId, false);
     });
   }
 
-  /** Write a string to the PTY (e.g. to run a command). */
-  async writeCommand(cmd: string) {
-    if (this.ptyId !== null) {
-      await ptyWrite(this.ptyId, cmd);
-    }
+  /** Send keystrokes to the shell. A dead PTY rejects every write, so the
+   *  first failure is toasted and the rest only logged. */
+  private writeToPty(data: string) {
+    if (this.ptyId === null) return;
+    ptyWrite(this.ptyId, data).catch((e) => {
+      log.warn("terminal", `ptyWrite failed for tab=${this.tabId}: ${e}`);
+      if (this.ptyWriteFailureShown) return;
+      this.ptyWriteFailureShown = true;
+      showToast("Terminal is no longer running", { body: String(e) });
+    });
+  }
+
+  /** A link clicked in the terminal goes through `open_url`, which only opens
+   *  https URLs, rather than the addon's default `window.open`. Anything it
+   *  refuses (`http://localhost:…`, say) is reported instead of silently doing
+   *  nothing. */
+  private openLink(uri: string) {
+    openUrl(uri).catch((e) => {
+      log.warn("terminal", `open_url refused ${uri}: ${e}`);
+      showToast("Could not open the link", { type: "info", body: String(e) });
+    });
   }
 
   private setupEnterRefresh() {
@@ -498,7 +572,7 @@ export class TerminalSession {
     this.terminal.onData((data) => {
       if (data === "\r" && this.currentCwd) {
         setTimeout(() => {
-          if (this.currentCwd) this.scheduleRefresh(this.currentCwd);
+          if (!this.destroyed && this.currentCwd) this.scheduleRefresh(this.currentCwd);
         }, 1000);
       }
     });
@@ -520,10 +594,11 @@ export class TerminalSession {
   }
 
   private scheduleRefresh(cwd: string) {
-    if (this.refreshTimer) clearTimeout(this.refreshTimer);
+    clearTimeout(this.refreshTimer ?? undefined);
     this.refreshTimer = setTimeout(async () => {
       try {
         const data = await refreshPanel(this.tabId, cwd);
+        this.panelRefreshFailing = false;
         if (get(activeTabId) !== this.tabId) return;
 
         if (this.panelChanged(data)) {
@@ -531,8 +606,13 @@ export class TerminalSession {
           panelData.set(data);
         }
       } catch (e) {
-        log.error("terminal", `panel refresh failed for tab=${this.tabId}`, e);
-        showToast("Panel refresh failed", { body: String(e) });
+        // Every trigger here is automatic — the 30s poll, Enter, OSC 7 — so a
+        // vanished cwd would toast once per session per poll. Log the first
+        // failure of a streak and stay quiet until a refresh succeeds again.
+        if (!this.panelRefreshFailing) {
+          this.panelRefreshFailing = true;
+          log.warn("terminal", `panel refresh failed for tab=${this.tabId}: ${e}`);
+        }
       }
     }, 300);
   }
@@ -603,8 +683,9 @@ export class TerminalSession {
 
   destroy() {
     log.info("terminal", `destroy tab=${this.tabId} ptyId=${this.ptyId}`);
+    this.destroyed = true;
     this.resizeObserver?.disconnect();
-    if (this.spawnFallback) clearTimeout(this.spawnFallback);
+    clearTimeout(this.spawnFallback ?? undefined);
     if (this.screenFrame !== null) cancelAnimationFrame(this.screenFrame);
     this.tints = [];
     this.unsubscribeTheme?.();
@@ -612,10 +693,15 @@ export class TerminalSession {
     this.prefersDark?.removeEventListener("change", this.applyXtermTheme);
     this.container.removeEventListener("mouseup", this.copySelection);
     this.stopPolling();
-    if (this.refreshTimer) clearTimeout(this.refreshTimer);
-    if (this.ptyId !== null) {
-      ptyKill(this.ptyId, this.tabId);
-    }
+    clearTimeout(this.refreshTimer ?? undefined);
+    clearTimeout(this.hiddenRefitTimer ?? undefined);
+    if (this.ptyId !== null) this.killPty(this.ptyId);
     this.terminal?.dispose();
+  }
+
+  private killPty(ptyId: number) {
+    ptyKill(ptyId, this.tabId).catch((e) =>
+      log.warn("terminal", `ptyKill failed for tab=${this.tabId}: ${e}`),
+    );
   }
 }

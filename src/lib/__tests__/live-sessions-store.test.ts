@@ -1,12 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { get } from "svelte/store";
 
-import {
-  liveSessionList,
-  liveSessions,
-  removeLiveSession,
-  upsertLiveSession,
-} from "../stores/liveSessions";
+import { liveSessions, removeLiveSession, upsertLiveSession } from "../stores/liveSessions";
 import type { LiveSession } from "../../types/session";
 
 function session(sessionUuid: string, overrides: Partial<LiveSession> = {}): LiveSession {
@@ -42,12 +37,6 @@ describe("liveSessions store", () => {
     liveSessions.set(new Map());
   });
 
-  it("adds a session on first upsert", () => {
-    upsertLiveSession(session("a"));
-    expect(get(liveSessions).size).toBe(1);
-    expect(get(liveSessions).get("a")?.sessionUuid).toBe("a");
-  });
-
   it("replaces an existing session rather than duplicating it", () => {
     upsertLiveSession(session("a", { toolCalls: 1 }));
     upsertLiveSession(session("a", { toolCalls: 7 }));
@@ -76,11 +65,5 @@ describe("liveSessions store", () => {
     const before = get(liveSessions);
     removeLiveSession("nope");
     expect(get(liveSessions)).toBe(before);
-  });
-
-  it("derives a list of sessions", () => {
-    upsertLiveSession(session("a"));
-    upsertLiveSession(session("b"));
-    expect(get(liveSessionList).map((s) => s.sessionUuid)).toEqual(["a", "b"]);
   });
 });

@@ -195,3 +195,73 @@ new mode 100755`;
     expect(files[0].hunks).toHaveLength(2);
   });
 });
+
+describe("parseDiff edge cases", () => {
+  it("reads git's quoted, C-escaped file names", () => {
+    const diff = [
+      'diff --git "a/caf\\303\\251.txt" "b/caf\\303\\251.txt"',
+      "index 1111111..2222222 100644",
+      '--- "a/caf\\303\\251.txt"',
+      '+++ "b/caf\\303\\251.txt"',
+      "@@ -1 +1 @@",
+      "-a",
+      "+b",
+      "",
+    ].join("\n");
+    const [file] = parseDiff(diff);
+    expect(file.oldName).toBe("café.txt");
+    expect(file.newName).toBe("café.txt");
+  });
+
+  it("keeps two files with quoted names apart", () => {
+    const one = 'diff --git "a/\\303\\251.txt" "b/\\303\\251.txt"\n@@ -1 +1 @@\n-a\n+b\n';
+    const two = 'diff --git "a/\\303\\250.txt" "b/\\303\\250.txt"\n@@ -1 +1 @@\n-a\n+b\n';
+    expect(parseDiff(one + two).map((f) => f.newName)).toEqual(["é.txt", "è.txt"]);
+  });
+
+  it("takes rename targets from the rename lines, quoted or not", () => {
+    const diff = [
+      "diff --git a/old.txt b/new.txt",
+      "similarity index 90%",
+      "rename from old.txt",
+      'rename to "sp\\303\\244ce.txt"',
+      "",
+    ].join("\n");
+    const [file] = parseDiff(diff);
+    expect(file.changeType).toBe("renamed");
+    expect(file.oldName).toBe("old.txt");
+    expect(file.newName).toBe("späce.txt");
+  });
+
+  it("drops the carriage return CRLF files leave on every diff line", () => {
+    const diff = "diff --git a/a b/a\r\n--- a/a\r\n+++ b/a\r\n@@ -1 +1 @@\r\n-old\r\n+x\r\n";
+    const [file] = parseDiff(diff);
+    const contents = file.hunks[0].lines.map((l) => l.content);
+    expect(contents.some((c) => c.includes("\r"))).toBe(false);
+    expect(contents).toContain("x");
+  });
+
+  it("counts an empty context line so later line numbers do not drift", () => {
+    // A tool that strips trailing whitespace turns a blank context line " " into "".
+    const diff = [
+      "diff --git a/a b/a",
+      "--- a/a",
+      "+++ b/a",
+      "@@ -1,3 +1,3 @@",
+      " one",
+      "",
+      "-two",
+      "+TWO",
+      "",
+    ].join("\n");
+    const lines = parseDiff(diff)[0].hunks[0].lines;
+    const changed = lines.find((l) => l.type === "add");
+    expect(changed?.newNum).toBe(3);
+    expect(lines.find((l) => l.type === "remove")?.oldNum).toBe(3);
+  });
+
+  it("does not invent a context line from the trailing newline", () => {
+    const diff = "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-a\n+b\n";
+    expect(parseDiff(diff)[0].hunks[0].lines.filter((l) => l.type === "context")).toEqual([]);
+  });
+});
