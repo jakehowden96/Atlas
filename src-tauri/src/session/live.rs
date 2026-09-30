@@ -2360,7 +2360,10 @@ mod tests {
         std::fs::write(&path, &line[..2]).unwrap(); // 'a' + first byte of '€'
         assert!(reader.read_new(&path).lines.is_empty());
 
-        let mut file = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
         file.write_all(&line[2..]).unwrap();
         file.write_all(b"\n").unwrap();
         drop(file);
@@ -2415,7 +2418,9 @@ mod tests {
         let path = dir.path().join("agent-x.jsonl");
         let call = |req: &str, tools: usize| {
             let blocks = (0..tools)
-                .map(|i| format!(r#"{{"type":"tool_use","id":"{req}{i}","name":"Read","input":{{}}}}"#))
+                .map(|i| {
+                    format!(r#"{{"type":"tool_use","id":"{req}{i}","name":"Read","input":{{}}}}"#)
+                })
                 .collect::<Vec<_>>()
                 .join(",");
             format!(
@@ -2460,10 +2465,9 @@ mod tests {
         ] {
             let (dir, mut tail) = tail_with(&[assistant_line("r1", model, usage)]);
             tail.poll();
-            let record = crate::commands::stats::parse_session(
-                &dir.path().join(format!("{UUID}.jsonl")),
-            )
-            .unwrap();
+            let record =
+                crate::commands::stats::parse_session(&dir.path().join(format!("{UUID}.jsonl")))
+                    .unwrap();
 
             assert!(tail.session().cost_estimate > 0.0, "{model} is priced");
             assert!(
@@ -2530,7 +2534,11 @@ mod tests {
         // Polling again without a change, then growing one file by one request.
         tail.poll();
         assert_eq!(tail.session().output_tokens, 6000, "no double count");
-        write("agent-a.jsonl", "claude-opus-5", &[("a1", 2000), ("a2", 500)]);
+        write(
+            "agent-a.jsonl",
+            "claude-opus-5",
+            &[("a1", 2000), ("a2", 500)],
+        );
         tail.poll();
         assert_eq!(tail.session().output_tokens, 6500);
     }
