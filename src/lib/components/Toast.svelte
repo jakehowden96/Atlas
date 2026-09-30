@@ -46,27 +46,32 @@
   }
 </script>
 
-{#if rendered.length > 0}
-  <div class="toast-stack">
-    {#each rendered as toast (toast.id)}
-      <div class="toast" class:leaving={leaving.has(toast.id)}>
-        <span class="dot" style="background: {dotColour(toast.type)}"></span>
-        <div class="text">
-          <div class="title">{toast.title}</div>
-          {#if toast.body}
-            <div class="body">{toast.body}</div>
-          {/if}
-        </div>
-        {#if toast.action}
-          <button type="button" class="action" onclick={() => runToastAction(toast.id)}
-            >{toast.action.label}</button
-          >
+<!-- The live region stays mounted while empty: a region that appears together
+     with its first message is often not announced. -->
+<div class="toast-stack" role="status" aria-live="polite">
+  {#each rendered as toast (toast.id)}
+    <div class="toast" class:leaving={leaving.has(toast.id)}>
+      <span class="dot" style="background: {dotColour(toast.type)}"></span>
+      <div class="text">
+        <div class="title">{toast.title}</div>
+        {#if toast.body}
+          <div class="body">{toast.body}</div>
         {/if}
-        <button type="button" class="close" onclick={() => dismissToast(toast.id)}>✕</button>
       </div>
-    {/each}
-  </div>
-{/if}
+      {#if toast.action}
+        <button type="button" class="action" onclick={() => runToastAction(toast.id)}
+          >{toast.action.label}</button
+        >
+      {/if}
+      <button
+        type="button"
+        class="close"
+        aria-label="Dismiss notification"
+        onclick={() => dismissToast(toast.id)}>✕</button
+      >
+    </div>
+  {/each}
+</div>
 
 <style>
   .toast-stack {

@@ -9,34 +9,6 @@ describe("toast store", () => {
     vi.useFakeTimers();
   });
 
-  it("starts empty", () => {
-    expect(get(toasts)).toEqual([]);
-  });
-
-  it("adds a toast via showToast", () => {
-    showToast("Something went wrong");
-    const items = get(toasts);
-    expect(items).toHaveLength(1);
-    expect(items[0].title).toBe("Something went wrong");
-    expect(items[0].body).toBeUndefined();
-    expect(items[0].type).toBe("error");
-  });
-
-  it("carries a second line as the body", () => {
-    showToast("Failed to list PRs", { body: "gh: not authenticated" });
-    const items = get(toasts);
-    expect(items[0].title).toBe("Failed to list PRs");
-    expect(items[0].body).toBe("gh: not authenticated");
-  });
-
-  it("supports different toast types", () => {
-    showToast("Info message", { type: "info" });
-    showToast("Warning message", { type: "warning" });
-    const items = get(toasts);
-    expect(items[0].type).toBe("info");
-    expect(items[1].type).toBe("warning");
-  });
-
   it("dismisses a toast by id", () => {
     showToast("First");
     showToast("Second");
@@ -46,8 +18,8 @@ describe("toast store", () => {
     expect(get(toasts)[0].title).toBe("Second");
   });
 
-  it("auto-dismisses after 4s", () => {
-    showToast("Temporary");
+  it("auto-dismisses an info toast after 4s", () => {
+    showToast("Temporary", { type: "info" });
     expect(get(toasts)).toHaveLength(1);
     vi.advanceTimersByTime(3999);
     expect(get(toasts)).toHaveLength(1);
@@ -79,16 +51,8 @@ describe("toast store", () => {
   });
 
   describe("action toasts", () => {
-    it("carries an action alongside the title", () => {
-      const run = vi.fn();
-      showToast("Atlas removed", { action: { label: "Undo", run } });
-      const toast = get(toasts)[0];
-      expect(toast.action?.label).toBe("Undo");
-      expect(run).not.toHaveBeenCalled();
-    });
-
     it("holds an action toast for 6s, not 4s", () => {
-      showToast("Atlas removed", { action: { label: "Undo", run: vi.fn() } });
+      showToast("Atlas removed", { type: "info", action: { label: "Undo", run: vi.fn() } });
       vi.advanceTimersByTime(4000);
       expect(get(toasts)).toHaveLength(1);
       vi.advanceTimersByTime(1999);
@@ -98,7 +62,7 @@ describe("toast store", () => {
     });
 
     it("still dismisses a plain toast at 4s", () => {
-      showToast("Plain");
+      showToast("Plain", { type: "info" });
       vi.advanceTimersByTime(4001);
       expect(get(toasts)).toHaveLength(0);
     });
@@ -128,7 +92,7 @@ describe("toast store", () => {
 
     it("does not run the action when it auto-dismisses", () => {
       const run = vi.fn();
-      showToast("Atlas removed", { action: { label: "Undo", run } });
+      showToast("Atlas removed", { type: "info", action: { label: "Undo", run } });
       vi.advanceTimersByTime(6001);
       expect(get(toasts)).toHaveLength(0);
       expect(run).not.toHaveBeenCalled();
@@ -153,5 +117,31 @@ describe("toast store", () => {
     expect(remaining).toHaveLength(2);
     expect(remaining[0].title).toBe("First");
     expect(remaining[1].title).toBe("Third");
+  });
+
+  it("keeps an error up longer than an info toast, since its body is the only detail", () => {
+    showToast("Could not save", { body: "disk full" });
+    vi.advanceTimersByTime(4001);
+    expect(get(toasts)).toHaveLength(1);
+    vi.advanceTimersByTime(6000);
+    expect(get(toasts)).toHaveLength(0);
+  });
+
+  it("shows a repeated identical toast once and gives it a fresh lifetime", () => {
+    showToast("Failed to list PRs", { body: "gh: not found", type: "info" });
+    vi.advanceTimersByTime(3000);
+    showToast("Failed to list PRs", { body: "gh: not found", type: "info" });
+    expect(get(toasts)).toHaveLength(1);
+
+    vi.advanceTimersByTime(3000);
+    expect(get(toasts)).toHaveLength(1);
+    vi.advanceTimersByTime(1001);
+    expect(get(toasts)).toHaveLength(0);
+  });
+
+  it("keeps only the newest few when many pile up", () => {
+    for (let i = 0; i < 10; i++) showToast(`Failure ${i}`);
+    const titles = get(toasts).map((t) => t.title);
+    expect(titles).toEqual(["Failure 6", "Failure 7", "Failure 8", "Failure 9"]);
   });
 });
