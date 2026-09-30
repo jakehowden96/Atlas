@@ -1081,12 +1081,15 @@ fn workflow_agents(run: &Value) -> Vec<(String, Subagent)> {
                     .and_then(iso_from_epoch_ms)
                     .or_else(|| {
                         started_at_ms.and_then(|start| {
-                            iso_from_epoch_ms(start + entry["durationMs"].as_i64().unwrap_or(0))
+                            iso_from_epoch_ms(
+                                start.saturating_add(entry["durationMs"].as_i64().unwrap_or(0)),
+                            )
                         })
                     })
             };
 
-            let tool_count = entry["toolCalls"].as_u64().unwrap_or(0) as u32;
+            let tool_count =
+                u32::try_from(entry["toolCalls"].as_u64().unwrap_or(0)).unwrap_or(u32::MAX);
 
             let agent_type = entry["agentType"]
                 .as_str()
@@ -2076,5 +2079,27 @@ mod tests {
         tail.poll();
         assert!(tail.session().pending_tool.is_none());
         assert_eq!(tail.session().state, SessionState::Idle);
+    }
+
+    /// Numbers come straight from a file another process writes. A corrupt
+    /// line must not panic (debug) or wrap (release) the tail.
+    #[test]
+    fn absurd_usage_and_workflow_times_do_not_overflow() {
+        let huge = format!(
+            r#"{{"type":"assistant","requestId":"req_h","timestamp":"2026-09-07T21:50:59.000Z","message":{{"role":"assistant","model":"claude-opus-5","stop_reason":"end_turn","content":[{{"type":"text","text":"ok"}}],"usage":{{"input_tokens":1,"cache_read_input_tokens":{max},"cache_creation_input_tokens":{max},"output_tokens":{max}}}}}}}"#,
+            max = u64::MAX
+        );
+        let (dir, mut tail) = tail_with(&[huge]);
+        write_workflow(
+            dir.path(),
+            UUID,
+            &format!(
+                r#"{{"runId":"wf_test","status":"completed","workflowProgress":[{{"type":"workflow_agent","agentId":"a1","state":"done","startedAt":{},"durationMs":10,"toolCalls":{}}}]}}"#,
+                i64::MAX - 1,
+                u64::MAX
+            ),
+        );
+        tail.poll();
+        assert_eq!(tail.session().subagents[0].tool_count, u32::MAX);
     }
 }

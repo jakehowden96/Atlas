@@ -154,13 +154,24 @@ pub(crate) fn context_window_for(model: &str) -> u64 {
 /// autocompact fires. Can exceed 1.0 with autocompact off; the views clamp.
 pub(crate) fn context_pct(tokens: u64, model: &str) -> f64 {
     let window = context_window_for(model);
-    if window == 0 {
-        return 0.0;
-    }
     tokens as f64 / window as f64
 }
 
 // ── Per-request accumulation ──────────────────────────────────────────────────
+
+/// Largest token count taken from a transcript field. No real request comes
+/// within orders of magnitude of it; it exists so a corrupt or hostile line
+/// carrying `u64::MAX` cannot overflow the sums built from these fields (a
+/// panic in debug builds, a silent wrap in release).
+const MAX_TOKEN_COUNT: u64 = 1 << 40;
+
+/// A token count read from a JSON field, clamped to `MAX_TOKEN_COUNT`.
+pub(crate) fn token_count(value: Option<&Value>) -> u64 {
+    value
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0)
+        .min(MAX_TOKEN_COUNT)
+}
 
 /// One API request's accumulated data. Several assistant lines share a
 /// `requestId` and each repeats the same `usage` block, so usage is taken from
@@ -178,7 +189,7 @@ impl ReqData {
     /// Read `message.usage` for a request first seen on this line.
     pub fn from_message(model: &str, msg: &Value) -> Self {
         let usage = msg.get("usage").unwrap_or(&Value::Null);
-        let field = |name: &str| usage.get(name).and_then(|v| v.as_u64()).unwrap_or(0);
+        let field = |name: &str| token_count(usage.get(name));
         ReqData {
             model: model.to_string(),
             input_tokens: field("input_tokens"),

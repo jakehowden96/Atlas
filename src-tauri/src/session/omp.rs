@@ -402,7 +402,7 @@ impl OmpTail {
                 .as_deref()
                 .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                 .zip(duration_ms)
-                .and_then(|(dt, dur)| iso_from_epoch_ms(dt.timestamp_millis() + dur))
+                .and_then(|(dt, dur)| iso_from_epoch_ms(dt.timestamp_millis().saturating_add(dur)))
                 .or_else(|| timestamp.clone());
             self.finish_subagent(idx, finished_at);
         }
@@ -663,7 +663,7 @@ struct Usage {
 
 impl Usage {
     fn from(usage: &Value) -> Self {
-        let tokens = |key: &str| usage.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
+        let tokens = |key: &str| crate::transcript::token_count(usage.get(key));
         Usage {
             input: tokens("input"),
             output: tokens("output"),
@@ -1489,5 +1489,20 @@ mod tests {
         std::fs::write(&path, "line one\nline two\n").unwrap();
         let since = SystemTime::now() + std::time::Duration::from_secs(60);
         assert_eq!(read_breadcrumb(&path, since), None);
+    }
+
+    #[test]
+    fn absurd_usage_does_not_overflow() {
+        let assistant = serde_json::json!({
+            "type": "message", "timestamp": "2026-01-01T00:00:00Z",
+            "message": {"role": "assistant", "model": "anthropic/claude-opus-5-5", "stopReason": "stop",
+                "content": [{"type": "text", "text": "done"}],
+                "usage": {"input": u64::MAX, "output": 5, "cacheRead": 1, "cacheWrite": u64::MAX,
+                    "cost": {"total": 0.01}}}
+        })
+        .to_string();
+        let (_dir, mut tail) = tail_with(&[assistant]);
+        assert!(tail.poll());
+        assert!(tail.session().context_tokens > 0);
     }
 }
