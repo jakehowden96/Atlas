@@ -5,6 +5,7 @@ import {
   activity,
   buildTiles,
   classifyRows,
+  detectPermissionPrompt,
   compareByAttention,
   compareByOpened,
   compareByWorkspace,
@@ -735,5 +736,66 @@ describe("classifyRows", () => {
     ];
     const preview = screenPreview(rows);
     expect(classifyRows(preview).length).toBe(preview.length);
+  });
+});
+
+describe("detectPermissionPrompt", () => {
+  const bash = [
+    "⏺ Bash(git push origin main)",
+    "",
+    " Bash command",
+    "",
+    "   git push origin main",
+    "   Push the branch",
+    "",
+    " Do you want to proceed?",
+    " ❯ 1. Yes",
+    "   2. Yes, and don't ask again for git push commands in /work/atlas",
+    "   3. No, and tell Claude what to do differently (esc)",
+    "",
+  ];
+
+  it("recognises the tool-permission list with the first option highlighted", () => {
+    expect(detectPermissionPrompt(bash)).toBe(true);
+  });
+
+  it("recognises the list inside the dialog's box border", () => {
+    const boxed = bash.map((row) => (row ? `│ ${row.padEnd(70)} │` : row));
+    expect(detectPermissionPrompt(boxed)).toBe(true);
+  });
+
+  it("does not offer Allow once the cursor moved off the first option", () => {
+    const moved = bash.map((row) =>
+      row.replace("❯ 1. Yes", "  1. Yes").replace("  3. No", "❯ 3. No"),
+    );
+    expect(detectPermissionPrompt(moved)).toBe(false);
+  });
+
+  it("reads an ordinary screen as no prompt", () => {
+    expect(
+      detectPermissionPrompt([
+        "> fix the bug",
+        "⏺ Done.",
+        "",
+        "─".repeat(40),
+        "> ",
+        "─".repeat(40),
+      ]),
+    ).toBe(false);
+    expect(detectPermissionPrompt([])).toBe(false);
+  });
+
+  it("reads an elicitation-style form as no prompt", () => {
+    const form = ["Server needs some information", "", " Name: ", " ❯ Continue", "   Cancel"];
+    expect(detectPermissionPrompt(form)).toBe(false);
+  });
+
+  it("ignores a prompt that has scrolled far above the bottom of the screen", () => {
+    const later = [...bash, ...Array.from({ length: 30 }, (_, i) => `⏺ output line ${i}`)];
+    expect(detectPermissionPrompt(later)).toBe(false);
+  });
+
+  it("needs the No option below Yes, not just the question and Yes", () => {
+    expect(detectPermissionPrompt(bash.slice(0, 9))).toBe(false);
   });
 });

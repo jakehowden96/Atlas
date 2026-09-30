@@ -15,7 +15,12 @@
   import { allowPendingTool, closeSession, denyPendingTool } from "../../session-actions";
   import { subagentMeta } from "../../session-view";
   import { togglePinnedSession } from "../../stores/settings";
-  import { activeTabId } from "../../stores/terminal";
+  import {
+    activeTabId,
+    canAnswerPermission,
+    permissionPromptTabs,
+    tabs,
+  } from "../../stores/terminal";
   import { focusedSessionId, showView } from "../../stores/view";
   import StatePill, { type PillState } from "../ui/StatePill.svelte";
 
@@ -52,10 +57,20 @@
   let needsYou = $derived(tile.state === "needsYou");
   let elapsed = $derived(formatElapsed(live.startedAt, now));
 
-  /** A permission prompt the hook flagged, as opposed to needs-you off a
-      question — a closing one, or an OMP `ask` the backend itself reports as
-      `needsYou`, which y/n does not answer. */
-  let permission = $derived(needsYou && live.state !== "needsYou" && live.pendingTool !== null);
+  /** A permission prompt the hook flagged and the terminal screen really
+      shows, as opposed to needs-you off a question — a closing one, an
+      elicitation dialog, or an OMP `ask` the backend itself reports as
+      `needsYou`, none of which y/n answers. The flag alone goes stale once the
+      user answers in the terminal, so the screen has to agree. */
+  let permission = $derived(
+    needsYou &&
+      live.state !== "needsYou" &&
+      live.pendingTool !== null &&
+      canAnswerPermission(
+        $tabs.find((t) => t.id === tile.terminalTabId),
+        $permissionPromptTabs,
+      ),
+  );
   let question = $derived(openQuestion(live));
   let feed = $derived(feedItems(live.lines, question));
   let agents = $derived(live.subagents.filter((a) => !a.done));
@@ -124,15 +139,16 @@
     else if (e.key === "n" || e.key === "N") deny(e);
   }
 
-  // Both stop propagation — the whole card is clickable.
+  // Both stop propagation — the whole card is clickable. Neither rejects: a
+  // failed write is toasted inside `answerPendingTool`.
   function allow(e: Event) {
     e.stopPropagation();
-    if (tile.terminalTabId) allowPendingTool(tile.terminalTabId);
+    if (tile.terminalTabId) void allowPendingTool(tile.terminalTabId);
   }
 
   function deny(e: Event) {
     e.stopPropagation();
-    if (tile.terminalTabId) denyPendingTool(tile.terminalTabId);
+    if (tile.terminalTabId) void denyPendingTool(tile.terminalTabId);
   }
 
   function togglePin(e: MouseEvent) {

@@ -4,7 +4,14 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill, refreshPanel, getPanelData } from "./ipc";
-import { setTabTitle, activeTabId, setTabNeedsInput, setTabReady, tabs } from "./stores/terminal";
+import {
+  setTabTitle,
+  activeTabId,
+  setPermissionPromptVisible,
+  setTabNeedsInput,
+  setTabReady,
+  tabs,
+} from "./stores/terminal";
 import { panelData } from "./stores/panel";
 import { keymap, terminalFontSize } from "./stores/settings";
 import { matchesAnyBinding } from "./keymap";
@@ -13,7 +20,7 @@ import { updateSessionLabelByTabId } from "./stores/workspace";
 import { get } from "svelte/store";
 import { showToast } from "./stores/toast";
 import { activeBlockTints, activeXtermTheme, themeMode } from "./theme";
-import { classifyRows, screenPreview, type RowBlock } from "./overview";
+import { classifyRows, detectPermissionPrompt, screenPreview, type RowBlock } from "./overview";
 import { log } from "./logger";
 
 export interface TerminalSessionOptions {
@@ -288,6 +295,7 @@ export class TerminalSession {
       const line = buffer.getLine(buffer.baseY + i);
       plain.push(line?.translateToString(true) ?? "");
     }
+    setPermissionPromptVisible(this.tabId, detectPermissionPrompt(plain));
     this.paintRowTints(plain);
   }
 

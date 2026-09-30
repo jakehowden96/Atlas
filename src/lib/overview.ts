@@ -584,3 +584,35 @@ export function classifyRows(rows: readonly string[]): RowBlock[] {
   }
   return out;
 }
+
+/** How far up from the bottom of the screen the prompt is searched for. */
+const PERMISSION_SEARCH_ROWS = 20;
+/** Rows may sit inside the dialog's box border. */
+const BOX_EDGE = "[\\s│┃|]*";
+const PERMISSION_QUESTION = /\bDo you want to\b/;
+const PERMISSION_YES_SELECTED = new RegExp(`^${BOX_EDGE}[❯>›]\\s*1\\.\\s+Yes\\b`);
+const PERMISSION_NO_OPTION = new RegExp(`^${BOX_EDGE}[❯>›]?\\s*\\d\\.\\s+No\\b`);
+
+/**
+ * Whether a Claude Code tool-permission prompt is what the screen shows right
+ * now, with its first option ("Yes") highlighted — so that a bare Enter
+ * accepts exactly the option a tile's Allow means.
+ *
+ * Detection is positive-only: the question line, the highlighted `1. Yes`
+ * and a `No` option must all be present, in that order, near the bottom of
+ * the screen. Anything the check does not recognise — a different TUI, a
+ * prompt whose wording Claude Code changed, a cursor moved off the first
+ * option — reads as "no prompt", and a tile then offers no shortcut rather
+ * than typing into a screen it cannot vouch for. The expected layout is
+ * Claude Code's `Do you want to proceed?` / `❯ 1. Yes` / `2. Yes, and …` /
+ * `3. No, and tell Claude …` list; it has not been checked against a live
+ * TUI on every release.
+ */
+export function detectPermissionPrompt(rows: readonly string[]): boolean {
+  const tail = trimBlankTail(rows).slice(-PERMISSION_SEARCH_ROWS);
+  const question = tail.findIndex((row) => PERMISSION_QUESTION.test(row));
+  if (question === -1) return false;
+  const yes = tail.findIndex((row, i) => i > question && PERMISSION_YES_SELECTED.test(row));
+  if (yes === -1) return false;
+  return tail.some((row, i) => i > yes && PERMISSION_NO_OPTION.test(row));
+}

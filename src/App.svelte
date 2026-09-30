@@ -156,10 +156,11 @@
       // Only mark as needing input for notification types that require user action.
       // Excludes idle_prompt — that fires when Claude finishes work and returns to
       // its prompt, which doesn't require user input.
-      const inputTypes = ["permission_prompt", "elicitation_dialog"];
-      if (!inputTypes.includes(notification.notification_type)) return;
+      const inputTypes = ["permission_prompt", "elicitation_dialog"] as const;
+      const kind = inputTypes.find((t) => t === notification.notification_type);
+      if (!kind) return;
 
-      setTabNeedsInput(session_id, true);
+      setTabNeedsInput(session_id, true, kind);
 
       // Send OS notification if enabled and tab is not active
       if (get(activeTabId) !== session_id && get(enableNotifications)) {

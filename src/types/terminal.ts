@@ -1,5 +1,8 @@
 import type { Terminal } from "@xterm/xterm";
 
+/** The `notification_type`s that flag a tab as waiting on the user. */
+export type NeedsInputKind = "permission_prompt" | "elicitation_dialog";
+
 export interface TerminalTab {
   type: "terminal";
   id: string;
@@ -9,6 +12,9 @@ export interface TerminalTab {
   cwd?: string;
   onData?: (data: string) => void;
   needsInput?: boolean;
+  /** Which Notification raised `needsInput`. Only a `permission_prompt` may be
+   *  answered from a tile; an elicitation dialog is a different dialog. */
+  needsInputKind?: NeedsInputKind;
   /** False until the harness's TUI enters the alternate screen buffer. The
    *  terminal stays hidden behind the "Starting <harness>…" overlay until
    *  then, so the shell prompt and the launch command are never shown. */

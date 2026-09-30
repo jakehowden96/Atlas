@@ -25,6 +25,8 @@ import {
   activeTabId,
   addTab,
   awaitTabPty,
+  canAnswerPermission,
+  permissionPromptTabs,
   removeTab,
   setTabNeedsInput,
   setTabReady,
@@ -322,21 +324,18 @@ export async function removeWorkspaceWithUndo(workspacePath: string) {
  * shows the terminal itself, and the floating card that used to answer for you
  * sat on top of the very prompt it was describing.
  *
- * ⚠ ASSUMPTION — NOT verified against a live TUI. This build environment has
- * no GUI, so `pnpm tauri dev` could not be run to watch what the prompt does.
- * Claude Code's permission prompt is an arrow-key selection list whose first
- * option ("Yes") is highlighted by default, so we send a bare CR to accept the
- * highlighted default and ESC to dismiss. The design prototype's toast copy
- * ("Typed 'y' into the session for you") would only be right if the prompt
- * were a plain y/n confirm, which it is not.
+ * Nothing is typed unless `canAnswerPermission` holds: the Notification hook
+ * flagged a `permission_prompt` for the tab AND `TerminalSession` reads a
+ * permission list with "Yes" highlighted off the terminal's own screen right
+ * now. The hook flag alone goes stale the moment the user answers in the
+ * terminal, and CR / ESC typed into anything but that list submit whatever is
+ * in the input box or interrupt the turn.
  *
- * TO CONFIRM OR REFUTE: run `pnpm tauri dev` with skip-permissions off, make
- * Claude run a `Bash` command, then click Allow.
- *   - Claude proceeds            → CR is right, keep as is.
- *   - Nothing happens            → the prompt is a y/n confirm; use "y" / "n".
- *   - Allow works, Deny does not → ESC is not wired; deny becomes two
- *     "\x1b[B" (ArrowDown) presses plus "\r" to pick "No, and tell Claude
- *     what to do differently".
+ * ⚠ The prompt layout `detectPermissionPrompt` reads, and CR / ESC as the
+ * accept / dismiss keys, were written from Claude Code's documented arrow-key
+ * list and have not been checked against a live TUI in this build environment.
+ * A layout the detector does not recognise therefore offers no Allow / Deny
+ * at all; the prompt is still answerable in the terminal itself.
  */
 
 /** Accept the highlighted default option. */
@@ -351,11 +350,17 @@ const PERMISSION_DENY = "\x1b";
  */
 async function answerPendingTool(sessionId: string, keystroke: string): Promise<void> {
   const tab = get(tabs).find((t) => t.id === sessionId);
-  if (!tab || tab.ptyId < 0) {
-    log.warn("session", `answerPendingTool: no live PTY for tab ${sessionId}`);
+  if (!canAnswerPermission(tab, get(permissionPromptTabs))) {
+    log.warn("session", `answerPendingTool: no permission prompt on screen for tab ${sessionId}`);
     return;
   }
-  await ptyWrite(tab.ptyId, keystroke);
+  try {
+    await ptyWrite(tab.ptyId, keystroke);
+  } catch (e) {
+    log.error("session", `answerPendingTool: ptyWrite failed for tab ${sessionId}`, e);
+    showToast("Could not answer the prompt", { body: String(e) });
+    return;
+  }
   setTabNeedsInput(sessionId, false);
 }
 
