@@ -24,7 +24,7 @@
     serverCompletionSource,
   } from "@codemirror/lsp-client";
   import { basicSetup } from "codemirror";
-  import { onDestroy } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import { log } from "../../logger";
 
   interface Props {
@@ -76,10 +76,16 @@
     const container = host;
     const key = docKey;
     if (!container || !key) return;
-    view?.destroy();
-    view = create(container, text);
-    void attachLanguage(view, path);
-    void attachServer(view, path, root);
+    // Only `host` and `docKey` are dependencies. `text` changes on every
+    // keystroke (it echoes the editor's own edits back), and `path`/`root` are
+    // reconfigured elsewhere, so reading them tracked would rebuild the editor
+    // — caret, focus and undo history included — on every key.
+    view = untrack(() => {
+      const next = create(container, text);
+      void attachLanguage(next, path);
+      void attachServer(next, path, root);
+      return next;
+    });
     return () => {
       view?.destroy();
       view = null;
