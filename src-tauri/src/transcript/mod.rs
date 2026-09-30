@@ -59,6 +59,10 @@ fn is_legacy_opus(m: &str) -> bool {
     m.contains("3-opus") || m.contains("opus-4-1") || m.contains("opus-4-2025")
 }
 
+/// **A change to a price or to `model_family` needs a `STATS_FILE_VERSION` bump
+/// in `commands::stats`:** costs are computed at parse time and cached per
+/// transcript, so unchanged files would otherwise keep their old cost.
+///
 /// Approximate API-equivalent pricing per million tokens, from Anthropic's
 /// published list prices (checked 2026-09-09). `cache_write` is the 5-minute
 /// rate — a transcript's `cache_creation_input_tokens` does not say which TTL
@@ -243,6 +247,10 @@ pub(crate) struct ModelSessionData {
     pub user_chars: u64,
     #[serde(default)]
     pub user_messages: u32,
+    /// Errored `tool_result`s for tool calls this family issued. Per family, not
+    /// the session's total, so summing families does not count an error twice.
+    #[serde(default)]
+    pub tool_errors: u32,
     /// Chars/count of prompts this model family sent when spawning a subagent
     /// (the `Agent` tool's `prompt` input) — distinct from the human's own messages.
     #[serde(default)]

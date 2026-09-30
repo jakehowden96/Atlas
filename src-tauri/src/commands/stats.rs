@@ -58,18 +58,39 @@ fn stats_path() -> Result<PathBuf, String> {
 
 // ── Version ───────────────────────────────────────────────────────────────────
 
-const STATS_FILE_VERSION: u32 = 7;
+/// Bump when a parsed field changes meaning or a new one is added.
+///
+/// Every cached record also holds numbers derived at parse time: costs come
+/// from `transcript::pricing_for`, so **a change to a price or to the model
+/// family mapping needs a bump here too**, or unchanged transcripts keep their
+/// old cost until they next change.
+const STATS_FILE_VERSION: u32 = 8;
+
+/// Oldest file version whose records are carried forward across a bump. Fields
+/// added since deserialize to their defaults, so such a record is complete
+/// enough to keep its totals but not the newer breakdowns. It is only kept for
+/// a transcript that no longer exists: one that is still on disk is re-parsed.
+const MIN_CARRIED_VERSION: u32 = 7;
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
 /// One session's parsed stats. Stored in stats.json as the incremental cache.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionRecord {
     pub session_id: String,
     pub path: String,
+    /// Transcript modified time in milliseconds (whole seconds would miss a
+    /// same-size rewrite within one second) and size: the cache key.
     pub mtime: u64,
     pub size: u64,
+    /// Newest modified time (ms) and total size of the session's subagent
+    /// transcripts. Their cost is folded into this record, so they are part of
+    /// the cache key: a subagent can finish after the main file's last write.
+    #[serde(default)]
+    pub sidecar_mtime: u64,
+    #[serde(default)]
+    pub sidecar_size: u64,
     pub title: Option<String>,
     pub cwd: Option<String>,
     pub git_branch: Option<String>,
@@ -345,13 +366,13 @@ pub struct StatsSummary {
     pub generated_at: String,
 }
 
-/// The on-disk stats.json layout — summary + cache.
+/// The on-disk stats.json layout: the per-session cache. The summary is derived
+/// from it on every recompute and nothing reads it back, so it is not stored.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StatsFile {
     pub version: u32,
     pub generated_at: String,
-    pub summary: StatsSummary,
     pub sessions: Vec<SessionRecord>,
 }
 
@@ -408,6 +429,7 @@ pub(crate) fn merge_model_data(
         entry.tool_calls += data.tool_calls;
         entry.user_chars += data.user_chars;
         entry.user_messages += data.user_messages;
+        entry.tool_errors += data.tool_errors;
         entry.subagent_prompt_chars += data.subagent_prompt_chars;
         entry.subagent_prompt_count += data.subagent_prompt_count;
         if data.peak_context > entry.peak_context {
@@ -423,13 +445,31 @@ fn file_mtime_size(path: &Path) -> (u64, u64) {
                 .modified()
                 .map(|t| {
                     t.duration_since(UNIX_EPOCH)
-                        .map(|d| d.as_secs())
+                        .map(|d| d.as_millis() as u64)
                         .unwrap_or(0)
                 })
                 .unwrap_or(0);
             (mtime, m.len())
         })
         .unwrap_or((0, 0))
+}
+
+/// Newest modified time (ms) and total size of a session's subagent
+/// transcripts, the part of the cache key that the main file does not cover.
+fn sidecar_fingerprint(transcript: &Path, is_omp: bool) -> (u64, u64) {
+    let files = if is_omp {
+        omp::sidecar_files(transcript)
+    } else {
+        let id = transcript
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        subagent_files(transcript, id)
+    };
+    files.iter().fold((0, 0), |(newest, total), file| {
+        let (mtime, size) = file_mtime_size(file);
+        (newest.max(mtime), total + size)
+    })
 }
 
 /// The regular `*.jsonl` files in a session's `<dir>/<session id>/subagents/`
@@ -482,7 +522,9 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
     // `tool_use.id` -> tool name, so an errored `tool_result` can be charged to
     // the tool that produced it. A transcript is append-only and chronological,
     // so the `tool_use` is always already seen by the time its result arrives.
-    let mut tool_name_by_id: HashMap<String, String> = HashMap::new();
+    let mut tool_name_by_id: HashMap<String, (String, String)> = HashMap::new();
+    // Errored results per model family: the family that issued the tool call.
+    let mut errors_by_family: HashMap<String, u32> = HashMap::new();
 
     // Buffered until the next assistant turn, so chars are attributed to whichever
     // model family actually answered — not summed into every family in the session.
@@ -541,8 +583,9 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
                             // An id with no matching `tool_use` in this file (a
                             // subagent's, say) still counts session-wide but has
                             // no tool to charge.
-                            if let Some(name) = tool_name_by_id.get(result.tool_use_id) {
+                            if let Some((name, family)) = tool_name_by_id.get(result.tool_use_id) {
                                 *tool_errors_by_name.entry(name.clone()).or_insert(0) += 1;
+                                *errors_by_family.entry(family.clone()).or_insert(0) += 1;
                             }
                         }
                     }
@@ -582,7 +625,8 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
                         }
                     }
                     if !tool.id.is_empty() {
-                        tool_name_by_id.insert(tool.id.to_string(), tool.name.to_string());
+                        tool_name_by_id
+                            .insert(tool.id.to_string(), (tool.name.to_string(), family.clone()));
                     }
                     new_tools.push(tool.name.to_string());
                 }
@@ -627,6 +671,9 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
         let entry = by_model.entry(family).or_default();
         entry.user_chars += chars;
         entry.user_messages += messages;
+    }
+    for (family, errors) in errors_by_family {
+        by_model.entry(family).or_default().tool_errors += errors;
     }
     for (family, (chars, count)) in by_model_subagent_prompts {
         let entry = by_model.entry(family).or_default();
@@ -700,6 +747,7 @@ pub(crate) fn parse_session(path: &Path) -> Result<SessionRecord, String> {
         by_model_subagents,
         subagent_invocations,
         harness: None,
+        ..Default::default()
     })
 }
 
@@ -789,7 +837,7 @@ fn accumulate_model(model_acc: &mut HashMap<String, ModelStats>, rec: &SessionRe
         ms.cache_creation_tokens += model_data.cache_creation_tokens;
         ms.cost += model_data.cost_estimate;
         ms.tool_calls += model_data.tool_calls as u64;
-        ms.tool_errors += rec.tool_errors;
+        ms.tool_errors += model_data.tool_errors;
         ms.total_duration_secs += rec.duration_secs;
         ms.total_subagents += rec.subagents as u64;
         if model_data.peak_context > ms.peak_context_max {
@@ -837,9 +885,9 @@ fn finalize_model(model_acc: &mut HashMap<String, ModelStats>) {
         if ms.output_tokens > 0 {
             ms.cost_per_k_output = ms.cost / ms.output_tokens as f64 * 1000.0;
         }
-        let total_calls = ms.tool_calls + ms.tool_errors as u64;
-        if total_calls > 0 {
-            ms.error_rate = ms.tool_errors as f64 / total_calls as f64;
+        // Errors per call, the same definition as the per-tool table.
+        if ms.tool_calls > 0 {
+            ms.error_rate = ms.tool_errors as f64 / ms.tool_calls as f64;
         }
     }
 }
@@ -1079,14 +1127,18 @@ fn load_cache(stats_path: &Path) -> LoadedCache {
         }
     };
     if let Ok(file) = serde_json::from_str::<StatsFile>(&json) {
-        if file.version == STATS_FILE_VERSION {
+        let current = file.version == STATS_FILE_VERSION;
+        if current || (MIN_CARRIED_VERSION..STATS_FILE_VERSION).contains(&file.version) {
+            if !current {
+                back_up(stats_path, &format!(".v{}.bak", file.version));
+            }
             return LoadedCache {
                 records: file
                     .sessions
                     .into_iter()
                     .map(|s| (s.path.clone(), s))
                     .collect(),
-                current: true,
+                current,
             };
         }
     }
@@ -1167,24 +1219,35 @@ fn recompute_in(
     for path in &session_files {
         let path_str = path.to_string_lossy().to_string();
         let (mtime, size) = file_mtime_size(path);
+        let is_omp = !path.starts_with(projects_dir);
+        let (sidecar_mtime, sidecar_size) = sidecar_fingerprint(path, is_omp);
 
         // Moved out of the cache rather than cloned: whatever is left in it
         // afterwards is a record whose file is gone.
         let stale = match cache.remove(&path_str) {
-            Some(cached) if cached.mtime == mtime && cached.size == size => {
+            Some(cached)
+                if cached.mtime == mtime
+                    && cached.size == size
+                    && cached.sidecar_mtime == sidecar_mtime
+                    && cached.sidecar_size == sidecar_size =>
+            {
                 records.push(cached);
                 continue;
             }
             stale => stale,
         };
 
-        let parsed = if path.starts_with(projects_dir) {
-            parse_session(path)
-        } else {
+        let parsed = if is_omp {
             omp::parse_omp_session(path)
+        } else {
+            parse_session(path)
         };
         match parsed {
-            Ok(rec) => {
+            Ok(mut rec) => {
+                // Taken before the parse, so a subagent write during it makes
+                // the next pass re-parse instead of being missed.
+                rec.sidecar_mtime = sidecar_mtime;
+                rec.sidecar_size = sidecar_size;
                 changed = true;
                 records.push(rec);
             }
@@ -1224,7 +1287,6 @@ fn recompute_in(
         let file = StatsFile {
             version: STATS_FILE_VERSION,
             generated_at: summary.generated_at.clone(),
-            summary: summary.clone(),
             sessions: records,
         };
         match serde_json::to_vec(&file) {
@@ -1711,6 +1773,7 @@ mod tests {
             by_model_subagents: HashMap::new(),
             subagent_invocations: HashMap::new(),
             harness: None,
+            ..Default::default()
         }
     }
 
@@ -1831,10 +1894,7 @@ mod tests {
     fn recent_sessions_are_newest_first_capped_and_carry_no_transcript_path() {
         let mut records: Vec<SessionRecord> = (0..60)
             .map(|i| {
-                let mut r = rec(
-                    &format!("{i:08x}-0000-4000-8000-000000000000"),
-                    "2026-01-01T00:00:00Z",
-                );
+                let mut r = rec(&format!("s{i:02}"), "2026-01-01T00:00:00Z");
                 r.last_timestamp = Some(format!("2026-02-{:02}T00:00:00Z", (i % 28) + 1));
                 r
             })
@@ -1934,24 +1994,81 @@ mod tests {
         assert_eq!(tree.saved().sessions.len(), 1, "a fresh file replaced it");
     }
 
+    /// A bump must not erase sessions whose transcripts Claude Code has pruned.
     #[test]
-    fn a_file_from_another_version_is_kept_under_its_version() {
+    fn a_previous_version_carries_its_pruned_sessions_forward_and_is_backed_up() {
         let tree = Tree::new();
         tree.session("p", "a", &[PROMPT]);
         let old = StatsFile {
             version: STATS_FILE_VERSION - 1,
             generated_at: "2026-01-01T00:00:00Z".to_string(),
-            summary: StatsSummary::default(),
             sessions: vec![rec("pruned", "2026-01-01T00:00:00Z")],
         };
         let old_json = serde_json::to_string(&old).unwrap();
         std::fs::write(tree.stats(), &old_json).unwrap();
 
-        tree.recompute();
+        let summary = tree.recompute();
 
+        assert_eq!(summary.total_sessions, 2, "the pruned one and the live one");
         let backup = sibling(&tree.stats(), &format!(".v{}.bak", STATS_FILE_VERSION - 1));
         assert_eq!(std::fs::read_to_string(backup).unwrap(), old_json);
         assert_eq!(tree.saved().version, STATS_FILE_VERSION);
+    }
+
+    /// Too old to carry: its records would be missing fields the dashboard needs.
+    #[test]
+    fn a_file_older_than_the_carried_range_is_backed_up_and_dropped() {
+        let tree = Tree::new();
+        tree.session("p", "a", &[PROMPT]);
+        let old_json = r#"{"version":3,"generatedAt":"x","summary":{},"sessions":[]}"#;
+        std::fs::write(tree.stats(), old_json).unwrap();
+
+        let summary = tree.recompute();
+
+        assert_eq!(summary.total_sessions, 1);
+        assert!(sibling(&tree.stats(), ".v3.bak").exists());
+    }
+
+    /// A subagent finishing after the main file's last write changes the
+    /// session's cost; the record must not stay stale until the main file moves.
+    #[test]
+    fn a_subagent_write_alone_refreshes_its_sessions_record() {
+        let tree = Tree::new();
+        tree.session("p", "a", &[PROMPT]);
+        let subagents = tree.projects().join("p/a/subagents");
+        std::fs::create_dir_all(&subagents).unwrap();
+        let agent = subagents.join("agent-1.jsonl");
+        let line = |id: &str| {
+            format!(
+                r#"{{"type":"assistant","requestId":"{id}","message":{{"model":"claude-sonnet-4-6","content":[],"usage":{{"output_tokens":1000}}}},"timestamp":"2026-01-01T00:00:00Z"}}"#
+            )
+        };
+        std::fs::write(&agent, line("r1") + "\n").unwrap();
+        let before = tree.recompute().total_output_tokens;
+
+        std::fs::write(&agent, line("r1") + "\n" + &line("r2") + "\n").unwrap();
+        let after = tree.recompute().total_output_tokens;
+
+        assert_eq!(before, 1000);
+        assert_eq!(after, 2000);
+    }
+
+    /// A session that used two families counts each error once, against the
+    /// family that issued the call, and every error rate is errors per call.
+    #[test]
+    fn tool_errors_are_split_across_families_not_repeated_in_each() {
+        let f = write_lines(&[
+            r#"{"type":"assistant","requestId":"r1","message":{"model":"claude-sonnet-4-6","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}],"usage":{"output_tokens":10}},"timestamp":"2026-01-01T00:00:00Z"}"#,
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","is_error":true}]},"timestamp":"2026-01-01T00:00:01Z"}"#,
+            r#"{"type":"assistant","requestId":"r2","message":{"model":"claude-opus-5","content":[{"type":"tool_use","id":"t2","name":"Bash","input":{}},{"type":"tool_use","id":"t3","name":"Read","input":{}}],"usage":{"output_tokens":10}},"timestamp":"2026-01-01T00:00:02Z"}"#,
+        ]);
+        let rec = parse_session(f.path()).unwrap();
+        let summary = aggregate(&[rec]);
+
+        assert_eq!(summary.by_model["Sonnet"].tool_errors, 1);
+        assert_eq!(summary.by_model["Opus"].tool_errors, 0);
+        assert!((summary.by_model["Sonnet"].error_rate - 1.0).abs() < 1e-9);
+        assert_eq!(summary.by_model["Opus"].error_rate, 0.0);
     }
 
     #[test]
@@ -2127,6 +2244,7 @@ mod tests {
             by_model_subagents: HashMap::new(),
             subagent_invocations: HashMap::new(),
             harness: None,
+            ..Default::default()
         };
         let records = vec![
             make_rec("s1", week_ts_1, "Opus"),
@@ -2180,6 +2298,7 @@ mod tests {
             by_model_subagents: HashMap::new(),
             subagent_invocations: HashMap::new(),
             harness: None,
+            ..Default::default()
         };
         let records = vec![
             make_rec("recent", &recent, "Sonnet"),

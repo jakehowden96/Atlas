@@ -642,6 +642,12 @@ fn subagent_transcripts(sidecar: &Path) -> Vec<PathBuf> {
     found
 }
 
+/// The subagent transcripts beneath an OMP session's transcript, for the stats
+/// cache key: their spend is folded into the parent's record.
+pub(crate) fn sidecar_files(transcript: &Path) -> Vec<PathBuf> {
+    subagent_transcripts(&transcript.with_extension(""))
+}
+
 /// One `task` subagent's own transcript, read incrementally, and what it has
 /// contributed so far — kept so a rewound file can take its share back out.
 struct SubagentFile {
@@ -793,7 +799,7 @@ fn file_mtime_size(path: &Path) -> (u64, u64) {
                 .modified()
                 .map(|t| {
                     t.duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
+                        .map(|d| d.as_millis() as u64)
                         .unwrap_or(0)
                 })
                 .unwrap_or(0);
@@ -1011,6 +1017,7 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
         by_model_subagents,
         subagent_invocations,
         harness: Some("omp".to_string()),
+        ..Default::default()
     })
 }
 
