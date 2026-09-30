@@ -22,6 +22,7 @@ vi.mock("../logger", () => ({
   log: { init: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock("../stores/stats", () => ({ startStatsFeed }));
+vi.mock("../sound", () => ({ playPing: vi.fn() }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("@tauri-apps/plugin-notification", () => ({
   isPermissionGranted: vi.fn(),
@@ -48,7 +49,8 @@ import {
   ghViewer,
   listRepoPrs,
 } from "../ipc";
-import { enableNotifications } from "../stores/settings";
+import { playPing } from "../sound";
+import { enableNotifications, soundOnNeedsYou } from "../stores/settings";
 import { activeTabId, addTab, tabs } from "../stores/terminal";
 import { activeView } from "../stores/view";
 
@@ -69,6 +71,7 @@ beforeEach(() => {
   activeTabId.set("");
   activeView.set("sessions");
   enableNotifications.set(true);
+  soundOnNeedsYou.set(false);
 });
 
 afterEach(() => {
@@ -173,6 +176,28 @@ describe("claude-notification", () => {
 
     expect(sendNotification).not.toHaveBeenCalled();
     expect(get(tabs)[0].needsInput).toBeUndefined();
+  });
+
+  it("pings when a session needs the user and the sound setting is on, even with notifications off", async () => {
+    addTab({ type: "terminal", id: "t1", ptyId: 7 });
+    soundOnNeedsYou.set(true);
+    enableNotifications.set(false);
+
+    await deliver(permissionPrompt("t1"), true);
+
+    expect(playPing).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not ping with the sound setting off, nor for the idle prompt", async () => {
+    addTab({ type: "terminal", id: "t1", ptyId: 7 });
+    await deliver(permissionPrompt("t1"), false);
+
+    soundOnNeedsYou.set(true);
+    const idle = permissionPrompt("t1");
+    idle.notification.notification_type = "idle_prompt";
+    await deliver(idle, false);
+
+    expect(playPing).not.toHaveBeenCalled();
   });
 
   it("does not notify when notifications are switched off, but still flags the tab", async () => {

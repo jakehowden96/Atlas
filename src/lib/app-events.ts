@@ -19,11 +19,12 @@ import {
 } from "./ipc";
 import { log } from "./logger";
 import { shouldNotify } from "./overview";
+import { playPing } from "./sound";
 import { handleClaudeSessionStart } from "./session-actions";
 import { filesTouched } from "./session-view";
 import { upsertLiveSession } from "./stores/liveSessions";
 import { panelData, setSessionTouchedFiles } from "./stores/panel";
-import { enableNotifications } from "./stores/settings";
+import { enableNotifications, soundOnNeedsYou } from "./stores/settings";
 import { activeTabId, setTabNeedsInput } from "./stores/terminal";
 import { activeView, showView } from "./stores/view";
 import { setSessionDiffStats } from "./stores/workspace";
@@ -38,6 +39,7 @@ async function handleNotification(event: ClaudeNotificationEvent) {
   if (!kind) return;
 
   setTabNeedsInput(session_id, true, kind);
+  if (get(soundOnNeedsYou)) playPing();
 
   if (
     !get(enableNotifications) ||
