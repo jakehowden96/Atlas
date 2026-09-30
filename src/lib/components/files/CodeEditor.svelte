@@ -15,6 +15,7 @@
   import { autocompletion } from "@codemirror/autocomplete";
   import { languageSupportFor, atlasEditorTheme } from "../../code-editor";
   import { languageIdFor } from "../../code-lang";
+  import { pathToFileUri } from "../../files";
   import { clientFor } from "../../lsp-client";
   import { Compartment, EditorState } from "@codemirror/state";
   import { EditorView, keymap } from "@codemirror/view";
@@ -131,7 +132,7 @@
     try {
       const client = await clientFor(languageId, forRoot);
       if (!client || target !== view) return;
-      const uri = `file://${forRoot.replace(/\/$/, "")}/${forPath}`;
+      const uri = pathToFileUri(`${forRoot.replace(/[\\/]$/, "")}/${forPath}`);
       target.dispatch({
         effects: lsp.reconfigure([
           languageServerSupport(client, uri, languageId),

@@ -343,10 +343,29 @@ export function touchedBy(
  */
 export function editorTarget(source: FileSource, path: string): { root: string; relative: string } {
   if (source === "plans" || source === "disk") {
-    const at = path.lastIndexOf("/");
-    return at <= 0
-      ? { root: "/", relative: path.replace(/^\//, "") }
-      : { root: path.slice(0, at), relative: path.slice(at + 1) };
+    const at = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+    if (at <= 0) return { root: "/", relative: path.replace(/^\//, "") };
+    const root = path.slice(0, at);
+    // `C:` alone names the drive's current directory; the drive root keeps its separator.
+    return {
+      root: /^[A-Za-z]:$/.test(root) ? `${root}${path[at]}` : root,
+      relative: path.slice(at + 1),
+    };
   }
   return { root: source.replace(/[\\/]+$/, ""), relative: path };
+}
+
+/**
+ * An absolute path as a `file://` URI. Each segment is percent-encoded, so a
+ * space, `#` or `%` in a directory name cannot corrupt the URI, and a Windows
+ * drive path becomes `file:///C:/…` rather than the invalid `file://C:\…`.
+ */
+export function pathToFileUri(path: string): string {
+  const unified = path.replace(/\\/g, "/");
+  const drive = /^[A-Za-z]:/.test(unified);
+  const absolute = drive || unified.startsWith("/") ? unified : `/${unified}`;
+  const segments = (drive ? `/${absolute}` : absolute).split("/");
+  // Segment 1 of `/C:/…` is the drive; its colon must stay literal.
+  const encoded = segments.map((seg, i) => (drive && i === 1 ? seg : encodeURIComponent(seg)));
+  return `file://${encoded.join("/")}`;
 }

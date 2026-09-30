@@ -11,7 +11,7 @@ vi.mock("../logger", () => ({
 }));
 
 import { lspSend, lspStart, onLspMessage } from "../ipc";
-import { resetLspClients, transportFor } from "../lsp-client";
+import { clientFor, resetLspClients, transportFor } from "../lsp-client";
 
 /** Handlers the backend event listener was given, so a test can push messages. */
 let pushes: ((id: string, message: string) => void)[] = [];
@@ -75,5 +75,33 @@ describe("transportFor", () => {
     const transport = await transportFor("typescript", "/repo");
     transport?.send('{"jsonrpc":"2.0"}');
     expect(vi.mocked(lspSend)).toHaveBeenCalledWith("typescript:/repo", '{"jsonrpc":"2.0"}');
+  });
+});
+
+describe("failed and concurrent starts", () => {
+  it("retries a start that failed instead of remembering the failure", async () => {
+    vi.mocked(lspStart).mockRejectedValueOnce(new Error("spawn failed"));
+    vi.mocked(lspStart).mockResolvedValueOnce("typescript:/repo");
+    expect(await transportFor("typescript", "/repo")).toBeNull();
+    expect(await transportFor("typescript", "/repo")).not.toBeNull();
+  });
+
+  it("gives two editors mounting together the same client", async () => {
+    vi.mocked(lspStart).mockResolvedValue("typescript:/repo");
+    const [a, b] = await Promise.all([
+      clientFor("typescript", "/repo"),
+      clientFor("typescript", "/repo"),
+    ]);
+    expect(a).not.toBeNull();
+    expect(a).toBe(b);
+  });
+
+  it("roots the client at a percent-encoded uri", async () => {
+    vi.mocked(lspStart).mockResolvedValue("typescript:/My Projects/app");
+    const client = await clientFor("typescript", "/My Projects/app");
+    // `config` is internal to the library but is exactly what is sent as rootUri.
+    expect((client as unknown as { config: { rootUri: string } }).config.rootUri).toBe(
+      "file:///My%20Projects/app",
+    );
   });
 });
