@@ -53,6 +53,9 @@ jobs:
         with:
           name: dist
           path: dist
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
       # rust-toolchain.toml pins the version, components and profile.
       - run: rustup toolchain install
         shell: bash
@@ -62,3 +65,9 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+      # The TypeScript types crossing IPC are generated from Rust. Regenerate and
+      # fail on any difference. macOS only: the output is identical on every OS
+      # and one run is enough.
+      - if: runner.os == 'macOS'
+        working-directory: .
+        run: node scripts/check-generated.mjs

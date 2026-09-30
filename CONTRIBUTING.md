@@ -44,6 +44,11 @@ cargo test
 - Windows is a supported target but is only exercised by CI; say so in a PR when you change
   platform-specific code you could not run.
 
+## Tauri plugin versions
+
+Each `tauri-plugin-*` crate and its `@tauri-apps/plugin-*` npm package must share a major.minor, or
+`tauri build` refuses to run. Bump both together (Dependabot opens them separately).
+
 ## Releasing
 
 Bump the three versions, update `CHANGELOG.md`, and push a tag `vX.Y.Z`. The release workflow builds
