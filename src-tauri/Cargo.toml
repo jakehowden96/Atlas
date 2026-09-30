@@ -28,6 +28,7 @@ fern = { version = "0.7", features = ["date-based"] }
 chrono = "0.4"
 tauri-plugin-dialog = "2.6.0"
 tauri-plugin-fs = "2.4.5"
+tauri-plugin-single-instance = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-clipboard-manager = "2"
 
