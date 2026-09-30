@@ -76,19 +76,45 @@ fn lookup(
         .map(|(_, binary)| *binary)
 }
 
-/// `<root>/node_modules/.bin/<binary>`, walking up from the file's workspace so
-/// a monorepo package finds the server hoisted at its root.
-fn in_node_modules(workspace_root: &Path, binary: &str) -> Option<PathBuf> {
-    let mut dir = Some(workspace_root);
-    while let Some(current) = dir {
-        let candidate = current.join("node_modules").join(".bin").join(binary);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-        dir = current.parent();
+/// The file names a server binary may have on this platform. npm installs a
+/// `.cmd` shim next to an extensionless sh script on Windows, and only the
+/// `.cmd` can be launched there; native servers are `.exe`. [UNVERIFIED on
+/// Windows]
+fn executable_names(binary: &str, windows: bool) -> Vec<String> {
+    if windows {
+        vec![format!("{binary}.exe"), format!("{binary}.cmd")]
+    } else {
+        vec![binary.to_string()]
     }
-    None
 }
+
+/// The first existing file in `dir` named like `binary`.
+fn find_in_dir(dir: &Path, binary: &str) -> Option<PathBuf> {
+    executable_names(binary, cfg!(windows))
+        .into_iter()
+        .map(|name| dir.join(name))
+        .find(|candidate| candidate.is_file())
+}
+
+/// `<root>/node_modules/.bin/<binary>`, and only there: a repository the user
+/// merely opened must not get to run code from a directory it does not own, so
+/// there is no walk up through the parents. The resolved file must also still
+/// be inside `<root>/node_modules` once symlinks are followed, so a `.bin`
+/// entry cannot point out of the tree.
+fn in_node_modules(workspace_root: &Path, binary: &str) -> Option<PathBuf> {
+    let modules = workspace_root.join("node_modules");
+    let found = find_in_dir(&modules.join(".bin"), binary)?;
+    let modules = modules.canonicalize().ok()?;
+    found
+        .canonicalize()
+        .ok()
+        .filter(|resolved| resolved.starts_with(&modules))
+        .map(|_| found)
+}
+
+/// How far up from the executable to look for Atlas's own `node_modules`:
+/// `target/{debug,release}/atlas` inside `src-tauri` inside the checkout.
+const ATLAS_TREE_DEPTH: usize = 6;
 
 /// Atlas's own `node_modules/.bin`, found by walking up from the executable.
 ///
@@ -96,36 +122,39 @@ fn in_node_modules(workspace_root: &Path, binary: &str) -> Option<PathBuf> {
 /// gets no diagnostics at all, which for a personal tool is most of them. The
 /// server Atlas ships is the last resort rather than the first, so a project
 /// that pins its own TypeScript is still the one that reports on its code.
+///
+/// The walk is short and never reaches the filesystem root: `/node_modules`
+/// or `C:\node_modules` is creatable by other users on some systems, and
+/// nothing from there should run as this user.
 fn beside_atlas(binary: &str) -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    let mut dir = exe.parent();
-    while let Some(current) = dir {
-        let candidate = current.join("node_modules").join(".bin").join(binary);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-        dir = current.parent();
-    }
-    None
+    exe.ancestors()
+        .skip(1)
+        .take(ATLAS_TREE_DEPTH)
+        .filter(|dir| dir.parent().is_some())
+        .find_map(|dir| find_in_dir(&dir.join("node_modules").join(".bin"), binary))
 }
 
 fn on_path(binary: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .map(|dir| dir.join(binary))
-        .find(|candidate| candidate.is_file())
+    std::env::split_paths(&path).find_map(|dir| find_in_dir(&dir, binary))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// The file name the server has on this platform.
+    fn server_file() -> String {
+        executable_names("typescript-language-server", cfg!(windows)).remove(0)
+    }
+
     #[test]
     fn prefers_the_workspace_copy_over_anything_on_path() {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("node_modules").join(".bin");
         std::fs::create_dir_all(&bin).unwrap();
-        let server = bin.join("typescript-language-server");
+        let server = bin.join(server_file());
         std::fs::write(&server, "#!/bin/sh\n").unwrap();
 
         let spec = resolve("typescript", dir.path()).expect("resolved");
@@ -134,15 +163,43 @@ mod tests {
     }
 
     #[test]
-    fn finds_a_server_hoisted_to_a_parent_of_the_workspace() {
+    fn a_parent_directorys_node_modules_is_not_searched() {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("node_modules").join(".bin");
         std::fs::create_dir_all(&bin).unwrap();
-        std::fs::write(bin.join("typescript-language-server"), "#!/bin/sh\n").unwrap();
+        std::fs::write(bin.join(server_file()), "#!/bin/sh\n").unwrap();
         let nested = dir.path().join("packages").join("web");
         std::fs::create_dir_all(&nested).unwrap();
 
-        assert!(resolve("typescript", &nested).is_some());
+        assert_eq!(in_node_modules(&nested, "typescript-language-server"), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_bin_entry_that_points_outside_node_modules_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside-server");
+        std::fs::write(&outside, "#!/bin/sh\n").unwrap();
+        let bin = dir.path().join("repo").join("node_modules").join(".bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::os::unix::fs::symlink(&outside, bin.join("typescript-language-server")).unwrap();
+
+        assert_eq!(
+            in_node_modules(&dir.path().join("repo"), "typescript-language-server"),
+            None
+        );
+    }
+
+    #[test]
+    fn windows_looks_for_launchable_extensions_not_the_sh_shim() {
+        assert_eq!(
+            executable_names("rust-analyzer", true),
+            vec!["rust-analyzer.exe", "rust-analyzer.cmd"]
+        );
+        assert_eq!(
+            executable_names("rust-analyzer", false),
+            vec!["rust-analyzer"]
+        );
     }
 
     #[test]
@@ -156,7 +213,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("node_modules").join(".bin");
         std::fs::create_dir_all(&bin).unwrap();
-        std::fs::write(bin.join("typescript-language-server"), "#!/bin/sh\n").unwrap();
+        std::fs::write(bin.join(server_file()), "#!/bin/sh\n").unwrap();
         for id in [
             "typescript",
             "typescriptreact",
