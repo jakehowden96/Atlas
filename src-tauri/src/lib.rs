@@ -95,9 +95,22 @@ fn hook_command_str(hook: &serde_json::Value) -> &str {
     hook.get("command").and_then(|c| c.as_str()).unwrap_or("")
 }
 
-/// Merge one Atlas hook command into `settings["hooks"][event]`, appending it
-/// unless an entry already carries `marker`. Returns true when `settings` was
-/// modified. Shared by every hook Atlas installs.
+/// True when `command` has the exact shape Atlas installs: a quoted executable
+/// path followed by `marker` as the whole argv tail. A user's own hook that
+/// merely mentions the marker somewhere does not qualify.
+fn is_atlas_command(command: &str, marker: &str) -> bool {
+    let command = command.trim();
+    command.starts_with('"') && command.ends_with(&format!("\" {marker}"))
+}
+
+/// Make `settings["hooks"][event]` carry exactly one Atlas entry whose command
+/// is `command`. An Atlas entry left by another install location (the app
+/// moved, a dev build ran first) is rewritten in place, and further stale
+/// duplicates are dropped; user hooks are never touched. Returns true when
+/// `settings` was modified. Shared by every hook Atlas installs.
+///
+/// When a dev build and an installed build coexist, whichever launched last
+/// owns the entry.
 fn merge_hook(settings: &mut serde_json::Value, event: &str, marker: &str, command: &str) -> bool {
     let Some(root) = settings.as_object_mut() else {
         return false;
@@ -113,18 +126,36 @@ fn merge_hook(settings: &mut serde_json::Value, event: &str, marker: &str, comma
         return false;
     };
 
-    let already_installed = entries.iter().any(|entry| {
+    let mut current_seen = entries.iter().any(|entry| {
         entry
             .get("hooks")
             .and_then(|h| h.as_array())
-            .is_some_and(|inner| {
-                inner
-                    .iter()
-                    .any(|hook| hook_command_str(hook).contains(marker))
-            })
+            .is_some_and(|inner| inner.iter().any(|hook| hook_command_str(hook) == command))
     });
-    if already_installed {
-        return false;
+    let mut changed = false;
+    entries.retain_mut(|entry| {
+        let Some(inner) = entry.get_mut("hooks").and_then(|h| h.as_array_mut()) else {
+            return true;
+        };
+        let before = inner.len();
+        inner.retain_mut(|hook| {
+            let existing = hook_command_str(hook);
+            if existing == command || !is_atlas_command(existing, marker) {
+                return true;
+            }
+            changed = true;
+            if current_seen {
+                return false;
+            }
+            current_seen = true;
+            hook["command"] = serde_json::Value::String(command.to_string());
+            true
+        });
+        // Drop the wrapper too if a stale Atlas command was all it held.
+        inner.len() == before || !inner.is_empty()
+    });
+    if current_seen {
+        return changed;
     }
 
     entries.push(serde_json::json!({
@@ -469,6 +500,50 @@ mod tests {
             settings["hooks"]["Notification"][0]["hooks"][0]["type"],
             "command"
         );
+    }
+
+    #[test]
+    fn a_stale_executable_path_is_replaced_in_place() {
+        let mut settings = serde_json::json!({
+            "hooks": { "Notification": [{
+                "matcher": "",
+                "hooks": [
+                    { "type": "command", "command": "\"/old/path/atlas\" hook notification" },
+                    { "type": "command", "command": "someone-elses-hook" }
+                ]
+            }] }
+        });
+        assert!(merge_notification_hook(&mut settings, NEW));
+        assert_eq!(
+            commands(&settings),
+            vec![NEW.to_string(), "someone-elses-hook".to_string()]
+        );
+        assert!(!merge_notification_hook(&mut settings, NEW));
+    }
+
+    #[test]
+    fn stale_duplicates_collapse_to_one_current_entry() {
+        let mut settings = serde_json::json!({
+            "hooks": { "Notification": [
+                { "matcher": "", "hooks": [{ "type": "command", "command": "\"/old/atlas\" hook notification" }] },
+                { "matcher": "", "hooks": [{ "type": "command", "command": NEW }] }
+            ] }
+        });
+        assert!(merge_notification_hook(&mut settings, NEW));
+        assert_eq!(commands(&settings), vec![NEW]);
+    }
+
+    #[test]
+    fn a_user_hook_that_merely_mentions_the_marker_is_not_ours() {
+        let user = "notify-send 'hook notification received'";
+        let mut settings = serde_json::json!({
+            "hooks": { "Notification": [{
+                "matcher": "",
+                "hooks": [{ "type": "command", "command": user }]
+            }] }
+        });
+        assert!(merge_notification_hook(&mut settings, NEW));
+        assert_eq!(commands(&settings), vec![user.to_string(), NEW.to_string()]);
     }
 
     #[test]
