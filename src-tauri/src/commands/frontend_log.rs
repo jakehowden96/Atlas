@@ -3,6 +3,7 @@
 //! the webview needs no filesystem access to keep a log.
 
 use serde::Deserialize;
+use ts_rs::TS;
 
 /// Longest message kept, in characters. A stack trace fits; a runaway loop
 /// logging a serialised store does not fill the day's log.
@@ -11,7 +12,8 @@ const MAX_MESSAGE_CHARS: usize = 8 * 1024;
 /// Longest scope kept.
 const MAX_SCOPE_CHARS: usize = 32;
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     Error,

@@ -9,6 +9,7 @@ use tauri::ipc::{Channel, InvokeResponseBody};
 
 use super::session::PtySession;
 use crate::error::AtlasError;
+use ts_rs::TS;
 
 /// The interactive shell to run inside a PTY, plus its startup arguments.
 ///
@@ -79,7 +80,8 @@ const INHERITED_CLAUDE_MARKERS: &[&str] = &[
 ];
 
 /// How a shell ended, as the last message on its output channel.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, TS)]
+#[ts(export)]
 struct PtyExit {
     /// `None` when the status could not be collected (the shell was killed by
     /// the app, or had not finished winding down).

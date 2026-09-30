@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, State};
+use ts_rs::TS;
 
 /// The extensions the Files screen shows and edits.
 ///
@@ -63,20 +64,23 @@ const DEBOUNCE: Duration = Duration::from_millis(300);
 
 /// A workspace's documents. `truncated` says the walk hit a cap (entry count,
 /// visit count or depth), so the tree is incomplete.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, TS)]
+#[ts(export)]
 pub struct DocList {
     pub entries: Vec<DocEntry>,
     pub truncated: bool,
 }
 
 /// One folder's children; `truncated` says there were more than were returned.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, TS)]
+#[ts(export)]
 pub struct DirList {
     pub entries: Vec<DirEntry>,
     pub truncated: bool,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, TS)]
+#[ts(export)]
 pub struct DocEntry {
     /// Forward-slash path relative to the workspace root — the tree key.
     pub rel_path: String,
@@ -92,7 +96,8 @@ pub struct DocEntry {
 /// milliseconds since the Unix epoch. The editor hands that time back on save
 /// (`write_text_file_at`'s `expected_mtime`) so an edit made by someone else in
 /// between is noticed instead of overwritten.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, TS)]
+#[ts(export)]
 pub struct TextFile {
     pub contents: String,
     pub mtime: u64,
@@ -100,7 +105,8 @@ pub struct TextFile {
 
 /// How a save ended. A file that changed on disk since it was read is a normal
 /// outcome the editor resolves with the user, not an error.
-#[derive(Debug, PartialEq, serde::Serialize)]
+#[derive(Debug, PartialEq, serde::Serialize, TS)]
+#[ts(export)]
 #[serde(
     tag = "kind",
     rename_all = "camelCase",
@@ -114,7 +120,8 @@ pub enum WriteOutcome {
     Conflict { disk_mtime: Option<u64> },
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, TS)]
+#[ts(export)]
 pub struct PlanEntry {
     pub path: String,
     pub name: String,
@@ -122,7 +129,8 @@ pub struct PlanEntry {
 }
 
 /// One child of a browsed directory, for the Open… dialog.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, TS)]
+#[ts(export)]
 pub struct DirEntry {
     pub name: String,
     /// Absolute.
@@ -570,7 +578,8 @@ pub fn validate_directory(path: String) -> Result<(), AtlasError> {
 #[derive(Default)]
 pub struct DocsWatchers(Mutex<HashMap<String, RecommendedWatcher>>);
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 struct DocsChangedEvent {
     workspace_path: String,

@@ -16,6 +16,7 @@ use crate::transcript::{
     requests_to_by_model, slot_start, tool_results, tool_uses, user_text, ActivityBucket,
     ActivityLog, ModelSessionData, ReqData,
 };
+use ts_rs::TS;
 
 /// A "user" line can be genuinely typed by the human, or injected by a skill/hook/
 /// background-task notification. Only the former should count as "a message from you" —
@@ -141,7 +142,8 @@ pub struct SessionRecord {
 }
 
 /// Per-model aggregate — the Sonnet vs Opus comparison block.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelStats {
     pub sessions: u32,
@@ -163,7 +165,8 @@ pub struct ModelStats {
     pub cost_per_k_output: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectStats {
     pub sessions: u32,
@@ -175,7 +178,8 @@ pub struct ProjectStats {
     pub subagents: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct DayStats {
     pub sessions: u32,
@@ -190,7 +194,8 @@ pub struct DayStats {
     pub subagents: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct WeekStats {
     pub sessions: u32,
@@ -204,7 +209,8 @@ pub struct WeekStats {
 /// A session as the Recent-sessions table needs it. Deliberately a projection
 /// of `SessionRecord` and not the record itself: `SessionRecord.path` is an
 /// absolute transcript path and must not cross IPC.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentSession {
     pub session_id: String,
@@ -251,7 +257,8 @@ const RECENT_SESSION_LIMIT: usize = 50;
 
 /// Headline numbers for one time window. The KPI strip renders one of these
 /// against the equally-sized window immediately before it.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct RangeTotals {
     pub sessions: u32,
@@ -310,7 +317,8 @@ impl WindowAcc {
 }
 
 /// The presentable summary returned to the frontend.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct StatsSummary {
     pub by_model: HashMap<String, ModelStats>,
@@ -1361,7 +1369,8 @@ pub async fn get_claude_stats() -> Result<StatsSummary, AtlasError> {
 // ── Resumable sessions ────────────────────────────────────────────────────────
 
 /// One prior conversation the New Session modal can hand to `claude --resume`.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ResumableSession {
     /// The transcript uuid — exactly what `--resume` takes.

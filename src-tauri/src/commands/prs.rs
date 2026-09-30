@@ -7,11 +7,35 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{OnceCell, Semaphore};
 use tokio::task::JoinSet;
+use ts_rs::TS;
+
+/// The combined state of a pull request's checks.
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, TS)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum CiState {
+    Passed,
+    Failed,
+    Pending,
+    None,
+}
+
+/// Where a pull request stands with its reviewers.
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, TS)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewState {
+    Approved,
+    ChangesRequested,
+    ReviewRequired,
+    None,
+}
 
 /// One open pull request. We over-fetch from gh and then collapse the noisy
 /// `statusCheckRollup` / `reviewDecision` / `comments` fields into small
 /// scalars the UI can switch on directly.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct Pr {
     pub number: u64,
@@ -25,10 +49,8 @@ pub struct Pr {
     /// nothing about which commit a local branch of that name points at.
     pub is_cross_repository: bool,
     pub head_ref_name: String,
-    /// "passed" | "failed" | "pending" | "none"
-    pub ci_state: String,
-    /// "approved" | "changes_requested" | "review_required" | "none"
-    pub review_state: String,
+    pub ci_state: CiState,
+    pub review_state: ReviewState,
     /// Logins of individually requested reviewers. Team requests carry no
     /// login and are dropped — "Needs my review" matches the viewer's login.
     pub review_request_logins: Vec<String>,
@@ -61,7 +83,8 @@ struct RawPr {
     comments: Vec<serde_json::Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(export)]
 pub struct PrAuthor {
     #[serde(default)]
     pub login: String,
@@ -70,9 +93,9 @@ pub struct PrAuthor {
 /// Collapse `gh`'s mixed StatusContext + CheckRun rollup into a single state.
 /// Any failure dominates; otherwise any in-progress means pending; otherwise
 /// if every check is good it's "passed"; an empty rollup is "none".
-fn rollup_ci_state(checks: &[serde_json::Value]) -> &'static str {
+fn rollup_ci_state(checks: &[serde_json::Value]) -> CiState {
     if checks.is_empty() {
-        return "none";
+        return CiState::None;
     }
     let mut any_pending = false;
     let mut any_success = false;
@@ -81,7 +104,9 @@ fn rollup_ci_state(checks: &[serde_json::Value]) -> &'static str {
         // StatusContext: state="SUCCESS"/"FAILURE"/"ERROR"/"PENDING"
         if let Some(conclusion) = c.get("conclusion").and_then(|v| v.as_str()) {
             match conclusion {
-                "FAILURE" | "TIMED_OUT" | "ACTION_REQUIRED" | "STARTUP_FAILURE" => return "failed",
+                "FAILURE" | "TIMED_OUT" | "ACTION_REQUIRED" | "STARTUP_FAILURE" => {
+                    return CiState::Failed
+                }
                 "CANCELLED" => {}
                 "SUCCESS" => any_success = true,
                 "NEUTRAL" | "SKIPPED" => {}
@@ -97,7 +122,7 @@ fn rollup_ci_state(checks: &[serde_json::Value]) -> &'static str {
             }
         } else if let Some(state) = c.get("state").and_then(|v| v.as_str()) {
             match state {
-                "FAILURE" | "ERROR" => return "failed",
+                "FAILURE" | "ERROR" => return CiState::Failed,
                 "PENDING" | "EXPECTED" => any_pending = true,
                 "SUCCESS" => any_success = true,
                 _ => {}
@@ -105,20 +130,20 @@ fn rollup_ci_state(checks: &[serde_json::Value]) -> &'static str {
         }
     }
     if any_pending {
-        "pending"
+        CiState::Pending
     } else if any_success {
-        "passed"
+        CiState::Passed
     } else {
-        "none"
+        CiState::None
     }
 }
 
-fn map_review(decision: &str) -> &'static str {
+fn map_review(decision: &str) -> ReviewState {
     match decision {
-        "APPROVED" => "approved",
-        "CHANGES_REQUESTED" => "changes_requested",
-        "REVIEW_REQUIRED" => "review_required",
-        _ => "none",
+        "APPROVED" => ReviewState::Approved,
+        "CHANGES_REQUESTED" => ReviewState::ChangesRequested,
+        "REVIEW_REQUIRED" => ReviewState::ReviewRequired,
+        _ => ReviewState::None,
     }
 }
 
@@ -144,8 +169,8 @@ fn flatten(raw: RawPr) -> Pr {
         is_draft: raw.is_draft,
         is_cross_repository: raw.is_cross_repository,
         head_ref_name: raw.head_ref_name,
-        ci_state: rollup_ci_state(&raw.status_check_rollup).to_string(),
-        review_state: map_review(&raw.review_decision).to_string(),
+        ci_state: rollup_ci_state(&raw.status_check_rollup),
+        review_state: map_review(&raw.review_decision),
         review_request_logins: review_request_logins(&raw.review_requests),
         comments_count: raw.comments.len() as u32,
     }
@@ -154,7 +179,8 @@ fn flatten(raw: RawPr) -> Pr {
 /// Why a `gh` call produced nothing. The first two are things the user fixes
 /// outside Atlas (install, sign in), so the UI shows the fix rather than gh's
 /// raw output.
-#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, TS)]
+#[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum GhErrorKind {
     /// No `gh` on PATH.
@@ -167,7 +193,8 @@ pub enum GhErrorKind {
     Failed,
 }
 
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, TS)]
+#[ts(export)]
 pub struct GhError {
     pub kind: GhErrorKind,
     pub message: String,
@@ -197,7 +224,8 @@ impl From<GhError> for AtlasError {
 
 /// Per-repo result. `error` describes a failed `gh` call so the UI can show
 /// "this one repo broke" without poisoning the whole snapshot.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, TS)]
+#[ts(export)]
 pub struct RepoPrs {
     pub repo: String,
     pub prs: Vec<Pr>,
@@ -426,13 +454,15 @@ pub async fn list_repo_prs(repos: Vec<String>) -> Result<Vec<RepoPrs>, AtlasErro
 }
 
 /// The signed-in GitHub user, as reported by `gh`.
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, TS)]
+#[ts(export)]
 pub struct GhViewer {
     pub login: String,
 }
 
 /// The answer to "who is signed in": the user, or why there is none.
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, TS)]
+#[ts(export)]
 pub struct GhViewerResult {
     pub viewer: Option<GhViewer>,
     pub error: Option<GhError>,
@@ -647,7 +677,7 @@ mod tests {
 
     #[test]
     fn rollup_none_when_empty() {
-        assert_eq!(rollup_ci_state(&[]), "none");
+        assert_eq!(rollup_ci_state(&[]), CiState::None);
     }
 
     #[test]
@@ -657,41 +687,44 @@ mod tests {
             check("COMPLETED", "FAILURE"),
             check("COMPLETED", "SUCCESS"),
         ];
-        assert_eq!(rollup_ci_state(&checks), "failed");
+        assert_eq!(rollup_ci_state(&checks), CiState::Failed);
     }
 
     #[test]
     fn rollup_pending_when_queued() {
         let checks = vec![check("COMPLETED", "SUCCESS"), check("QUEUED", "")];
-        assert_eq!(rollup_ci_state(&checks), "pending");
+        assert_eq!(rollup_ci_state(&checks), CiState::Pending);
     }
 
     #[test]
     fn rollup_passed_when_all_success() {
         let checks = vec![check("COMPLETED", "SUCCESS"), check("COMPLETED", "SUCCESS")];
-        assert_eq!(rollup_ci_state(&checks), "passed");
+        assert_eq!(rollup_ci_state(&checks), CiState::Passed);
     }
 
     #[test]
     fn rollup_skipped_neutral_dont_count() {
         let checks = vec![check("COMPLETED", "SKIPPED"), check("COMPLETED", "NEUTRAL")];
-        assert_eq!(rollup_ci_state(&checks), "none");
+        assert_eq!(rollup_ci_state(&checks), CiState::None);
     }
 
     #[test]
     fn rollup_handles_status_context() {
-        assert_eq!(rollup_ci_state(&[ctx("SUCCESS")]), "passed");
-        assert_eq!(rollup_ci_state(&[ctx("PENDING")]), "pending");
-        assert_eq!(rollup_ci_state(&[ctx("FAILURE")]), "failed");
+        assert_eq!(rollup_ci_state(&[ctx("SUCCESS")]), CiState::Passed);
+        assert_eq!(rollup_ci_state(&[ctx("PENDING")]), CiState::Pending);
+        assert_eq!(rollup_ci_state(&[ctx("FAILURE")]), CiState::Failed);
     }
 
     #[test]
     fn map_review_states() {
-        assert_eq!(map_review("APPROVED"), "approved");
-        assert_eq!(map_review("CHANGES_REQUESTED"), "changes_requested");
-        assert_eq!(map_review("REVIEW_REQUIRED"), "review_required");
-        assert_eq!(map_review(""), "none");
-        assert_eq!(map_review("anything-else"), "none");
+        assert_eq!(map_review("APPROVED"), ReviewState::Approved);
+        assert_eq!(
+            map_review("CHANGES_REQUESTED"),
+            ReviewState::ChangesRequested
+        );
+        assert_eq!(map_review("REVIEW_REQUIRED"), ReviewState::ReviewRequired);
+        assert_eq!(map_review(""), ReviewState::None);
+        assert_eq!(map_review("anything-else"), ReviewState::None);
     }
 
     #[test]

@@ -10,6 +10,7 @@ use crate::pty::manager::PtyManager;
 use crate::session::manager::{LiveSessionManager, SessionUpdateEvent};
 use crate::session::omp;
 use crate::session::transcript::{find_transcript, is_valid_session_uuid};
+use ts_rs::TS;
 
 fn invalid_session_id(session_uuid: &str) -> AtlasError {
     AtlasError::invalid_input(format!("invalid session id: {session_uuid:?}"))
@@ -111,7 +112,8 @@ pub async fn start_omp_tail(
 
 /// What Settings › Claude Code reports. Every field degrades to `None`/`false`
 /// rather than erroring: the section is diagnostic, not load-bearing.
-#[derive(Debug, Serialize, Default)]
+#[derive(Debug, Serialize, Default, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeInfo {
     /// Absolute path to the `claude` binary, if it is on PATH.

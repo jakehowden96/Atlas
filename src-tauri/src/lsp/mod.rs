@@ -26,9 +26,11 @@ use frame::{frame, FrameReader};
 
 use crate::error::AtlasError;
 use crate::state::{StateFile, StateStore};
+use ts_rs::TS;
 
 /// A message relayed from a server to the frontend.
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone, serde::Serialize, TS)]
+#[ts(export)]
 pub struct LspMessage {
     /// The session this belongs to — `<language>:<workspace root>`.
     pub id: String,
@@ -40,13 +42,15 @@ pub struct LspMessage {
 /// its own, and the session has been removed. The frontend drops what it cached
 /// for `id`; the next editor to need one starts a fresh server. Not sent for an
 /// explicit `lsp_stop`.
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone, serde::Serialize, TS)]
+#[ts(export)]
 pub struct LspExit {
     pub id: String,
 }
 
 /// What `lsp_start` found.
-#[derive(Debug, PartialEq, serde::Serialize)]
+#[derive(Debug, PartialEq, serde::Serialize, TS)]
+#[ts(export)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum LspStart {
     /// A server is running; use `id` with `lsp_send`.

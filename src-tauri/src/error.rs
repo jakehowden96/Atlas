@@ -287,6 +287,16 @@ mod tests {
         ));
     }
 
+    /// The wire carries JSON numbers, which JavaScript reads as doubles, so
+    /// every 64-bit counter must stay below 2^53 and be typed `number`. The
+    /// setting lives in `.cargo/config.toml`; without it ts-rs says `bigint`.
+    #[test]
+    fn large_integers_are_exported_as_number() {
+        let config = ts_rs::Config::from_env();
+        assert_eq!(<u64 as TS>::name(&config), "number");
+        assert_eq!(<i64 as TS>::name(&config), "number");
+    }
+
     #[tokio::test]
     async fn a_panicked_task_is_internal() {
         let joined = tokio::task::spawn_blocking(|| panic!("task died")).await;

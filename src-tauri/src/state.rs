@@ -19,10 +19,12 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::State;
+use ts_rs::TS;
 
 /// The files the webview may load and save. A closed set: the path is built
 /// here, never taken from the caller.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "lowercase")]
 pub enum StateFile {
     Settings,
@@ -43,7 +45,8 @@ impl StateFile {
 const MAX_STATE_BYTES: usize = 32 * 1024 * 1024;
 
 /// What `state_load` returns.
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(Debug, Serialize, PartialEq, TS)]
+#[ts(export)]
 pub struct StateLoad {
     /// The file's JSON text, or `None` when it is missing or was unusable.
     pub contents: Option<String>,

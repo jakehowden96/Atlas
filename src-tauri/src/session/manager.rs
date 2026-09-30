@@ -27,12 +27,14 @@ use super::live::{LiveSession, SessionTail};
 use super::omp::{self, OmpTail};
 use crate::commands::stats::claude_projects_dir;
 use crate::error::AtlasError;
+use ts_rs::TS;
 
 /// Per-session gap between emits. Short enough to feel live, long enough that a
 /// burst of appends within one Claude turn collapses into one update.
 const DEBOUNCE: Duration = Duration::from_millis(250);
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct SessionUpdateEvent {
     pub session_uuid: String,
     pub session: LiveSession,

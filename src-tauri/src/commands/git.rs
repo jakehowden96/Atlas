@@ -5,6 +5,7 @@ use crate::error::AtlasError;
 use crate::panel::types::GitStatus;
 use std::io::Read;
 use std::process::{Command, Stdio};
+use ts_rs::TS;
 
 /// A `git -C <cwd> <args>` command.
 ///
@@ -202,7 +203,8 @@ pub(crate) fn parse_remote_slug(url: &str) -> Option<String> {
 }
 
 /// One git repo Atlas can act in: a workspace, or a repo one level inside it.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, TS)]
+#[ts(export)]
 pub struct WorkspaceRepo {
     /// Absolute path of the repo's working tree.
     pub path: String,
