@@ -3,10 +3,14 @@
 //! Claude Code runs in the alternate screen buffer, so the xterm buffer holds
 //! TUI chrome rather than a conversation. The structured source is the
 //! session's own `~/.claude/projects/<slug>/<uuid>.jsonl`, which this module
-//! reads incrementally — never from the start, because it reaches megabytes.
+//! reads incrementally. A newly attached tail reads the file once from the
+//! start, in bounded chunks, because cost and context need the whole history;
+//! after that it only reads what was appended.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::borrow::Cow;
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -320,6 +324,26 @@ impl LineReader {
     }
 }
 
+/// Output tokens, cost and the largest context over the requests added so far.
+///
+/// A request's usage never changes once it is first seen, so the totals are
+/// kept as requests arrive instead of re-pricing every request of a
+/// thousand-request session on each poll.
+#[derive(Default)]
+struct Spend {
+    output_tokens: u64,
+    cost: f64,
+    peak_context: u64,
+}
+
+impl Spend {
+    fn add(&mut self, req: &ReqData) {
+        self.output_tokens += req.output_tokens;
+        self.cost += req.cost();
+        self.peak_context = self.peak_context.max(req.context());
+    }
+}
+
 // ── Subagent transcripts ──────────────────────────────────────────────────────
 
 /// Counts `tool_use` blocks in one subagent's own transcript, and keeps its
@@ -332,8 +356,9 @@ impl LineReader {
 struct SubagentCounter {
     reader: LineReader,
     tool_count: u32,
-    /// requestId -> usage, deduplicated the same way as the parent's.
-    requests: HashMap<String, ReqData>,
+    /// Keys of the requests already counted, deduplicated the same way as the parent's.
+    seen: HashSet<String>,
+    spend: Spend,
 }
 
 impl SubagentCounter {
@@ -341,19 +366,21 @@ impl SubagentCounter {
         SubagentCounter {
             reader: LineReader::new(),
             tool_count: 0,
-            requests: HashMap::new(),
+            seen: HashSet::new(),
+            spend: Spend::default(),
         }
     }
 
     /// Returns true when the count or the usage changed.
     fn poll(&mut self, path: &Path) -> bool {
-        let before = (self.tool_count, self.requests.len());
+        let before = (self.tool_count, self.seen.len());
         let mut changed = false;
         loop {
             let batch = self.reader.read_new(path);
             if batch.rewound {
                 self.tool_count = 0;
-                self.requests.clear();
+                self.seen.clear();
+                self.spend = Spend::default();
                 changed = true;
             }
             for raw in &batch.lines {
@@ -366,16 +393,16 @@ impl SubagentCounter {
                 let msg = obj.get("message").unwrap_or(&Value::Null);
                 self.tool_count += tool_uses(msg).len() as u32;
                 if let (Some(model), Some(key)) = (assistant_model(&obj), request_key(&obj)) {
-                    self.requests
-                        .entry(key)
-                        .or_insert_with(|| ReqData::from_message(model, msg));
+                    if self.seen.insert(key) {
+                        self.spend.add(&ReqData::from_message(model, msg));
+                    }
                 }
             }
             if !batch.more {
                 break;
             }
         }
-        changed || (self.tool_count, self.requests.len()) != before
+        changed || (self.tool_count, self.seen.len()) != before
     }
 }
 
@@ -395,12 +422,19 @@ pub struct SessionTail {
     /// Key into `requests` of the newest request seen. The map has no order, and
     /// current context is the newest request's, not the biggest.
     last_request: Option<String>,
+    /// Spend over `requests`, kept current as requests are first seen.
+    spend: Spend,
+    /// `tool_use` blocks over `requests`.
+    tool_calls: u32,
     /// Unanswered `tool_use` blocks in call order: (id, name, input summary).
     outstanding: Vec<(String, String, String)>,
     /// `tool_use` id -> index into `session.subagents`.
     subagent_index: HashMap<String, usize>,
     /// Subagent file stem -> its incremental tool counter.
     subagent_files: HashMap<String, SubagentCounter>,
+    /// Subagent file stem -> the parent `tool_use` id its `meta.json` names. Only
+    /// a complete read is remembered, so a meta file still being written is retried.
+    subagent_tool_ids: HashMap<String, String>,
     /// Indices into `session.subagents` of the ones launched in the background.
     background_subagents: HashSet<usize>,
     /// Workflow run file -> (len, mtime) at the last poll. Claude Code rewrites
@@ -442,6 +476,9 @@ impl SessionTail {
             session: LiveSession::new(session_uuid),
             requests: HashMap::new(),
             last_request: None,
+            spend: Spend::default(),
+            tool_calls: 0,
+            subagent_tool_ids: HashMap::new(),
             outstanding: Vec::new(),
             subagent_index: HashMap::new(),
             subagent_files: HashMap::new(),
@@ -509,6 +546,9 @@ impl SessionTail {
         self.session = LiveSession::new(uuid);
         self.requests.clear();
         self.last_request = None;
+        self.spend = Spend::default();
+        self.tool_calls = 0;
+        self.subagent_tool_ids.clear();
         self.outstanding.clear();
         self.subagent_index.clear();
         self.subagent_files.clear();
@@ -702,11 +742,16 @@ impl SessionTail {
         if let (Some(model), Some(key)) = (assistant_model(obj), request_key(obj)) {
             self.session.model = Some(model.to_string());
             self.last_request = Some(key.clone());
-            let entry = self
-                .requests
-                .entry(key)
-                .or_insert_with(|| ReqData::from_message(model, msg));
-            entry.tool_names.extend(new_tools);
+            let req = match self.requests.entry(key) {
+                Entry::Occupied(occupied) => occupied.into_mut(),
+                Entry::Vacant(vacant) => {
+                    let req = ReqData::from_message(model, msg);
+                    self.spend.add(&req);
+                    vacant.insert(req)
+                }
+            };
+            self.tool_calls += u32::try_from(new_tools.len()).unwrap_or(u32::MAX);
+            req.tool_names.extend(new_tools);
         }
     }
 
@@ -773,25 +818,15 @@ impl SessionTail {
     }
 
     fn finalize(&mut self) {
-        let mut output_tokens = 0;
-        let mut cost_estimate = 0.0;
-        let mut peak_context = 0;
-        let mut tool_calls = 0;
-        for req in self.requests.values() {
-            output_tokens += req.output_tokens;
-            cost_estimate += req.cost();
-            peak_context = peak_context.max(req.context());
-            tool_calls += req.tool_names.len() as u32;
-        }
+        let mut output_tokens = self.spend.output_tokens;
+        let mut cost_estimate = self.spend.cost;
+        let peak_context = self.spend.peak_context;
+        let tool_calls = self.tool_calls;
         // A subagent's requests are billed to this session but never written
         // into its transcript. Spend only: its context and tools are its own.
-        for req in self
-            .subagent_files
-            .values()
-            .flat_map(|c| c.requests.values())
-        {
-            output_tokens += req.output_tokens;
-            cost_estimate += req.cost();
+        for counter in self.subagent_files.values() {
+            output_tokens += counter.spend.output_tokens;
+            cost_estimate += counter.spend.cost;
         }
         // Newest request, not biggest: after a compact or a `/clear` the window
         // really is emptier, and a peak would stay pinned to the old high while
@@ -878,21 +913,20 @@ impl SessionTail {
             else {
                 continue;
             };
-            let stem = stem.to_string();
-            let Some(tool_use_id) = std::fs::read_to_string(&meta_path)
-                .ok()
-                .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-                .and_then(|v| {
-                    v.get("toolUseId")
-                        .and_then(|t| t.as_str())
-                        .map(|s| s.to_string())
-                })
+            if !self.subagent_tool_ids.contains_key(stem) {
+                let Some(id) = read_tool_use_id(&meta_path) else {
+                    continue;
+                };
+                self.subagent_tool_ids.insert(stem.to_string(), id);
+            }
+            let Some(&idx) = self
+                .subagent_tool_ids
+                .get(stem)
+                .and_then(|id| self.subagent_index.get(id.as_str()))
             else {
                 continue;
             };
-            let Some(&idx) = self.subagent_index.get(&tool_use_id) else {
-                continue;
-            };
+            let stem = stem.to_string();
             let jsonl = self.subagents_dir.join(format!("{}.jsonl", stem));
             let counter = self
                 .subagent_files
@@ -955,29 +989,41 @@ impl SessionTail {
 /// One line, trimmed and capped — transcript text is multi-line and long.
 pub(super) fn excerpt(text: &str) -> String {
     let first = text.trim().lines().next().unwrap_or("").trim();
-    if first.chars().count() <= EXCERPT {
-        return first.to_string();
-    }
-    let cut: String = first.chars().take(EXCERPT).collect();
-    format!("{}…", cut)
+    capped(first, EXCERPT)
 }
 
 /// `text` capped at `max` chars, with an ellipsis marking the cut.
 pub(super) fn capped(text: &str, max: usize) -> String {
-    if text.chars().count() <= max {
-        return text.to_string();
+    match text.char_indices().nth(max) {
+        None => text.to_string(),
+        Some((cut, _)) => format!("{}…", &text[..cut]),
     }
-    let cut: String = text.chars().take(max).collect();
-    format!("{}…", cut)
+}
+
+/// `text` with whitespace runs collapsed to one space, stopped once it is
+/// longer than `max` chars: the caller caps it, so the rest of an unbounded
+/// assistant text or prompt need not be copied.
+fn collapsed_head(text: &str, max: usize) -> String {
+    let mut out = String::new();
+    let mut chars = 0;
+    for word in text.split_whitespace() {
+        if !out.is_empty() {
+            out.push(' ');
+            chars += 1;
+        }
+        out.push_str(word);
+        chars += word.chars().count();
+        if chars > max {
+            break;
+        }
+    }
+    out
 }
 
 /// An assistant text block as one transcript line: whitespace collapsed and
 /// capped, so the feed can clamp it to a few lines rather than the first.
 pub(super) fn note_text(text: &str) -> String {
-    capped(
-        &text.split_whitespace().collect::<Vec<_>>().join(" "),
-        NOTE_SUMMARY,
-    )
+    capped(&collapsed_head(text, NOTE_SUMMARY), NOTE_SUMMARY)
 }
 
 /// The newest user prompt, for the Sessions grid card. None for a
@@ -992,7 +1038,7 @@ pub(super) fn prompt_text(text: &str) -> Option<String> {
     } else {
         text.to_string()
     };
-    let collapsed = base.split_whitespace().collect::<Vec<_>>().join(" ");
+    let collapsed = collapsed_head(&base, PROMPT_SUMMARY);
     if collapsed.is_empty() {
         None
     } else {
@@ -1001,16 +1047,21 @@ pub(super) fn prompt_text(text: &str) -> Option<String> {
 }
 
 /// `tool_result.content` is usually a string but can be an array of blocks.
-pub(super) fn result_text(content: &Value) -> String {
+pub(super) fn result_text(content: &Value) -> Cow<'_, str> {
     match content {
-        Value::String(s) => s.clone(),
-        Value::Array(blocks) => blocks
-            .iter()
-            .filter_map(|b| b.get("text").and_then(|v| v.as_str()))
-            .collect::<Vec<_>>()
-            .join(" "),
-        Value::Null => String::new(),
-        other => other.to_string(),
+        Value::String(s) => Cow::Borrowed(s.as_str()),
+        Value::Array(blocks) => {
+            let texts: Vec<&str> = blocks
+                .iter()
+                .filter_map(|b| b.get("text").and_then(|v| v.as_str()))
+                .collect();
+            match texts.as_slice() {
+                [only] => Cow::Borrowed(only),
+                _ => Cow::Owned(texts.join(" ")),
+            }
+        }
+        Value::Null => Cow::Borrowed(""),
+        other => Cow::Owned(other.to_string()),
     }
 }
 
@@ -1030,6 +1081,14 @@ pub(super) fn input_summary(input: &Value) -> String {
         }
     }
     String::new()
+}
+
+/// The `toolUseId` a subagent's `meta.json` names, or None while the file is
+/// missing, unreadable or not yet complete.
+fn read_tool_use_id(meta_path: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(meta_path).ok()?;
+    let meta = serde_json::from_str::<Value>(&text).ok()?;
+    meta.get("toolUseId")?.as_str().map(str::to_string)
 }
 
 fn plan_from_todos(input: &Value) -> Vec<PlanItem> {
@@ -1152,8 +1211,7 @@ fn workflow_agents(run: &Value) -> Vec<(String, Subagent)> {
 
     run["workflowProgress"]
         .as_array()
-        .cloned()
-        .unwrap_or_default()
+        .map_or(&[][..], Vec::as_slice)
         .iter()
         .enumerate()
         .filter(|(_, entry)| entry.get("type").and_then(|v| v.as_str()) == Some("workflow_agent"))
@@ -2273,5 +2331,37 @@ mod tests {
         append(&path, &["".to_string(), prompt_line(r#""b""#)]);
         tail.poll();
         assert_eq!(tail.session().last_prompt.as_deref(), Some("b"));
+    }
+
+    /// A `meta.json` caught half-written is retried, and a complete one is
+    /// remembered rather than re-read on every poll.
+    #[test]
+    fn a_subagent_meta_still_being_written_is_retried() {
+        let (dir, mut tail) = tail_with(&fixture_lines());
+        let subagents = dir.path().join(UUID).join("subagents");
+        std::fs::create_dir_all(&subagents).unwrap();
+        let meta = subagents.join("agent-abc.meta.json");
+        std::fs::write(&meta, r#"{"toolUseId":"toolu_agen"#).unwrap();
+        std::fs::write(
+            subagents.join("agent-abc.jsonl"),
+            concat!(
+                r#"{"isSidechain":true,"type":"assistant","requestId":"r1","message":{"model":"claude-opus-5","content":[{"type":"tool_use","id":"s1","name":"Read","input":{}}],"usage":{"output_tokens":5}}}"#,
+                "\n"
+            ),
+        )
+        .unwrap();
+        tail.poll();
+        let count = |tail: &SessionTail| {
+            tail.session()
+                .subagents
+                .iter()
+                .find(|s| s.task == "Check the parser")
+                .map(|s| s.tool_count)
+        };
+        assert_eq!(count(&tail), Some(0));
+
+        std::fs::write(&meta, r#"{"toolUseId":"toolu_agent1"}"#).unwrap();
+        assert!(tail.poll());
+        assert_eq!(count(&tail), Some(1));
     }
 }
