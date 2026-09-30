@@ -357,20 +357,84 @@ fn install_session_start_hook(command: &str) {
     );
 }
 
-/// macOS GUI apps inherit launchd's bare PATH (/usr/bin:/bin:...), which lacks
-/// Homebrew's bin dir — so direct `Command::new("gh")` spawns fail when Atlas
-/// is launched from Finder/Dock rather than a terminal. Append the standard
-/// Homebrew locations (Apple Silicon and Intel) if they're missing.
-fn extend_path_for_gui_launch() {
-    let current = std::env::var("PATH").unwrap_or_default();
-    let mut parts: Vec<std::path::PathBuf> = std::env::split_paths(&current).collect();
-    for dir in ["/opt/homebrew/bin", "/usr/local/bin"] {
-        let dir = std::path::Path::new(dir);
-        if dir.is_dir() && !parts.iter().any(|p| p == dir) {
-            parts.push(dir.to_path_buf());
+/// Directories where user-level installers put `claude`, `node` and friends,
+/// relative to the home directory. A Finder/Dock launch gets launchd's bare
+/// PATH and would otherwise miss all of them, though the login-shell PTY finds
+/// them.
+const HOME_BIN_DIRS: &[&str] = &[
+    ".local/bin", // Claude Code's native installer
+    ".volta/bin",
+    ".local/share/mise/shims",
+    ".asdf/shims",
+    ".bun/bin",
+    ".npm-global/bin",
+    ".cargo/bin",
+];
+
+/// System-wide locations: Homebrew on Apple Silicon and on Intel.
+const SYSTEM_BIN_DIRS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
+
+/// The newest `~/.nvm/versions/node/<version>/bin`, if nvm is installed. nvm
+/// only puts a version on PATH from a shell's rc file, which a GUI never runs.
+fn newest_nvm_bin(home: &std::path::Path) -> Option<std::path::PathBuf> {
+    let versions = home.join(".nvm").join("versions").join("node");
+    let mut dirs: Vec<(Vec<u64>, std::path::PathBuf)> = std::fs::read_dir(versions)
+        .ok()?
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let parts = name
+                .trim_start_matches('v')
+                .split('.')
+                .map(|p| p.parse().ok())
+                .collect::<Option<Vec<u64>>>()?;
+            Some((parts, entry.path().join("bin")))
+        })
+        .filter(|(_, bin)| bin.is_dir())
+        .collect();
+    dirs.sort();
+    dirs.pop().map(|(_, bin)| bin)
+}
+
+/// Every well-known tool directory that exists on this machine.
+fn gui_path_additions(home: Option<&std::path::Path>) -> Vec<std::path::PathBuf> {
+    let mut dirs: Vec<std::path::PathBuf> = SYSTEM_BIN_DIRS
+        .iter()
+        .map(std::path::PathBuf::from)
+        .collect();
+    if let Some(home) = home {
+        dirs.extend(HOME_BIN_DIRS.iter().map(|d| home.join(d)));
+        dirs.extend(newest_nvm_bin(home));
+    }
+    dirs.retain(|d| d.is_dir());
+    dirs
+}
+
+/// `current` with each of `extra` appended unless already present. Empty
+/// entries are dropped: an empty PATH element means the working directory.
+fn extended_path(
+    current: &std::ffi::OsStr,
+    extra: Vec<std::path::PathBuf>,
+) -> Option<std::ffi::OsString> {
+    let mut parts: Vec<std::path::PathBuf> = std::env::split_paths(current)
+        .filter(|p| !p.as_os_str().is_empty())
+        .collect();
+    for dir in extra {
+        if !parts.contains(&dir) {
+            parts.push(dir);
         }
     }
-    if let Ok(joined) = std::env::join_paths(parts) {
+    std::env::join_paths(parts).ok()
+}
+
+/// macOS GUI apps inherit launchd's bare PATH (/usr/bin:/bin:...), so direct
+/// `Command::new("gh")` / `claude` spawns fail when Atlas is launched from
+/// Finder/Dock rather than a terminal. Append the standard Homebrew and
+/// user-level tool locations that exist. [UNVERIFIED on Windows]
+fn extend_path_for_gui_launch() {
+    let current = std::env::var_os("PATH").unwrap_or_default();
+    let extra = gui_path_additions(dirs::home_dir().as_deref());
+    if let Some(joined) = extended_path(&current, extra) {
         std::env::set_var("PATH", joined);
     }
 }
@@ -905,5 +969,49 @@ mod tests {
                 .any(|l| l.contains("watcher-test") && l.contains("boom 1234")),
             "{lines:?}"
         );
+    }
+
+    #[test]
+    fn an_empty_path_does_not_gain_a_working_directory_entry() {
+        let joined = extended_path(std::ffi::OsStr::new(""), vec!["/x/bin".into()]).unwrap();
+        let parts: Vec<_> = std::env::split_paths(&joined).collect();
+        assert_eq!(parts, vec![std::path::PathBuf::from("/x/bin")]);
+    }
+
+    #[test]
+    fn existing_path_entries_are_kept_first_and_not_duplicated() {
+        let current = std::env::join_paths(["/usr/bin", "/x/bin"]).unwrap();
+        let joined = extended_path(&current, vec!["/x/bin".into(), "/y/bin".into()]).unwrap();
+        let parts: Vec<_> = std::env::split_paths(&joined).collect();
+        assert_eq!(
+            parts,
+            vec![
+                std::path::PathBuf::from("/usr/bin"),
+                "/x/bin".into(),
+                "/y/bin".into()
+            ]
+        );
+    }
+
+    #[test]
+    fn user_level_tool_dirs_that_exist_are_added_and_missing_ones_are_not() {
+        let home = tempfile::tempdir().unwrap();
+        let local = home.path().join(".local/bin");
+        std::fs::create_dir_all(&local).unwrap();
+        for v in ["v18.19.0", "v20.11.1", "v9.0.0"] {
+            std::fs::create_dir_all(home.path().join(".nvm/versions/node").join(v).join("bin"))
+                .unwrap();
+        }
+
+        let added = gui_path_additions(Some(home.path()));
+
+        assert!(added.contains(&local));
+        assert!(!added.contains(&home.path().join(".volta/bin")));
+        let nvm = home.path().join(".nvm/versions/node/v20.11.1/bin");
+        assert!(
+            added.contains(&nvm),
+            "newest nvm node, not the newest string: {added:?}"
+        );
+        assert!(!added.contains(&home.path().join(".nvm/versions/node/v9.0.0/bin")));
     }
 }
