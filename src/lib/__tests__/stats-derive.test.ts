@@ -6,6 +6,7 @@ import {
   delta,
   deltaLabel,
   deltaTone,
+  fmtTokens,
   modelRows,
   peakDay,
   projectRows,
@@ -432,5 +433,14 @@ describe("todayCost", () => {
 
   it("is zero with no stats loaded yet", () => {
     expect(todayCost(null, now)).toBe(0);
+  });
+});
+
+describe("fmtTokens", () => {
+  it("moves to millions when rounding would print 1000K", () => {
+    expect(fmtTokens(999_600)).toBe("1.0M");
+    expect(fmtTokens(999_400)).toBe("999K");
+    expect(fmtTokens(1_500_000)).toBe("1.5M");
+    expect(fmtTokens(12)).toBe("12");
   });
 });
