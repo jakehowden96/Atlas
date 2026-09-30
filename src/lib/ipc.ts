@@ -2,7 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { DirEntry, DocEntry, DocsChangedEvent, PlanEntry } from "../types/files";
 import type { GitStatus, PanelData } from "../types/panel";
-import type { GhViewer, RepoPrs, WorkspaceRepo } from "../types/prs";
+import type { GhViewerResult, RepoPrs, WorkspaceRepo } from "../types/prs";
 import type { LiveSession, SessionUpdateEvent } from "../types/session";
 import type { ResumableSession, StatsSummary } from "../types/stats";
 import { log } from "./logger";
@@ -91,10 +91,11 @@ export async function listRepoPrs(repos: string[]): Promise<RepoPrs[]> {
 }
 
 /**
- * The signed-in GitHub user. Resolves to null — never rejects — when `gh` is
- * missing or logged out, so the PRs screen can degrade to All-only.
+ * The signed-in GitHub user, or why there is none. `gh` missing or logged out
+ * is a result, not a rejection, so the PRs screen can show the fix and degrade
+ * to All-only.
  */
-export async function ghViewer(): Promise<GhViewer | null> {
+export async function ghViewer(): Promise<GhViewerResult> {
   return invoke("gh_viewer");
 }
 

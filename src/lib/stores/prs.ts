@@ -5,11 +5,12 @@
  */
 import { derived, get, writable } from "svelte/store";
 import { ghViewer, listRepoPrs, listWorkspaceRepos } from "../ipc";
+import { setupProblem } from "../gh-setup";
 import { log } from "../logger";
 import { autoAddReposFromWorkspaces, prRefreshMinutes, watchedRepos } from "./settings";
 import { showToast } from "./toast";
 import { visibleWorkspaces } from "./workspace";
-import type { GhViewer, Pr, RepoPrs, WorkspaceRepo } from "../../types/prs";
+import type { GhError, GhViewer, Pr, RepoPrs, WorkspaceRepo } from "../../types/prs";
 
 export type PrFilter = "all" | "mine" | "review";
 
@@ -17,6 +18,12 @@ export const prRepos = writable<RepoPrs[] | null>(null);
 export const prsLoading = writable(false);
 export const prsLastUpdated = writable<number | null>(null);
 export const prViewer = writable<GhViewer | null>(null);
+/** Why there is no viewer, when gh said so: missing, or not signed in. */
+export const prViewerError = writable<GhError | null>(null);
+/** `gh` missing or signed out, from the viewer lookup or any repo's answer. */
+export const prSetupProblem = derived([prRepos, prViewerError], ([$repos, $error]) =>
+  setupProblem($repos, $error),
+);
 export const prFilter = writable<PrFilter>("all");
 
 /** Every PR across every watched repo, flattened. */
@@ -166,12 +173,16 @@ export const effectiveWatchedRepos = derived(
 
 async function loadViewer(): Promise<void> {
   try {
-    prViewer.set(await ghViewer());
+    const result = await ghViewer();
+    prViewer.set(result.viewer);
+    prViewerError.set(result.error);
   } catch (e) {
-    // gh_viewer resolves to null rather than rejecting, so this is a broken
-    // IPC channel — still not worth a toast, the screen degrades to All-only.
+    // gh_viewer reports a missing gh in its result rather than rejecting, so
+    // this is a broken IPC channel — still not worth a toast, the screen
+    // degrades to All-only.
     log.warn("prs", `gh_viewer failed: ${e}`);
     prViewer.set(null);
+    prViewerError.set(null);
   }
 }
 
