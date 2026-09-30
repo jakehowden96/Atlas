@@ -27,6 +27,8 @@ import {
   addTab,
   awaitTabPty,
   canAnswerPermission,
+  hasLivePty,
+  markTabExited,
   permissionPromptTabs,
   removeTab,
   setTabNeedsInput,
@@ -84,6 +86,22 @@ export async function closeSessionTab(tabId: string) {
   clearForSession(tabId);
   setSessionTouchedFiles(tabId, []);
   setSessionDiffStats(tabId, null);
+}
+
+/**
+ * The shell behind a tab exited on its own (`exit`, Ctrl-D, a crash). The tab
+ * stays so the terminal keeps showing what was on screen, but it is marked
+ * ended, the transcript tail stops, and the session row reads idle instead of
+ * running; opening it again starts a fresh process (resuming the conversation).
+ */
+export async function handleTerminalExit(tabId: string) {
+  markTabExited(tabId);
+  const session = get(workspaces)
+    .flatMap((w) => w.sessions)
+    .find((s) => s.terminalTabId === tabId);
+  if (!session) return;
+  await endSessionTail(session.claudeSessionId);
+  await updateSessionStatus(session.id, "idle");
 }
 
 /**
@@ -177,6 +195,9 @@ export async function spawnHarnessSession(
   // The PTY is spawned by the TerminalSession this tab mounts, so its id lands
   // on the tab a moment later; wait for it rather than for a clock.
   void awaitTabPty(tabId).then((tab) => {
+    // The shell died before it ever came up: `handleTerminalExit` has already
+    // put the row to rest, and "running" would undo it.
+    if (tab?.exited) return;
     if (!tab) {
       // Closed while waiting, or the shell never came up: the second case
       // leaves a tab on "Starting…" (or its error card) and a row that would
@@ -208,7 +229,7 @@ export async function spawnHarnessSession(
       // Re-check: the tab may have been closed during the delay,
       // in which case its PTY is dead and the write must be skipped.
       const current = get(tabs).find((t) => t.id === tabId);
-      if (!current || current.ptyId < 0) return;
+      if (!hasLivePty(current)) return;
       try {
         await ptyWrite(current.ptyId, cmd);
       } catch (e) {

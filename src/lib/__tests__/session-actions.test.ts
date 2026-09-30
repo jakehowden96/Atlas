@@ -19,6 +19,7 @@ import {
   closeSessionTab,
   denyPendingTool,
   handleClaudeSessionStart,
+  handleTerminalExit,
   spawnHarnessSession,
 } from "../session-actions";
 import { liveSessions, upsertLiveSession } from "../stores/liveSessions";
@@ -281,5 +282,55 @@ describe("closing a session's terminal tab", () => {
     expect(get(reviewComments).has("t9")).toBe(false);
     expect(get(sessionTouchedFiles).has("t9")).toBe(false);
     expect(get(sessionDiffStats).has("t9")).toBe(false);
+  });
+});
+
+describe("a shell that exits on its own", () => {
+  beforeEach(() => {
+    tabs.set([]);
+    activeTabId.set("");
+    liveSessions.set(new Map());
+    toasts.set([]);
+    vi.clearAllMocks();
+    vi.mocked(stopSessionTail).mockResolvedValue(undefined);
+  });
+
+  it("moves the session row to idle, keeps its tab, and stops the tail", async () => {
+    workspaces.set([{ path: "/w", name: "w", sessions: [row()] }]);
+    addTab({ type: "terminal", id: "t1", ptyId: 7 });
+    upsertLiveSession(live(UUID));
+
+    await handleTerminalExit("t1");
+
+    const session = get(workspaces)[0].sessions[0];
+    expect(session.status).toBe("idle");
+    // The row keeps its tab, so the tile stays put and shows why it stopped.
+    expect(session.terminalTabId).toBe("t1");
+    expect(get(tabs)).toHaveLength(1);
+    expect(get(tabs)[0].exited).toBe(true);
+    expect(stopSessionTail).toHaveBeenCalledWith(UUID);
+    expect(get(liveSessions).has(UUID)).toBe(false);
+  });
+
+  it("types nothing into the dead PTY when a tile answers a stale prompt", async () => {
+    workspaces.set([{ path: "/w", name: "w", sessions: [row()] }]);
+    addTab({ type: "terminal", id: "t1", ptyId: 7 });
+    setTabNeedsInput("t1", true, "permission_prompt");
+    setPermissionPromptVisible("t1", true);
+
+    await handleTerminalExit("t1");
+    await allowPendingTool("t1");
+
+    expect(ptyWrite).not.toHaveBeenCalled();
+  });
+
+  it("still ends a tab that no session row owns", async () => {
+    workspaces.set([{ path: "/w", name: "w", sessions: [] }]);
+    addTab({ type: "terminal", id: "t1", ptyId: 7 });
+
+    await expect(handleTerminalExit("t1")).resolves.toBeUndefined();
+
+    expect(get(tabs)[0].exited).toBe(true);
+    expect(stopSessionTail).not.toHaveBeenCalled();
   });
 });

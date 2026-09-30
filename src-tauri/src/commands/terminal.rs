@@ -1,25 +1,29 @@
 use std::collections::HashMap;
-use tauri::ipc::Channel;
+use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::State;
 
 use super::panel::cleanup_session_analysis;
 use crate::pty::manager::PtyManager;
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pty_spawn(
     manager: State<'_, PtyManager>,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
     env_vars: Option<HashMap<String, String>>,
-    on_data: Channel<Vec<u8>>,
+    on_data: Channel<InvokeResponseBody>,
 ) -> Result<u32, String> {
     manager.spawn(cols, rows, cwd, env_vars, on_data)
 }
 
+/// Deliberately a plain (main-thread) command: it only queues the bytes, so it
+/// cannot block, and the main thread is what runs one window's commands in the
+/// order they were sent. An `async` command would be scheduled onto the
+/// runtime's threads and two keystrokes could overtake each other.
 #[tauri::command]
 pub fn pty_write(manager: State<'_, PtyManager>, id: u32, data: Vec<u8>) -> Result<(), String> {
-    manager.write(id, &data)
+    manager.write(id, data)
 }
 
 #[tauri::command]
@@ -32,7 +36,7 @@ pub fn pty_resize(
     manager.resize(id, cols, rows)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pty_kill(
     manager: State<'_, PtyManager>,
     id: u32,

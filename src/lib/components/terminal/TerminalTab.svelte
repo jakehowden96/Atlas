@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { closeSessionForTab } from "../../session-actions";
+  import { closeSessionForTab, handleTerminalExit } from "../../session-actions";
   import { TerminalSession } from "../../terminal-session";
   import "@xterm/xterm/css/xterm.css";
 
@@ -38,6 +38,7 @@
       visible,
       onPtyReady,
       onSpawnError,
+      onExit: () => void handleTerminalExit(tabId),
       cwd,
     });
   });

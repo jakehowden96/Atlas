@@ -13,18 +13,32 @@ import type { GitStatus, PanelData } from "../types/panel";
 import type { GhViewerResult, RepoPrs, WorkspaceRepo } from "../types/prs";
 import type { LiveSession, SessionUpdateEvent } from "../types/session";
 import type { ResumableSession, StatsSummary } from "../types/stats";
+import type { PtyExit } from "../types/terminal";
 import { log } from "./logger";
+
+/** What the PTY's output channel carries: raw bytes, then one exit message. */
+type PtyMessage = ArrayBuffer | { exit: PtyExit };
+
+export interface PtyHandlers {
+  onData: (data: Uint8Array) => void;
+  /** The shell is gone. Called once, after the last `onData`. */
+  onExit: (exit: PtyExit) => void;
+}
 
 export async function ptySpawn(
   cols: number,
   rows: number,
-  onData: (data: Uint8Array) => void,
+  handlers: PtyHandlers,
   cwd?: string,
   envVars?: Record<string, string>,
 ): Promise<number> {
-  const channel = new Channel<number[]>();
-  channel.onmessage = (data) => {
-    onData(new Uint8Array(data));
+  // The backend sends output as raw bytes, which Tauri delivers as an
+  // ArrayBuffer (a JSON number array cost about 3.5x the bytes and a parse per
+  // message), and ends with a JSON `{ exit }` message.
+  const channel = new Channel<PtyMessage>();
+  channel.onmessage = (message) => {
+    if ("exit" in message) handlers.onExit(message.exit);
+    else handlers.onData(new Uint8Array(message));
   };
 
   log.info("ipc", `ptySpawn cols=${cols} rows=${rows} cwd=${cwd ?? "default"}`);
