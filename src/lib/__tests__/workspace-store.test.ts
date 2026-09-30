@@ -1,13 +1,21 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import { get } from "svelte/store";
 
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  exists: vi.fn(),
-  readTextFile: vi.fn(),
-  writeTextFile: vi.fn(),
-  mkdir: vi.fn(),
-  BaseDirectory: { Home: 0 },
-}));
+vi.mock("../ipc", () => ({ stateLoad: vi.fn(), stateSave: vi.fn() }));
+vi.mock("../logger", () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
+
+/** What the backend hands `loadWorkspaces` for a file that exists. */
+function mockFile(contents: string) {
+  vi.mocked(stateLoad).mockResolvedValue({ contents, recovered: false });
+}
+
+function mockNoFile() {
+  vi.mocked(stateLoad).mockResolvedValue({ contents: null, recovered: false });
+}
+
+const OLD_ID = "11111111-1111-4111-8111-111111111111";
+const NEW_ID = "22222222-2222-4222-8222-222222222222";
+const OTHER_ID = "33333333-3333-4333-8333-333333333333";
 
 let uuidCounter = 0;
 vi.stubGlobal("crypto", {
@@ -26,16 +34,24 @@ import {
   addSession,
   removeSession,
   loadWorkspaces,
+  migrateWorkspaces,
+  WORKSPACES_VERSION,
   resumeSession,
   rebindSessionClaudeId,
   nextAvailableColor,
   WORKSPACE_COLORS,
   type Workspace,
 } from "../stores/workspace";
-import { exists, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { stateLoad, stateSave } from "../ipc";
 import { toasts } from "../stores/toast";
 
 describe("workspace store", () => {
+  // Writes are held until the first load settles, so settle it once.
+  beforeAll(async () => {
+    mockNoFile();
+    await loadWorkspaces();
+  });
+
   beforeEach(() => {
     workspaces.set([]);
     removedWorkspaces.set([]);
@@ -197,36 +213,47 @@ describe("workspace store", () => {
   describe("rebindSessionClaudeId", () => {
     it("retags the session whose tab id matches", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-old", "claude-code");
-      const changed = await rebindSessionClaudeId("tab-1", "claude-new");
+      await addSession("/a", "test", "tab-1", OLD_ID, "claude-code");
+      const changed = await rebindSessionClaudeId("tab-1", NEW_ID);
       expect(changed).toBe(true);
-      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe("claude-new");
+      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe(NEW_ID);
+    });
+
+    it("refuses an id that is not a UUID, since it is later typed into a shell", async () => {
+      await addWorkspace("/a");
+      await addSession("/a", "test", "tab-1", OLD_ID, "claude-code");
+      vi.mocked(stateSave).mockClear();
+      for (const bad of ["x; rm -rf ~", "--dangerously", "claude-new", ""]) {
+        expect(await rebindSessionClaudeId("tab-1", bad)).toBe(false);
+      }
+      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe(OLD_ID);
+      expect(stateSave).not.toHaveBeenCalled();
     });
 
     it("is a no-op when the id already matches", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1", "claude-code");
+      await addSession("/a", "test", "tab-1", OLD_ID, "claude-code");
       vi.clearAllMocks();
-      const changed = await rebindSessionClaudeId("tab-1", "claude-1");
+      const changed = await rebindSessionClaudeId("tab-1", OLD_ID);
       expect(changed).toBe(false);
-      expect(writeTextFile).not.toHaveBeenCalled();
+      expect(stateSave).not.toHaveBeenCalled();
     });
 
     it("leaves sessions on other tabs untouched", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "one", "tab-1", "claude-1", "claude-code");
-      await addSession("/a", "two", "tab-2", "claude-2", "claude-code");
-      await rebindSessionClaudeId("tab-1", "claude-1-new");
+      await addSession("/a", "one", "tab-1", OLD_ID, "claude-code");
+      await addSession("/a", "two", "tab-2", OTHER_ID, "claude-code");
+      await rebindSessionClaudeId("tab-1", NEW_ID);
       const sessions = get(workspaces)[0].sessions;
-      expect(sessions.find((s) => s.terminalTabId === "tab-2")?.claudeSessionId).toBe("claude-2");
+      expect(sessions.find((s) => s.terminalTabId === "tab-2")?.claudeSessionId).toBe(OTHER_ID);
     });
 
     it("does nothing when no session owns that tab id", async () => {
       await addWorkspace("/a");
-      await addSession("/a", "test", "tab-1", "claude-1", "claude-code");
-      const changed = await rebindSessionClaudeId("tab-missing", "claude-new");
+      await addSession("/a", "test", "tab-1", OLD_ID, "claude-code");
+      const changed = await rebindSessionClaudeId("tab-missing", NEW_ID);
       expect(changed).toBe(false);
-      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe("claude-1");
+      expect(get(workspaces)[0].sessions[0].claudeSessionId).toBe(OLD_ID);
     });
   });
 
@@ -260,9 +287,41 @@ describe("workspace store", () => {
   });
 
   describe("loadWorkspaces", () => {
+    it("keeps a stored UUID session id and drops one that is not a UUID", async () => {
+      const row = (id: string, claudeSessionId: string) => ({
+        id,
+        label: id,
+        status: "idle",
+        terminalTabId: null,
+        createdAt: "",
+        claudeSessionId,
+      });
+      mockFile(
+        JSON.stringify({
+          version: 1,
+          workspaces: [
+            {
+              path: "/a",
+              name: "a",
+              color: WORKSPACE_COLORS[0],
+              sessions: [
+                row("good", OLD_ID),
+                row("shell", "abc; touch /tmp/x"),
+                row("flag", "--x"),
+              ],
+            },
+          ],
+        }),
+      );
+      await loadWorkspaces();
+      const ids = Object.fromEntries(
+        get(workspaces)[0].sessions.map((s) => [s.id, s.claudeSessionId]),
+      );
+      expect(ids).toEqual({ good: OLD_ID, shell: null, flag: null });
+    });
+
     it("loads from file and resets running sessions to idle", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
+      mockFile(
         JSON.stringify([
           {
             path: "/a",
@@ -288,8 +347,7 @@ describe("workspace store", () => {
     });
 
     it("drops a malformed workspace or session and keeps the rest", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
+      mockFile(
         JSON.stringify([
           { name: "no path" },
           null,
@@ -312,8 +370,7 @@ describe("workspace store", () => {
     });
 
     it("preserves claudeSessionId across a reload", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
+      mockFile(
         JSON.stringify([
           {
             path: "/a",
@@ -326,7 +383,7 @@ describe("workspace store", () => {
                 status: "running",
                 terminalTabId: "tab-1",
                 createdAt: "",
-                claudeSessionId: "claude-1",
+                claudeSessionId: OLD_ID,
               },
             ],
           },
@@ -334,13 +391,12 @@ describe("workspace store", () => {
       );
       await loadWorkspaces();
       const session = get(workspaces)[0].sessions[0];
-      expect(session.claudeSessionId).toBe("claude-1");
+      expect(session.claudeSessionId).toBe(OLD_ID);
       expect(session.terminalTabId).toBeNull();
     });
 
     it("migrates sessions written without claudeSessionId to null", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
+      mockFile(
         JSON.stringify([
           {
             path: "/a",
@@ -357,8 +413,7 @@ describe("workspace store", () => {
     });
 
     it("migrates sessions written without harnessId to null", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
+      mockFile(
         JSON.stringify([
           {
             path: "/a",
@@ -382,8 +437,7 @@ describe("workspace store", () => {
     });
 
     it("migrates a retired Everforest colour onto the new palette", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
+      mockFile(
         JSON.stringify([
           { path: "/a", name: "a", color: "#e67e80", sessions: [] },
           { path: "/b", name: "b", color: "#a7c080", sessions: [] },
@@ -395,8 +449,7 @@ describe("workspace store", () => {
     });
 
     it("keeps a colour that is already in the palette", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
+      mockFile(
         JSON.stringify([{ path: "/a", name: "a", color: WORKSPACE_COLORS[3], sessions: [] }]),
       );
       await loadWorkspaces();
@@ -404,23 +457,45 @@ describe("workspace store", () => {
     });
 
     it("handles missing file gracefully", async () => {
-      vi.mocked(exists).mockResolvedValue(false);
+      mockNoFile();
       await loadWorkspaces();
       expect(get(workspaces)).toEqual([]);
     });
 
-    it("handles corrupted JSON gracefully", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue("not json");
+    it("tells the user once where the backup went when the file was unusable", async () => {
+      toasts.set([]);
+      vi.mocked(stateLoad).mockResolvedValue({ contents: null, recovered: true });
       await loadWorkspaces();
+      await loadWorkspaces();
+      const recovered = get(toasts).filter(
+        (t) => t.title === "Your workspaces file could not be read",
+      );
+      expect(recovered).toHaveLength(1);
+      expect(recovered[0].body).toContain("workspaces.json.bak");
       expect(get(workspaces)).toEqual([]);
+    });
+
+    it("loads what it understands from a file written by a newer version and says so", async () => {
+      toasts.set([]);
+      mockFile(
+        JSON.stringify({
+          version: WORKSPACES_VERSION + 1,
+          workspaces: [{ path: "/a", name: "a", color: WORKSPACE_COLORS[0], sessions: [] }],
+          somethingNew: true,
+        }),
+      );
+      await loadWorkspaces();
+      expect(get(workspaces).map((w) => w.path)).toEqual(["/a"]);
+      expect(get(toasts).map((t) => t.title)).toContain(
+        "Your workspaces were saved by a newer Atlas",
+      );
     });
   });
 
   describe("storage failures", () => {
     it("tells the user once when workspaces cannot be saved", async () => {
       toasts.set([]);
-      vi.mocked(writeTextFile)
+      vi.mocked(stateSave)
         .mockRejectedValueOnce(new Error("denied"))
         .mockRejectedValueOnce(new Error("denied"));
       await addWorkspace("/a");
@@ -473,20 +548,20 @@ describe("workspace store", () => {
     it("is a no-op when the workspace is already hidden", async () => {
       await addWorkspace("/a");
       await hideWorkspace("/a");
-      vi.mocked(writeTextFile).mockClear();
+      vi.mocked(stateSave).mockClear();
 
       await hideWorkspace("/a");
       expect(get(removedWorkspaces)).toEqual(["/a"]);
-      expect(writeTextFile).not.toHaveBeenCalled();
+      expect(stateSave).not.toHaveBeenCalled();
     });
 
     it("is a no-op when unhiding a workspace that is not hidden", async () => {
       await addWorkspace("/a");
-      vi.mocked(writeTextFile).mockClear();
+      vi.mocked(stateSave).mockClear();
 
       await unhideWorkspace("/a");
       expect(get(removedWorkspaces)).toEqual([]);
-      expect(writeTextFile).not.toHaveBeenCalled();
+      expect(stateSave).not.toHaveBeenCalled();
     });
 
     it("persists a hide and reloads it", async () => {
@@ -494,14 +569,13 @@ describe("workspace store", () => {
       await addWorkspace("/b");
       await hideWorkspace("/a");
 
-      const calls = vi.mocked(writeTextFile).mock.calls;
+      const calls = vi.mocked(stateSave).mock.calls;
       const written = calls[calls.length - 1][1] as string;
       expect(JSON.parse(written).removedWorkspaces).toEqual(["/a"]);
 
       workspaces.set([]);
       removedWorkspaces.set([]);
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(written);
+      mockFile(written);
       await loadWorkspaces();
 
       expect(get(removedWorkspaces)).toEqual(["/a"]);
@@ -510,8 +584,7 @@ describe("workspace store", () => {
     });
 
     it("reads a legacy bare-array file as nothing hidden", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
+      mockFile(
         JSON.stringify([{ path: "/a", name: "a", color: WORKSPACE_COLORS[0], sessions: [] }]),
       );
       await loadWorkspaces();
@@ -519,5 +592,38 @@ describe("workspace store", () => {
       expect(get(removedWorkspaces)).toEqual([]);
       expect(get(visibleWorkspaces)).toHaveLength(1);
     });
+  });
+});
+
+describe("migrateWorkspaces", () => {
+  it("reads a bare array (the oldest shape) as a workspace list", () => {
+    const list = [{ path: "/a" }];
+    expect(migrateWorkspaces(list)).toEqual({
+      stored: { workspaces: list },
+      newerThanKnown: false,
+    });
+  });
+
+  it("flags only a version above the one this build writes", () => {
+    expect(migrateWorkspaces({ workspaces: [] }).newerThanKnown).toBe(false);
+    expect(migrateWorkspaces({ version: WORKSPACES_VERSION, workspaces: [] }).newerThanKnown).toBe(
+      false,
+    );
+    expect(
+      migrateWorkspaces({ version: WORKSPACES_VERSION + 1, workspaces: [] }).newerThanKnown,
+    ).toBe(true);
+  });
+
+  it.each([null, "text", 3])("reads %j as an empty file", (raw) => {
+    expect(migrateWorkspaces(raw)).toEqual({ stored: {}, newerThanKnown: false });
+  });
+});
+
+describe("workspace persistence", () => {
+  it("writes the schema version with every save", async () => {
+    await addWorkspace("/versioned");
+    const calls = vi.mocked(stateSave).mock.calls;
+    expect(JSON.parse(calls[calls.length - 1][1] as string).version).toBe(WORKSPACES_VERSION);
+    workspaces.set([]);
   });
 });

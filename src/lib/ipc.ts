@@ -1,6 +1,14 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { DirEntry, DocEntry, DocsChangedEvent, PlanEntry } from "../types/files";
+import type {
+  DirList,
+  DocList,
+  DocsChangedEvent,
+  PlanEntry,
+  TextFile,
+  WriteOutcome,
+} from "../types/files";
+import type { LspStart } from "../types/lsp";
 import type { GitStatus, PanelData } from "../types/panel";
 import type { GhViewerResult, RepoPrs, WorkspaceRepo } from "../types/prs";
 import type { LiveSession, SessionUpdateEvent } from "../types/session";
@@ -146,6 +154,15 @@ export async function claudeInfo(): Promise<ClaudeInfo> {
   return invoke("claude_info");
 }
 
+/**
+ * Install (`true`) or remove (`false`) Atlas's two hooks in
+ * `~/.claude/settings.json`. Only Atlas's own entries are added or removed;
+ * rejects — leaving the file exactly as it was — when that file does not parse.
+ */
+export async function setClaudeHook(enabled: boolean): Promise<void> {
+  return invoke("set_claude_hook", { enabled });
+}
+
 export async function onSessionUpdate(
   callback: (sessionUuid: string, session: LiveSession) => void,
 ): Promise<UnlistenFn> {
@@ -231,9 +248,10 @@ export async function onClaudeSessionStart(
 /**
  * Every file the editor can open under a workspace — prose, source and config
  * — directories included, already sorted directories-first then by name.
- * Capped at depth 8 and 2000 entries.
+ * Capped at depth 8, 2000 entries and 100 000 directory entries looked at;
+ * `truncated` says a cap cut the walk short.
  */
-export async function listWorkspaceDocs(workspacePath: string): Promise<DocEntry[]> {
+export async function listWorkspaceDocs(workspacePath: string): Promise<DocList> {
   return invoke("list_workspace_docs", { workspacePath });
 }
 
@@ -244,20 +262,54 @@ export async function listClaudePlans(): Promise<PlanEntry[]> {
 
 /**
  * One directory's children, flat and unfiltered, for the Open… dialog. Rejects
- * a path that is not an existing absolute directory.
+ * a path that is not an existing absolute directory inside a workspace or a
+ * folder added to Files. At most 5000 children come back; `truncated` says
+ * there were more.
  */
-export async function listDir(path: string): Promise<DirEntry[]> {
+export async function listDir(path: string): Promise<DirList> {
   return invoke("list_dir", { path });
 }
 
-/** Rejects anything whose extension the Files screen cannot open. */
-export async function readTextFileAt(path: string): Promise<string> {
+/**
+ * Tell the backend the user just picked this folder in the native dialog, so
+ * the Files commands accept it for the rest of the run. Persisting the choice
+ * (as a workspace or a file source) is what keeps it allowed after a restart.
+ */
+export async function filesGrant(path: string): Promise<void> {
+  return invoke("files_grant", { path });
+}
+
+/** Rejects a path that is not an existing absolute directory; reads nothing. */
+export async function validateDirectory(path: string): Promise<void> {
+  return invoke("validate_directory", { path });
+}
+
+/**
+ * Reads and writes are limited to registered workspaces, folders added to
+ * Files, and `~/.claude/plans`, and never reach `~/.atlas` or Claude Code's
+ * `settings*.json`; anything else rejects.
+ *
+ * Rejects anything whose extension the Files screen cannot open.
+ */
+export async function readTextFileAt(path: string): Promise<TextFile> {
   return invoke("read_text_file_at", { path });
 }
 
-/** Creates parent directories for a new file. Same extension gate as above. */
-export async function writeTextFileAt(path: string, contents: string): Promise<void> {
-  return invoke("write_text_file_at", { path, contents });
+/**
+ * Creates parent directories for a new file. Same extension gate and scope as
+ * above.
+ *
+ * `expectedMtime` is the `mtime` the file had when it was read. If the file's
+ * time is no longer that, nothing is written and the result is a `conflict`;
+ * pass null to write unconditionally (a new file, or the user chose to keep
+ * their version).
+ */
+export async function writeTextFileAt(
+  path: string,
+  contents: string,
+  expectedMtime: number | null,
+): Promise<WriteOutcome> {
+  return invoke("write_text_file_at", { path, contents, expectedMtime });
 }
 
 /**
@@ -289,15 +341,39 @@ export async function onDocsChanged(
   });
 }
 
+// ── Atlas state files ───────────────────────────────────────────────────────
+
+/** The two files under `~/.atlas` the backend loads and saves on the webview's
+ *  behalf. A closed set: the webview never supplies a path. */
+export type StateFileName = "settings" | "workspaces";
+
+export interface StateLoad {
+  /** The file's JSON text; null when it is missing or was unusable. */
+  contents: string | null;
+  /** The file did not parse and was copied to `<name>.json.bak`. */
+  recovered: boolean;
+}
+
+export async function stateLoad(name: StateFileName): Promise<StateLoad> {
+  return invoke("state_load", { name });
+}
+
+/** Atomic and serialised in Rust. Rejects contents that are not JSON. */
+export async function stateSave(name: StateFileName, contents: string): Promise<void> {
+  return invoke("state_save", { name, contents });
+}
+
 // ── Language servers ────────────────────────────────────────────────────────
 
 /**
- * Start a language server for `languageId` rooted at `root`, returning the
- * session id to send on. Rejects when no server for that language is installed,
- * which the caller treats as "no diagnostics here" rather than a failure.
+ * Ask the backend for a language server for `languageId` rooted at `root`.
+ * `notTrusted` means language servers are off for that workspace (the default;
+ * the backend reads the user's choice from `settings.json` itself and starts
+ * nothing); `noServer` means it is trusted but none is installed, which is the
+ * ordinary case for most file types and is not a failure.
  */
-export async function lspStart(languageId: string, root: string): Promise<string> {
-  return invoke<string>("lsp_start", { languageId, root });
+export async function lspStart(languageId: string, root: string): Promise<LspStart> {
+  return invoke<LspStart>("lsp_start", { languageId, root });
 }
 
 /** Relay one JSON-RPC message. Framing happens on the Rust side. */
@@ -305,8 +381,20 @@ export async function lspSend(id: string, message: string): Promise<void> {
   return invoke("lsp_send", { id, message });
 }
 
+/** Stop a server and forget its session. Idempotent. */
 export async function lspStop(id: string): Promise<void> {
   return invoke("lsp_stop", { id });
+}
+
+/**
+ * A server exited or crashed on its own and the backend has dropped the
+ * session. Not sent for an `lspStop`. The next `lspStart` for that pair starts
+ * a fresh server.
+ */
+export async function onLspExit(callback: (id: string) => void): Promise<UnlistenFn> {
+  return listen<{ id: string }>("lsp-exit", (event) => {
+    callback(event.payload.id);
+  });
 }
 
 export async function onLspMessage(

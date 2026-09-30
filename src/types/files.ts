@@ -15,6 +15,12 @@ export interface DocEntry {
   modified: string | null;
 }
 
+/** A workspace's documents. `truncated` means a cap was hit and the list is incomplete. */
+export interface DocList {
+  entries: DocEntry[];
+  truncated: boolean;
+}
+
 /**
  * A file in `~/.claude/plans`. `name` is the file stem — a slugified cwd plus a
  * random suffix (`c-users-me-github-atlas-atl-curried-thacker`), not a session
@@ -40,7 +46,28 @@ export interface DirEntry {
   is_text: boolean;
 }
 
+/** One folder's children; `truncated` means there were more than were returned. */
+export interface DirList {
+  entries: DirEntry[];
+  truncated: boolean;
+}
+
 export interface DocsChangedEvent {
   workspacePath: string;
   relPath: string;
 }
+
+/** A document's text and its modification time (ms since the epoch) at read. */
+export interface TextFile {
+  contents: string;
+  mtime: number;
+}
+
+/**
+ * How a save ended. A file that changed on disk since it was read is reported
+ * as `conflict`, not as an error, and nothing is written. `diskMtime` is the
+ * file's current time, or null when it no longer exists.
+ */
+export type WriteOutcome =
+  | { kind: "saved"; mtime: number }
+  | { kind: "conflict"; diskMtime: number | null };

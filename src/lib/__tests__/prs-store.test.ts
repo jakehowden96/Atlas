@@ -9,14 +9,6 @@ vi.mock("../ipc", () => ({
 vi.mock("../logger", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  BaseDirectory: { Home: 1 },
-  readTextFile: vi.fn(),
-  writeTextFile: vi.fn(),
-  mkdir: vi.fn(),
-  exists: vi.fn(),
-}));
-
 import { ghViewer, listRepoPrs, listWorkspaceRepos } from "../ipc";
 import {
   isMine,

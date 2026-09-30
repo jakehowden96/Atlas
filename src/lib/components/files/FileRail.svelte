@@ -16,7 +16,6 @@
   } from "../../files";
   import { formatAgo, formatBytes } from "../../format";
   import { outline, wikilinks } from "../../markdown";
-  import { buildTiles } from "../../overview";
   import {
     activeFile,
     diskDocs,
@@ -27,11 +26,9 @@
     openFile,
     plans,
   } from "../../stores/files";
-  import { liveSessionList } from "../../stores/liveSessions";
+  import { liveTiles } from "../../stores/liveTiles";
   import { sessionTouchedFiles } from "../../stores/panel";
-  import { tabs } from "../../stores/terminal";
   import { fileRailOpen, focusedSessionId, showView } from "../../stores/view";
-  import { sessionDiffStats, visibleWorkspaces } from "../../stores/workspace";
   import { closeWith } from "../ui/Modal.svelte";
   import StatePill, { type PillState } from "../ui/StatePill.svelte";
 
@@ -87,12 +84,8 @@
       : [],
   );
 
-  let needsInputTabs = $derived(new Set($tabs.filter((t) => t.needsInput).map((t) => t.id)));
-  let tiles = $derived(
-    buildTiles($liveSessionList, $visibleWorkspaces, $sessionDiffStats, needsInputTabs),
-  );
   let touches = $derived(
-    key ? touchedBy(absolutePath(file.source, file.path), tiles, $sessionTouchedFiles) : [],
+    key ? touchedBy(absolutePath(file.source, file.path), $liveTiles, $sessionTouchedFiles) : [],
   );
 
   let modified = $derived.by(() => {

@@ -12,14 +12,6 @@ vi.mock("../logger", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  BaseDirectory: { Home: 1 },
-  readTextFile: vi.fn(),
-  writeTextFile: vi.fn(),
-  mkdir: vi.fn(),
-  exists: vi.fn(),
-}));
-
 import { ptyKill, ptyWrite, startSessionTail, stopSessionTail } from "../ipc";
 import {
   allowPendingTool,
@@ -33,7 +25,12 @@ import { liveSessions, upsertLiveSession } from "../stores/liveSessions";
 import { sessionTouchedFiles, setSessionTouchedFiles } from "../stores/panel";
 import { addComment, reviewComments } from "../stores/reviewComments";
 import { toasts } from "../stores/toast";
-import { workspaces, type WorkspaceSession } from "../stores/workspace";
+import {
+  sessionDiffStats,
+  setSessionDiffStats,
+  workspaces,
+  type WorkspaceSession,
+} from "../stores/workspace";
 import type { LiveSession } from "../../types/session";
 import {
   activeTabId,
@@ -277,9 +274,12 @@ describe("closing a session's terminal tab", () => {
     );
     setSessionTouchedFiles("t9", [{ path: "a.ts", added: 1, removed: 0, repo: "" }]);
 
+    setSessionDiffStats("t9", { filesChanged: 1, linesAdded: 2, linesRemoved: 3 });
+
     await closeSessionTab("t9");
 
     expect(get(reviewComments).has("t9")).toBe(false);
     expect(get(sessionTouchedFiles).has("t9")).toBe(false);
+    expect(get(sessionDiffStats).has("t9")).toBe(false);
   });
 });

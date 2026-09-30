@@ -1,8 +1,10 @@
 import { writable, derived, get } from "svelte/store";
-import { BaseDirectory, readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs";
+import { stateLoad } from "../ipc";
 import { log } from "../logger";
 import { basename } from "../format";
-import { reportStorageFailure } from "../storage-failure";
+import { isSessionUuid } from "../session-id";
+import { createStatePersister } from "../state-persist";
+import { reportNewerState, reportStateRecovered, reportStorageFailure } from "../storage-failure";
 
 export interface WorkspaceSession {
   id: string;
@@ -40,8 +42,8 @@ function formatLabel(raw: string): string {
     .join(" ");
 }
 
-const STORAGE_DIR = ".atlas";
-const STORAGE_FILE = ".atlas/workspaces.json";
+/** The schema version `persist` writes. */
+export const WORKSPACES_VERSION = 1;
 
 export const workspaces = writable<Workspace[]>([]);
 
@@ -84,16 +86,6 @@ export function setSessionDiffStats(sessionId: string, stats: DiffStats | null) 
   });
 }
 
-let dirEnsured = false;
-async function ensureDir() {
-  if (dirEnsured) return;
-  const dirExists = await exists(STORAGE_DIR, { baseDir: BaseDirectory.Home });
-  if (!dirExists) {
-    await mkdir(STORAGE_DIR, { baseDir: BaseDirectory.Home });
-  }
-  dirEnsured = true;
-}
-
 const SESSION_STATUSES: WorkspaceSession["status"][] = [
   "complete",
   "running",
@@ -101,6 +93,12 @@ const SESSION_STATUSES: WorkspaceSession["status"][] = [
   "idle",
   "starting",
 ];
+
+function validSessionId(id: string): string | null {
+  if (isSessionUuid(id)) return id;
+  log.warn("workspace", "dropping a stored session id that is not a UUID");
+  return null;
+}
 
 /** A session row read from disk, or null if it is not one. A row is live only
  *  within a run, so whatever Atlas was doing when it last wrote is reset. */
@@ -115,8 +113,11 @@ function sanitizeSession(raw: unknown): WorkspaceSession | null {
     status: status === "running" || status === "starting" ? "idle" : status,
     terminalTabId: null,
     createdAt: typeof s.createdAt === "string" ? s.createdAt : "",
-    // Written by a version of Atlas that did not track Claude session ids.
-    claudeSessionId: typeof s.claudeSessionId === "string" ? s.claudeSessionId : null,
+    // Written by a version of Atlas that did not track Claude session ids, or
+    // not a UUID: the id is later typed into a shell, so anything else is
+    // dropped (the row stays, but can only be started fresh).
+    claudeSessionId:
+      typeof s.claudeSessionId === "string" ? validSessionId(s.claudeSessionId) : null,
     // Written by a version of Atlas that predates harnesses.
     harnessId: typeof s.harnessId === "string" ? s.harnessId : null,
   };
@@ -140,17 +141,36 @@ function sanitizeWorkspace(raw: unknown): Workspace | null {
   };
 }
 
+/**
+ * Bring a parsed workspaces file up to `WORKSPACES_VERSION`.
+ *
+ * Version 0 is everything written before versioning: originally a bare array of
+ * workspaces, later an object without a `version` key. `newerThanKnown` is true
+ * for a file written by a later Atlas; what this build understands still loads,
+ * and the backend keeps the original as `workspaces.json.v<N>.bak` before this
+ * build's save replaces it.
+ */
+export function migrateWorkspaces(raw: unknown): {
+  stored: StoredWorkspaces;
+  newerThanKnown: boolean;
+} {
+  if (Array.isArray(raw)) return { stored: { workspaces: raw }, newerThanKnown: false };
+  if (!raw || typeof raw !== "object") return { stored: {}, newerThanKnown: false };
+  const stored = raw as StoredWorkspaces;
+  const version = typeof stored.version === "number" ? stored.version : 0;
+  return { stored, newerThanKnown: version > WORKSPACES_VERSION };
+}
+
+/** Writes are held until this has settled, so a workspace added first can
+ *  never replace the file with a list that never saw the stored one. */
 export async function loadWorkspaces() {
   log.info("workspace", "loadWorkspaces started");
   try {
-    const fileExists = await exists(STORAGE_FILE, { baseDir: BaseDirectory.Home });
-    if (!fileExists) return;
-    const raw = await readTextFile(STORAGE_FILE, { baseDir: BaseDirectory.Home });
-    // Files written before workspaces could be hidden are a bare array.
-    const parsed: unknown = JSON.parse(raw);
-    const stored: StoredWorkspaces | null = Array.isArray(parsed)
-      ? { workspaces: parsed }
-      : (parsed as StoredWorkspaces | null);
+    const loaded = await stateLoad("workspaces");
+    if (loaded.recovered) reportStateRecovered("workspaces");
+    if (loaded.contents === null) return;
+    const { stored, newerThanKnown } = migrateWorkspaces(JSON.parse(loaded.contents));
+    if (newerThanKnown) reportNewerState("workspaces");
     const rawList = Array.isArray(stored?.workspaces) ? stored.workspaces : [];
     const removed = Array.isArray(stored?.removedWorkspaces) ? stored.removedWorkspaces : [];
     removedWorkspaces.set(removed.filter((p): p is string => typeof p === "string"));
@@ -178,31 +198,37 @@ export async function loadWorkspaces() {
   } catch (e) {
     log.error("workspace", "failed to load workspaces", e);
     reportStorageFailure("workspaces", "load", e);
+  } finally {
+    persister.markLoaded();
   }
 }
 
 /** The on-disk shape. A hide has to outlive a restart, so it is written
  *  alongside the workspaces rather than kept in memory. */
 interface StoredWorkspaces {
+  version?: number;
   /** `unknown` on the way in: `loadWorkspaces` validates each entry. */
   workspaces?: unknown[];
   removedWorkspaces?: unknown[];
 }
 
-async function persist() {
-  try {
-    await ensureDir();
-    const data: StoredWorkspaces = {
-      workspaces: get(workspaces),
-      removedWorkspaces: get(removedWorkspaces),
-    };
-    await writeTextFile(STORAGE_FILE, JSON.stringify(data, null, 2), {
-      baseDir: BaseDirectory.Home,
-    });
-  } catch (e) {
+const persister = createStatePersister(
+  "workspaces",
+  (): StoredWorkspaces => ({
+    version: WORKSPACES_VERSION,
+    workspaces: get(workspaces),
+    removedWorkspaces: get(removedWorkspaces),
+  }),
+  (e) => {
     log.error("workspace", "failed to persist workspaces", e);
     reportStorageFailure("workspaces", "save", e);
-  }
+  },
+);
+
+/** Write the current workspaces. Coalesced and held until `loadWorkspaces`
+ *  has settled — see `createStatePersister`. */
+function persist(): Promise<void> {
+  return persister.request();
 }
 
 // The Mission Control workspace tag palette. Settings → Workspaces offers
@@ -364,6 +390,7 @@ export async function rebindSessionClaudeId(
   tabId: string,
   claudeSessionId: string,
 ): Promise<boolean> {
+  if (!isSessionUuid(claudeSessionId)) return false;
   let changed = false;
   workspaces.update((ws) =>
     ws.map((w) => ({

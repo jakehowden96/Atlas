@@ -19,7 +19,7 @@ vi.mock("../ipc", () => ({
   ptyKill: vi.fn(),
 }));
 vi.mock("../logger", () => ({
-  log: { init: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock("../stores/stats", () => ({ startStatsFeed }));
 vi.mock("../sound", () => ({ playPing: vi.fn() }));
@@ -29,14 +29,6 @@ vi.mock("@tauri-apps/plugin-notification", () => ({
   requestPermission: vi.fn(),
   sendNotification: vi.fn(),
 }));
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  BaseDirectory: { Home: 1 },
-  readTextFile: vi.fn(),
-  writeTextFile: vi.fn(),
-  mkdir: vi.fn(),
-  exists: vi.fn(async () => false),
-}));
-
 import { isPermissionGranted, sendNotification } from "@tauri-apps/plugin-notification";
 import { bootApp } from "../app-boot";
 import {

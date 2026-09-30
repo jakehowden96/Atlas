@@ -4,14 +4,6 @@ import { get } from "svelte/store";
 vi.mock("../ipc", () => ({
   ptyWrite: vi.fn(),
 }));
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  exists: vi.fn(),
-  readTextFile: vi.fn(),
-  writeTextFile: vi.fn(),
-  mkdir: vi.fn(),
-  BaseDirectory: { Home: 0 },
-}));
-
 import { ptyWrite } from "../ipc";
 import { submitReview } from "../review/submitReview";
 import {

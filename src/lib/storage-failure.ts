@@ -23,3 +23,33 @@ export function reportStorageFailure(
         : `Changes may be lost when Atlas closes. ${String(error)}`,
   });
 }
+
+/**
+ * Tell the user once per run that a state file did not parse and was reset.
+ * The backend has already copied the bad file to `<name>.json.bak`, so nothing
+ * is lost; this says where.
+ */
+export function reportStateRecovered(file: "settings" | "workspaces"): void {
+  const id = `${file}:recovered`;
+  if (announced.has(id)) return;
+  announced.add(id);
+  showToast(`Your ${file} file could not be read`, {
+    body: `Starting from defaults. The unreadable file was kept as ~/.atlas/${file}.json.bak.`,
+    type: "warning",
+  });
+}
+
+/**
+ * Tell the user once per run that a state file came from a newer Atlas. This
+ * build loads what it understands; the backend keeps the newer file as
+ * `<name>.json.v<N>.bak` before the first save replaces it.
+ */
+export function reportNewerState(file: "settings" | "workspaces"): void {
+  const id = `${file}:newer`;
+  if (announced.has(id)) return;
+  announced.add(id);
+  showToast(`Your ${file} were saved by a newer Atlas`, {
+    body: `Settings this version does not know are dropped on the next save. The original was kept as ~/.atlas/${file}.json.v<N>.bak.`,
+    type: "warning",
+  });
+}

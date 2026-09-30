@@ -14,6 +14,7 @@ pub mod server;
 
 use std::collections::HashMap;
 use std::io::Write;
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::{Arc, Mutex};
@@ -23,6 +24,8 @@ use tauri::{AppHandle, Emitter};
 
 use frame::{frame, FrameReader};
 
+use crate::state::{StateFile, StateStore};
+
 /// A message relayed from a server to the frontend.
 #[derive(Clone, serde::Serialize)]
 pub struct LspMessage {
@@ -30,6 +33,28 @@ pub struct LspMessage {
     pub id: String,
     /// One JSON-RPC message, no headers.
     pub message: String,
+}
+
+/// The `lsp-exit` event: a server's output closed, so it crashed or exited on
+/// its own, and the session has been removed. The frontend drops what it cached
+/// for `id`; the next editor to need one starts a fresh server. Not sent for an
+/// explicit `lsp_stop`.
+#[derive(Clone, serde::Serialize)]
+pub struct LspExit {
+    pub id: String,
+}
+
+/// What `lsp_start` found.
+#[derive(Debug, PartialEq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum LspStart {
+    /// A server is running; use `id` with `lsp_send`.
+    Started { id: String },
+    /// Language servers are off for this workspace (the default). Nothing was
+    /// resolved or run.
+    NotTrusted,
+    /// Trusted, but no server for this language is installed.
+    NoServer,
 }
 
 struct Session {
@@ -109,6 +134,56 @@ fn validate_root(root: &str) -> Result<std::path::PathBuf, String> {
     Ok(path.to_path_buf())
 }
 
+/// Whether the user turned language servers on for `root`: it is, or lies
+/// inside, a path listed under `lspTrustedWorkspaces` in `settings.json`.
+///
+/// Rust reads that file itself; the webview cannot assert trust. Servers run
+/// project code (rust-analyzer executes build scripts and proc macros,
+/// tsserver loads plugins named in tsconfig, and `node_modules/.bin` is
+/// resolved from the workspace), so merely opening a file from a cloned repo
+/// must not start one. Paths are compared canonically, so a symlinked spelling
+/// of a trusted workspace is still that workspace.
+fn is_trusted(settings: Option<&serde_json::Value>, root: &Path) -> bool {
+    let Some(list) = settings
+        .and_then(|s| s.get("lspTrustedWorkspaces"))
+        .and_then(|v| v.as_array())
+    else {
+        return false;
+    };
+    let Ok(root) = std::fs::canonicalize(root) else {
+        return false;
+    };
+    list.iter()
+        .filter_map(|v| v.as_str())
+        .map(Path::new)
+        .filter(|p| p.is_absolute())
+        .filter_map(|p| std::fs::canonicalize(p).ok())
+        .any(|trusted| root.starts_with(trusted))
+}
+
+/// Remove `id` from `sessions` if it is still the session whose child has
+/// process id `pid`, then kill and reap that child. False when the session was
+/// already stopped or replaced by a newer server for the same pair, which this
+/// must not disturb.
+fn evict(sessions: &Mutex<HashMap<String, Session>>, id: &str, pid: u32) -> bool {
+    let removed = {
+        let Ok(mut sessions) = sessions.lock() else {
+            return false;
+        };
+        if sessions.get(id).is_some_and(|s| s.child.id() == pid) {
+            sessions.remove(id)
+        } else {
+            None
+        }
+    };
+    let Some(mut session) = removed else {
+        return false;
+    };
+    let _ = session.child.kill();
+    let _ = session.child.wait();
+    true
+}
+
 /// The session id for a workspace and language. Deriving it rather than handing
 /// out a random one means a second editor on the same language reuses the
 /// server it already has, which is the expensive thing to start.
@@ -116,24 +191,29 @@ fn session_id(language_id: &str, root: &str) -> String {
     format!("{language_id}:{root}")
 }
 
-/// Start a server for `language_id` rooted at `root`, or report that there
-/// isn't one. Returns the session id to use with `lsp_send`.
+/// Start a server for `language_id` rooted at `root`, if the user trusts that
+/// workspace and one is installed. `LspStart::Started` carries the session id
+/// to use with `lsp_send`.
 ///
 /// Starting twice for the same pair is a no-op that returns the same id.
 #[tauri::command]
 pub fn lsp_start(
     app: AppHandle,
     manager: tauri::State<'_, LspManager>,
+    state: tauri::State<'_, StateStore>,
     language_id: String,
     root: String,
-) -> Result<String, String> {
+) -> Result<LspStart, String> {
     let root_dir = validate_root(&root)?;
+    if !is_trusted(state.read_json(StateFile::Settings).as_ref(), &root_dir) {
+        return Ok(LspStart::NotTrusted);
+    }
     let id = session_id(&language_id, &root);
     {
         let mut sessions = manager.sessions.lock().map_err(|e| e.to_string())?;
         let alive = sessions.get_mut(&id).map(Session::is_alive);
         match alive {
-            Some(true) => return Ok(id),
+            Some(true) => return Ok(LspStart::Started { id }),
             Some(false) => {
                 if let Some(mut dead) = sessions.remove(&id) {
                     let _ = dead.child.wait();
@@ -144,8 +224,9 @@ pub fn lsp_start(
         }
     }
 
-    let spec = server::resolve(&language_id, &root_dir)
-        .ok_or_else(|| format!("no language server installed for {language_id}"))?;
+    let Some(spec) = server::resolve(&language_id, &root_dir) else {
+        return Ok(LspStart::NoServer);
+    };
 
     let mut command = Command::new(&spec.command);
     command
@@ -173,11 +254,13 @@ pub fn lsp_start(
         .take()
         .ok_or("no stdout on the language server")?;
     let stderr = child.stderr.take();
+    let pid = child.id();
 
     // Relay stdout. A server writes as it pleases, so the reader owns a
     // `FrameReader` across reads rather than assuming one chunk is one message.
     let emit_id = id.clone();
     let emit_app = app.clone();
+    let reader_sessions = Arc::clone(&manager.sessions);
     thread::spawn(move || {
         use std::io::Read;
         let mut reader = FrameReader::new();
@@ -200,6 +283,12 @@ pub fn lsp_start(
             }
         }
         log::info!("language server {} closed its output", emit_id);
+        // The server is gone (or useless without its output): drop the dead
+        // session so the next start replaces it, reap the child so it does not
+        // linger defunct, and tell the frontend to forget its client.
+        if evict(&reader_sessions, &emit_id, pid) {
+            let _ = emit_app.emit("lsp-exit", LspExit { id: emit_id });
+        }
     });
 
     // A server's stderr is diagnostics about the server, not about the code.
@@ -232,7 +321,7 @@ pub fn lsp_start(
         id,
         spec.command.display()
     );
-    Ok(id)
+    Ok(LspStart::Started { id })
 }
 
 /// Relay one JSON-RPC message to a running server.
@@ -252,8 +341,9 @@ pub fn lsp_send(
         .map_err(|_| format!("language server {id} is not accepting input"))
 }
 
-/// Stop a server. Idempotent, so closing the last editor for a language can
-/// call it without checking.
+/// Stop a server. Idempotent. The frontend calls it when the user turns
+/// language servers off for a workspace, so nothing keeps running project code
+/// after trust is withdrawn.
 #[tauri::command]
 pub fn lsp_stop(manager: tauri::State<'_, LspManager>, id: String) -> Result<(), String> {
     let mut sessions = manager.sessions.lock().map_err(|e| e.to_string())?;
@@ -370,5 +460,113 @@ mod tests {
             thread::sleep(std::time::Duration::from_millis(10));
         }
         panic!("session still reported alive after its process exited");
+    }
+
+    fn settings_trusting(paths: &[&Path]) -> serde_json::Value {
+        serde_json::json!({ "lspTrustedWorkspaces": paths.iter().map(|p| p.to_string_lossy()).collect::<Vec<_>>() })
+    }
+
+    #[test]
+    fn language_servers_are_off_unless_the_workspace_is_listed() {
+        let ws = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+
+        // No settings file, no key, an empty list, a different workspace.
+        assert!(!is_trusted(None, ws.path()));
+        assert!(!is_trusted(Some(&serde_json::json!({})), ws.path()));
+        assert!(!is_trusted(Some(&settings_trusting(&[])), ws.path()));
+        assert!(!is_trusted(
+            Some(&settings_trusting(&[other.path()])),
+            ws.path()
+        ));
+        assert!(is_trusted(
+            Some(&settings_trusting(&[ws.path()])),
+            ws.path()
+        ));
+    }
+
+    #[test]
+    fn a_folder_inside_a_trusted_workspace_is_trusted_but_a_parent_is_not() {
+        let ws = tempfile::tempdir().unwrap();
+        let inner = ws.path().join("packages/app");
+        std::fs::create_dir_all(&inner).unwrap();
+        let settings = settings_trusting(&[&inner]);
+
+        assert!(is_trusted(Some(&settings), &inner));
+        assert!(is_trusted(Some(&settings_trusting(&[ws.path()])), &inner));
+        assert!(!is_trusted(Some(&settings), ws.path()));
+    }
+
+    #[test]
+    fn trust_entries_that_are_not_absolute_existing_strings_grant_nothing() {
+        let ws = tempfile::tempdir().unwrap();
+        let settings = serde_json::json!({
+            "lspTrustedWorkspaces": ["relative/dir", 7, null, ws.path().join("gone")]
+        });
+        assert!(!is_trusted(Some(&settings), ws.path()));
+        // A malformed key is not a list at all.
+        assert!(!is_trusted(
+            Some(&serde_json::json!({ "lspTrustedWorkspaces": true })),
+            ws.path()
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_spelling_of_a_trusted_workspace_is_that_workspace() {
+        let real = tempfile::tempdir().unwrap();
+        let holder = tempfile::tempdir().unwrap();
+        let link = holder.path().join("alias");
+        std::os::unix::fs::symlink(real.path(), &link).unwrap();
+        assert!(is_trusted(Some(&settings_trusting(&[real.path()])), &link));
+    }
+
+    #[cfg(unix)]
+    fn sleeping_session(sessions: &Mutex<HashMap<String, Session>>, id: &str) -> u32 {
+        let mut child = Command::new("sleep")
+            .arg("30")
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let stdin = child.stdin.take().unwrap();
+        sessions.lock().unwrap().insert(
+            id.to_string(),
+            Session {
+                child,
+                outbox: spawn_writer(stdin),
+            },
+        );
+        pid
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_server_whose_output_closed_is_removed_and_killed() {
+        let sessions = Mutex::new(HashMap::new());
+        let pid = sleeping_session(&sessions, "rust:/repo");
+
+        assert!(evict(&sessions, "rust:/repo", pid));
+
+        assert!(sessions.lock().unwrap().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_late_exit_does_not_remove_a_newer_server_for_the_same_pair() {
+        let sessions = Mutex::new(HashMap::new());
+        let newer_pid = sleeping_session(&sessions, "rust:/repo");
+
+        // The old server's reader finishing after its replacement started.
+        assert!(!evict(&sessions, "rust:/repo", newer_pid + 1));
+
+        assert!(sessions.lock().unwrap().contains_key("rust:/repo"));
+        assert!(evict(&sessions, "rust:/repo", newer_pid));
+    }
+
+    #[test]
+    fn evicting_a_session_that_is_already_gone_does_nothing() {
+        let sessions = Mutex::new(HashMap::new());
+        assert!(!evict(&sessions, "rust:/repo", 1));
     }
 }

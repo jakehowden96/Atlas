@@ -34,6 +34,7 @@ import {
   tabs,
 } from "./stores/terminal";
 import { basename } from "./format";
+import { isSessionUuid } from "./session-id";
 import { tabIdForSession } from "./session-view";
 import {
   activeSessionId,
@@ -44,6 +45,7 @@ import {
   hideWorkspace,
   rebindSessionClaudeId,
   resumeSession,
+  setSessionDiffStats,
   stripBundleExtension,
   unhideWorkspace,
   updateSessionStatus,
@@ -68,7 +70,7 @@ async function endSessionTail(claudeSessionId: string | null | undefined) {
 }
 
 /** Kill a terminal tab's PTY, if it has one, and drop the tab with the review
- *  comments and touched-file counts kept under its id. */
+ *  comments, touched-file counts and diff-stat badge kept under its id. */
 export async function closeSessionTab(tabId: string) {
   const tab = get(tabs).find((t) => t.id === tabId);
   if (tab && tab.ptyId >= 0) {
@@ -81,6 +83,7 @@ export async function closeSessionTab(tabId: string) {
   removeTab(tabId);
   clearForSession(tabId);
   setSessionTouchedFiles(tabId, []);
+  setSessionDiffStats(tabId, null);
 }
 
 /**
@@ -102,16 +105,6 @@ function resolveHarness(harnessId: string): HarnessConfig {
  *  UUID for this spawn. */
 function resolveArgs(args: string[], claudeSessionId: string): string[] {
   return args.map((a) => (a === "{sessionId}" || a === "{resumeId}" ? claudeSessionId : a));
-}
-
-const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Session ids are spliced into a command line typed into the user's shell
- *  (`{sessionId}` / `{resumeId}`), and they arrive from places Atlas does not
- *  control — transcript file names, the SessionStart hook. Only a UUID is
- *  safe to type; anything else could carry shell syntax or a leading `--`. */
-export function isSessionUuid(id: string): boolean {
-  return SESSION_UUID.test(id);
 }
 
 /**

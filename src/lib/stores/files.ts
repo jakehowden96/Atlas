@@ -1,6 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { derived, get, writable, type Writable } from "svelte/store";
-import type { DirEntry, DocEntry, PlanEntry } from "../../types/files";
+import type { DirEntry, DocEntry, PlanEntry, TextFile } from "../../types/files";
 import {
   absolutePath,
   ancestorPaths,
@@ -61,28 +61,41 @@ export const dirtyFiles = derived(docs, ($docs) => new Set($docs.keys()));
 export const unreadable = writable<Set<string>>(new Set());
 /** Keys with unsaved edits whose file changed on disk underneath them. */
 export const conflicts = writable<Set<string>>(new Set());
+/** The modification time each open file had when we last read or wrote it. A
+ *  save hands it back so the backend can tell the file changed in between. A
+ *  key with no entry (a brand-new note) saves unconditionally. */
+const diskMtimes = new Map<string, number>();
+/** The disk's newer time for a key in `conflicts`, taken on "keep mine". Null
+ *  means the file is gone. */
+const conflictMtimes = new Map<string, number | null>();
 
 /** Why the tree is empty when a listing failed; `""` when the last one worked. */
 export const listError = writable("");
 
-/** The backend stops walking a workspace at this many entries
- *  (`MAX_ENTRIES` in `commands/files.rs`), so a list this long is cut short. */
-export const DOC_LIST_LIMIT = 2000;
+/** The backend's walk of the shown workspace hit a cap, so `docEntries` is
+ *  incomplete. The tree says so rather than looking merely empty. */
+export const docsTruncated = writable(false);
+/** Registered folders whose listing was cut at the backend's cap. */
+export const truncatedSources = writable<Set<string>>(new Set());
 
 /** Refresh the workspace listing. A workspace that cannot be walked lists as
  *  empty and sets `listError`, which the tree shows. */
 export async function loadDocs(workspacePath: string): Promise<void> {
   if (!workspacePath) {
     docEntries.set([]);
+    docsTruncated.set(false);
     return;
   }
   try {
-    docEntries.set(await listWorkspaceDocs(workspacePath));
+    const listing = await listWorkspaceDocs(workspacePath);
+    docEntries.set(listing.entries);
+    docsTruncated.set(listing.truncated);
     listError.set("");
   } catch (e) {
     log.error("files", `listWorkspaceDocs failed for ${workspacePath}`, e);
     listError.set(`Could not list ${workspacePath}: ${String(e)}`);
     docEntries.set([]);
+    docsTruncated.set(false);
   }
 }
 
@@ -102,12 +115,15 @@ export async function loadPlans(): Promise<void> {
  *  one is the user's call. */
 export async function loadSourceFiles(paths: string[]): Promise<void> {
   const next = new Map<string, DirEntry[]>();
+  const cut = new Set<string>();
   for (const dir of paths) {
     try {
+      const listing = await listDir(dir);
       next.set(
         dir,
-        (await listDir(dir)).filter((entry) => entry.is_text),
+        listing.entries.filter((entry) => entry.is_text),
       );
+      if (listing.truncated) cut.add(dir);
     } catch (e) {
       log.error("files", `listDir failed for ${dir}`, e);
       listError.set(`Could not list ${dir}: ${String(e)}`);
@@ -115,6 +131,7 @@ export async function loadSourceFiles(paths: string[]): Promise<void> {
     }
   }
   sourceFiles.set(next);
+  truncatedSources.set(cut);
 }
 
 /** Register a folder under "From disk". The tree lists it from `sources`. */
@@ -164,6 +181,8 @@ export function closeFile(key: string): void {
   });
   setMember(unreadable, key, false);
   setMember(conflicts, key, false);
+  diskMtimes.delete(key);
+  conflictMtimes.delete(key);
   if (get(activeFile) === key) activeFile.set(next[at] ?? next[at - 1] ?? "");
 }
 
@@ -199,7 +218,9 @@ export async function loadFileText(key: string): Promise<void> {
   if (get(docs).has(key)) return;
   const { source, path } = parseFileKey(key);
   try {
-    setDiskDoc(key, await readTextFileAt(absolutePath(source, path)));
+    const file = await readTextFileAt(absolutePath(source, path));
+    setDiskDoc(key, file.contents);
+    diskMtimes.set(key, file.mtime);
   } catch (e) {
     log.error("files", `read failed for ${key}`, e);
     showToast("Could not open that file", { body: String(e) });
@@ -230,7 +251,23 @@ async function saveFile(key: string): Promise<void> {
   // are restored from the text it was read with.
   const out = matchLineEndings(text, get(diskDocs).get(key));
   try {
-    await writeTextFileAt(absolutePath(source, path), out);
+    const outcome = await writeTextFileAt(
+      absolutePath(source, path),
+      out,
+      diskMtimes.get(key) ?? null,
+    );
+    if (outcome.kind === "conflict") {
+      // Someone else saved (or deleted) the file since it was read; the edit
+      // stays, unsaved, until the user picks reload or keep-mine.
+      conflictMtimes.set(key, outcome.diskMtime);
+      setMember(conflicts, key, true);
+      showToast("File changed on disk", {
+        body: "Reload it or keep your version before saving.",
+        type: "warning",
+      });
+      return;
+    }
+    diskMtimes.set(key, outcome.mtime);
     // What was just written is now what is on disk, so the editor keeps showing
     // it the moment the unsaved edit is dropped — and the next save can still
     // see which endings the file has.
@@ -321,7 +358,7 @@ export async function handleExternalChange(workspacePath: string, relPath: strin
   if (!get(openFiles).includes(key) || get(unreadable).has(key)) return;
   const known = get(diskDocs).get(key);
   if (known === undefined) return;
-  let latest: string;
+  let latest: TextFile;
   try {
     latest = await readTextFileAt(absolutePath(workspacePath, relPath));
   } catch (e) {
@@ -329,27 +366,46 @@ export async function handleExternalChange(workspacePath: string, relPath: strin
     log.warn("files", `re-read failed for ${key}: ${e}`);
     return;
   }
-  if (latest === known) return;
-  if (get(docs).has(key)) setMember(conflicts, key, true);
-  else setDiskDoc(key, latest);
+  if (latest.contents === known) {
+    // Touched without a change (or our own save echoing): take the new time so
+    // the next save does not mistake it for someone else's edit.
+    if (!get(conflicts).has(key)) diskMtimes.set(key, latest.mtime);
+    return;
+  }
+  if (get(docs).has(key)) {
+    conflictMtimes.set(key, latest.mtime);
+    setMember(conflicts, key, true);
+  } else {
+    setDiskDoc(key, latest.contents);
+    diskMtimes.set(key, latest.mtime);
+  }
 }
 
 /** Conflict resolution: discard the unsaved edit and show what is on disk now. */
 export async function reloadFromDisk(key: string): Promise<void> {
   const { source, path } = parseFileKey(key);
   try {
-    setDiskDoc(key, await readTextFileAt(absolutePath(source, path)));
+    const file = await readTextFileAt(absolutePath(source, path));
+    setDiskDoc(key, file.contents);
+    diskMtimes.set(key, file.mtime);
   } catch (e) {
     log.error("files", `reload failed for ${key}`, e);
     showToast("Could not reload that file", { body: String(e) });
     return;
   }
   dropDoc(key);
+  conflictMtimes.delete(key);
   setMember(conflicts, key, false);
 }
 
-/** Conflict resolution: keep the unsaved edit, so the next save overwrites the disk. */
+/** Conflict resolution: keep the unsaved edit, so the next save overwrites the
+ *  disk. The save now expects the time the disk has, so it goes through once —
+ *  and a file that was deleted is written fresh. */
 export function keepMine(key: string): void {
+  const newer = conflictMtimes.get(key);
+  if (newer === undefined || newer === null) diskMtimes.delete(key);
+  else diskMtimes.set(key, newer);
+  conflictMtimes.delete(key);
   setMember(conflicts, key, false);
 }
 

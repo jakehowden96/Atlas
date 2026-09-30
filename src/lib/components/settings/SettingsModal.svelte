@@ -17,24 +17,29 @@
     type Binding,
     type Keymap,
   } from "../../keymap";
+  import { stopServersFor } from "../../lsp-client";
   import { log } from "../../logger";
   import { showToast } from "../../stores/toast";
   import { addWorkspaceFolder, removeWorkspaceWithUndo } from "../../session-actions";
   import { prViewer, repoSlugsByWorkspace } from "../../stores/prs";
   import {
     autoAddReposFromWorkspaces,
+    claudeHook,
     enableNotifications,
     harnesses,
     keymap,
+    lspTrustedWorkspaces,
     MAX_TERMINAL_FONT_SIZE,
     MIN_TERMINAL_FONT_SIZE,
     overviewOrdering,
     prRefreshMinutes,
     resetKeymap,
     setAutoAddReposFromWorkspaces,
+    setClaudeHookEnabled,
     setEnableNotifications,
     setHarnesses,
     setKeymap,
+    setLspTrusted,
     setOverviewOrdering,
     setPrRefreshMinutes,
     setSoundOnNeedsYou,
@@ -106,6 +111,41 @@
   /** Which chord slot is listening: index 0 is the action's primary, 1 its
    *  alternate. Null when nothing is being recorded. */
   let recording = $state<{ action: Action; index: number } | null>(null);
+
+  /** Install or remove the hooks, then refresh the installed badges from the
+   *  file itself rather than assuming the change landed. */
+  async function setHook(enabled: boolean) {
+    try {
+      await setClaudeHookEnabled(enabled);
+    } catch (e) {
+      log.warn("settings", `could not ${enabled ? "install" : "remove"} the Claude hooks: ${e}`);
+      showToast(
+        enabled
+          ? "Could not install the Claude Code hooks"
+          : "Could not remove the Claude Code hooks",
+        {
+          body: String(e),
+        },
+      );
+    }
+    try {
+      claude = await claudeInfo();
+    } catch (e) {
+      log.warn("settings", `claude_info failed: ${e}`);
+    }
+  }
+
+  /** Language servers run a workspace's own code, so they are opt-in per
+   *  workspace; turning them off also stops any that are running. */
+  async function setWorkspaceLsp(path: string, trusted: boolean) {
+    try {
+      await setLspTrusted(path, trusted);
+      if (!trusted) await stopServersFor(path);
+    } catch (e) {
+      log.warn("settings", `could not change language servers for ${path}: ${e}`);
+      showToast("Could not change language servers", { body: String(e) });
+    }
+  }
 
   let title = $derived(NAV.find((n) => n.id === section)?.label ?? "Settings");
   let conflicts = $derived(findConflicts(draft));
@@ -473,6 +513,17 @@
                     </div>
                   </div>
                   <span class="ws-count">{ws.sessions.length} sessions</span>
+                  <div
+                    class="lsp"
+                    title="Run a language server (TypeScript, Rust, …) for diagnostics in Files. A language server executes this workspace's own code, so it is off until you trust the workspace."
+                  >
+                    <span class="lsp-label">Language servers</span>
+                    <Toggle
+                      checked={$lspTrustedWorkspaces.includes(ws.path)}
+                      label="Language servers for {ws.name}"
+                      onChange={(v) => void setWorkspaceLsp(ws.path, v)}
+                    />
+                  </div>
                   <button
                     type="button"
                     class="remove"
@@ -554,6 +605,25 @@
                 >~/.claude/settings.json</code
               >; everything else comes from tailing the session transcript.
             </p>
+
+            <div class="row">
+              <div class="row-text">
+                <div class="row-title">Install Atlas's hooks</div>
+                <div class="row-desc">
+                  On by default. Off removes only Atlas's two entries from <code
+                    >~/.claude/settings.json</code
+                  >
+                  and keeps them out; your own hooks and settings are never touched. Without them a session
+                  that needs you is not flagged from its prompt, and <code>/clear</code> and
+                  <code>/compact</code> are not followed.
+                </div>
+              </div>
+              <Toggle
+                checked={$claudeHook}
+                label="Install Atlas's hooks"
+                onChange={(v) => void setHook(v)}
+              />
+            </div>
 
             <div class="list">
               <div class="list-row hook-row">
@@ -974,6 +1044,19 @@
     color: var(--muted);
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+
+  .lsp {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .lsp-label {
+    font-family: var(--font-ui);
+    font-size: var(--fs-xs);
+    color: var(--muted);
+    white-space: nowrap;
   }
 
   .ws-count {

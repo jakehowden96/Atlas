@@ -1,14 +1,15 @@
 //! Files screen backend: the workspace document tree, `~/.claude/plans`,
 //! reading and writing documents, and watching for external edits.
 //!
-//! The frontend cannot do this with `@tauri-apps/plugin-fs` alone: workspaces
-//! routinely live outside `$HOME`, and a recursive walk from the frontend would
-//! cost one IPC round trip per directory.
+//! This lives in Rust rather than the webview: workspaces routinely live
+//! outside `$HOME`, a recursive walk from the frontend would cost one IPC round
+//! trip per directory, and the webview has no filesystem access of its own.
 
+use super::files_scope::FilesScope;
 use super::validate::validate_cwd;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Mutex};
@@ -33,8 +34,22 @@ const DOC_EXTENSIONS: &[&str] = &[
 ];
 
 /// Caps on the walk, so a stray home-directory workspace cannot hang the UI.
-const MAX_DEPTH: usize = 8;
-const MAX_ENTRIES: usize = 2000;
+/// `visits` counts every directory entry looked at, kept or not: a workspace
+/// full of files the tree never shows would otherwise be walked without bound.
+struct Limits {
+    depth: usize,
+    entries: usize,
+    visits: usize,
+}
+
+const WALK_LIMITS: Limits = Limits {
+    depth: 8,
+    entries: 2000,
+    visits: 100_000,
+};
+
+/// Most children `list_dir` returns for one folder.
+const MAX_DIR_ENTRIES: usize = 5000;
 
 /// Largest file the editor will open.
 const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
@@ -44,6 +59,21 @@ const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
 /// one, so this is a trailing edge — emitting on the first event would race a
 /// half-written file.
 const DEBOUNCE: Duration = Duration::from_millis(300);
+
+/// A workspace's documents. `truncated` says the walk hit a cap (entry count,
+/// visit count or depth), so the tree is incomplete.
+#[derive(serde::Serialize)]
+pub struct DocList {
+    pub entries: Vec<DocEntry>,
+    pub truncated: bool,
+}
+
+/// One folder's children; `truncated` says there were more than were returned.
+#[derive(serde::Serialize)]
+pub struct DirList {
+    pub entries: Vec<DirEntry>,
+    pub truncated: bool,
+}
 
 #[derive(serde::Serialize)]
 pub struct DocEntry {
@@ -55,6 +85,32 @@ pub struct DocEntry {
     pub size: u64,
     /// RFC3339, or None when the platform does not report mtime.
     pub modified: Option<String>,
+}
+
+/// A document's text and the modification time it had when it was read, in
+/// milliseconds since the Unix epoch. The editor hands that time back on save
+/// (`write_text_file_at`'s `expected_mtime`) so an edit made by someone else in
+/// between is noticed instead of overwritten.
+#[derive(Debug, serde::Serialize)]
+pub struct TextFile {
+    pub contents: String,
+    pub mtime: u64,
+}
+
+/// How a save ended. A file that changed on disk since it was read is a normal
+/// outcome the editor resolves with the user, not an error.
+#[derive(Debug, PartialEq, serde::Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum WriteOutcome {
+    /// Written; `mtime` is the new modification time.
+    Saved { mtime: u64 },
+    /// Nothing was written. `disk_mtime` is the file's current modification
+    /// time, or `None` when it no longer exists.
+    Conflict { disk_mtime: Option<u64> },
 }
 
 #[derive(serde::Serialize)]
@@ -73,6 +129,17 @@ pub struct DirEntry {
     pub is_dir: bool,
     /// A document the editor can open. Never true for a directory.
     pub is_text: bool,
+}
+
+/// Modification time in milliseconds since the epoch; 0 when the platform does
+/// not report one, which makes the conflict check a no-op for that file.
+fn mtime_ms(metadata: &std::fs::Metadata) -> u64 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 fn rfc3339(time: std::time::SystemTime) -> String {
@@ -94,15 +161,18 @@ fn should_prune_dir(name: &str) -> bool {
 
 /// Every document under `root`, plus the directories on the way to them.
 ///
-/// Sorted directories-first then case-insensitively by name, which also orders
-/// each sibling group that way once the frontend rebuilds the tree — so it does
-/// not have to re-sort.
-fn walk_docs(root: &Path) -> Vec<DocEntry> {
+/// Breadth-first, so when a cap cuts the walk short it is the deepest
+/// directories that are missing, not an arbitrary subset. Sorted
+/// directories-first then case-insensitively by name, which also orders each
+/// sibling group that way once the frontend rebuilds the tree — so it does not
+/// have to re-sort.
+fn walk_docs(root: &Path, limits: &Limits) -> DocList {
     let mut entries: Vec<DocEntry> = Vec::new();
-    let mut stack = vec![(root.to_path_buf(), 0usize)];
-    let mut depth_capped = false;
+    let mut queue = VecDeque::from([(root.to_path_buf(), 0usize)]);
+    let mut visited = 0usize;
+    let mut truncated = false;
 
-    'walk: while let Some((dir, depth)) = stack.pop() {
+    'walk: while let Some((dir, depth)) = queue.pop_front() {
         let read_dir = match std::fs::read_dir(&dir) {
             Ok(r) => r,
             Err(e) => {
@@ -112,12 +182,14 @@ fn walk_docs(root: &Path) -> Vec<DocEntry> {
         };
 
         for entry in read_dir.flatten() {
-            if entries.len() >= MAX_ENTRIES {
+            visited += 1;
+            if visited > limits.visits {
                 log::warn!(
-                    "Doc walk of {} hit the {} entry cap — the tree is truncated",
+                    "Doc walk of {} looked at {} entries — the tree is truncated",
                     root.display(),
-                    MAX_ENTRIES
+                    limits.visits
                 );
+                truncated = true;
                 break 'walk;
             }
 
@@ -132,13 +204,23 @@ fn walk_docs(root: &Path) -> Vec<DocEntry> {
                 if should_prune_dir(&name) {
                     continue;
                 }
-                if depth + 1 < MAX_DEPTH {
-                    stack.push((path.clone(), depth + 1));
+                if depth + 1 < limits.depth {
+                    queue.push_back((path.clone(), depth + 1));
                 } else {
-                    depth_capped = true;
+                    truncated = true;
                 }
             } else if !is_doc_file(&path) {
                 continue;
+            }
+
+            if entries.len() >= limits.entries {
+                log::warn!(
+                    "Doc walk of {} hit the {} entry cap — the tree is truncated",
+                    root.display(),
+                    limits.entries
+                );
+                truncated = true;
+                break 'walk;
             }
 
             let Ok(rel) = path.strip_prefix(root) else {
@@ -160,12 +242,8 @@ fn walk_docs(root: &Path) -> Vec<DocEntry> {
         }
     }
 
-    if depth_capped {
-        log::warn!(
-            "Doc walk of {} hit the depth cap of {} — deeper directories were skipped",
-            root.display(),
-            MAX_DEPTH
-        );
+    if truncated {
+        log::warn!("Doc walk of {} is incomplete", root.display());
     }
 
     entries.sort_by(|a, b| {
@@ -174,14 +252,18 @@ fn walk_docs(root: &Path) -> Vec<DocEntry> {
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
             .then_with(|| a.rel_path.cmp(&b.rel_path))
     });
-    entries
+    DocList { entries, truncated }
 }
 
 /// Every file the editor can open under a workspace, directories included.
 #[tauri::command(async)]
-pub async fn list_workspace_docs(workspace_path: String) -> Result<Vec<DocEntry>, String> {
+pub async fn list_workspace_docs(
+    workspace_path: String,
+    scope: State<'_, FilesScope>,
+) -> Result<DocList, String> {
     validate_cwd(&workspace_path)?;
-    tokio::task::spawn_blocking(move || Ok(walk_docs(Path::new(&workspace_path))))
+    scope.resolve(&workspace_path)?;
+    tokio::task::spawn_blocking(move || Ok(walk_docs(Path::new(&workspace_path), &WALK_LIMITS)))
         .await
         .map_err(|e| format!("Task join error: {}", e))?
 }
@@ -191,11 +273,21 @@ pub async fn list_workspace_docs(workspace_path: String) -> Result<Vec<DocEntry>
 /// `walk_docs` recurses and keeps only documents, which is the wrong shape for
 /// a folder browser: the Open… dialog lists what is really in the folder and
 /// greys out what it cannot open, so the folder looks like itself.
-fn list_children(dir: &Path) -> Result<Vec<DirEntry>, String> {
+fn list_children(dir: &Path) -> Result<DirList, String> {
     let read_dir = std::fs::read_dir(dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
 
     let mut entries: Vec<DirEntry> = Vec::new();
+    let mut truncated = false;
     for entry in read_dir.flatten() {
+        if entries.len() >= MAX_DIR_ENTRIES {
+            log::warn!(
+                "{} has more than {} entries — the listing is truncated",
+                dir.display(),
+                MAX_DIR_ENTRIES
+            );
+            truncated = true;
+            break;
+        }
         let path = entry.path();
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
             log::debug!("Skipping non-UTF-8 entry {}", path.display());
@@ -217,13 +309,14 @@ fn list_children(dir: &Path) -> Result<Vec<DirEntry>, String> {
             .cmp(&a.is_dir)
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
-    Ok(entries)
+    Ok(DirList { entries, truncated })
 }
 
 /// The contents of one directory, for the Open… dialog's browser.
 #[tauri::command(async)]
-pub async fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
+pub async fn list_dir(path: String, scope: State<'_, FilesScope>) -> Result<DirList, String> {
     validate_cwd(&path)?;
+    scope.resolve(&path)?;
     tokio::task::spawn_blocking(move || list_children(Path::new(&path)))
         .await
         .map_err(|e| format!("Task join error: {}", e))?
@@ -298,9 +391,23 @@ fn validate_doc_path(path: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-#[tauri::command(async)]
-pub fn read_text_file_at(path: String) -> Result<String, String> {
-    let path = validate_doc_path(&path)?;
+/// The scoped, canonical path for a document: a document extension, inside an
+/// allowed root, not denied. The extension is checked on the resolved path as
+/// well, so a `.md` symlink cannot expose a file that is not a document.
+fn resolve_doc(scope: &FilesScope, path: &str) -> Result<PathBuf, String> {
+    validate_doc_path(path)?;
+    let resolved = scope.resolve(path)?;
+    if !is_doc_file(&resolved) {
+        return Err(format!(
+            "Not a file type the Files screen can open: {}",
+            resolved.display()
+        ));
+    }
+    Ok(resolved)
+}
+
+fn read_file(scope: &FilesScope, path: &str) -> Result<TextFile, String> {
+    let path = resolve_doc(scope, path)?;
     let file = std::fs::File::open(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
     // A `.md` symlink to `/dev/zero` reports length 0, so check the handle is
     // a regular file, and cap the read itself rather than trusting a size that
@@ -321,7 +428,17 @@ pub fn read_text_file_at(path: String) -> Result<String, String> {
             path.display()
         ));
     }
-    String::from_utf8(bytes).map_err(|_| format!("{} is not a UTF-8 text file", path.display()))
+    let contents = String::from_utf8(bytes)
+        .map_err(|_| format!("{} is not a UTF-8 text file", path.display()))?;
+    Ok(TextFile {
+        contents,
+        mtime: mtime_ms(&metadata),
+    })
+}
+
+#[tauri::command(async)]
+pub fn read_text_file_at(path: String, scope: State<'_, FilesScope>) -> Result<TextFile, String> {
+    read_file(&scope, &path)
 }
 
 /// Replace `target` with `contents` without ever leaving it truncated: write a
@@ -377,26 +494,65 @@ fn write_atomically(target: &Path, contents: &str) -> std::io::Result<()> {
     written
 }
 
-#[tauri::command(async)]
-pub fn write_text_file_at(path: String, contents: String) -> Result<(), String> {
-    let path = validate_doc_path(&path)?;
-    let parent = path
+/// Save `contents`. With `expected_mtime`, refuse (without writing) when the
+/// file's modification time is no longer that — someone else saved it since it
+/// was read, or it was deleted. `None` writes unconditionally, which is what a
+/// brand-new note and an explicit "keep mine" want.
+fn write_file(
+    scope: &FilesScope,
+    path: &str,
+    contents: &str,
+    expected_mtime: Option<u64>,
+) -> Result<WriteOutcome, String> {
+    // Already canonical: a symlinked file is written through to its target
+    // rather than replaced by a regular file.
+    let target = resolve_doc(scope, path)?;
+    let parent = target
         .parent()
-        .ok_or_else(|| format!("Path has no parent directory: {}", path.display()))?;
+        .ok_or_else(|| format!("Path has no parent directory: {}", target.display()))?;
+
+    if let Some(expected) = expected_mtime {
+        match std::fs::metadata(&target) {
+            Ok(meta) if mtime_ms(&meta) != expected => {
+                return Ok(WriteOutcome::Conflict {
+                    disk_mtime: Some(mtime_ms(&meta)),
+                })
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(WriteOutcome::Conflict { disk_mtime: None })
+            }
+            Err(e) => return Err(format!("{}: {}", target.display(), e)),
+        }
+    }
 
     // New notes land in directories that may not exist yet.
     std::fs::create_dir_all(parent).map_err(|e| format!("{}: {}", parent.display(), e))?;
 
-    // Save through a symlinked file rather than replacing the link with a
-    // regular file, as writing in place always did.
-    let target = match std::fs::symlink_metadata(&path) {
-        Ok(meta) if meta.file_type().is_symlink() => {
-            std::fs::canonicalize(&path).map_err(|e| format!("{}: {}", path.display(), e))?
-        }
-        _ => path.clone(),
-    };
+    write_atomically(&target, contents).map_err(|e| format!("{}: {}", target.display(), e))?;
+    let meta = std::fs::metadata(&target).map_err(|e| format!("{}: {}", target.display(), e))?;
+    Ok(WriteOutcome::Saved {
+        mtime: mtime_ms(&meta),
+    })
+}
 
-    write_atomically(&target, &contents).map_err(|e| format!("{}: {}", path.display(), e))
+#[tauri::command(async)]
+pub fn write_text_file_at(
+    path: String,
+    contents: String,
+    expected_mtime: Option<u64>,
+    scope: State<'_, FilesScope>,
+) -> Result<WriteOutcome, String> {
+    write_file(&scope, &path, &contents, expected_mtime)
+}
+
+/// Whether `path` is an existing absolute directory. A typed-in workspace path
+/// is checked with this before it is added, so a typo never becomes a
+/// workspace whose every session fails to spawn. It reads nothing, so it needs
+/// no file scope.
+#[tauri::command]
+pub fn validate_directory(path: String) -> Result<(), String> {
+    validate_cwd(&path)
 }
 
 /// One `notify` watcher per watched workspace. Dropping a watcher stops it and
@@ -526,8 +682,10 @@ pub fn start_docs_watch(
     workspace_path: String,
     app: AppHandle,
     watchers: State<'_, DocsWatchers>,
+    scope: State<'_, FilesScope>,
 ) -> Result<(), String> {
     validate_cwd(&workspace_path)?;
+    scope.resolve(&workspace_path)?;
     let key = watch_key(&workspace_path);
     let mut watchers = watchers.0.lock().map_err(|e| e.to_string())?;
     if watchers.contains_key(&key) {
@@ -554,6 +712,13 @@ pub fn stop_docs_watch(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    /// A scope that allows exactly the temp directory.
+    fn scoped(dir: &TempDir) -> FilesScope {
+        let scope = FilesScope::new(None);
+        scope.grant(&dir.path().to_string_lossy()).unwrap();
+        scope
+    }
 
     fn touch(path: &Path) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -593,8 +758,9 @@ mod tests {
         touch(&root.join("node_modules/pkg/readme.md"));
         touch(&root.join("target/debug/notes.txt"));
 
-        let entries = walk_docs(root);
-        let paths = rel_paths(&entries);
+        let walked = walk_docs(root, &WALK_LIMITS);
+        let entries = &walked.entries;
+        let paths = rel_paths(entries);
 
         assert!(paths.contains(&"README.md"));
         assert!(paths.contains(&"docs/guide.markdown"));
@@ -617,11 +783,93 @@ mod tests {
         touch(&root.join("d1/d2/d3/d4/d5/d6/d7/within.md"));
         touch(&root.join("d1/d2/d3/d4/d5/d6/d7/d8/beyond.md"));
 
-        let entries = walk_docs(root);
-        let paths = rel_paths(&entries);
+        let walked = walk_docs(root, &WALK_LIMITS);
+        let entries = &walked.entries;
+        let paths = rel_paths(entries);
 
         assert!(paths.contains(&"d1/d2/d3/d4/d5/d6/d7/within.md"));
         assert!(!paths.iter().any(|p| p.ends_with("beyond.md")));
+        assert!(walked.truncated, "a depth cut must be reported");
+    }
+
+    #[test]
+    fn a_walk_that_fits_is_not_truncated() {
+        let tmp = TempDir::new().unwrap();
+        touch(&tmp.path().join("a.md"));
+        touch(&tmp.path().join("docs/b.md"));
+        assert!(!walk_docs(tmp.path(), &WALK_LIMITS).truncated);
+    }
+
+    #[test]
+    fn hitting_the_entry_cap_is_reported_and_keeps_the_shallowest_entries() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        for n in 0..6 {
+            touch(&root.join(format!("top{n}.md")));
+        }
+        touch(&root.join("deep/er/still/buried.md"));
+        // The six files and the `deep` folder fill the cap exactly.
+        let limits = Limits {
+            entries: 7,
+            ..WALK_LIMITS
+        };
+
+        let walked = walk_docs(root, &limits);
+
+        assert!(walked.truncated);
+        assert_eq!(walked.entries.len(), 7);
+        // Breadth-first: the cut falls on the deepest files, never on the top
+        // level that was listed first.
+        let paths = rel_paths(&walked.entries);
+        assert!((0..6).all(|n| paths.contains(&format!("top{n}.md").as_str())));
+        assert!(!paths.iter().any(|p| p.ends_with("buried.md")));
+    }
+
+    #[test]
+    fn exactly_filling_the_entry_cap_is_not_truncation() {
+        let tmp = TempDir::new().unwrap();
+        for n in 0..4 {
+            touch(&tmp.path().join(format!("n{n}.md")));
+        }
+        let limits = Limits {
+            entries: 4,
+            ..WALK_LIMITS
+        };
+        let walked = walk_docs(tmp.path(), &limits);
+        assert_eq!(walked.entries.len(), 4);
+        assert!(!walked.truncated);
+    }
+
+    #[test]
+    fn files_the_tree_never_shows_still_count_against_the_visit_cap() {
+        let tmp = TempDir::new().unwrap();
+        for n in 0..40 {
+            touch(&tmp.path().join(format!("blob{n}.bin")));
+        }
+        touch(&tmp.path().join("kept.md"));
+        let limits = Limits {
+            visits: 10,
+            ..WALK_LIMITS
+        };
+
+        let walked = walk_docs(tmp.path(), &limits);
+
+        assert!(walked.truncated, "40 skipped files must not be free");
+    }
+
+    #[test]
+    fn a_huge_folder_listing_is_cut_and_reported() {
+        let tmp = TempDir::new().unwrap();
+        for n in 0..MAX_DIR_ENTRIES + 3 {
+            std::fs::write(tmp.path().join(format!("f{n}.md")), "").unwrap();
+        }
+        let listed = list_children(tmp.path()).unwrap();
+        assert_eq!(listed.entries.len(), MAX_DIR_ENTRIES);
+        assert!(listed.truncated);
+
+        let small = TempDir::new().unwrap();
+        touch(&small.path().join("a.md"));
+        assert!(!list_children(small.path()).unwrap().truncated);
     }
 
     #[test]
@@ -632,7 +880,7 @@ mod tests {
         touch(&root.join("beta.md"));
         touch(&root.join("zeta/inner.md"));
 
-        let entries = walk_docs(root);
+        let entries = walk_docs(root, &WALK_LIMITS).entries;
         assert_eq!(entries[0].rel_path, "zeta");
         assert!(entries[0].is_dir);
 
@@ -653,7 +901,7 @@ mod tests {
         touch(&root.join("icon.png"));
         touch(&root.join("sub/deep.md"));
 
-        let entries = list_children(root).unwrap();
+        let entries = list_children(root).unwrap().entries;
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         // Directories first, then by name — and nothing from inside `sub`, which
         // the dialog reaches by walking into it.
@@ -670,21 +918,19 @@ mod tests {
     #[test]
     fn write_text_file_at_refuses_a_path_the_editor_cannot_open() {
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let path = tmp.path().join("icon.png");
-        assert!(write_text_file_at(
-            path.to_string_lossy().to_string(),
-            "not an image".to_string(),
-        )
-        .is_err());
+        assert!(write_file(&scope, &path.to_string_lossy(), "not an image", None).is_err());
         assert!(!path.exists());
     }
 
     #[test]
     fn write_replaces_contents_and_leaves_no_temp_file() {
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let path = tmp.path().join("note.md");
         std::fs::write(&path, "old").unwrap();
-        write_text_file_at(path.to_string_lossy().to_string(), "new".to_string()).unwrap();
+        write_file(&scope, &path.to_string_lossy(), "new", None).unwrap();
 
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
         let names: Vec<_> = std::fs::read_dir(tmp.path())
@@ -699,10 +945,11 @@ mod tests {
     fn write_keeps_the_file_mode() {
         use std::os::unix::fs::PermissionsExt;
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let path = tmp.path().join("private.md");
         std::fs::write(&path, "old").unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
-        write_text_file_at(path.to_string_lossy().to_string(), "new".to_string()).unwrap();
+        write_file(&scope, &path.to_string_lossy(), "new", None).unwrap();
 
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
@@ -713,11 +960,12 @@ mod tests {
     fn write_refuses_a_read_only_file_and_leaves_it_alone() {
         use std::os::unix::fs::PermissionsExt;
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let path = tmp.path().join("locked.md");
         std::fs::write(&path, "old").unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
 
-        assert!(write_text_file_at(path.to_string_lossy().to_string(), "new".to_string()).is_err());
+        assert!(write_file(&scope, &path.to_string_lossy(), "new", None).is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "old");
     }
 
@@ -725,12 +973,13 @@ mod tests {
     #[test]
     fn write_saves_through_a_symlinked_file() {
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let real = tmp.path().join("real/target.md");
         touch(&real);
         let link = tmp.path().join("note.md");
         std::os::unix::fs::symlink(&real, &link).unwrap();
 
-        write_text_file_at(link.to_string_lossy().to_string(), "new".to_string()).unwrap();
+        write_file(&scope, &link.to_string_lossy(), "new", None).unwrap();
 
         assert!(std::fs::symlink_metadata(&link)
             .unwrap()
@@ -739,25 +988,108 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&real).unwrap(), "new");
     }
 
+    #[test]
+    fn read_refuses_something_that_is_not_a_regular_file_behind_a_document_name() {
+        let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
+        let dir = tmp.path().join("notes.md");
+        std::fs::create_dir(&dir).unwrap();
+        let err = read_file(&scope, &dir.to_string_lossy()).unwrap_err();
+        assert!(err.contains("not a regular file"), "{err}");
+    }
+
     #[cfg(unix)]
     #[test]
-    fn read_refuses_a_device_behind_a_document_name() {
+    fn a_document_symlink_to_a_device_is_refused() {
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let link = tmp.path().join("zero.md");
         std::os::unix::fs::symlink("/dev/zero", &link).unwrap();
-        assert!(read_text_file_at(link.to_string_lossy().to_string()).is_err());
+        assert!(read_file(&scope, &link.to_string_lossy()).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_and_write_refuse_a_symlink_that_leaves_the_folder() {
+        let ws = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let secret = outside.path().join("secret.md");
+        std::fs::write(&secret, "outside").unwrap();
+        let link = ws.path().join("leak.md");
+        std::os::unix::fs::symlink(&secret, &link).unwrap();
+        let scope = scoped(&ws);
+
+        assert!(read_file(&scope, &link.to_string_lossy()).is_err());
+        assert!(write_file(&scope, &link.to_string_lossy(), "pwned", None).is_err());
+        assert_eq!(std::fs::read_to_string(&secret).unwrap(), "outside");
+    }
+
+    #[test]
+    fn write_refuses_a_path_outside_every_root_and_creates_nothing() {
+        let ws = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let scope = scoped(&ws);
+        let target = outside.path().join("new/dir/evil.sh");
+
+        assert!(write_file(&scope, &target.to_string_lossy(), "evil", None).is_err());
+        assert!(!outside.path().join("new").exists());
+    }
+
+    #[test]
+    fn dot_dot_traversal_is_refused_on_read_and_write() {
+        let ws = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        std::fs::write(outside.path().join("x.md"), "x").unwrap();
+        let scope = scoped(&ws);
+        let sneaky = format!(
+            "{}/../{}/x.md",
+            ws.path().display(),
+            outside.path().file_name().unwrap().to_string_lossy()
+        );
+
+        assert!(read_file(&scope, &sneaky).is_err());
+        assert!(write_file(&scope, &sneaky, "pwned", None).is_err());
+        assert_eq!(
+            std::fs::read_to_string(outside.path().join("x.md")).unwrap(),
+            "x"
+        );
+    }
+
+    #[test]
+    fn claude_settings_and_atlas_state_are_not_reachable_even_from_a_registered_home() {
+        let home = TempDir::new().unwrap();
+        std::fs::create_dir_all(home.path().join(".claude")).unwrap();
+        std::fs::create_dir_all(home.path().join(".atlas")).unwrap();
+        std::fs::write(home.path().join(".claude/settings.json"), "{}").unwrap();
+        std::fs::write(home.path().join(".atlas/settings.json"), "{}").unwrap();
+        let scope = FilesScope::new(Some(std::fs::canonicalize(home.path()).unwrap()));
+        scope.grant(&home.path().to_string_lossy()).unwrap();
+
+        for denied in [".claude/settings.json", ".atlas/settings.json"] {
+            let path = home.path().join(denied).to_string_lossy().to_string();
+            assert!(read_file(&scope, &path).is_err(), "{denied}");
+            assert!(
+                write_file(&scope, &path, "{\"hooks\":1}", None).is_err(),
+                "{denied}"
+            );
+            assert_eq!(
+                std::fs::read_to_string(home.path().join(denied)).unwrap(),
+                "{}"
+            );
+        }
     }
 
     #[test]
     fn read_rejects_an_oversized_file_and_non_utf8() {
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let big = tmp.path().join("big.md");
         std::fs::write(&big, vec![b'a'; MAX_READ_BYTES as usize + 1]).unwrap();
-        assert!(read_text_file_at(big.to_string_lossy().to_string()).is_err());
+        assert!(read_file(&scope, &big.to_string_lossy()).is_err());
 
         let binary = tmp.path().join("bin.md");
         std::fs::write(&binary, [0xff, 0xfe, 0x00]).unwrap();
-        let err = read_text_file_at(binary.to_string_lossy().to_string()).unwrap_err();
+        let err = read_file(&scope, &binary.to_string_lossy()).unwrap_err();
         assert!(err.contains("UTF-8"), "{err}");
     }
 
@@ -768,7 +1100,7 @@ mod tests {
         touch(&tmp.path().join("real/deep.md"));
         std::os::unix::fs::symlink(tmp.path().join("real"), tmp.path().join("link")).unwrap();
 
-        let entries = list_children(tmp.path()).unwrap();
+        let entries = list_children(tmp.path()).unwrap().entries;
         let link = entries.iter().find(|e| e.name == "link").unwrap();
         assert!(link.is_dir);
         assert!(!link.is_text);
@@ -785,14 +1117,11 @@ mod tests {
     #[test]
     fn write_text_file_at_accepts_a_source_path() {
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let path = tmp.path().join("src/main.rs");
-        write_text_file_at(
-            path.to_string_lossy().to_string(),
-            "fn main() {}".to_string(),
-        )
-        .unwrap();
+        write_file(&scope, &path.to_string_lossy(), "fn main() {}", None).unwrap();
         assert_eq!(
-            read_text_file_at(path.to_string_lossy().to_string()).unwrap(),
+            read_file(&scope, &path.to_string_lossy()).unwrap().contents,
             "fn main() {}"
         );
     }
@@ -800,10 +1129,11 @@ mod tests {
     #[test]
     fn write_text_file_at_creates_parents_and_round_trips() {
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let path = tmp.path().join("notes/new/note.md");
-        write_text_file_at(path.to_string_lossy().to_string(), "hello".to_string()).unwrap();
+        write_file(&scope, &path.to_string_lossy(), "hello", None).unwrap();
         assert_eq!(
-            read_text_file_at(path.to_string_lossy().to_string()).unwrap(),
+            read_file(&scope, &path.to_string_lossy()).unwrap().contents,
             "hello"
         );
     }
@@ -885,5 +1215,100 @@ mod tests {
             watched_rel_path(&roots, &canonical.join("notes.md")),
             Some("notes.md".to_string())
         );
+    }
+
+    /// Backdate a file's mtime, standing in for someone else saving it later.
+    fn set_mtime_ms(path: &Path, ms: u64) {
+        let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+        file.set_modified(std::time::UNIX_EPOCH + Duration::from_millis(ms))
+            .unwrap();
+    }
+
+    #[test]
+    fn read_reports_the_files_mtime_in_milliseconds() {
+        let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
+        let path = tmp.path().join("a.md");
+        std::fs::write(&path, "x").unwrap();
+        set_mtime_ms(&path, 1_700_000_123_456);
+
+        let file = read_file(&scope, &path.to_string_lossy()).unwrap();
+
+        assert_eq!(file.mtime, 1_700_000_123_456);
+    }
+
+    #[test]
+    fn a_save_with_the_mtime_it_read_succeeds_and_reports_the_new_one() {
+        let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
+        let path = tmp.path().join("a.md");
+        std::fs::write(&path, "old").unwrap();
+        set_mtime_ms(&path, 1_700_000_000_000);
+        let path = path.to_string_lossy().to_string();
+
+        let outcome = write_file(&scope, &path, "new", Some(1_700_000_000_000)).unwrap();
+
+        let WriteOutcome::Saved { mtime } = outcome else {
+            panic!("expected a save, got {outcome:?}");
+        };
+        assert_eq!(read_file(&scope, &path).unwrap().mtime, mtime);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+    }
+
+    #[test]
+    fn a_save_over_a_file_someone_else_changed_is_a_conflict_and_writes_nothing() {
+        let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
+        let path = tmp.path().join("a.md");
+        std::fs::write(&path, "theirs").unwrap();
+        set_mtime_ms(&path, 1_700_000_999_000);
+
+        let outcome = write_file(
+            &scope,
+            &path.to_string_lossy(),
+            "mine",
+            Some(1_700_000_000_000),
+        )
+        .unwrap();
+
+        assert_eq!(
+            outcome,
+            WriteOutcome::Conflict {
+                disk_mtime: Some(1_700_000_999_000)
+            }
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "theirs");
+    }
+
+    #[test]
+    fn a_save_over_a_file_deleted_since_it_was_read_is_a_conflict_and_does_not_recreate_it() {
+        let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
+        let path = tmp.path().join("gone.md");
+
+        let outcome = write_file(
+            &scope,
+            &path.to_string_lossy(),
+            "mine",
+            Some(1_700_000_000_000),
+        )
+        .unwrap();
+
+        assert_eq!(outcome, WriteOutcome::Conflict { disk_mtime: None });
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_save_with_no_expected_mtime_overwrites_whatever_is_there() {
+        let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
+        let path = tmp.path().join("a.md");
+        std::fs::write(&path, "theirs").unwrap();
+        set_mtime_ms(&path, 1_700_000_999_000);
+
+        let outcome = write_file(&scope, &path.to_string_lossy(), "mine", None).unwrap();
+
+        assert!(matches!(outcome, WriteOutcome::Saved { .. }));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "mine");
     }
 }

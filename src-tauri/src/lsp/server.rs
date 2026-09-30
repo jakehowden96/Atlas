@@ -40,7 +40,9 @@ fn stdio_args(binary: &str) -> Vec<String> {
 }
 
 /// Find the server for `language_id`, looking in the workspace before the
-/// wider machine. Returns `None` when nothing suitable is installed, which is
+/// wider machine. Only called for a workspace the user turned language servers
+/// on for (`lsp_start` checks), which is what makes running its
+/// `node_modules/.bin` acceptable. Returns `None` when nothing suitable is installed, which is
 /// not an error: the editor still highlights and edits, it just has no
 /// diagnostics.
 pub fn resolve(language_id: &str, workspace_root: &Path) -> Option<ServerSpec> {

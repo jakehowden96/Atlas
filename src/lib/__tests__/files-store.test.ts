@@ -24,8 +24,9 @@ vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => windowApi }))
 vi.mock("../stores/toast", () => ({ showToast: vi.fn() }));
 
 import { setOpenFiles } from "../stores/settings";
-import { listWorkspaceDocs, readTextFileAt, writeTextFileAt } from "../ipc";
+import { listDir, listWorkspaceDocs, readTextFileAt, writeTextFileAt } from "../ipc";
 import { fileKey } from "../files";
+import type { TextFile, WriteOutcome } from "../../types/files";
 import {
   activeFile,
   closeRequest,
@@ -40,6 +41,8 @@ import {
   diskDocs,
   docs,
   loadFileText,
+  loadSourceFiles,
+  truncatedSources,
   saveActiveFile,
   setDoc,
   unreadable,
@@ -47,6 +50,10 @@ import {
 import { openFiles } from "../stores/file-tabs";
 
 const key = fileKey("/ws", "big.md");
+
+/** What the backend returns for a read; the time defaults to 1. */
+const file = (contents: string, mtime = 1): TextFile => ({ contents, mtime });
+const saved = (mtime = 2): WriteOutcome => ({ kind: "saved", mtime });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -73,10 +80,12 @@ describe("saveActiveFile", () => {
   });
 
   it("keeps an edit typed while the write was in flight", async () => {
-    vi.mocked(readTextFileAt).mockResolvedValue("");
+    vi.mocked(readTextFileAt).mockResolvedValue(file(""));
     await loadFileText(key);
     let finish!: () => void;
-    vi.mocked(writeTextFileAt).mockReturnValue(new Promise<void>((r) => (finish = r)));
+    vi.mocked(writeTextFileAt).mockReturnValue(
+      new Promise<WriteOutcome>((r) => (finish = () => r(saved()))),
+    );
 
     setDoc(key, "a");
     const saving = saveActiveFile();
@@ -89,13 +98,94 @@ describe("saveActiveFile", () => {
   });
 
   it("marks the file clean when nothing changed during the write", async () => {
-    vi.mocked(readTextFileAt).mockResolvedValue("");
+    vi.mocked(readTextFileAt).mockResolvedValue(file(""));
     await loadFileText(key);
-    vi.mocked(writeTextFileAt).mockResolvedValue(undefined);
+    vi.mocked(writeTextFileAt).mockResolvedValue(saved());
     setDoc(key, "a");
     await saveActiveFile();
     expect(get(docs).has(key)).toBe(false);
     expect(get(diskDocs).get(key)).toBe("a");
+  });
+});
+
+describe("saving against the time the file was read at", () => {
+  const noteKey = fileKey("/ws", "m.md");
+
+  async function openLoaded(mtime: number) {
+    openFiles.set([noteKey]);
+    activeFile.set(noteKey);
+    vi.mocked(readTextFileAt).mockResolvedValue(file("disk", mtime));
+    await loadFileText(noteKey);
+  }
+
+  it("sends the time it read, then the time the last save reported", async () => {
+    await openLoaded(100);
+    vi.mocked(writeTextFileAt).mockResolvedValue(saved(150));
+    setDoc(noteKey, "a");
+    await saveActiveFile();
+    setDoc(noteKey, "ab");
+    await saveActiveFile();
+
+    expect(vi.mocked(writeTextFileAt).mock.calls.map((c) => c[2])).toEqual([100, 150]);
+  });
+
+  it("saves a brand-new note without an expected time", async () => {
+    const fresh = fileKey("/ws", "fresh.md");
+    activeFile.set(fresh);
+    vi.mocked(writeTextFileAt).mockResolvedValue(saved(5));
+    setDoc(fresh, "fresh");
+    await saveActiveFile();
+
+    expect(writeTextFileAt).toHaveBeenCalledWith("/ws/fresh.md", "fresh", null);
+  });
+
+  it("keeps the edit and offers reload or keep-mine when the disk moved on", async () => {
+    await openLoaded(100);
+    vi.mocked(writeTextFileAt).mockResolvedValueOnce({ kind: "conflict", diskMtime: 300 });
+    setDoc(noteKey, "mine");
+    await saveActiveFile();
+
+    expect(get(conflicts).has(noteKey)).toBe(true);
+    expect(get(docs).get(noteKey)).toBe("mine");
+    expect(get(diskDocs).get(noteKey)).toBe("disk");
+
+    // Saving is refused while the conflict is open, then goes through once the
+    // user keeps their version — expecting the time the disk now has.
+    vi.mocked(writeTextFileAt).mockClear();
+    await saveActiveFile();
+    expect(writeTextFileAt).not.toHaveBeenCalled();
+
+    keepMine(noteKey);
+    vi.mocked(writeTextFileAt).mockResolvedValue(saved(301));
+    await saveActiveFile();
+    expect(writeTextFileAt).toHaveBeenCalledWith("/ws/m.md", "mine", 300);
+    expect(get(docs).has(noteKey)).toBe(false);
+  });
+
+  it("writes a file fresh when the user keeps their version of one deleted on disk", async () => {
+    await openLoaded(100);
+    vi.mocked(writeTextFileAt).mockResolvedValueOnce({ kind: "conflict", diskMtime: null });
+    setDoc(noteKey, "mine");
+    await saveActiveFile();
+    expect(get(conflicts).has(noteKey)).toBe(true);
+
+    keepMine(noteKey);
+    vi.mocked(writeTextFileAt).mockResolvedValue(saved(400));
+    await saveActiveFile();
+    expect(writeTextFileAt).toHaveBeenLastCalledWith("/ws/m.md", "mine", null);
+  });
+
+  it("does not mistake a touch, or the echo of its own save, for someone else's edit", async () => {
+    await openLoaded(100);
+    // The watcher reports the same text with a newer time.
+    vi.mocked(readTextFileAt).mockResolvedValue(file("disk", 180));
+    await handleExternalChange("/ws", "m.md");
+    vi.mocked(writeTextFileAt).mockResolvedValue(saved(190));
+    setDoc(noteKey, "a");
+    await saveActiveFile();
+
+    expect(writeTextFileAt).toHaveBeenCalledWith("/ws/m.md", "a", 180);
+    expect(get(conflicts).size).toBe(0);
   });
 });
 
@@ -106,14 +196,14 @@ describe("external changes to an open file", () => {
   async function openLoaded(disk: string) {
     openFiles.set([noteKey]);
     activeFile.set(noteKey);
-    vi.mocked(readTextFileAt).mockResolvedValue(disk);
+    vi.mocked(readTextFileAt).mockResolvedValue(file(disk));
     await loadFileText(noteKey);
     vi.mocked(readTextFileAt).mockClear();
   }
 
   it("reloads a clean file when it changes on disk", async () => {
     await openLoaded("old");
-    vi.mocked(readTextFileAt).mockResolvedValue("new");
+    vi.mocked(readTextFileAt).mockResolvedValue(file("new"));
     await handleExternalChange(ws, "a.md");
     expect(get(diskDocs).get(noteKey)).toBe("new");
     expect(get(conflicts).size).toBe(0);
@@ -122,7 +212,7 @@ describe("external changes to an open file", () => {
   it("flags a conflict instead of overwriting unsaved edits", async () => {
     await openLoaded("old");
     setDoc(noteKey, "mine");
-    vi.mocked(readTextFileAt).mockResolvedValue("theirs");
+    vi.mocked(readTextFileAt).mockResolvedValue(file("theirs"));
     await handleExternalChange(ws, "a.md");
     expect(get(docs).get(noteKey)).toBe("mine");
     expect(get(conflicts).has(noteKey)).toBe(true);
@@ -134,10 +224,10 @@ describe("external changes to an open file", () => {
   it("ignores the echo of its own save", async () => {
     await openLoaded("old");
     setDoc(noteKey, "mine");
-    vi.mocked(writeTextFileAt).mockResolvedValue(undefined);
+    vi.mocked(writeTextFileAt).mockResolvedValue(saved());
     await saveActiveFile();
     setDoc(noteKey, "mine and more");
-    vi.mocked(readTextFileAt).mockResolvedValue("mine");
+    vi.mocked(readTextFileAt).mockResolvedValue(file("mine"));
     await handleExternalChange(ws, "a.md");
     expect(get(conflicts).size).toBe(0);
   });
@@ -150,13 +240,13 @@ describe("external changes to an open file", () => {
   it("lets the user take the disk version or keep their own", async () => {
     await openLoaded("old");
     setDoc(noteKey, "mine");
-    vi.mocked(readTextFileAt).mockResolvedValue("theirs");
+    vi.mocked(readTextFileAt).mockResolvedValue(file("theirs", 200));
     await handleExternalChange(ws, "a.md");
 
     keepMine(noteKey);
-    vi.mocked(writeTextFileAt).mockResolvedValue(undefined);
+    vi.mocked(writeTextFileAt).mockResolvedValue(saved());
     await saveActiveFile();
-    expect(writeTextFileAt).toHaveBeenCalledWith("/ws/a.md", "mine");
+    expect(writeTextFileAt).toHaveBeenCalledWith("/ws/a.md", "mine", 200);
 
     setDoc(noteKey, "again");
     await handleExternalChange(ws, "a.md");
@@ -173,7 +263,7 @@ describe("closing a tab with unsaved edits", () => {
   beforeEach(async () => {
     openFiles.set([tab]);
     activeFile.set(tab);
-    vi.mocked(readTextFileAt).mockResolvedValue("disk");
+    vi.mocked(readTextFileAt).mockResolvedValue(file("disk"));
     await loadFileText(tab);
   });
 
@@ -210,9 +300,9 @@ describe("closing a tab with unsaved edits", () => {
     expect(setOpenFiles).not.toHaveBeenCalled();
 
     requestCloseFile(tab);
-    vi.mocked(writeTextFileAt).mockResolvedValue(undefined);
+    vi.mocked(writeTextFileAt).mockResolvedValue(saved());
     await resolveCloseRequest("save");
-    expect(writeTextFileAt).toHaveBeenLastCalledWith("/ws/n.md", "typed");
+    expect(writeTextFileAt).toHaveBeenLastCalledWith("/ws/n.md", "typed", 1);
     expect(setOpenFiles).toHaveBeenLastCalledWith([]);
   });
 });
@@ -252,8 +342,26 @@ describe("listing failures", () => {
     await loadDocs("/ws");
     expect(get(listError)).toContain("permission denied");
 
-    vi.mocked(listWorkspaceDocs).mockResolvedValueOnce([]);
+    vi.mocked(listWorkspaceDocs).mockResolvedValueOnce({ entries: [], truncated: false });
     await loadDocs("/ws");
     expect(get(listError)).toBe("");
+  });
+});
+
+describe("registered folder listings", () => {
+  it("remembers which folders the backend cut short", async () => {
+    const entry = (name: string) => ({
+      name,
+      path: `/src/${name}`,
+      is_dir: false,
+      is_text: true,
+    });
+    vi.mocked(listDir)
+      .mockResolvedValueOnce({ entries: [entry("a.md")], truncated: true })
+      .mockResolvedValueOnce({ entries: [entry("b.md")], truncated: false });
+
+    await loadSourceFiles(["/big", "/small"]);
+
+    expect([...get(truncatedSources)]).toEqual(["/big"]);
   });
 });

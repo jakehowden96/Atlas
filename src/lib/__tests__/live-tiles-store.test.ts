@@ -8,13 +8,6 @@ vi.mock("../overview", async (importOriginal) => {
   buildTiles.mockImplementation(actual.buildTiles);
   return { ...actual, buildTiles };
 });
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  BaseDirectory: { Home: 1 },
-  readTextFile: vi.fn(),
-  writeTextFile: vi.fn(),
-  mkdir: vi.fn(),
-  exists: vi.fn(),
-}));
 vi.mock("../logger", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));

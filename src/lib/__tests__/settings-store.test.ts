@@ -1,33 +1,35 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import { get } from "svelte/store";
-
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  exists: vi.fn(),
-  readTextFile: vi.fn(),
-  writeTextFile: vi.fn(),
-  mkdir: vi.fn(),
-  BaseDirectory: { Home: 0 },
-}));
 
 vi.mock("../ipc", () => ({
   startOmpTail: vi.fn(),
   startSessionTail: vi.fn(),
   stopSessionTail: vi.fn(),
+  stateLoad: vi.fn(),
+  stateSave: vi.fn(),
+  setClaudeHook: vi.fn(),
 }));
+
+vi.mock("../logger", () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
 import { DEFAULT_KEYMAP } from "../keymap";
 import {
   autoAddReposFromWorkspaces,
+  claudeHook,
   DEFAULT_HARNESSES,
   enableNotifications,
   harnesses,
   keymap,
   lastHarnessId,
   loadSettings,
+  lspTrustedWorkspaces,
+  setLspTrusted,
+  migrateSettings,
   overviewOrdering,
   prRefreshMinutes,
   resetKeymap,
   setAutoAddReposFromWorkspaces,
+  setClaudeHookEnabled,
   setEnableNotifications,
   setFileSources,
   setHarnesses,
@@ -41,6 +43,7 @@ import {
   setTerminalFontSize,
   setTheme,
   setWatchedRepos,
+  SETTINGS_VERSION,
   soundOnNeedsYou,
   tailTranscripts,
   terminalFontSize,
@@ -53,23 +56,42 @@ import { liveSessions } from "../stores/liveSessions";
 import { tabs } from "../stores/terminal";
 import { themeMode } from "../theme";
 import { workspaces } from "../stores/workspace";
-import { exists, readTextFile, writeTextFile, mkdir } from "@tauri-apps/plugin-fs";
 import { toasts } from "../stores/toast";
-import { startOmpTail, startSessionTail, stopSessionTail } from "../ipc";
+import {
+  setClaudeHook,
+  startOmpTail,
+  startSessionTail,
+  stopSessionTail,
+  stateLoad,
+  stateSave,
+} from "../ipc";
 
-/** The persisted object the last `writeTextFile` call wrote. */
+/** The persisted object the last `stateSave` call wrote. */
 function lastWritten() {
-  const calls = vi.mocked(writeTextFile).mock.calls;
+  const calls = vi.mocked(stateSave).mock.calls;
   return JSON.parse(calls[calls.length - 1][1] as string);
 }
 
+/** What the backend hands `loadSettings` for a file that exists. */
+function mockFile(contents: string) {
+  vi.mocked(stateLoad).mockResolvedValue({ contents, recovered: false });
+}
+
+function mockNoFile() {
+  vi.mocked(stateLoad).mockResolvedValue({ contents: null, recovered: false });
+}
+
 function allowWrites() {
-  vi.mocked(exists).mockResolvedValue(true);
-  vi.mocked(mkdir).mockResolvedValue(undefined);
-  vi.mocked(writeTextFile).mockResolvedValue(undefined);
+  vi.mocked(stateSave).mockResolvedValue(undefined);
 }
 
 describe("settings store", () => {
+  // Writes are held until the first load settles, so settle it once.
+  beforeAll(async () => {
+    mockNoFile();
+    await loadSettings();
+  });
+
   beforeEach(() => {
     // Reset to defaults
     enableNotifications.set(true);
@@ -88,43 +110,59 @@ describe("settings store", () => {
     tabs.set([]);
     openFiles.set([]);
     sources.set([]);
+    lspTrustedWorkspaces.set([]);
+    claudeHook.set(true);
     keymap.set({ ...DEFAULT_KEYMAP });
     vi.clearAllMocks();
   });
 
   describe("loadSettings", () => {
     it("loads enableNotifications false from file", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(JSON.stringify({ enableNotifications: false }));
+      mockFile(JSON.stringify({ enableNotifications: false }));
       await loadSettings();
       expect(get(enableNotifications)).toBe(false);
     });
 
     it("handles missing file gracefully", async () => {
-      vi.mocked(exists).mockResolvedValue(false);
+      mockNoFile();
       await loadSettings();
       expect(get(enableNotifications)).toBe(true);
     });
 
     it("tells the user when the settings file cannot be read", async () => {
       toasts.set([]);
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue("{not valid json");
+      vi.mocked(stateLoad).mockRejectedValueOnce(new Error("permission denied"));
       await loadSettings();
       expect(get(toasts).map((t) => t.title)).toEqual(["Could not read your settings"]);
+      expect(get(enableNotifications)).toBe(true);
     });
 
-    it("handles corrupted JSON gracefully", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue("{not valid json");
+    it("tells the user once where the backup went when the file was unusable", async () => {
+      toasts.set([]);
+      vi.mocked(stateLoad).mockResolvedValue({ contents: null, recovered: true });
       await loadSettings();
+      await loadSettings();
+      const recovered = get(toasts).filter(
+        (t) => t.title === "Your settings file could not be read",
+      );
+      expect(recovered).toHaveLength(1);
+      expect(recovered[0].body).toContain("settings.json.bak");
       expect(get(enableNotifications)).toBe(true);
+    });
+
+    it("loads what it understands from a file written by a newer version and says so", async () => {
+      toasts.set([]);
+      mockFile(JSON.stringify({ version: SETTINGS_VERSION + 1, theme: "dark", futureKey: 1 }));
+      await loadSettings();
+      expect(get(themeMode)).toBe("dark");
+      expect(get(toasts).map((t) => t.title)).toContain(
+        "Your settings were saved by a newer Atlas",
+      );
     });
 
     /** The 4.x on-disk shape. Every key added since must fall back to a default. */
     it("loads an old three-key settings file and fills in defaults", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
+      mockFile(
         JSON.stringify({
           // `skipPermissions` was removed in 5.0; an old file still carries it
           // and must load without error rather than throwing on an unknown key.
@@ -148,8 +186,7 @@ describe("settings store", () => {
     });
 
     it("loads every new key when the file carries them", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
+      mockFile(
         JSON.stringify({
           theme: "dark",
           soundOnNeedsYou: true,
@@ -172,8 +209,7 @@ describe("settings store", () => {
     });
 
     it("ignores out-of-range values rather than adopting them", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
+      mockFile(
         JSON.stringify({
           prRefreshMinutes: 7,
           overviewOrdering: "alphabetical",
@@ -188,17 +224,13 @@ describe("settings store", () => {
     });
 
     it("clamps an absurd persisted font size", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(JSON.stringify({ terminalFontSize: 400 }));
+      mockFile(JSON.stringify({ terminalFontSize: 400 }));
       await loadSettings();
       expect(get(terminalFontSize)).toBe(24);
     });
 
     it("merges a partial persisted keymap over the defaults", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
-        JSON.stringify({ keymap: { jump: { mod: true, shift: false, key: "p" } } }),
-      );
+      mockFile(JSON.stringify({ keymap: { jump: { mod: true, shift: false, key: "p" } } }));
       await loadSettings();
 
       // A file written before alternates existed holds one binding per action;
@@ -208,8 +240,7 @@ describe("settings store", () => {
     });
 
     it("drops a malformed binding rather than throwing", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
+      mockFile(
         JSON.stringify({ keymap: { jump: "⌘P", settings: { mod: true, shift: false, key: "e" } } }),
       );
       await loadSettings();
@@ -219,8 +250,7 @@ describe("settings store", () => {
     });
 
     it("a settings file from an earlier Atlas keeps every default chord", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(JSON.stringify({ theme: "dark" }));
+      mockFile(JSON.stringify({ theme: "dark" }));
       await loadSettings();
       expect(get(keymap)).toEqual(DEFAULT_KEYMAP);
     });
@@ -237,25 +267,20 @@ describe("settings store", () => {
     };
 
     it("loads a valid harnesses list from file", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
-        JSON.stringify({ harnesses: [customHarness], lastHarnessId: "omp" }),
-      );
+      mockFile(JSON.stringify({ harnesses: [customHarness], lastHarnessId: "omp" }));
       await loadSettings();
       expect(get(harnesses)).toEqual([customHarness]);
       expect(get(lastHarnessId)).toBe("omp");
     });
 
     it("drops a malformed entry, keeping the defaults if that empties the list", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(JSON.stringify({ harnesses: [{ id: "bad" }] }));
+      mockFile(JSON.stringify({ harnesses: [{ id: "bad" }] }));
       await loadSettings();
       expect(get(harnesses)).toEqual(DEFAULT_HARNESSES);
     });
 
     it("drops harnesses with an empty or repeated id", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
+      mockFile(
         JSON.stringify({
           harnesses: [
             { ...customHarness, id: "" },
@@ -269,8 +294,7 @@ describe("settings store", () => {
     });
 
     it("keeps the defaults when the file has no harnesses key at all", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(JSON.stringify({ theme: "dark" }));
+      mockFile(JSON.stringify({ theme: "dark" }));
       await loadSettings();
       expect(get(harnesses)).toEqual(DEFAULT_HARNESSES);
       expect(get(lastHarnessId)).toBe("claude-code");
@@ -326,32 +350,25 @@ describe("settings store", () => {
       allowWrites();
       await setEnableNotifications(false);
       expect(get(enableNotifications)).toBe(false);
-      expect(writeTextFile).toHaveBeenCalled();
+      expect(stateSave).toHaveBeenCalled();
     });
   });
 
   describe("watchedRepos", () => {
     it("loads watchedRepos from file", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
-        JSON.stringify({ watchedRepos: ["owner/repo-a", "owner/repo-b"] }),
-      );
+      mockFile(JSON.stringify({ watchedRepos: ["owner/repo-a", "owner/repo-b"] }));
       await loadSettings();
       expect(get(watchedRepos)).toEqual(["owner/repo-a", "owner/repo-b"]);
     });
 
     it("keeps only string entries of watchedRepos", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
-        JSON.stringify({ watchedRepos: ["owner/repo", 1, {}, null] }),
-      );
+      mockFile(JSON.stringify({ watchedRepos: ["owner/repo", 1, {}, null] }));
       await loadSettings();
       expect(get(watchedRepos)).toEqual(["owner/repo"]);
     });
 
     it("ignores non-array watchedRepos in file", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(JSON.stringify({ watchedRepos: "not-an-array" }));
+      mockFile(JSON.stringify({ watchedRepos: "not-an-array" }));
       await loadSettings();
       expect(get(watchedRepos)).toEqual([]);
     });
@@ -360,7 +377,7 @@ describe("settings store", () => {
       allowWrites();
       await setWatchedRepos(["owner/repo"]);
       expect(get(watchedRepos)).toEqual(["owner/repo"]);
-      expect(writeTextFile).toHaveBeenCalled();
+      expect(stateSave).toHaveBeenCalled();
       expect(lastWritten().watchedRepos).toEqual(["owner/repo"]);
     });
   });
@@ -434,8 +451,7 @@ describe("settings store", () => {
     });
 
     it("loads them back, ignoring malformed entries", async () => {
-      vi.mocked(exists).mockResolvedValue(true);
-      vi.mocked(readTextFile).mockResolvedValue(
+      mockFile(
         JSON.stringify({
           openFiles: ["wsnote.md", 7],
           fileSources: ["/home/me/notes", null],
@@ -581,5 +597,99 @@ describe("settings store", () => {
       expect(startOmpTail).toHaveBeenCalledWith("uuid-a", 7);
       expect(startSessionTail).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("migrateSettings", () => {
+  it("treats a file with no version as version 0 and not newer", () => {
+    const { data, newerThanKnown } = migrateSettings({ theme: "dark" });
+    expect(data.theme).toBe("dark");
+    expect(newerThanKnown).toBe(false);
+  });
+
+  it("flags only a version above the one this build writes", () => {
+    expect(migrateSettings({ version: SETTINGS_VERSION }).newerThanKnown).toBe(false);
+    expect(migrateSettings({ version: SETTINGS_VERSION + 1 }).newerThanKnown).toBe(true);
+  });
+
+  it.each([null, "text", 3, [1, 2]])("reads %j as an empty settings file", (raw) => {
+    expect(migrateSettings(raw)).toEqual({ data: {}, newerThanKnown: false });
+  });
+});
+
+describe("Claude Code hook opt-out", () => {
+  beforeEach(() => {
+    claudeHook.set(true);
+    vi.mocked(stateSave).mockReset();
+    vi.mocked(stateSave).mockResolvedValue(undefined);
+    vi.mocked(setClaudeHook).mockReset();
+  });
+
+  it("is on until the user turns it off", () => {
+    expect(get(claudeHook)).toBe(true);
+  });
+
+  it("removes the hooks first, then remembers the choice", async () => {
+    const order: string[] = [];
+    vi.mocked(setClaudeHook).mockImplementation(async () => void order.push("hooks"));
+    vi.mocked(stateSave).mockImplementation(async () => void order.push("save"));
+
+    await setClaudeHookEnabled(false);
+
+    expect(setClaudeHook).toHaveBeenCalledWith(false);
+    expect(order).toEqual(["hooks", "save"]);
+    expect(get(claudeHook)).toBe(false);
+    expect(lastWritten().claudeHook).toBe(false);
+  });
+
+  it("neither flips the switch nor saves when the hooks could not be changed", async () => {
+    vi.mocked(setClaudeHook).mockRejectedValue(new Error("settings.json is not valid JSON"));
+
+    await expect(setClaudeHookEnabled(false)).rejects.toThrow("not valid JSON");
+
+    expect(get(claudeHook)).toBe(true);
+    expect(stateSave).not.toHaveBeenCalled();
+  });
+
+  it("restores an off switch on load", async () => {
+    mockFile(JSON.stringify({ claudeHook: false }));
+    await loadSettings();
+    expect(get(claudeHook)).toBe(false);
+  });
+});
+
+describe("language server trust", () => {
+  beforeEach(() => {
+    lspTrustedWorkspaces.set([]);
+    vi.mocked(stateSave).mockClear();
+  });
+
+  it("is off for every workspace until the user turns it on, and is saved when they do", async () => {
+    vi.mocked(stateSave).mockResolvedValue(undefined);
+    expect(get(lspTrustedWorkspaces)).toEqual([]);
+
+    await setLspTrusted("/ws/a", true);
+    await setLspTrusted("/ws/a", true);
+
+    expect(get(lspTrustedWorkspaces)).toEqual(["/ws/a"]);
+    expect(stateSave).toHaveBeenCalledTimes(1);
+    expect(lastWritten().lspTrustedWorkspaces).toEqual(["/ws/a"]);
+
+    await setLspTrusted("/ws/a", false);
+    expect(lastWritten().lspTrustedWorkspaces).toEqual([]);
+  });
+
+  it("restores the list on load and ignores entries that are not paths", async () => {
+    mockFile(JSON.stringify({ lspTrustedWorkspaces: ["/ws/a", 3, null] }));
+    await loadSettings();
+    expect(get(lspTrustedWorkspaces)).toEqual(["/ws/a"]);
+  });
+});
+
+describe("settings persistence", () => {
+  it("writes the schema version with every save", async () => {
+    allowWrites();
+    await setTheme("dark");
+    expect(lastWritten().version).toBe(SETTINGS_VERSION);
   });
 });
