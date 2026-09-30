@@ -492,10 +492,6 @@ impl SessionTail {
         }
     }
 
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
     pub fn session(&self) -> &LiveSession {
         &self.session
     }

@@ -18,10 +18,14 @@ use crate::transcript::{context_pct, jsonl_lines, model_family, ModelSessionData
 
 // ── Paths ────────────────────────────────────────────────────────────────────
 
-/// `~/.omp/agent`. `PI_CODING_AGENT_DIR`/`XDG_STATE_HOME` overrides are not
-/// read — this is where a default install writes.
+/// `~/.omp/agent`, resolved through symlinks when it exists: notify's macOS
+/// backend reports real paths, so a symlinked `~/.omp` (common with dotfile
+/// managers) would otherwise never match a path built from the unresolved
+/// name. `PI_CODING_AGENT_DIR`/`XDG_STATE_HOME` overrides are not read — this
+/// is where a default install writes.
 pub fn agent_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".omp").join("agent"))
+    let dir = dirs::home_dir().map(|h| h.join(".omp").join("agent"))?;
+    Some(dir.canonicalize().unwrap_or(dir))
 }
 
 /// The breadcrumb file OMP writes for one terminal, keyed by its tty:
@@ -48,6 +52,22 @@ pub fn read_breadcrumb(path: &Path, since: SystemTime) -> Option<PathBuf> {
     }
 }
 
+/// True for the transcript, its write lock, or a subagent's transcript (whose
+/// locks sit in the same sidecar directory) — a rewritten breadcrumb only ever
+/// names the parent file.
+///
+/// The write lock is `.<transcript file name>.lock`, beside the transcript. OMP
+/// appends through a long-lived descriptor, and FSEvents reports nothing for
+/// those writes; the lock it creates and removes around each append is the only
+/// event the transcript's growth produces.
+pub fn owns_transcript(transcript: &Path, path: &Path) -> bool {
+    let lock = transcript.with_file_name(format!(
+        ".{}.lock",
+        transcript.file_name().unwrap_or_default().to_string_lossy()
+    ));
+    path == transcript || path == lock || path.starts_with(transcript.with_extension(""))
+}
+
 // ── The tail ──────────────────────────────────────────────────────────────────
 
 /// One OMP session's transcript tail plus the state folded out of it.
@@ -56,11 +76,6 @@ pub struct OmpTail {
     /// `<transcript path>` without its extension — the directory OMP writes
     /// each `task` subagent's own transcript into, `<name>.jsonl`.
     sidecar: PathBuf,
-    /// `.<transcript file name>.lock`, beside it. OMP appends through a
-    /// long-lived descriptor, and FSEvents reports nothing for those writes;
-    /// the lock it creates and removes around each append is the only event
-    /// the transcript's growth produces.
-    lock: PathBuf,
     reader: LineReader,
     /// Keyed by the Atlas session uuid, never OMP's own `session.id`.
     session: LiveSession,
@@ -86,13 +101,8 @@ pub struct OmpTail {
 impl OmpTail {
     pub fn new(session_uuid: String, path: PathBuf) -> Self {
         let sidecar = path.with_extension("");
-        let lock = path.with_file_name(format!(
-            ".{}.lock",
-            path.file_name().unwrap_or_default().to_string_lossy()
-        ));
         OmpTail {
             path,
-            lock,
             sidecar,
             reader: LineReader::new(),
             session: LiveSession::new(session_uuid),
@@ -106,19 +116,8 @@ impl OmpTail {
         }
     }
 
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
     pub fn session(&self) -> &LiveSession {
         &self.session
-    }
-
-    /// True for the transcript, its write lock, or a subagent's transcript
-    /// (whose locks sit in the same sidecar directory) — a rewritten
-    /// breadcrumb only ever names the parent file.
-    pub fn owns(&self, path: &Path) -> bool {
-        path == self.path || path == self.lock || path.starts_with(&self.sidecar)
     }
 
     /// Fold in everything appended since the last call. Returns true when
@@ -1071,9 +1070,15 @@ mod tests {
     #[test]
     fn the_transcripts_write_lock_counts_as_its_own_write() {
         let dir = Path::new("/sessions/-code-atlas");
-        let tail = OmpTail::new(UUID.to_string(), dir.join("2026-01-01T00-00-00Z_abc.jsonl"));
-        assert!(tail.owns(&dir.join(".2026-01-01T00-00-00Z_abc.jsonl.lock")));
-        assert!(!tail.owns(&dir.join(".2026-01-01T00-00-00Z_other.jsonl.lock")));
+        let transcript = dir.join("2026-01-01T00-00-00Z_abc.jsonl");
+        assert!(owns_transcript(
+            &transcript,
+            &dir.join(".2026-01-01T00-00-00Z_abc.jsonl.lock")
+        ));
+        assert!(!owns_transcript(
+            &transcript,
+            &dir.join(".2026-01-01T00-00-00Z_other.jsonl.lock")
+        ));
     }
 
     /// Write `lines` into a temp dir as `session.jsonl`, and return the tail

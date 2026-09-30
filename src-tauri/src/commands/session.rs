@@ -7,40 +7,55 @@ use tauri::{AppHandle, Emitter, State};
 use crate::pty::manager::PtyManager;
 use crate::session::manager::{LiveSessionManager, SessionUpdateEvent};
 use crate::session::omp;
-use crate::session::transcript::await_transcript;
+use crate::session::transcript::{find_transcript, is_valid_session_uuid};
 
-/// How long `start_session_tail` waits for a transcript that already exists
-/// (the resume case) before handing the session to the watcher instead.
-const TRANSCRIPT_TIMEOUT: Duration = Duration::from_secs(5);
+fn invalid_session_id(session_uuid: &str) -> String {
+    format!("invalid session id: {session_uuid:?}")
+}
 
 /// Start tailing a session's transcript. Further changes arrive as
 /// `session-update` events until `stop_session_tail`.
 ///
-/// The transcript usually does not exist yet: this is called right after the
-/// spawn, and Claude Code writes the file only after its cold start and first
-/// turn — comfortably longer than any timeout worth blocking a command on.
-/// So when the file is not there, the session is registered as pending and the
-/// watcher attaches the tail when it appears. Returning an error instead would
-/// abandon the session forever, which is what used to happen.
-#[tauri::command(async)]
+/// The session is registered first, then the transcript is looked for once. A
+/// resumed session's file is already there and is attached at once, with its
+/// state sent as a `session-update` (nothing will touch the file to trigger
+/// one). A new session's file appears only after Claude Code's cold start and
+/// first turn, so the watcher attaches it when it does. Registering before
+/// looking means a file that appears in between is not missed, and a
+/// `stop_session_tail` that lands in between cancels the start instead of
+/// leaving a tail behind for a closed tab.
+#[tauri::command]
 pub async fn start_session_tail(
     session_uuid: String,
+    app: AppHandle,
     manager: State<'_, LiveSessionManager>,
 ) -> Result<(), String> {
-    let manager = manager.inner().clone();
-
-    match await_transcript(&session_uuid, TRANSCRIPT_TIMEOUT).await {
-        Some(path) => {
-            // A resumed session's transcript can be megabytes, so the first read
-            // is pushed off the async runtime.
-            let uuid = session_uuid.clone();
-            tokio::task::spawn_blocking(move || manager.start(&uuid, path))
-                .await
-                .map_err(|e| e.to_string())??;
-            Ok(())
-        }
-        None => manager.expect(&session_uuid),
+    if !is_valid_session_uuid(&session_uuid) {
+        return Err(invalid_session_id(&session_uuid));
     }
+    manager.expect(&session_uuid)?;
+
+    let manager = manager.inner().clone();
+    let uuid = session_uuid.clone();
+    // A resumed session's transcript can be megabytes, so the directory scan
+    // and the first read are pushed off the async runtime.
+    let session = tokio::task::spawn_blocking(move || {
+        let path = find_transcript(&uuid)?;
+        manager.start_if_pending(&uuid, path)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if let Some(session) = session {
+        let _ = app.emit(
+            "session-update",
+            SessionUpdateEvent {
+                session_uuid,
+                session,
+            },
+        );
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -57,7 +72,7 @@ pub fn stop_session_tail(
 /// OMP has no transcript uuid to await the way Claude Code does — the tty its
 /// shell runs on is the only handle Atlas has, and OMP's own breadcrumb file
 /// maps that tty to the transcript path.
-#[tauri::command(async)]
+#[tauri::command]
 pub async fn start_omp_tail(
     session_uuid: String,
     pty_id: u32,
@@ -65,6 +80,9 @@ pub async fn start_omp_tail(
     manager: State<'_, LiveSessionManager>,
     ptys: State<'_, PtyManager>,
 ) -> Result<(), String> {
+    if !is_valid_session_uuid(&session_uuid) {
+        return Err(invalid_session_id(&session_uuid));
+    }
     let tty = ptys
         .tty_name(pty_id)
         .ok_or_else(|| format!("no tty for pty {pty_id}"))?;
