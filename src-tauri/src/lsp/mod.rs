@@ -24,6 +24,7 @@ use tauri::{AppHandle, Emitter};
 
 use frame::{frame, FrameReader};
 
+use crate::error::AtlasError;
 use crate::state::{StateFile, StateStore};
 
 /// A message relayed from a server to the frontend.
@@ -123,13 +124,17 @@ impl LspManager {
 /// server's working directory and the only place project-local servers are
 /// looked up, so a relative or missing path is refused rather than resolved
 /// against whatever Atlas's own working directory happens to be.
-fn validate_root(root: &str) -> Result<std::path::PathBuf, String> {
+fn validate_root(root: &str) -> Result<std::path::PathBuf, AtlasError> {
     let path = std::path::Path::new(root);
     if !path.is_absolute() {
-        return Err(format!("workspace root must be an absolute path: {root}"));
+        return Err(AtlasError::invalid_input(format!(
+            "workspace root must be an absolute path: {root}"
+        )));
     }
     if !path.is_dir() {
-        return Err(format!("workspace root is not a directory: {root}"));
+        return Err(AtlasError::not_found(format!(
+            "workspace root is not a directory: {root}"
+        )));
     }
     Ok(path.to_path_buf())
 }
@@ -203,14 +208,14 @@ pub fn lsp_start(
     state: tauri::State<'_, StateStore>,
     language_id: String,
     root: String,
-) -> Result<LspStart, String> {
+) -> Result<LspStart, AtlasError> {
     let root_dir = validate_root(&root)?;
     if !is_trusted(state.read_json(StateFile::Settings).as_ref(), &root_dir) {
         return Ok(LspStart::NotTrusted);
     }
     let id = session_id(&language_id, &root);
     {
-        let mut sessions = manager.sessions.lock().map_err(|e| e.to_string())?;
+        let mut sessions = manager.sessions.lock()?;
         let alive = sessions.get_mut(&id).map(Session::is_alive);
         match alive {
             Some(true) => return Ok(LspStart::Started { id }),
@@ -241,18 +246,24 @@ pub fn lsp_start(
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("could not start {}: {e}", spec.command.display()))?;
+    let program = spec.command.display().to_string();
+    let mut child = command.spawn().map_err(|e| {
+        let message = format!("could not start {program}: {e}");
+        if e.kind() == std::io::ErrorKind::NotFound {
+            AtlasError::tool_missing(&program, message)
+        } else {
+            AtlasError::tool_failed(&program, message)
+        }
+    })?;
 
     let stdin = child
         .stdin
         .take()
-        .ok_or("no stdin on the language server")?;
+        .ok_or_else(|| AtlasError::internal("no stdin on the language server"))?;
     let stdout = child
         .stdout
         .take()
-        .ok_or("no stdout on the language server")?;
+        .ok_or_else(|| AtlasError::internal("no stdout on the language server"))?;
     let stderr = child.stderr.take();
     let pid = child.id();
 
@@ -309,7 +320,7 @@ pub fn lsp_start(
         });
     }
 
-    manager.sessions.lock().map_err(|e| e.to_string())?.insert(
+    manager.sessions.lock()?.insert(
         id.clone(),
         Session {
             child,
@@ -330,23 +341,23 @@ pub fn lsp_send(
     manager: tauri::State<'_, LspManager>,
     id: String,
     message: String,
-) -> Result<(), String> {
-    let sessions = manager.sessions.lock().map_err(|e| e.to_string())?;
+) -> Result<(), AtlasError> {
+    let sessions = manager.sessions.lock()?;
     let session = sessions
         .get(&id)
-        .ok_or_else(|| format!("no language server session {id}"))?;
+        .ok_or_else(|| AtlasError::not_found(format!("no language server session {id}")))?;
     session
         .outbox
         .try_send(frame(&message))
-        .map_err(|_| format!("language server {id} is not accepting input"))
+        .map_err(|_| AtlasError::io(format!("language server {id} is not accepting input")))
 }
 
 /// Stop a server. Idempotent. The frontend calls it when the user turns
 /// language servers off for a workspace, so nothing keeps running project code
 /// after trust is withdrawn.
 #[tauri::command]
-pub fn lsp_stop(manager: tauri::State<'_, LspManager>, id: String) -> Result<(), String> {
-    let mut sessions = manager.sessions.lock().map_err(|e| e.to_string())?;
+pub fn lsp_stop(manager: tauri::State<'_, LspManager>, id: String) -> Result<(), AtlasError> {
+    let mut sessions = manager.sessions.lock()?;
     if let Some(mut session) = sessions.remove(&id) {
         let _ = session.child.kill();
         let _ = session.child.wait();
@@ -384,11 +395,20 @@ mod tests {
 
     #[test]
     fn a_relative_or_missing_root_is_refused() {
-        assert!(validate_root("repo").is_err());
-        assert!(validate_root("").is_err());
+        assert!(matches!(
+            validate_root("repo"),
+            Err(AtlasError::InvalidInput { .. })
+        ));
+        assert!(matches!(
+            validate_root(""),
+            Err(AtlasError::InvalidInput { .. })
+        ));
         let dir = tempfile::tempdir().unwrap();
         assert!(validate_root(dir.path().to_str().unwrap()).is_ok());
-        assert!(validate_root(dir.path().join("missing").to_str().unwrap()).is_err());
+        assert!(matches!(
+            validate_root(dir.path().join("missing").to_str().unwrap()),
+            Err(AtlasError::NotFound { .. })
+        ));
     }
 
     /// A sink that never accepts a byte, like a server that stopped reading.
