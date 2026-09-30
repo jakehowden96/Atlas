@@ -424,6 +424,14 @@ describe("workspace store", () => {
       expect(get(visibleWorkspaces).map((w) => w.path)).toEqual(["/a", "/b", "/c"]);
     });
 
+    it("brings a hidden workspace back when its folder is added again", async () => {
+      await addWorkspace("/a");
+      await hideWorkspace("/a");
+
+      expect(await addWorkspace("/a")).toBe(true);
+      expect(get(visibleWorkspaces).map((w) => w.path)).toEqual(["/a"]);
+    });
+
     it("is a no-op when the workspace is already hidden", async () => {
       await addWorkspace("/a");
       await hideWorkspace("/a");

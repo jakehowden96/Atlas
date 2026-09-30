@@ -198,7 +198,11 @@ export async function addWorkspace(path: string): Promise<boolean> {
   if (current.some((w) => w.path === path)) {
     log.info("workspace", `addWorkspace duplicate: ${path}`);
     activeWorkspacePath.set(path);
-    return false;
+    // A workspace the user removed is only hidden; adding it again is how they
+    // ask for it back.
+    if (!get(removedWorkspaces).includes(path)) return false;
+    await unhideWorkspace(path);
+    return true;
   }
   const name = stripBundleExtension(basename(path));
   const color = nextAvailableColor(current);
