@@ -168,54 +168,108 @@ fn merge_notification_hook(settings: &mut serde_json::Value, command: &str) -> b
     merge_hook(settings, "Notification", HOOK_MARKER, command) || legacy_dropped
 }
 
+/// Load `settings.json`. A missing file is an empty object; any other read or
+/// parse failure is an error, because the caller must not overwrite a file it
+/// could not understand (the user's model, permissions, env and MCP config
+/// live there).
+fn read_claude_settings(path: &std::path::Path) -> Result<serde_json::Value, String> {
+    match std::fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("not valid JSON: {e}")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(serde_json::json!({})),
+        Err(e) => Err(format!("could not be read: {e}")),
+    }
+}
+
+/// Copy the original `settings.json` to `settings.json.atlas-bak`, once. An
+/// existing backup is kept: it holds the oldest, pre-Atlas contents.
+fn back_up_claude_settings(path: &std::path::Path) -> std::io::Result<()> {
+    let mut backup = path.as_os_str().to_owned();
+    backup.push(".atlas-bak");
+    let backup = std::path::PathBuf::from(backup);
+    if !path.exists() || backup.exists() {
+        return Ok(());
+    }
+    std::fs::copy(path, backup).map(|_| ())
+}
+
 /// Read-modify-write `~/.claude/settings.json`, applying `merge` and writing
 /// back only when it reports a change. Shared by every hook installer.
-fn update_claude_settings(merge: impl FnOnce(&mut serde_json::Value) -> bool, label: &str) {
-    let claude_settings_path = match dirs::home_dir() {
-        Some(h) => h.join(".claude").join("settings.json"),
-        None => return,
+///
+/// A file that cannot be read or parsed is never touched: the failure is
+/// logged at error level and the hook is simply not installed.
+fn update_claude_settings(
+    claude_settings_path: &std::path::Path,
+    merge: impl FnOnce(&mut serde_json::Value) -> bool,
+    label: &str,
+) {
+    let mut settings = match read_claude_settings(claude_settings_path) {
+        Ok(settings) => settings,
+        Err(reason) => {
+            log::error!(
+                "{} {} — leaving it untouched, so the Atlas {} hook is not installed",
+                claude_settings_path.display(),
+                reason,
+                label
+            );
+            return;
+        }
     };
-
-    if let Some(parent) = claude_settings_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-
-    let mut settings: serde_json::Value = std::fs::read_to_string(&claude_settings_path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_else(|| serde_json::json!({}));
 
     if !merge(&mut settings) {
         log::info!("Atlas {} hook already installed", label);
         return;
     }
 
-    match serde_json::to_string_pretty(&settings) {
-        Ok(json) => {
-            if let Err(e) = std::fs::write(&claude_settings_path, json) {
-                log::warn!("Failed to write Claude settings: {}", e);
-            } else {
-                log::info!("Installed Atlas {} hook", label);
-            }
+    let json = match serde_json::to_string_pretty(&settings) {
+        Ok(json) => json,
+        Err(e) => {
+            log::warn!("Failed to serialize Claude settings: {}", e);
+            return;
         }
-        Err(e) => log::warn!("Failed to serialize Claude settings: {}", e),
+    };
+    if let Some(parent) = claude_settings_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Err(e) = back_up_claude_settings(claude_settings_path) {
+        log::error!(
+            "Could not back up {} — leaving it untouched: {}",
+            claude_settings_path.display(),
+            e
+        );
+        return;
+    }
+    match std::fs::write(claude_settings_path, json) {
+        Ok(()) => log::info!("Installed Atlas {} hook", label),
+        Err(e) => log::warn!("Failed to write Claude settings: {}", e),
     }
 }
 
 /// Install the Atlas notification hook into ~/.claude/settings.json
 /// so Claude Code notifies Atlas when it needs input.
 fn install_notification_hook(command: &str) {
+    let Some(path) = claude_settings_path() else {
+        return;
+    };
     update_claude_settings(
+        &path,
         |settings| merge_notification_hook(settings, command),
         "notification",
     );
+}
+
+fn claude_settings_path() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|h| h.join(".claude").join("settings.json"))
 }
 
 /// Install the Atlas session-start hook into ~/.claude/settings.json so Atlas
 /// hears the real session id whenever Claude Code rotates to a new one —
 /// `/clear` and `/compact` both do, and only this hook says so.
 fn install_session_start_hook(command: &str) {
+    let Some(path) = claude_settings_path() else {
+        return;
+    };
     update_claude_settings(
+        &path,
         |settings| merge_hook(settings, "SessionStart", SESSION_START_HOOK_MARKER, command),
         "session-start",
     );
@@ -537,5 +591,73 @@ mod tests {
         assert!(command.starts_with('"'));
         assert!(command.ends_with("\" hook session-start"));
         assert!(command.contains(SESSION_START_HOOK_MARKER));
+    }
+
+    fn install(path: &std::path::Path) {
+        update_claude_settings(path, |s| merge_notification_hook(s, NEW), "notification");
+    }
+
+    #[test]
+    fn an_unparseable_settings_file_is_left_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let original = "{ \"model\": \"opus\", }";
+        std::fs::write(&path, original).unwrap();
+
+        install(&path);
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+    }
+
+    #[test]
+    fn a_non_utf8_settings_file_is_left_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let original = [b'{', 0xff, 0xfe, b'}'];
+        std::fs::write(&path, original).unwrap();
+
+        install(&path);
+
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+    }
+
+    #[test]
+    fn a_missing_settings_file_is_created_without_a_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+
+        install(&path);
+
+        let settings: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(commands(&settings), vec![NEW]);
+        assert!(!dir.path().join("settings.json.atlas-bak").exists());
+    }
+
+    #[test]
+    fn the_original_is_backed_up_once_before_the_first_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let backup = dir.path().join("settings.json.atlas-bak");
+        let original = "{\"model\": \"opus\"}";
+        std::fs::write(&path, original).unwrap();
+
+        install(&path);
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), original);
+
+        // A later change must not overwrite the pre-Atlas backup.
+        update_claude_settings(
+            &path,
+            |s| {
+                merge_hook(
+                    s,
+                    "SessionStart",
+                    SESSION_START_HOOK_MARKER,
+                    NEW_SESSION_START,
+                )
+            },
+            "session-start",
+        );
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), original);
     }
 }
