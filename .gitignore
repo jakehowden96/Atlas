@@ -5,3 +5,9 @@ src-tauri/gen/
 .DS_Store
 .claude/
 .vscode/mcp.json
+.env
+.env.*
+*.local
+coverage/
+.idea/
+*.log
