@@ -29,7 +29,4 @@ export interface PanelData {
 export interface GitStatus {
   has_unstaged: boolean;
   has_staged: boolean;
-  has_unpushed: boolean;
-  commits_behind: number;
-  branch: string;
 }
