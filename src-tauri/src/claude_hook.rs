@@ -3,6 +3,7 @@
 //! input or changed its session id (`atlas hook <kind>`, see `hook.rs`).
 
 use crate::atomic_write;
+use crate::error::AtlasError;
 
 /// Identifies Atlas's own entry in `hooks.Notification`. The command is
 /// `"<exe>" hook notification`, so the argv tail is the part that is stable
@@ -146,11 +147,12 @@ fn merge_notification_hook(settings: &mut serde_json::Value, command: &str) -> b
 /// parse failure is an error, because the caller must not overwrite a file it
 /// could not understand (the user's model, permissions, env and MCP config
 /// live there).
-fn read_claude_settings(path: &std::path::Path) -> Result<serde_json::Value, String> {
+fn read_claude_settings(path: &std::path::Path) -> Result<serde_json::Value, AtlasError> {
     match std::fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("not valid JSON: {e}")),
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map_err(|e| AtlasError::parse(format!("{} is not valid JSON: {e}", path.display()))),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(serde_json::json!({})),
-        Err(e) => Err(format!("could not be read: {e}")),
+        Err(e) => Err(AtlasError::io_at(path, &e)),
     }
 }
 
@@ -181,29 +183,27 @@ static SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 fn update_claude_settings(
     claude_settings_path: &std::path::Path,
     merge: impl FnOnce(&mut serde_json::Value) -> bool,
-) -> Result<bool, String> {
-    let _guard = SETTINGS_LOCK.lock().map_err(|e| e.to_string())?;
-    let mut settings = read_claude_settings(claude_settings_path)
-        .map_err(|reason| format!("{} {}", claude_settings_path.display(), reason))?;
+) -> Result<bool, AtlasError> {
+    let _guard = SETTINGS_LOCK.lock()?;
+    let mut settings = read_claude_settings(claude_settings_path)?;
 
     if !merge(&mut settings) {
         return Ok(false);
     }
 
-    let mut json = serde_json::to_string_pretty(&settings)
-        .map_err(|e| format!("Failed to serialize Claude settings: {e}"))?;
+    let mut json = serde_json::to_string_pretty(&settings)?;
     json.push('\n');
     if let Some(parent) = claude_settings_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        std::fs::create_dir_all(parent).map_err(|e| AtlasError::io_at(parent, &e))?;
     }
     back_up_claude_settings(claude_settings_path).map_err(|e| {
-        format!(
+        AtlasError::io(format!(
             "Could not back up {} — leaving it untouched: {e}",
             claude_settings_path.display()
-        )
+        ))
     })?;
     atomic_write::write_atomic(claude_settings_path, json.as_bytes())
-        .map_err(|e| format!("Failed to write {}: {e}", claude_settings_path.display()))?;
+        .map_err(|e| AtlasError::io_at(claude_settings_path, &e))?;
     Ok(true)
 }
 
@@ -315,7 +315,7 @@ fn apply(
     enabled: bool,
     notification: &str,
     session_start: &str,
-) -> Result<bool, String> {
+) -> Result<bool, AtlasError> {
     update_claude_settings(path, |settings| {
         if enabled {
             merge_atlas_hooks(settings, notification, session_start)
@@ -340,14 +340,16 @@ pub(crate) fn sync_at_launch(enabled: bool) {
     }
 }
 
-fn set_hooks(enabled: bool) -> Result<bool, String> {
-    let path = claude_settings_path().ok_or("Could not resolve the home directory")?;
+fn set_hooks(enabled: bool) -> Result<bool, AtlasError> {
+    let path = claude_settings_path()
+        .ok_or_else(|| AtlasError::internal("Could not resolve the home directory"))?;
     let (notification, session_start) = if enabled {
+        let exe_error = |e: std::io::Error| {
+            AtlasError::io(format!("Could not resolve the Atlas executable: {e}"))
+        };
         (
-            notification_hook_command()
-                .map_err(|e| format!("Could not resolve the Atlas executable: {e}"))?,
-            session_start_hook_command()
-                .map_err(|e| format!("Could not resolve the Atlas executable: {e}"))?,
+            notification_hook_command().map_err(exe_error)?,
+            session_start_hook_command().map_err(exe_error)?,
         )
     } else {
         (String::new(), String::new())
@@ -359,7 +361,7 @@ fn set_hooks(enabled: bool) -> Result<bool, String> {
 /// `~/.claude/settings.json`; nothing else in that file is touched, and a file
 /// that does not parse is left exactly as it is and reported as an error.
 #[tauri::command(async)]
-pub fn set_claude_hook(enabled: bool) -> Result<(), String> {
+pub fn set_claude_hook(enabled: bool) -> Result<(), AtlasError> {
     set_hooks(enabled).map(|changed| {
         log::info!(
             "Atlas Claude Code hooks {}{}",
@@ -566,7 +568,7 @@ mod tests {
         assert!(command.contains(SESSION_START_HOOK_MARKER));
     }
 
-    fn install(path: &std::path::Path) -> Result<bool, String> {
+    fn install(path: &std::path::Path) -> Result<bool, AtlasError> {
         update_claude_settings(path, |s| merge_notification_hook(s, NEW))
     }
 
@@ -809,7 +811,7 @@ mod tests {
 
         let err = apply(&path, false, "", "").unwrap_err();
 
-        assert!(err.contains("not valid JSON"), "{err}");
+        assert!(matches!(err, AtlasError::Parse { .. }), "{err:?}");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
         assert!(!dir.path().join("settings.json.atlas-bak").exists());
     }
