@@ -30,9 +30,7 @@
     "@codemirror/view": "^6.43.11",
     "@fontsource-variable/geist": "^5.3.0",
     "@fontsource-variable/geist-mono": "^5.3.0",
-    "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@tauri-apps/api": "^2.10.1",
-    "@tauri-apps/cli": "^2.10.1",
     "@tauri-apps/plugin-clipboard-manager": "^2.4.0",
     "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-fs": "^2.4.5",
@@ -46,6 +44,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "@tauri-apps/cli": "^2.10.1",
     "prettier": "^3.8.1",
     "prettier-plugin-svelte": "^3.5.1",
     "svelte-check": "^4.4.6",
