@@ -51,10 +51,6 @@ export async function ptyKill(id: number, sessionId?: string): Promise<void> {
   return invoke("pty_kill", { id, sessionId: sessionId ?? null });
 }
 
-export async function getSessionDir(sessionId: string): Promise<string> {
-  return invoke("get_session_dir", { sessionId });
-}
-
 export async function getPanelData(sessionId: string): Promise<PanelData | null> {
   try {
     const data = await invoke<PanelData | null>("get_panel_data", { sessionId });

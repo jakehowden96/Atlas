@@ -493,7 +493,6 @@ pub fn run() -> std::process::ExitCode {
             commands::terminal::pty_write,
             commands::terminal::pty_resize,
             commands::terminal::pty_kill,
-            commands::panel::get_session_dir,
             commands::panel::get_panel_data,
             commands::panel::refresh_panel,
             commands::git::get_git_status,

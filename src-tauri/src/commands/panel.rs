@@ -17,16 +17,6 @@ fn panel_lock(session_id: &str) -> Arc<Mutex<()>> {
         .clone()
 }
 
-#[tauri::command]
-pub fn get_session_dir(session_id: String) -> Result<String, String> {
-    validate_session_id(&session_id)?;
-    let dir = sessions_dir()?.join(&session_id);
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    dir.to_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| "Invalid path".to_string())
-}
-
 #[tauri::command(async)]
 pub fn get_panel_data(session_id: String) -> Result<Option<PanelData>, String> {
     validate_session_id(&session_id)?;
