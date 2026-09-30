@@ -444,6 +444,7 @@ fn extend_path_for_gui_launch() {
 pub fn run() -> std::process::ExitCode {
     setup_logging();
     install_panic_hook();
+    log::info!("Atlas {} started", env!("CARGO_PKG_VERSION"));
     extend_path_for_gui_launch();
 
     let pty_manager = PtyManager::new();
@@ -501,6 +502,7 @@ pub fn run() -> std::process::ExitCode {
         .invoke_handler(tauri::generate_handler![
             state::state_load,
             state::state_save,
+            commands::frontend_log::log_write,
             lsp::lsp_start,
             lsp::lsp_send,
             lsp::lsp_stop,

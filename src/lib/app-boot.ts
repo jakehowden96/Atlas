@@ -15,7 +15,6 @@ export async function bootApp(): Promise<() => void> {
   // workspaces: waiting for them last painted the system theme first on a
   // machine pinned to the other one.
   const settingsLoaded = loadSettings();
-  await log.init();
   log.info("app", "boot started");
   await loadWorkspaces();
   const ws = get(visibleWorkspaces);

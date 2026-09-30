@@ -1,5 +1,6 @@
 mod diff;
 pub mod files;
+pub mod frontend_log;
 pub mod git;
 pub mod panel;
 pub(crate) mod proc;
