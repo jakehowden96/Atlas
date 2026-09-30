@@ -16,7 +16,9 @@
   import { languageSupportFor, atlasEditorTheme } from "../../code-editor";
   import { languageIdFor } from "../../code-lang";
   import { pathToFileUri } from "../../files";
-  import { clientFor } from "../../lsp-client";
+  import { clientFor, untrustedRoots } from "../../lsp-client";
+  import { setLspTrusted } from "../../stores/settings";
+  import { visibleWorkspaces } from "../../stores/workspace";
   import { Compartment, EditorState } from "@codemirror/state";
   import { EditorView } from "@codemirror/view";
   import {
@@ -152,6 +154,28 @@
     }
   }
 
+  /* The backend starts no language server in a workspace the user has not
+     turned them on for. Say so, quietly, where the diagnostics would be — but
+     only for a registered workspace, since that is the only thing Settings can
+     turn them on for. */
+  let offerLsp = $derived(
+    $untrustedRoots.has(root) &&
+      languageIdFor(path) !== "plaintext" &&
+      $visibleWorkspaces.some((w) => w.path === root),
+  );
+
+  async function enableServers() {
+    const target = view;
+    try {
+      // Resolves once the choice is on disk: the backend reads it from there.
+      await setLspTrusted(root, true);
+    } catch (e) {
+      log.warn("lsp", `could not enable language servers for ${root}: ${e}`);
+      return;
+    }
+    if (target && target === view) void attachServer(target, path, root);
+  }
+
   /* A file that failed to load shows as an empty buffer; typing into it would
      only tempt a save over the real file, so it cannot be edited. */
   $effect(() => {
@@ -176,15 +200,57 @@
   }
 </script>
 
-<div class="code" bind:this={host}></div>
+<div class="code-wrap">
+  <div class="code" bind:this={host}></div>
+  {#if offerLsp}
+    <div class="lsp-note" role="status">
+      Language servers are off for this workspace.
+      <button type="button" onclick={() => void enableServers()}>Enable</button>
+    </div>
+  {/if}
+</div>
 
 <style>
+  .code-wrap {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+
   .code {
     flex: 1;
     min-width: 0;
     min-height: 0;
     overflow: hidden;
     background: var(--term-bg);
+  }
+
+  .lsp-note {
+    position: absolute;
+    right: 10px;
+    bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    font-family: var(--font-ui);
+    font-size: var(--fs-2xs);
+    color: var(--muted);
+  }
+
+  .lsp-note button {
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: transparent;
+    font: inherit;
+    color: var(--text);
+    cursor: pointer;
   }
 
   /* CodeMirror sizes itself off its parent, so the host has to be a real box

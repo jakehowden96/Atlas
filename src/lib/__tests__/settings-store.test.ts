@@ -20,6 +20,8 @@ import {
   keymap,
   lastHarnessId,
   loadSettings,
+  lspTrustedWorkspaces,
+  setLspTrusted,
   migrateSettings,
   overviewOrdering,
   prRefreshMinutes,
@@ -98,6 +100,7 @@ describe("settings store", () => {
     tabs.set([]);
     openFiles.set([]);
     sources.set([]);
+    lspTrustedWorkspaces.set([]);
     keymap.set({ ...DEFAULT_KEYMAP });
     vi.clearAllMocks();
   });
@@ -600,6 +603,34 @@ describe("migrateSettings", () => {
 
   it.each([null, "text", 3, [1, 2]])("reads %j as an empty settings file", (raw) => {
     expect(migrateSettings(raw)).toEqual({ data: {}, newerThanKnown: false });
+  });
+});
+
+describe("language server trust", () => {
+  beforeEach(() => {
+    lspTrustedWorkspaces.set([]);
+    vi.mocked(stateSave).mockClear();
+  });
+
+  it("is off for every workspace until the user turns it on, and is saved when they do", async () => {
+    vi.mocked(stateSave).mockResolvedValue(undefined);
+    expect(get(lspTrustedWorkspaces)).toEqual([]);
+
+    await setLspTrusted("/ws/a", true);
+    await setLspTrusted("/ws/a", true);
+
+    expect(get(lspTrustedWorkspaces)).toEqual(["/ws/a"]);
+    expect(stateSave).toHaveBeenCalledTimes(1);
+    expect(lastWritten().lspTrustedWorkspaces).toEqual(["/ws/a"]);
+
+    await setLspTrusted("/ws/a", false);
+    expect(lastWritten().lspTrustedWorkspaces).toEqual([]);
+  });
+
+  it("restores the list on load and ignores entries that are not paths", async () => {
+    mockFile(JSON.stringify({ lspTrustedWorkspaces: ["/ws/a", 3, null] }));
+    await loadSettings();
+    expect(get(lspTrustedWorkspaces)).toEqual(["/ws/a"]);
   });
 });
 

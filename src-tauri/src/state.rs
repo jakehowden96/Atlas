@@ -109,6 +109,11 @@ impl StateStore {
         }
     }
 
+    /// Rust's own read of a state file; see [`read_json`].
+    pub fn read_json(&self, file: StateFile) -> Option<serde_json::Value> {
+        read_json(self.dir.as_deref()?, file)
+    }
+
     pub fn save(&self, file: StateFile, contents: &str) -> Result<(), String> {
         if contents.len() > MAX_STATE_BYTES {
             return Err(format!(

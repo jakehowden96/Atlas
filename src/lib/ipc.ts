@@ -8,6 +8,7 @@ import type {
   TextFile,
   WriteOutcome,
 } from "../types/files";
+import type { LspStart } from "../types/lsp";
 import type { GitStatus, PanelData } from "../types/panel";
 import type { GhViewer, RepoPrs, WorkspaceRepo } from "../types/prs";
 import type { LiveSession, SessionUpdateEvent } from "../types/session";
@@ -351,12 +352,14 @@ export async function stateSave(name: StateFileName, contents: string): Promise<
 // ── Language servers ────────────────────────────────────────────────────────
 
 /**
- * Start a language server for `languageId` rooted at `root`, returning the
- * session id to send on. Rejects when no server for that language is installed,
- * which the caller treats as "no diagnostics here" rather than a failure.
+ * Ask the backend for a language server for `languageId` rooted at `root`.
+ * `notTrusted` means language servers are off for that workspace (the default;
+ * the backend reads the user's choice from `settings.json` itself and starts
+ * nothing); `noServer` means it is trusted but none is installed, which is the
+ * ordinary case for most file types and is not a failure.
  */
-export async function lspStart(languageId: string, root: string): Promise<string> {
-  return invoke<string>("lsp_start", { languageId, root });
+export async function lspStart(languageId: string, root: string): Promise<LspStart> {
+  return invoke<LspStart>("lsp_start", { languageId, root });
 }
 
 /** Relay one JSON-RPC message. Framing happens on the Rust side. */
@@ -364,8 +367,20 @@ export async function lspSend(id: string, message: string): Promise<void> {
   return invoke("lsp_send", { id, message });
 }
 
+/** Stop a server and forget its session. Idempotent. */
 export async function lspStop(id: string): Promise<void> {
   return invoke("lsp_stop", { id });
+}
+
+/**
+ * A server exited or crashed on its own and the backend has dropped the
+ * session. Not sent for an `lspStop`. The next `lspStart` for that pair starts
+ * a fresh server.
+ */
+export async function onLspExit(callback: (id: string) => void): Promise<UnlistenFn> {
+  return listen<{ id: string }>("lsp-exit", (event) => {
+    callback(event.payload.id);
+  });
 }
 
 export async function onLspMessage(

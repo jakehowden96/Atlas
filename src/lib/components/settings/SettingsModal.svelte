@@ -17,6 +17,7 @@
     type Binding,
     type Keymap,
   } from "../../keymap";
+  import { stopServersFor } from "../../lsp-client";
   import { log } from "../../logger";
   import { showToast } from "../../stores/toast";
   import { addWorkspaceFolder, removeWorkspaceWithUndo } from "../../session-actions";
@@ -26,6 +27,7 @@
     enableNotifications,
     harnesses,
     keymap,
+    lspTrustedWorkspaces,
     MAX_TERMINAL_FONT_SIZE,
     MIN_TERMINAL_FONT_SIZE,
     overviewOrdering,
@@ -35,6 +37,7 @@
     setEnableNotifications,
     setHarnesses,
     setKeymap,
+    setLspTrusted,
     setOverviewOrdering,
     setPrRefreshMinutes,
     setSoundOnNeedsYou,
@@ -106,6 +109,18 @@
   /** Which chord slot is listening: index 0 is the action's primary, 1 its
    *  alternate. Null when nothing is being recorded. */
   let recording = $state<{ action: Action; index: number } | null>(null);
+
+  /** Language servers run a workspace's own code, so they are opt-in per
+   *  workspace; turning them off also stops any that are running. */
+  async function setWorkspaceLsp(path: string, trusted: boolean) {
+    try {
+      await setLspTrusted(path, trusted);
+      if (!trusted) await stopServersFor(path);
+    } catch (e) {
+      log.warn("settings", `could not change language servers for ${path}: ${e}`);
+      showToast("Could not change language servers", { body: String(e) });
+    }
+  }
 
   let title = $derived(NAV.find((n) => n.id === section)?.label ?? "Settings");
   let conflicts = $derived(findConflicts(draft));
@@ -473,6 +488,17 @@
                     </div>
                   </div>
                   <span class="ws-count">{ws.sessions.length} sessions</span>
+                  <div
+                    class="lsp"
+                    title="Run a language server (TypeScript, Rust, …) for diagnostics in Files. A language server executes this workspace's own code, so it is off until you trust the workspace."
+                  >
+                    <span class="lsp-label">Language servers</span>
+                    <Toggle
+                      checked={$lspTrustedWorkspaces.includes(ws.path)}
+                      label="Language servers for {ws.name}"
+                      onChange={(v) => void setWorkspaceLsp(ws.path, v)}
+                    />
+                  </div>
                   <button
                     type="button"
                     class="remove"
@@ -974,6 +1000,19 @@
     color: var(--muted);
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+
+  .lsp {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .lsp-label {
+    font-family: var(--font-ui);
+    font-size: var(--fs-xs);
+    color: var(--muted);
+    white-space: nowrap;
   }
 
   .ws-count {

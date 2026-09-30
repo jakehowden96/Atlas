@@ -81,6 +81,10 @@ export const tailTranscripts = writable(true);
 /** Overview tiles the user pinned, by `pinKey`. Pinned tiles sort above every
     other tile whatever the ordering is. */
 export const pinnedSessions = writable<string[]>([]);
+/** Workspace paths the user turned language servers on for. Off by default: a
+    server runs the workspace's own code, so the backend starts none for a path
+    that is not listed here (it reads this list from `settings.json` itself). */
+export const lspTrustedWorkspaces = writable<string[]>([]);
 /** The harnesses New Session can launch. `DEFAULT_HARNESSES` is only the
     store's initial value — a harness added later in Settings behaves
     identically to the built-ins. */
@@ -121,6 +125,7 @@ interface PersistedSettings {
    *  file is already read on boot. */
   openFiles?: string[];
   fileSources?: string[];
+  lspTrustedWorkspaces?: string[];
   /** One binding per action in files written before alternates existed;
    *  a list since. `mergeKeymap` reads both. */
   keymap?: Partial<Record<Action, Binding | Binding[]>>;
@@ -237,6 +242,11 @@ export async function loadSettings() {
     if (Array.isArray(data.fileSources)) {
       sources.set(data.fileSources.filter((path) => typeof path === "string"));
     }
+    if (Array.isArray(data.lspTrustedWorkspaces)) {
+      lspTrustedWorkspaces.set(
+        data.lspTrustedWorkspaces.filter((path) => typeof path === "string"),
+      );
+    }
     // Malformed entries are dropped inside `mergeKeymap`, so a hand-edited file
     // costs the user one binding rather than the whole settings load.
     keymap.set(mergeKeymap(data.keymap));
@@ -267,6 +277,7 @@ const persister = createStatePersister(
     lastHarnessId: get(lastHarnessId),
     openFiles: get(openFiles),
     fileSources: get(sources),
+    lspTrustedWorkspaces: get(lspTrustedWorkspaces),
     keymap: get(keymap),
   }),
   (e) => {
@@ -351,6 +362,18 @@ export async function setOpenFiles(keys: string[]) {
 
 export async function setFileSources(paths: string[]) {
   sources.set(paths);
+  await persistSettings();
+}
+
+/**
+ * Turn language servers on or off for one workspace. Resolves once the choice
+ * is on disk, because the backend decides whether to start a server from
+ * `settings.json`, not from anything the webview tells it.
+ */
+export async function setLspTrusted(path: string, trusted: boolean) {
+  const current = get(lspTrustedWorkspaces);
+  if (current.includes(path) === trusted) return;
+  lspTrustedWorkspaces.set(trusted ? [...current, path] : current.filter((p) => p !== path));
   await persistSettings();
 }
 
