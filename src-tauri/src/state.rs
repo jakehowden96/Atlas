@@ -155,6 +155,15 @@ impl StateStore {
     }
 }
 
+/// The parsed state file in `dir`, or `None` when it is missing or unusable.
+/// Read-only and lock-free: saves are atomic renames, so this always sees a
+/// whole file. For Rust's own reads of settings and workspaces (file scope,
+/// language server trust, the hook opt-out); it never repairs or backs up.
+pub fn read_json(dir: &Path, file: StateFile) -> Option<serde_json::Value> {
+    let bytes = std::fs::read(dir.join(file.file_name())).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
 /// The top-level `version` number; a file without one (or an array-shaped
 /// legacy file) is version 0.
 fn version_of(value: &serde_json::Value) -> u64 {
@@ -371,6 +380,24 @@ mod tests {
         assert!(
             !tmp.path().join(".atlas/settings.json.bak").exists(),
             "a torn write would have been treated as corrupt"
+        );
+    }
+
+    #[test]
+    fn read_json_is_none_for_missing_or_unparseable_and_never_writes() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join(".atlas");
+        assert!(read_json(&dir, StateFile::Settings).is_none());
+
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("settings.json"), "{ nope").unwrap();
+        assert!(read_json(&dir, StateFile::Settings).is_none());
+        assert!(!dir.join("settings.json.bak").exists());
+
+        std::fs::write(dir.join("settings.json"), r#"{"claudeHook":false}"#).unwrap();
+        assert_eq!(
+            read_json(&dir, StateFile::Settings).unwrap()["claudeHook"],
+            serde_json::Value::Bool(false)
         );
     }
 

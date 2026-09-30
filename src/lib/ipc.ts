@@ -239,13 +239,34 @@ export async function listClaudePlans(): Promise<PlanEntry[]> {
 
 /**
  * One directory's children, flat and unfiltered, for the Open… dialog. Rejects
- * a path that is not an existing absolute directory.
+ * a path that is not an existing absolute directory inside a workspace or a
+ * folder added to Files.
  */
 export async function listDir(path: string): Promise<DirEntry[]> {
   return invoke("list_dir", { path });
 }
 
-/** Rejects anything whose extension the Files screen cannot open. */
+/**
+ * Tell the backend the user just picked this folder in the native dialog, so
+ * the Files commands accept it for the rest of the run. Persisting the choice
+ * (as a workspace or a file source) is what keeps it allowed after a restart.
+ */
+export async function filesGrant(path: string): Promise<void> {
+  return invoke("files_grant", { path });
+}
+
+/** Rejects a path that is not an existing absolute directory; reads nothing. */
+export async function validateDirectory(path: string): Promise<void> {
+  return invoke("validate_directory", { path });
+}
+
+/**
+ * Reads and writes are limited to registered workspaces, folders added to
+ * Files, and `~/.claude/plans`, and never reach `~/.atlas` or Claude Code's
+ * `settings*.json`; anything else rejects.
+ *
+ * Rejects anything whose extension the Files screen cannot open.
+ */
 export async function readTextFileAt(path: string): Promise<string> {
   return invoke("read_text_file_at", { path });
 }

@@ -5,6 +5,7 @@
 //! outside `$HOME`, a recursive walk from the frontend would cost one IPC round
 //! trip per directory, and the webview has no filesystem access of its own.
 
+use super::files_scope::FilesScope;
 use super::validate::validate_cwd;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
@@ -179,8 +180,12 @@ fn walk_docs(root: &Path) -> Vec<DocEntry> {
 
 /// Every file the editor can open under a workspace, directories included.
 #[tauri::command(async)]
-pub async fn list_workspace_docs(workspace_path: String) -> Result<Vec<DocEntry>, String> {
+pub async fn list_workspace_docs(
+    workspace_path: String,
+    scope: State<'_, FilesScope>,
+) -> Result<Vec<DocEntry>, String> {
     validate_cwd(&workspace_path)?;
+    scope.resolve(&workspace_path)?;
     tokio::task::spawn_blocking(move || Ok(walk_docs(Path::new(&workspace_path))))
         .await
         .map_err(|e| format!("Task join error: {}", e))?
@@ -222,8 +227,9 @@ fn list_children(dir: &Path) -> Result<Vec<DirEntry>, String> {
 
 /// The contents of one directory, for the Open… dialog's browser.
 #[tauri::command(async)]
-pub async fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
+pub async fn list_dir(path: String, scope: State<'_, FilesScope>) -> Result<Vec<DirEntry>, String> {
     validate_cwd(&path)?;
+    scope.resolve(&path)?;
     tokio::task::spawn_blocking(move || list_children(Path::new(&path)))
         .await
         .map_err(|e| format!("Task join error: {}", e))?
@@ -298,9 +304,23 @@ fn validate_doc_path(path: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-#[tauri::command(async)]
-pub fn read_text_file_at(path: String) -> Result<String, String> {
-    let path = validate_doc_path(&path)?;
+/// The scoped, canonical path for a document: a document extension, inside an
+/// allowed root, not denied. The extension is checked on the resolved path as
+/// well, so a `.md` symlink cannot expose a file that is not a document.
+fn resolve_doc(scope: &FilesScope, path: &str) -> Result<PathBuf, String> {
+    validate_doc_path(path)?;
+    let resolved = scope.resolve(path)?;
+    if !is_doc_file(&resolved) {
+        return Err(format!(
+            "Not a file type the Files screen can open: {}",
+            resolved.display()
+        ));
+    }
+    Ok(resolved)
+}
+
+fn read_file(scope: &FilesScope, path: &str) -> Result<String, String> {
+    let path = resolve_doc(scope, path)?;
     let file = std::fs::File::open(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
     // A `.md` symlink to `/dev/zero` reports length 0, so check the handle is
     // a regular file, and cap the read itself rather than trusting a size that
@@ -322,6 +342,11 @@ pub fn read_text_file_at(path: String) -> Result<String, String> {
         ));
     }
     String::from_utf8(bytes).map_err(|_| format!("{} is not a UTF-8 text file", path.display()))
+}
+
+#[tauri::command(async)]
+pub fn read_text_file_at(path: String, scope: State<'_, FilesScope>) -> Result<String, String> {
+    read_file(&scope, &path)
 }
 
 /// Replace `target` with `contents` without ever leaving it truncated: write a
@@ -377,26 +402,36 @@ fn write_atomically(target: &Path, contents: &str) -> std::io::Result<()> {
     written
 }
 
-#[tauri::command(async)]
-pub fn write_text_file_at(path: String, contents: String) -> Result<(), String> {
-    let path = validate_doc_path(&path)?;
-    let parent = path
+fn write_file(scope: &FilesScope, path: &str, contents: &str) -> Result<(), String> {
+    // Already canonical: a symlinked file is written through to its target
+    // rather than replaced by a regular file.
+    let target = resolve_doc(scope, path)?;
+    let parent = target
         .parent()
-        .ok_or_else(|| format!("Path has no parent directory: {}", path.display()))?;
+        .ok_or_else(|| format!("Path has no parent directory: {}", target.display()))?;
 
     // New notes land in directories that may not exist yet.
     std::fs::create_dir_all(parent).map_err(|e| format!("{}: {}", parent.display(), e))?;
 
-    // Save through a symlinked file rather than replacing the link with a
-    // regular file, as writing in place always did.
-    let target = match std::fs::symlink_metadata(&path) {
-        Ok(meta) if meta.file_type().is_symlink() => {
-            std::fs::canonicalize(&path).map_err(|e| format!("{}: {}", path.display(), e))?
-        }
-        _ => path.clone(),
-    };
+    write_atomically(&target, contents).map_err(|e| format!("{}: {}", target.display(), e))
+}
 
-    write_atomically(&target, &contents).map_err(|e| format!("{}: {}", path.display(), e))
+#[tauri::command(async)]
+pub fn write_text_file_at(
+    path: String,
+    contents: String,
+    scope: State<'_, FilesScope>,
+) -> Result<(), String> {
+    write_file(&scope, &path, &contents)
+}
+
+/// Whether `path` is an existing absolute directory. A typed-in workspace path
+/// is checked with this before it is added, so a typo never becomes a
+/// workspace whose every session fails to spawn. It reads nothing, so it needs
+/// no file scope.
+#[tauri::command]
+pub fn validate_directory(path: String) -> Result<(), String> {
+    validate_cwd(&path)
 }
 
 /// One `notify` watcher per watched workspace. Dropping a watcher stops it and
@@ -526,8 +561,10 @@ pub fn start_docs_watch(
     workspace_path: String,
     app: AppHandle,
     watchers: State<'_, DocsWatchers>,
+    scope: State<'_, FilesScope>,
 ) -> Result<(), String> {
     validate_cwd(&workspace_path)?;
+    scope.resolve(&workspace_path)?;
     let key = watch_key(&workspace_path);
     let mut watchers = watchers.0.lock().map_err(|e| e.to_string())?;
     if watchers.contains_key(&key) {
@@ -554,6 +591,13 @@ pub fn stop_docs_watch(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    /// A scope that allows exactly the temp directory.
+    fn scoped(dir: &TempDir) -> FilesScope {
+        let scope = FilesScope::new(None);
+        scope.grant(&dir.path().to_string_lossy()).unwrap();
+        scope
+    }
 
     fn touch(path: &Path) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -670,21 +714,19 @@ mod tests {
     #[test]
     fn write_text_file_at_refuses_a_path_the_editor_cannot_open() {
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let path = tmp.path().join("icon.png");
-        assert!(write_text_file_at(
-            path.to_string_lossy().to_string(),
-            "not an image".to_string(),
-        )
-        .is_err());
+        assert!(write_file(&scope, &path.to_string_lossy(), "not an image").is_err());
         assert!(!path.exists());
     }
 
     #[test]
     fn write_replaces_contents_and_leaves_no_temp_file() {
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let path = tmp.path().join("note.md");
         std::fs::write(&path, "old").unwrap();
-        write_text_file_at(path.to_string_lossy().to_string(), "new".to_string()).unwrap();
+        write_file(&scope, &path.to_string_lossy(), "new").unwrap();
 
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
         let names: Vec<_> = std::fs::read_dir(tmp.path())
@@ -699,10 +741,11 @@ mod tests {
     fn write_keeps_the_file_mode() {
         use std::os::unix::fs::PermissionsExt;
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let path = tmp.path().join("private.md");
         std::fs::write(&path, "old").unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
-        write_text_file_at(path.to_string_lossy().to_string(), "new".to_string()).unwrap();
+        write_file(&scope, &path.to_string_lossy(), "new").unwrap();
 
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
@@ -713,11 +756,12 @@ mod tests {
     fn write_refuses_a_read_only_file_and_leaves_it_alone() {
         use std::os::unix::fs::PermissionsExt;
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let path = tmp.path().join("locked.md");
         std::fs::write(&path, "old").unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
 
-        assert!(write_text_file_at(path.to_string_lossy().to_string(), "new".to_string()).is_err());
+        assert!(write_file(&scope, &path.to_string_lossy(), "new").is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "old");
     }
 
@@ -725,12 +769,13 @@ mod tests {
     #[test]
     fn write_saves_through_a_symlinked_file() {
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let real = tmp.path().join("real/target.md");
         touch(&real);
         let link = tmp.path().join("note.md");
         std::os::unix::fs::symlink(&real, &link).unwrap();
 
-        write_text_file_at(link.to_string_lossy().to_string(), "new".to_string()).unwrap();
+        write_file(&scope, &link.to_string_lossy(), "new").unwrap();
 
         assert!(std::fs::symlink_metadata(&link)
             .unwrap()
@@ -739,25 +784,108 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&real).unwrap(), "new");
     }
 
+    #[test]
+    fn read_refuses_something_that_is_not_a_regular_file_behind_a_document_name() {
+        let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
+        let dir = tmp.path().join("notes.md");
+        std::fs::create_dir(&dir).unwrap();
+        let err = read_file(&scope, &dir.to_string_lossy()).unwrap_err();
+        assert!(err.contains("not a regular file"), "{err}");
+    }
+
     #[cfg(unix)]
     #[test]
-    fn read_refuses_a_device_behind_a_document_name() {
+    fn a_document_symlink_to_a_device_is_refused() {
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let link = tmp.path().join("zero.md");
         std::os::unix::fs::symlink("/dev/zero", &link).unwrap();
-        assert!(read_text_file_at(link.to_string_lossy().to_string()).is_err());
+        assert!(read_file(&scope, &link.to_string_lossy()).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_and_write_refuse_a_symlink_that_leaves_the_folder() {
+        let ws = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let secret = outside.path().join("secret.md");
+        std::fs::write(&secret, "outside").unwrap();
+        let link = ws.path().join("leak.md");
+        std::os::unix::fs::symlink(&secret, &link).unwrap();
+        let scope = scoped(&ws);
+
+        assert!(read_file(&scope, &link.to_string_lossy()).is_err());
+        assert!(write_file(&scope, &link.to_string_lossy(), "pwned").is_err());
+        assert_eq!(std::fs::read_to_string(&secret).unwrap(), "outside");
+    }
+
+    #[test]
+    fn write_refuses_a_path_outside_every_root_and_creates_nothing() {
+        let ws = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let scope = scoped(&ws);
+        let target = outside.path().join("new/dir/evil.sh");
+
+        assert!(write_file(&scope, &target.to_string_lossy(), "evil").is_err());
+        assert!(!outside.path().join("new").exists());
+    }
+
+    #[test]
+    fn dot_dot_traversal_is_refused_on_read_and_write() {
+        let ws = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        std::fs::write(outside.path().join("x.md"), "x").unwrap();
+        let scope = scoped(&ws);
+        let sneaky = format!(
+            "{}/../{}/x.md",
+            ws.path().display(),
+            outside.path().file_name().unwrap().to_string_lossy()
+        );
+
+        assert!(read_file(&scope, &sneaky).is_err());
+        assert!(write_file(&scope, &sneaky, "pwned").is_err());
+        assert_eq!(
+            std::fs::read_to_string(outside.path().join("x.md")).unwrap(),
+            "x"
+        );
+    }
+
+    #[test]
+    fn claude_settings_and_atlas_state_are_not_reachable_even_from_a_registered_home() {
+        let home = TempDir::new().unwrap();
+        std::fs::create_dir_all(home.path().join(".claude")).unwrap();
+        std::fs::create_dir_all(home.path().join(".atlas")).unwrap();
+        std::fs::write(home.path().join(".claude/settings.json"), "{}").unwrap();
+        std::fs::write(home.path().join(".atlas/settings.json"), "{}").unwrap();
+        let scope = FilesScope::new(Some(std::fs::canonicalize(home.path()).unwrap()));
+        scope.grant(&home.path().to_string_lossy()).unwrap();
+
+        for denied in [".claude/settings.json", ".atlas/settings.json"] {
+            let path = home.path().join(denied).to_string_lossy().to_string();
+            assert!(read_file(&scope, &path).is_err(), "{denied}");
+            assert!(
+                write_file(&scope, &path, "{\"hooks\":1}").is_err(),
+                "{denied}"
+            );
+            assert_eq!(
+                std::fs::read_to_string(home.path().join(denied)).unwrap(),
+                "{}"
+            );
+        }
     }
 
     #[test]
     fn read_rejects_an_oversized_file_and_non_utf8() {
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let big = tmp.path().join("big.md");
         std::fs::write(&big, vec![b'a'; MAX_READ_BYTES as usize + 1]).unwrap();
-        assert!(read_text_file_at(big.to_string_lossy().to_string()).is_err());
+        assert!(read_file(&scope, &big.to_string_lossy()).is_err());
 
         let binary = tmp.path().join("bin.md");
         std::fs::write(&binary, [0xff, 0xfe, 0x00]).unwrap();
-        let err = read_text_file_at(binary.to_string_lossy().to_string()).unwrap_err();
+        let err = read_file(&scope, &binary.to_string_lossy()).unwrap_err();
         assert!(err.contains("UTF-8"), "{err}");
     }
 
@@ -785,14 +913,11 @@ mod tests {
     #[test]
     fn write_text_file_at_accepts_a_source_path() {
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let path = tmp.path().join("src/main.rs");
-        write_text_file_at(
-            path.to_string_lossy().to_string(),
-            "fn main() {}".to_string(),
-        )
-        .unwrap();
+        write_file(&scope, &path.to_string_lossy(), "fn main() {}").unwrap();
         assert_eq!(
-            read_text_file_at(path.to_string_lossy().to_string()).unwrap(),
+            read_file(&scope, &path.to_string_lossy()).unwrap(),
             "fn main() {}"
         );
     }
@@ -800,12 +925,10 @@ mod tests {
     #[test]
     fn write_text_file_at_creates_parents_and_round_trips() {
         let tmp = TempDir::new().unwrap();
+        let scope = scoped(&tmp);
         let path = tmp.path().join("notes/new/note.md");
-        write_text_file_at(path.to_string_lossy().to_string(), "hello".to_string()).unwrap();
-        assert_eq!(
-            read_text_file_at(path.to_string_lossy().to_string()).unwrap(),
-            "hello"
-        );
+        write_file(&scope, &path.to_string_lossy(), "hello").unwrap();
+        assert_eq!(read_file(&scope, &path.to_string_lossy()).unwrap(), "hello");
     }
 
     #[test]

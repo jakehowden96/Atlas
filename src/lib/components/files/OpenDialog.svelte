@@ -11,7 +11,7 @@
   import { homeDir } from "@tauri-apps/api/path";
   import type { DirEntry } from "../../../types/files";
   import { breadcrumbs, parentDir } from "../../files";
-  import { listDir } from "../../ipc";
+  import { filesGrant, listDir } from "../../ipc";
   import { log } from "../../logger";
   import { showToast } from "../../stores/toast";
   import { addSource, fileWs, openFile } from "../../stores/files";
@@ -72,6 +72,9 @@
     try {
       const picked = await pickFolder({ directory: true, multiple: false, defaultPath: dir });
       if (typeof picked !== "string") return;
+      // The native picker is what authorises the folder; the backend accepts
+      // nothing outside workspaces and folders it was told about this way.
+      await filesGrant(picked);
       await addSource(picked);
       openDialogOpen.set(false);
     } catch (e) {

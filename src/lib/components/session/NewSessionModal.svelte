@@ -11,7 +11,7 @@
   import { get } from "svelte/store";
   import type { ResumableSession } from "../../../types/stats";
   import { homeDir } from "@tauri-apps/api/path";
-  import { listDir, listResumableSessions } from "../../ipc";
+  import { listResumableSessions, validateDirectory } from "../../ipc";
   import { log } from "../../logger";
   import {
     ageLabel,
@@ -250,7 +250,7 @@
         const path = expandHome(addPath, await homeDir());
         // Rejects anything that is not an existing directory, so a typo never
         // becomes a workspace whose every session fails to spawn.
-        await listDir(path);
+        await validateDirectory(path);
         await addWorkspace(path);
         selectPath(path);
         return;

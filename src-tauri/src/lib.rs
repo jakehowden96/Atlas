@@ -495,6 +495,7 @@ pub fn run() -> std::process::ExitCode {
         })
         .manage(pty_manager)
         .manage(state_store)
+        .manage(commands::files_scope::FilesScope::new(dirs::home_dir()))
         .manage(lsp_manager)
         .manage(live_sessions.clone())
         .manage(commands::files::DocsWatchers::default())
@@ -529,6 +530,8 @@ pub fn run() -> std::process::ExitCode {
             commands::files::list_dir,
             commands::files::read_text_file_at,
             commands::files::write_text_file_at,
+            commands::files::validate_directory,
+            commands::files_scope::files_grant,
             commands::files::start_docs_watch,
             commands::files::stop_docs_watch,
         ])
