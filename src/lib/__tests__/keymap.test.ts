@@ -237,6 +237,22 @@ describe("mergeKeymap and the alternates a stored file predates", () => {
   });
 });
 
+describe("mergeKeymap after dropping an alternate", () => {
+  it("keeps the primary alone for an action whose defaults ship only one chord", () => {
+    const primary = { mod: true, shift: false, key: "p" };
+    const withAlt = mergeKeymap({ jump: [primary, { mod: true, shift: true, key: "p" }] });
+    expect(withAlt.jump).toHaveLength(2);
+    expect(mergeKeymap({ jump: [primary] }).jump).toEqual([primary]);
+  });
+
+  it("puts back a default alternate that was dropped from an unmodified default list", () => {
+    const [primary] = DEFAULT_KEYMAP.backToSessions;
+    expect(mergeKeymap({ backToSessions: [primary] }).backToSessions).toEqual(
+      DEFAULT_KEYMAP.backToSessions,
+    );
+  });
+});
+
 describe("isReachable", () => {
   it("marks ⌘Escape unreachable on macOS only", () => {
     const cmdEscape = DEFAULT_KEYMAP.backToSessions[0];

@@ -52,6 +52,11 @@ describe("renderMarkdown", () => {
     );
   });
 
+  it("ends a blockquote at the first unquoted line, including at end of input", () => {
+    expect(renderMarkdown("> a\n> b")).toBe("<blockquote><p>a\nb</p></blockquote>");
+    expect(renderMarkdown("> a\nafter")).toBe("<blockquote><p>a</p></blockquote>\n<p>after</p>");
+  });
+
   it("renders a blockquote's contents as blocks", () => {
     const html = renderMarkdown("> ## Heads up\n> body");
     expect(html).toContain("<blockquote>");
