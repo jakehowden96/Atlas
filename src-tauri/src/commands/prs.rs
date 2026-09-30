@@ -715,6 +715,21 @@ mod tests {
         assert_eq!(rollup_ci_state(&[ctx("FAILURE")]), CiState::Failed);
     }
 
+    /// The UI switches on these exact words (`ciState === "failed"`).
+    #[test]
+    fn states_serialise_as_the_words_the_ui_switches_on() {
+        assert_eq!(serde_json::json!(CiState::Passed), "passed");
+        assert_eq!(serde_json::json!(CiState::None), "none");
+        assert_eq!(
+            serde_json::json!(ReviewState::ChangesRequested),
+            "changes_requested"
+        );
+        assert_eq!(
+            serde_json::json!(ReviewState::ReviewRequired),
+            "review_required"
+        );
+    }
+
     #[test]
     fn map_review_states() {
         assert_eq!(map_review("APPROVED"), ReviewState::Approved);
