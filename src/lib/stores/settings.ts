@@ -11,6 +11,7 @@ import {
   type Keymap,
 } from "../keymap";
 import { log } from "../logger";
+import { reportStorageFailure } from "../storage-failure";
 import { themeMode, type ThemeMode } from "../theme";
 import { openFiles, sources } from "./files";
 import { liveSessions } from "./liveSessions";
@@ -223,7 +224,7 @@ export async function loadSettings() {
     log.info("settings", "settings loaded");
   } catch (e) {
     log.error("settings", "failed to load settings", e);
-    console.warn("Failed to load settings (using defaults):", e);
+    reportStorageFailure("settings", "load", e);
   }
 }
 
@@ -252,7 +253,7 @@ async function persistSettings() {
     });
   } catch (e) {
     log.error("settings", "failed to persist settings", e);
-    console.error("Failed to persist settings:", e);
+    reportStorageFailure("settings", "save", e);
   }
 }
 

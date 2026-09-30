@@ -2,6 +2,7 @@ import { writable, derived, get } from "svelte/store";
 import { BaseDirectory, readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs";
 import { log } from "../logger";
 import { basename } from "../format";
+import { reportStorageFailure } from "../storage-failure";
 
 export interface WorkspaceSession {
   id: string;
@@ -176,7 +177,7 @@ export async function loadWorkspaces() {
     log.info("workspace", `store updated with ${data.length} workspaces`);
   } catch (e) {
     log.error("workspace", "failed to load workspaces", e);
-    console.warn("Failed to load workspaces (starting fresh):", e);
+    reportStorageFailure("workspaces", "load", e);
   }
 }
 
@@ -200,7 +201,7 @@ async function persist() {
     });
   } catch (e) {
     log.error("workspace", "failed to persist workspaces", e);
-    console.error("Failed to persist workspaces:", e);
+    reportStorageFailure("workspaces", "save", e);
   }
 }
 

@@ -33,6 +33,7 @@ import {
   type Workspace,
 } from "../stores/workspace";
 import { exists, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { toasts } from "../stores/toast";
 
 describe("workspace store", () => {
   beforeEach(() => {
@@ -413,6 +414,19 @@ describe("workspace store", () => {
       vi.mocked(readTextFile).mockResolvedValue("not json");
       await loadWorkspaces();
       expect(get(workspaces)).toEqual([]);
+    });
+  });
+
+  describe("storage failures", () => {
+    it("tells the user once when workspaces cannot be saved", async () => {
+      toasts.set([]);
+      vi.mocked(writeTextFile)
+        .mockRejectedValueOnce(new Error("denied"))
+        .mockRejectedValueOnce(new Error("denied"));
+      await addWorkspace("/a");
+      await addWorkspace("/b");
+      expect(get(toasts)).toHaveLength(1);
+      expect(get(toasts)[0].title).toMatch(/save/i);
     });
   });
 

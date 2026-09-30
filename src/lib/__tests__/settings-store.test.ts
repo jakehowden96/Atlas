@@ -54,6 +54,7 @@ import { tabs } from "../stores/terminal";
 import { themeMode } from "../theme";
 import { workspaces } from "../stores/workspace";
 import { exists, readTextFile, writeTextFile, mkdir } from "@tauri-apps/plugin-fs";
+import { toasts } from "../stores/toast";
 import { startOmpTail, startSessionTail, stopSessionTail } from "../ipc";
 
 /** The persisted object the last `writeTextFile` call wrote. */
@@ -103,6 +104,14 @@ describe("settings store", () => {
       vi.mocked(exists).mockResolvedValue(false);
       await loadSettings();
       expect(get(enableNotifications)).toBe(true);
+    });
+
+    it("tells the user when the settings file cannot be read", async () => {
+      toasts.set([]);
+      vi.mocked(exists).mockResolvedValue(true);
+      vi.mocked(readTextFile).mockResolvedValue("{not valid json");
+      await loadSettings();
+      expect(get(toasts).map((t) => t.title)).toEqual(["Could not read your settings"]);
     });
 
     it("handles corrupted JSON gracefully", async () => {
