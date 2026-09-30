@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { UnlistenFn } from "@tauri-apps/api/event";
-  import { onDestroy, onMount } from "svelte";
   import { get } from "svelte/store";
   import {
     buildDocTree,
@@ -22,6 +21,7 @@
     docEntries,
     expanded,
     fileWs,
+    handleExternalChange,
     loadDocs,
     loadPlans,
     loadSourceFiles,
@@ -142,16 +142,27 @@
   });
 
   // An edit made outside Atlas arrives here; re-listing is cheap and keeps the
-  // tree correct for creations and deletions as well as edits.
-  let unlistenDocs: UnlistenFn | null = null;
-  onMount(async () => {
-    unlistenDocs = await onDocsChanged((workspacePath) => {
-      if (workspacePath === get(fileWs)) void loadDocs(workspacePath);
-    });
-  });
-  onDestroy(() => {
-    unlistenDocs?.();
-    unlistenDocs = null;
+  // tree correct for creations and deletions as well as edits. An open tab for
+  // the changed file is reloaded or flagged as conflicting. `onDocsChanged`
+  // resolves asynchronously, so a view torn down before it does must unlisten
+  // the moment the handle arrives.
+  $effect(() => {
+    let stopped = false;
+    let unlisten: UnlistenFn | null = null;
+    onDocsChanged((workspacePath, relPath) => {
+      if (workspacePath !== get(fileWs)) return;
+      void loadDocs(workspacePath);
+      void handleExternalChange(workspacePath, relPath);
+    })
+      .then((fn) => {
+        if (stopped) fn();
+        else unlisten = fn;
+      })
+      .catch((e) => log.warn("files", `could not listen for doc changes: ${e}`));
+    return () => {
+      stopped = true;
+      unlisten?.();
+    };
   });
 </script>
 

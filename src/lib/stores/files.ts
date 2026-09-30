@@ -1,4 +1,4 @@
-import { derived, get, writable } from "svelte/store";
+import { derived, get, writable, type Writable } from "svelte/store";
 import type { DirEntry, DocEntry, PlanEntry } from "../../types/files";
 import {
   absolutePath,
@@ -60,6 +60,8 @@ export const plans = writable<PlanEntry[]>([]);
 export const dirtyFiles = derived(docs, ($docs) => new Set($docs.keys()));
 /** Keys whose file failed to load. They open read-only and cannot be saved. */
 export const unreadable = writable<Set<string>>(new Set());
+/** Keys with unsaved edits whose file changed on disk underneath them. */
+export const conflicts = writable<Set<string>>(new Set());
 
 /** Refresh the workspace listing. A workspace that cannot be walked lists as
  *  empty rather than throwing — the tree has nowhere to show an error. */
@@ -150,12 +152,8 @@ export function closeFile(key: string): void {
     next.delete(key);
     return next;
   });
-  unreadable.update((current) => {
-    if (!current.has(key)) return current;
-    const next = new Set(current);
-    next.delete(key);
-    return next;
-  });
+  setMember(unreadable, key, false);
+  setMember(conflicts, key, false);
   if (get(activeFile) === key) activeFile.set(next[at] ?? next[at - 1] ?? "");
 }
 
@@ -194,7 +192,7 @@ export async function loadFileText(key: string): Promise<void> {
   } catch (e) {
     log.error("files", `read failed for ${key}`, e);
     showToast("Could not open that file", { body: String(e) });
-    unreadable.update((current) => new Set(current).add(key));
+    setMember(unreadable, key, true);
     setDiskDoc(key, "");
   }
 }
@@ -205,6 +203,13 @@ export async function saveActiveFile(): Promise<void> {
   const key = get(activeFile);
   const text = get(docs).get(key);
   if (!key || text === undefined || get(unreadable).has(key)) return;
+  if (get(conflicts).has(key)) {
+    showToast("File changed on disk", {
+      body: "Reload it or keep your version before saving.",
+      type: "warning",
+    });
+    return;
+  }
   const { source, path } = parseFileKey(key);
   // The editor hands back LF whatever the file used, so the file's own endings
   // are restored from the text it was read with.
@@ -222,6 +227,61 @@ export async function saveActiveFile(): Promise<void> {
     log.error("files", `save failed for ${key}`, e);
     showToast("Could not save", { body: String(e) });
   }
+}
+
+/** Add or remove `key` in a set store, leaving the set alone if nothing changes. */
+function setMember(store: Writable<Set<string>>, key: string, present: boolean) {
+  store.update((current) => {
+    if (current.has(key) === present) return current;
+    const next = new Set(current);
+    if (present) next.add(key);
+    else next.delete(key);
+    return next;
+  });
+}
+
+/**
+ * A file under the watched workspace changed on disk. Nothing happens unless it
+ * is open here. A clean tab is re-read so it shows what is on disk; a tab with
+ * unsaved edits is flagged in `conflicts` instead, so the user's typing is never
+ * replaced silently. Our own saves echo through here too, and are recognised by
+ * the disk text already matching what was last written.
+ */
+export async function handleExternalChange(workspacePath: string, relPath: string): Promise<void> {
+  const key = fileKey(workspacePath, relPath);
+  if (!get(openFiles).includes(key) || get(unreadable).has(key)) return;
+  const known = get(diskDocs).get(key);
+  if (known === undefined) return;
+  let latest: string;
+  try {
+    latest = await readTextFileAt(absolutePath(workspacePath, relPath));
+  } catch (e) {
+    // Deleted or unreadable now: keep what the editor has rather than blanking it.
+    log.warn("files", `re-read failed for ${key}: ${e}`);
+    return;
+  }
+  if (latest === known) return;
+  if (get(docs).has(key)) setMember(conflicts, key, true);
+  else setDiskDoc(key, latest);
+}
+
+/** Conflict resolution: discard the unsaved edit and show what is on disk now. */
+export async function reloadFromDisk(key: string): Promise<void> {
+  const { source, path } = parseFileKey(key);
+  try {
+    setDiskDoc(key, await readTextFileAt(absolutePath(source, path)));
+  } catch (e) {
+    log.error("files", `reload failed for ${key}`, e);
+    showToast("Could not reload that file", { body: String(e) });
+    return;
+  }
+  dropDoc(key);
+  setMember(conflicts, key, false);
+}
+
+/** Conflict resolution: keep the unsaved edit, so the next save overwrites the disk. */
+export function keepMine(key: string): void {
+  setMember(conflicts, key, false);
 }
 
 export function toggleExpanded(key: string): void {

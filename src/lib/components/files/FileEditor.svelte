@@ -17,6 +17,7 @@
   import {
     activeFile,
     closeFile,
+    conflicts,
     dirtyFiles,
     diskDocs,
     docEntries,
@@ -28,6 +29,8 @@
     openFiles,
     outlineJump,
     plans,
+    keepMine,
+    reloadFromDisk,
     saveActiveFile,
     setDoc,
     unreadable,
@@ -42,6 +45,7 @@
   let text = $derived($docs.get(key) ?? $diskDocs.get(key) ?? "");
   let dirty = $derived($dirtyFiles.has(key));
   let unreadableFile = $derived($unreadable.has(key));
+  let conflicted = $derived($conflicts.has(key));
   let markdown = $derived(/\.(md|markdown)$/i.test(file.path));
   /** Preview is markdown-only, so a `.txt` always shows its source. */
   let mode = $derived(markdown ? $fileMode : "source");
@@ -234,6 +238,14 @@
         </svg>
       </button>
     </div>
+
+    {#if conflicted}
+      <div class="conflict" role="alert">
+        <span>This file changed on disk while you had unsaved edits.</span>
+        <button type="button" onclick={() => void reloadFromDisk(key)}>Reload from disk</button>
+        <button type="button" onclick={() => keepMine(key)}>Keep mine</button>
+      </div>
+    {/if}
 
     <div class="body">
       {#if mode !== "preview"}
@@ -442,6 +454,25 @@
     font-family: var(--font-mono);
     font-size: var(--fs-2xs);
     opacity: 0.7;
+  }
+
+  .conflict {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--warn);
+    font-size: var(--fs-xs);
+  }
+
+  .conflict button {
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    color: var(--text);
+    cursor: pointer;
   }
 
   /* ── Body ──────────────────────────────────────────────────────────────── */
