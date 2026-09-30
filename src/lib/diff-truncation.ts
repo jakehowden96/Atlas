@@ -1,4 +1,4 @@
-import type { DiffData } from "../types/panel";
+import type { DiffData, PanelData } from "../types/panel";
 import { formatBytes } from "./format";
 
 const encoder = new TextEncoder();
@@ -35,4 +35,16 @@ export function truncationNotice(diff: DiffData | null | undefined, view: BaseVi
 
 function describe(shownFiles: number, totalFiles: number, shownBytes: number): string {
   return `diff truncated - ${shownFiles} of ${totalFiles} files (${formatBytes(shownBytes)} shown)`;
+}
+
+/**
+ * What the Changes drawer says when there are no files to show. "Working tree
+ * clean" would be a lie on a machine with no git, where nothing was checked.
+ */
+export function emptyDiffMessage(panel: PanelData | null, isMac: boolean): string {
+  if (panel?.issue === "git_not_found") {
+    const install = isMac ? "xcode-select --install" : "winget install --id Git.Git";
+    return `git was not found on PATH. Install it (${install}), then reopen this panel.`;
+  }
+  return "Working tree clean";
 }

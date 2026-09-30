@@ -39,7 +39,12 @@ export interface PanelData {
   cwd: string;
   /** `null` when the tree is clean or the directory holds no repo. */
   diff: DiffData | null;
+  /** Why there is nothing to show when it is not simply a clean tree. */
+  issue?: PanelIssue;
 }
+
+/** No `git` on PATH, so no directory can be diffed. */
+export type PanelIssue = "git_not_found";
 
 export interface GitStatus {
   has_unstaged: boolean;

@@ -1,8 +1,8 @@
 use super::diff::{count_diff_stats, discover_diff, fit_to_budget, MAX_PANEL_DIFF_SIZE};
-use super::git::{git_cmd, should_skip_dir};
+use super::git::{git_cmd, should_skip_dir, GIT_NOT_FOUND};
 use super::validate::{validate_cwd, validate_session_id};
 use crate::atomic_write::write_atomic;
-use crate::panel::types::{sessions_dir, DiffData, PanelData, ProjectDiff};
+use crate::panel::types::{sessions_dir, DiffData, PanelData, PanelIssue, ProjectDiff};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::{Arc, Mutex};
@@ -65,18 +65,28 @@ pub async fn refresh_panel(session_id: String, cwd: String) -> Result<Option<Pan
     let cwd_clone = cwd.clone();
     let path_clone = panel_path.clone();
     tokio::task::spawn_blocking(move || {
-        if let Ok(git_root) = git_cmd(&cwd_clone, &["rev-parse", "--show-toplevel"]) {
-            if !git_root.is_empty() {
+        match git_cmd(&cwd_clone, &["rev-parse", "--show-toplevel"]) {
+            Ok(git_root) if !git_root.is_empty() => {
                 build_panel_single(&sid_clone, &git_root, &path_clone)
-            } else {
-                build_panel_multi(&sid_clone, &cwd_clone, &path_clone)
             }
-        } else {
-            build_panel_multi(&sid_clone, &cwd_clone, &path_clone)
+            Err(e) if e == GIT_NOT_FOUND => Ok(Some(git_missing_panel(&cwd_clone))),
+            _ => build_panel_multi(&sid_clone, &cwd_clone, &path_clone),
         }
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// The panel for a machine with no git: nothing can be diffed, and the drawer
+/// says why. Not written to panel.json, so no stale file outlives the fix.
+fn git_missing_panel(cwd: &str) -> PanelData {
+    PanelData {
+        version: 1,
+        timestamp: now_iso8601(),
+        cwd: cwd.to_string(),
+        diff: None,
+        issue: Some(PanelIssue::GitNotFound),
+    }
 }
 
 /// Single repo: discover diff and build PanelData
@@ -96,6 +106,7 @@ fn build_panel_single(
             timestamp: now_iso8601(),
             cwd: git_root.to_string(),
             diff: None,
+            issue: None,
         };
         write_panel(session_id, &cleared, panel_path);
         return Ok(Some(cleared));
@@ -130,6 +141,7 @@ fn build_panel_single(
             }
             .sealed(),
         ),
+        issue: None,
     };
 
     write_panel(session_id, &data, panel_path);
@@ -214,6 +226,7 @@ fn build_panel_multi(
             timestamp: now_iso8601(),
             cwd: root.to_string(),
             diff: None,
+            issue: None,
         };
         write_panel(session_id, &cleared, panel_path);
         return Ok(Some(cleared));
@@ -237,6 +250,7 @@ fn build_panel_multi(
             }
             .sealed(),
         ),
+        issue: None,
     };
 
     write_panel(session_id, &data, panel_path);
@@ -352,6 +366,22 @@ mod tests {
     }
 
     #[test]
+    fn a_missing_git_reaches_the_webview_as_a_named_issue() {
+        let json = serde_json::to_value(git_missing_panel("/w")).unwrap();
+        assert_eq!(json["issue"], "git_not_found");
+        assert!(json["diff"].is_null());
+        // An ordinary panel carries no `issue` key at all.
+        let ordinary = PanelData {
+            issue: None,
+            ..git_missing_panel("/w")
+        };
+        assert!(serde_json::to_value(ordinary)
+            .unwrap()
+            .get("issue")
+            .is_none());
+    }
+
+    #[test]
     fn a_clean_tree_is_recorded_not_deleted() {
         let repo = init_repo();
         let dir = repo.path();
@@ -414,6 +444,7 @@ mod tests {
             timestamp: "2024-01-01T00:00:00Z".to_string(),
             cwd: "/w".to_string(),
             diff: None,
+            issue: None,
         };
         write_panel("atomic-write", &data, &panel);
         write_panel("atomic-write", &data, &panel);

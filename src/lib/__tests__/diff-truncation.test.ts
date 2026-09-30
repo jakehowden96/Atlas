@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { truncationNotice } from "../diff-truncation";
-import type { DiffData } from "../../types/panel";
+import { emptyDiffMessage, truncationNotice } from "../diff-truncation";
+import type { DiffData, PanelData } from "../../types/panel";
 
 const CUT = { shown_files: 2, total_files: 9, shown_bytes: 2048 };
 
@@ -62,5 +62,20 @@ describe("truncationNotice", () => {
       projects: [{ name: "api", raw: "abcd", files_changed: 1, lines_added: 0, lines_removed: 0 }],
     });
     expect(truncationNotice(multi, "main")).toBeNull();
+  });
+});
+
+describe("emptyDiffMessage", () => {
+  const base: PanelData = { version: 1, timestamp: "", cwd: "/w", diff: null };
+
+  it("calls a checked, unchanged tree clean", () => {
+    expect(emptyDiffMessage(base, true)).toBe("Working tree clean");
+    expect(emptyDiffMessage(null, true)).toBe("Working tree clean");
+  });
+
+  it("does not call a tree clean when git could not be run, and names the fix", () => {
+    const missing: PanelData = { ...base, issue: "git_not_found" };
+    expect(emptyDiffMessage(missing, true)).toContain("xcode-select --install");
+    expect(emptyDiffMessage(missing, false)).toContain("winget install --id Git.Git");
   });
 });

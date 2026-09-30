@@ -10,6 +10,20 @@ use std::process::{Command, Stdio};
 /// `GIT_OPTIONAL_LOCKS=0` stops read-only commands from opportunistically
 /// refreshing the index: Atlas polls constantly and would otherwise collide
 /// with Claude's or the user's own `git add`/`commit` on `.git/index.lock`.
+/// What a failed `git` spawn says when there is no git to spawn. The UI shows
+/// this text as is, so it carries the fix.
+pub(crate) const GIT_NOT_FOUND: &str = "git was not found on PATH. Install it (macOS: xcode-select --install, Windows: winget install --id Git.Git)";
+
+/// A failed `git` spawn as the message callers see: a missing binary is
+/// `GIT_NOT_FOUND`, not the OS's 'No such file or directory (os error 2)'.
+fn spawn_error(e: &std::io::Error) -> String {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        GIT_NOT_FOUND.to_string()
+    } else {
+        e.to_string()
+    }
+}
+
 fn git_command(cwd: &str, args: &[&str]) -> Command {
     let mut cmd = Command::new("git");
     cmd.args(["-C", cwd])
@@ -23,7 +37,9 @@ fn git_command(cwd: &str, args: &[&str]) -> Command {
 /// significant (a trailing blank context line, NUL separators), so callers
 /// that parse it must not go through the trimming `git_cmd`.
 pub(crate) fn git_raw(cwd: &str, args: &[&str]) -> Result<String, String> {
-    let output = git_command(cwd, args).output().map_err(|e| e.to_string())?;
+    let output = git_command(cwd, args)
+        .output()
+        .map_err(|e| spawn_error(&e))?;
 
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).to_string());
@@ -51,7 +67,7 @@ pub(crate) fn git_raw_capped(
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| spawn_error(&e))?;
     let Some(stdout) = child.stdout.take() else {
         let _ = child.kill();
         let _ = child.wait();
@@ -403,6 +419,14 @@ mod tests {
     }
 
     // --- git_cmd error handling ---
+
+    #[test]
+    fn a_missing_git_binary_has_its_own_message() {
+        let missing = std::io::Error::from(std::io::ErrorKind::NotFound);
+        assert_eq!(spawn_error(&missing), GIT_NOT_FOUND);
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        assert_ne!(spawn_error(&denied), GIT_NOT_FOUND);
+    }
 
     #[test]
     fn git_cmd_nonexistent_dir() {

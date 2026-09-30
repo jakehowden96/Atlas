@@ -9,10 +9,10 @@
     TOTAL_LINE_BUDGET,
     type FlatFile,
   } from "../../diff-view";
-  import { truncationNotice, type BaseView } from "../../diff-truncation";
+  import { emptyDiffMessage, truncationNotice, type BaseView } from "../../diff-truncation";
   import { refreshPanel } from "../../ipc";
   import { log } from "../../logger";
-  import { enterLabel } from "../../platform";
+  import { enterLabel, isMacPlatform } from "../../platform";
   import { submitReview } from "../../review/submitReview";
   import { panelData } from "../../stores/panel";
   import {
@@ -314,7 +314,7 @@
 
     <div class="body">
       {#if flatFiles.length === 0}
-        <div class="clean">Working tree clean</div>
+        <div class="clean">{emptyDiffMessage($panelData, isMacPlatform())}</div>
       {:else}
         <DiffFileTree
           {flatFiles}

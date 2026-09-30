@@ -8,6 +8,16 @@ pub struct PanelData {
     pub cwd: String,
     /// `null` when the tree is clean (or the directory holds no repo).
     pub diff: Option<DiffData>,
+    /// Why there is nothing to show, when it is not simply a clean tree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issue: Option<PanelIssue>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PanelIssue {
+    /// No `git` on PATH, so no directory can be diffed.
+    GitNotFound,
 }
 
 /// What a size cap left out of a diff.
