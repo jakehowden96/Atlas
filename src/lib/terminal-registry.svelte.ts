@@ -22,10 +22,12 @@ interface TerminalProps {
   tabId: string;
   visible: boolean;
   ready: boolean;
+  spawnError?: string;
   harnessLabel?: string;
   cwd?: string;
   onData?: (data: string) => void;
   onPtyReady: (ptyId: number) => void;
+  onSpawnError: (message: string) => void;
 }
 
 interface Entry {

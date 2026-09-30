@@ -2,7 +2,7 @@
   import { onDestroy, onMount } from "svelte";
   import { chords } from "../../stores/settings";
   import { getSessionDir } from "../../ipc";
-  import { tabs } from "../../stores/terminal";
+  import { setTabSpawnError, tabs } from "../../stores/terminal";
   import { showToast } from "../../stores/toast";
   import { activeView } from "../../stores/view";
   import {
@@ -74,10 +74,12 @@
         tabId: tab.id,
         visible: showing && tab.id === visibleTabId,
         ready: tab.ready !== false,
+        spawnError: tab.spawnError,
         harnessLabel: tab.harnessLabel,
         cwd: tab.cwd,
         onData: tab.onData,
         onPtyReady: (ptyId: number) => handlePtyReady(tab.id, ptyId),
+        onSpawnError: (message: string) => setTabSpawnError(tab.id, message),
       });
     }
     for (const id of liveTabIds) {

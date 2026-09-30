@@ -50,8 +50,8 @@ export function removeTab(id: string) {
 }
 
 /**
- * Resolve once the tab has a live PTY, or `null` if it is closed first or the
- * wait runs out.
+ * Resolve once the tab has a live PTY, or `null` if it is closed first, its
+ * spawn failed, or the wait runs out.
  *
  * The pty id arrives from the other side of the component tree —
  * `TerminalSession` spawns the PTY and `TerminalContainer` writes the id back
@@ -79,6 +79,7 @@ export function awaitTabPty(id: string, timeoutMs = 10_000): Promise<TabItem | n
     unsubscribe = tabs.subscribe((list) => {
       const tab = list.find((t) => t.id === id);
       if (!tab) return settle(null);
+      if (tab.spawnError) return settle(null);
       if (tab.ptyId >= 0) settle(tab);
     });
     if (settled) unsubscribe();
@@ -95,6 +96,10 @@ export function setTabTitle(id: string, title: string) {
       tabs.update((t) => t.map((tab) => (tab.id === id ? { ...tab, title } : tab)));
     }, 100),
   );
+}
+
+export function setTabSpawnError(id: string, spawnError: string) {
+  tabs.update((t) => t.map((tab) => (tab.id === id ? { ...tab, spawnError } : tab)));
 }
 
 export function setTabReady(id: string) {

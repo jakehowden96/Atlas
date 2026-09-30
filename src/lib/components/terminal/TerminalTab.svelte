@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { closeSessionForTab } from "../../session-actions";
   import { TerminalSession } from "../../terminal-session";
   import "@xterm/xterm/css/xterm.css";
 
@@ -7,9 +8,12 @@
     tabId: string;
     visible: boolean;
     ready?: boolean;
+    /** Set once the PTY failed to spawn; replaces the loading overlay. */
+    spawnError?: string;
     /** Names the harness in the loading overlay. */
     harnessLabel?: string;
     onPtyReady: (ptyId: number) => void;
+    onSpawnError: (message: string) => void;
     cwd?: string;
     onData?: (data: string) => void;
   }
@@ -18,8 +22,10 @@
     tabId,
     visible,
     ready = true,
+    spawnError,
     harnessLabel = "session",
     onPtyReady,
+    onSpawnError,
     cwd,
     onData,
   }: Props = $props();
@@ -33,6 +39,7 @@
       container: containerEl,
       visible,
       onPtyReady,
+      onSpawnError,
       cwd,
       onData,
     });
@@ -55,7 +62,15 @@
   });
 </script>
 
-{#if !ready}
+{#if spawnError}
+  <div class="loading-overlay" role="alert">
+    <span class="loading-text">Could not start the terminal.</span>
+    <span class="error-detail">{spawnError}</span>
+    <button type="button" class="close-session" onclick={() => void closeSessionForTab(tabId)}>
+      Close session
+    </button>
+  </div>
+{:else if !ready}
   <div class="loading-overlay">
     <span class="material-symbols-outlined loading-spinner">progress_activity</span>
     <span class="loading-text">Starting {harnessLabel}...</span>
@@ -109,6 +124,26 @@
     color: var(--muted);
     font-family: var(--font-ui);
     font-size: var(--fs-sm);
+  }
+
+  .error-detail {
+    max-width: 32rem;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+
+  .close-session {
+    padding: 0.35rem 0.9rem;
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    background: var(--surface2);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: var(--fs-sm);
+    cursor: pointer;
   }
 
   @keyframes spin {

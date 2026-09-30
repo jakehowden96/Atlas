@@ -30,6 +30,8 @@ export interface TerminalSessionOptions {
   onPtyReady: (ptyId: number) => void;
   cwd?: string;
   onData?: (data: string) => void;
+  /** The PTY could not be spawned; the tab has nothing to wait on. */
+  onSpawnError: (message: string) => void;
 }
 
 /** How long a terminal waits for its container to be laid out before spawning
@@ -49,6 +51,11 @@ export class TerminalSession {
   private _visible: boolean;
   private initialCwd?: string;
   private externalOnData?: (data: string) => void;
+  private onSpawnError: (message: string) => void;
+  /** Set by `destroy()`. Every callback that can fire later — a pending spawn,
+   *  PTY output, timers — checks it before touching the disposed xterm. */
+  private destroyed = false;
+  private ptyWriteFailureShown = false;
   private unsubscribeTheme: (() => void) | null = null;
   private unsubscribeFontSize: (() => void) | null = null;
   private prefersDark: MediaQueryList | null = null;
@@ -89,7 +96,7 @@ export class TerminalSession {
       mouseup, which fires after this one bubbles through the container. */
   private copySelection = () => {
     setTimeout(() => {
-      if (!this.terminal.hasSelection()) return;
+      if (this.destroyed || !this.terminal.hasSelection()) return;
       writeText(this.terminal.getSelection()).catch((e) =>
         log.warn("terminal", `copy-on-select failed: ${e}`),
       );
@@ -118,7 +125,9 @@ export class TerminalSession {
     if (!this.hasSize()) return;
     this.fitAddon.fit();
     if (this.ptyId !== null) {
-      ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows);
+      ptyResize(this.ptyId, this.terminal.cols, this.terminal.rows).catch((e) =>
+        log.warn("terminal", `ptyResize failed for tab=${this.tabId}: ${e}`),
+      );
     }
   }
 
@@ -128,6 +137,7 @@ export class TerminalSession {
     this._visible = opts.visible;
     this.initialCwd = opts.cwd;
     this.externalOnData = opts.onData;
+    this.onSpawnError = opts.onSpawnError;
 
     this.terminal = new Terminal({
       cursorBlink: true,
@@ -457,11 +467,14 @@ export class TerminalSession {
 
   private async spawnPty(onPtyReady: (ptyId: number) => void) {
     log.info("terminal", `spawnPty tab=${this.tabId} cwd=${this.initialCwd ?? "default"}`);
+    let ptyId: number;
     try {
-      this.ptyId = await ptySpawn(
+      ptyId = await ptySpawn(
         this.terminal.cols,
         this.terminal.rows,
         (data) => {
+          // Output can trail the kill; the xterm it would land in is gone.
+          if (this.destroyed) return;
           this.terminal.write(data);
           if (this.externalOnData) {
             const decoder = new TextDecoder();
@@ -471,34 +484,48 @@ export class TerminalSession {
         this.initialCwd ?? undefined,
         { ATLAS_SESSION_ID: this.tabId },
       );
-      log.info("terminal", `spawnPty success: ptyId=${this.ptyId}`);
-      onPtyReady(this.ptyId);
-      // Seed cwd from the spawn arg so the diff panel populates without
-      // waiting for OSC 7 (not all shells emit it). OSC 7 will still
-      // overwrite this when the user `cd`s.
-      if (this.initialCwd && !this.currentCwd) {
-        this.currentCwd = this.initialCwd;
-        this.scheduleRefresh(this.initialCwd);
-      }
     } catch (e) {
       log.error("terminal", `spawnPty failed for tab=${this.tabId}`, e);
+      if (this.destroyed) return;
       showToast("Failed to spawn terminal", { body: String(e) });
+      this.onSpawnError(String(e));
       return;
     }
 
+    // The tab was closed while the spawn was in flight: nothing owns this
+    // shell any more, so it would live until the app quits.
+    if (this.destroyed) {
+      this.killPty(ptyId);
+      return;
+    }
+
+    this.ptyId = ptyId;
+    log.info("terminal", `spawnPty success: ptyId=${ptyId}`);
+    onPtyReady(ptyId);
+    // Seed cwd from the spawn arg so the diff panel populates without
+    // waiting for OSC 7 (not all shells emit it). OSC 7 will still
+    // overwrite this when the user `cd`s.
+    if (this.initialCwd && !this.currentCwd) {
+      this.currentCwd = this.initialCwd;
+      this.scheduleRefresh(this.initialCwd);
+    }
+
     this.terminal.onData((data) => {
-      if (this.ptyId !== null) {
-        ptyWrite(this.ptyId, data);
-      }
+      this.writeToPty(data);
       setTabNeedsInput(this.tabId, false);
     });
   }
 
-  /** Write a string to the PTY (e.g. to run a command). */
-  async writeCommand(cmd: string) {
-    if (this.ptyId !== null) {
-      await ptyWrite(this.ptyId, cmd);
-    }
+  /** Send keystrokes to the shell. A dead PTY rejects every write, so the
+   *  first failure is toasted and the rest only logged. */
+  private writeToPty(data: string) {
+    if (this.ptyId === null) return;
+    ptyWrite(this.ptyId, data).catch((e) => {
+      log.warn("terminal", `ptyWrite failed for tab=${this.tabId}: ${e}`);
+      if (this.ptyWriteFailureShown) return;
+      this.ptyWriteFailureShown = true;
+      showToast("Terminal is no longer running", { body: String(e) });
+    });
   }
 
   private setupEnterRefresh() {
@@ -506,7 +533,7 @@ export class TerminalSession {
     this.terminal.onData((data) => {
       if (data === "\r" && this.currentCwd) {
         setTimeout(() => {
-          if (this.currentCwd) this.scheduleRefresh(this.currentCwd);
+          if (!this.destroyed && this.currentCwd) this.scheduleRefresh(this.currentCwd);
         }, 1000);
       }
     });
@@ -611,8 +638,9 @@ export class TerminalSession {
 
   destroy() {
     log.info("terminal", `destroy tab=${this.tabId} ptyId=${this.ptyId}`);
+    this.destroyed = true;
     this.resizeObserver?.disconnect();
-    if (this.spawnFallback) clearTimeout(this.spawnFallback);
+    clearTimeout(this.spawnFallback ?? undefined);
     if (this.screenFrame !== null) cancelAnimationFrame(this.screenFrame);
     this.tints = [];
     this.unsubscribeTheme?.();
@@ -620,10 +648,14 @@ export class TerminalSession {
     this.prefersDark?.removeEventListener("change", this.applyXtermTheme);
     this.container.removeEventListener("mouseup", this.copySelection);
     this.stopPolling();
-    if (this.refreshTimer) clearTimeout(this.refreshTimer);
-    if (this.ptyId !== null) {
-      ptyKill(this.ptyId, this.tabId);
-    }
+    clearTimeout(this.refreshTimer ?? undefined);
+    if (this.ptyId !== null) this.killPty(this.ptyId);
     this.terminal?.dispose();
+  }
+
+  private killPty(ptyId: number) {
+    ptyKill(ptyId, this.tabId).catch((e) =>
+      log.warn("terminal", `ptyKill failed for tab=${this.tabId}: ${e}`),
+    );
   }
 }

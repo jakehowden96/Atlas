@@ -146,7 +146,17 @@ export async function spawnHarnessSession(
   // The PTY is spawned by the TerminalSession this tab mounts, so its id lands
   // on the tab a moment later; wait for it rather than for a clock.
   void awaitTabPty(tabId).then((tab) => {
-    if (!tab) return;
+    if (!tab) {
+      // Closed while waiting, or the shell never came up: the second case
+      // leaves a tab on "Starting…" (or its error card) and a row that would
+      // otherwise read `starting` forever.
+      const stuck = get(tabs).find((t) => t.id === tabId);
+      if (stuck) {
+        updateSessionStatus(session.id, "error");
+        if (!stuck.spawnError) showToast("Terminal failed to start", { type: "error" });
+      }
+      return;
+    }
 
     // Terminal: nothing to type, and nothing shaped like a TUI to wait on —
     // no 300ms delay for a shell prompt, no 5s alt-screen fallback.
@@ -163,12 +173,19 @@ export async function spawnHarnessSession(
        it. `submitReview.ts` already writes "\r" for the same reason. */
     const cmd = `${harness.command}${args.length > 0 ? ` ${args.join(" ")}` : ""}\r`;
     // Small delay to let the shell prompt render.
-    setTimeout(() => {
+    setTimeout(async () => {
       // Re-check: the tab may have been closed during the delay,
       // in which case its PTY is dead and the write must be skipped.
       const current = get(tabs).find((t) => t.id === tabId);
       if (!current || current.ptyId < 0) return;
-      ptyWrite(current.ptyId, cmd);
+      try {
+        await ptyWrite(current.ptyId, cmd);
+      } catch (e) {
+        log.error("session", `launch command write failed for tab ${tabId}`, e);
+        showToast(`Could not start ${harness.label}`, { body: String(e) });
+        updateSessionStatus(session.id, "error");
+        return;
+      }
       updateSessionStatus(session.id, "running");
       // Tail the session's own transcript for structured live state — which
       // command depends on the harness, and a bare Terminal has none at all —
@@ -258,7 +275,12 @@ export function openSession(workspacePath: string, sessionId: string) {
       existingSessionId: session.id,
       resumeSessionId: session.claudeSessionId ?? undefined,
       harnessId: session.harnessId ?? "claude-code",
-    }).finally(() => spawningSessionIds.delete(session.id));
+    })
+      .catch((e) => {
+        log.error("session", `openSession failed for ${session.id}`, e);
+        showToast("Could not open the session", { body: String(e) });
+      })
+      .finally(() => spawningSessionIds.delete(session.id));
   }
 }
 
@@ -281,6 +303,16 @@ export async function closeSession(sessionId: string) {
   // the store, and the gate then silently skips the return to Sessions.
   focusedSessionId.set("");
   showView("sessions");
+}
+
+/** `closeSession` for a tab that only knows its own id — the error card a
+ *  failed spawn leaves behind. A tab no session row owns is just dropped. */
+export async function closeSessionForTab(tabId: string) {
+  const session = get(workspaces)
+    .flatMap((w) => w.sessions)
+    .find((s) => s.terminalTabId === tabId);
+  if (session) await closeSession(session.id);
+  else await closeSessionTab(tabId);
 }
 
 /**
