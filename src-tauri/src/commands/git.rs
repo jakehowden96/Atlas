@@ -1,19 +1,78 @@
+use super::proc::no_window;
 use super::prs::validate_repo_slug;
 use super::validate::{validate_branch_name, validate_cwd};
 use crate::panel::types::GitStatus;
-use std::process::Command;
+use std::io::Read;
+use std::process::{Command, Stdio};
 
-pub(crate) fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("git")
-        .args([&["-C", cwd], args].concat())
-        .output()
-        .map_err(|e| e.to_string())?;
+/// A `git -C <cwd> <args>` command.
+///
+/// `GIT_OPTIONAL_LOCKS=0` stops read-only commands from opportunistically
+/// refreshing the index: Atlas polls constantly and would otherwise collide
+/// with Claude's or the user's own `git add`/`commit` on `.git/index.lock`.
+fn git_command(cwd: &str, args: &[&str]) -> Command {
+    let mut cmd = Command::new("git");
+    cmd.args(["-C", cwd])
+        .args(args)
+        .env("GIT_OPTIONAL_LOCKS", "0");
+    no_window(&mut cmd);
+    cmd
+}
+
+/// Run git and return stdout verbatim. Diff and `-z` output is whitespace
+/// significant (a trailing blank context line, NUL separators), so callers
+/// that parse it must not go through the trimming `git_cmd`.
+pub(crate) fn git_raw(cwd: &str, args: &[&str]) -> Result<String, String> {
+    let output = git_command(cwd, args).output().map_err(|e| e.to_string())?;
 
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).to_string());
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Run git and return stdout trimmed, for commands that print a single token.
+pub(crate) fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
+    git_raw(cwd, args).map(|s| s.trim().to_string())
+}
+
+/// Like `git_raw`, but reads at most `cap` bytes of stdout and then kills the
+/// child. A regenerated lockfile or vendored directory can produce hundreds of
+/// MB of diff; the caller truncates to a couple of MB anyway, so there is no
+/// reason to buffer the rest. Returns the bytes read and whether output was cut.
+pub(crate) fn git_raw_capped(
+    cwd: &str,
+    args: &[&str],
+    cap: usize,
+) -> Result<(String, bool), String> {
+    let mut child = git_command(cwd, args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    let Some(stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("git stdout was not captured".to_string());
+    };
+
+    let mut buf = Vec::new();
+    let read = stdout.take(cap as u64 + 1).read_to_end(&mut buf);
+    let truncated = buf.len() > cap;
+    if truncated {
+        buf.truncate(cap);
+        // Closing the pipe would only stop git on its next write; kill it now.
+        let _ = child.kill();
+    }
+    let status = child.wait().map_err(|e| e.to_string())?;
+    read.map_err(|e| e.to_string())?;
+
+    if !truncated && !status.success() {
+        return Err(format!("git exited with {status}"));
+    }
+    Ok((String::from_utf8_lossy(&buf).into_owned(), truncated))
 }
 
 /// Check whether a directory should be skipped during repo scanning.
@@ -80,8 +139,18 @@ pub async fn get_git_status(cwd: String) -> Result<GitStatus, String> {
 pub(crate) fn parse_remote_slug(url: &str) -> Option<String> {
     let url = url.trim();
     let path = match url.split_once("://") {
-        // scheme://[user@]host[:port]/owner/repo
-        Some((_, rest)) => rest.split_once('/')?.1,
+        // scheme://[user@]host[:port]/owner/repo. `file://` remotes and empty
+        // authorities are local paths, not hosted repos.
+        Some((scheme, rest)) => {
+            if scheme.eq_ignore_ascii_case("file") {
+                return None;
+            }
+            let (authority, path) = rest.split_once('/')?;
+            if authority.is_empty() {
+                return None;
+            }
+            path
+        }
         None => {
             // scp-like [user@]host:owner/repo. `C:/repos/foo` also splits on a
             // colon, so require a dotted hostname to tell the two apart.
@@ -153,7 +222,8 @@ pub async fn list_workspace_repos(workspace_path: String) -> Result<Vec<Workspac
         };
         let mut repos: Vec<WorkspaceRepo> = Vec::new();
         for entry in read_dir.flatten() {
-            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            // `Path::is_dir` follows symlinks: a symlinked checkout is a real repo.
+            if !entry.path().is_dir() {
                 continue;
             }
             let path = entry.path();
@@ -172,14 +242,63 @@ pub async fn list_workspace_repos(workspace_path: String) -> Result<Vec<Workspac
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
-/// Checkout an existing local branch.
+/// Check out an existing local branch.
+///
+/// `validate_branch_name` only screens the spelling; git would still accept a
+/// remote-only name (DWIM creates a tracking branch), `@{-1}`, a SHA or `HEAD`.
+/// Requiring `refs/heads/<branch>` to exist and passing `--no-guess` and a
+/// trailing `--` pins the meaning to "that local branch", even when a worktree
+/// file shares its name.
+fn checkout_local_branch(cwd: &str, branch: &str) -> Result<(), String> {
+    let full_ref = format!("refs/heads/{branch}");
+    git_cmd(cwd, &["rev-parse", "--verify", "--quiet", &full_ref])
+        .map_err(|_| format!("No local branch named '{branch}'"))?;
+    git_cmd(cwd, &["checkout", "--no-guess", branch, "--"]).map(|_| ())
+}
+
 #[tauri::command(async)]
 pub async fn git_checkout_branch(cwd: String, branch: String) -> Result<(), String> {
     validate_cwd(&cwd)?;
     validate_branch_name(&branch)?;
-    tokio::task::spawn_blocking(move || git_cmd(&cwd, &["checkout", &branch]).map(|_| ()))
+    tokio::task::spawn_blocking(move || checkout_local_branch(&cwd, &branch))
         .await
         .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// Real-repo fixtures shared by the git, diff and panel tests.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::path::Path;
+
+    /// Run git in `dir` with a fixed identity, panicking on failure.
+    pub fn git(dir: &Path, args: &[&str]) {
+        let status = std::process::Command::new("git")
+            .args([
+                "-c",
+                "user.name=Atlas Test",
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "commit.gpgsign=false",
+            ])
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?} failed");
+    }
+
+    pub fn init_repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        git(dir.path(), &["init", "-q", "-b", "main"]);
+        dir
+    }
+
+    pub fn commit_all(dir: &Path, message: &str) {
+        git(dir, &["add", "-A"]);
+        git(dir, &["commit", "-q", "-m", message]);
+    }
 }
 
 #[cfg(test)]
@@ -275,11 +394,99 @@ mod tests {
         assert_eq!(parse_remote_slug("https://github.com/own er/repo"), None);
     }
 
+    #[test]
+    fn slug_rejects_file_urls_and_empty_authority() {
+        assert_eq!(parse_remote_slug("file:///home/me/proj/repo.git"), None);
+        assert_eq!(parse_remote_slug("https:///owner/repo"), None);
+    }
+
     // --- git_cmd error handling ---
 
     #[test]
     fn git_cmd_nonexistent_dir() {
         let result = git_cmd("/nonexistent/path/that/should/not/exist", &["status"]);
         assert!(result.is_err());
+    }
+
+    // --- against real repos ---
+
+    use super::test_support::{commit_all, git, init_repo};
+
+    #[test]
+    fn checkout_targets_the_local_branch_not_a_same_named_file() {
+        let repo = init_repo();
+        let dir = repo.path();
+        std::fs::write(
+            dir.join("feature"),
+            "a file that shares the branch's name\n",
+        )
+        .unwrap();
+        commit_all(dir, "init");
+        git(dir, &["branch", "feature"]);
+
+        checkout_local_branch(dir.to_str().unwrap(), "feature").unwrap();
+
+        let head = git_cmd(
+            dir.to_str().unwrap(),
+            &["rev-parse", "--abbrev-ref", "HEAD"],
+        )
+        .unwrap();
+        assert_eq!(head, "feature");
+    }
+
+    #[test]
+    fn checkout_refuses_anything_but_an_existing_local_branch() {
+        let repo = init_repo();
+        let dir = repo.path();
+        std::fs::write(dir.join("a.txt"), "a\n").unwrap();
+        commit_all(dir, "init");
+        let cwd = dir.to_str().unwrap();
+        let sha = git_cmd(cwd, &["rev-parse", "HEAD"]).unwrap();
+
+        for spelling in ["HEAD", "@{-1}", sha.as_str(), "nonexistent"] {
+            assert!(
+                checkout_local_branch(cwd, spelling).is_err(),
+                "{spelling} must not be treated as a local branch"
+            );
+        }
+    }
+
+    #[test]
+    fn capped_git_output_stops_at_the_cap() {
+        let repo = init_repo();
+        let dir = repo.path();
+        let cwd = dir.to_str().unwrap();
+        std::fs::write(dir.join("big.txt"), "old\n".repeat(50_000)).unwrap();
+        commit_all(dir, "init");
+        std::fs::write(dir.join("big.txt"), "new\n".repeat(50_000)).unwrap();
+
+        let (out, truncated) = git_raw_capped(cwd, &["diff"], 1000).unwrap();
+        assert!(truncated);
+        assert_eq!(out.len(), 1000);
+
+        let (small, truncated) = git_raw_capped(cwd, &["rev-parse", "HEAD"], 1000).unwrap();
+        assert!(!truncated);
+        assert_eq!(small.trim().len(), 40);
+    }
+
+    #[test]
+    fn capped_git_output_reports_failure() {
+        let repo = init_repo();
+        let cwd = repo.path().to_str().unwrap();
+        assert!(git_raw_capped(cwd, &["rev-parse", "no-such-ref"], 1000).is_err());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn workspace_scan_finds_a_symlinked_checkout() {
+        let real = init_repo();
+        let workspace = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(real.path(), workspace.path().join("linked")).unwrap();
+
+        let repos = list_workspace_repos(workspace.path().to_string_lossy().to_string())
+            .await
+            .unwrap();
+        assert_eq!(repos.len(), 1);
+        assert!(repos[0].path.ends_with("linked"));
     }
 }
