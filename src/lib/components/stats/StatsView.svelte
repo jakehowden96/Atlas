@@ -31,7 +31,7 @@
     WEEK_COUNT,
     type Range,
   } from "../../stats-derive";
-  import { statsLoading, statsSummary } from "../../stores/stats";
+  import { reloadStats, statsError, statsLoading, statsSummary } from "../../stores/stats";
   import { openNewSession } from "../../stores/view";
   import { visibleWorkspaces } from "../../stores/workspace";
   import Sparkline from "../ui/Sparkline.svelte";
@@ -205,6 +205,11 @@
 
   {#if loading && !summary}
     <div class="empty-page">Scanning transcripts…</div>
+  {:else if !summary && $statsError}
+    <div class="empty-page">
+      Could not read stats: {$statsError}
+      <button type="button" onclick={() => void reloadStats()}>Retry</button>
+    </div>
   {:else if !summary}
     <div class="empty-page">No transcripts found under ~/.claude/projects.</div>
   {:else}

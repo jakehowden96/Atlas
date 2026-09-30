@@ -17,19 +17,45 @@ export const statsSummary = writable<StatsSummary | null>(null);
 /** False once the first load has settled, successfully or not. */
 export const statsLoading = writable(true);
 
-/** Load the cache and subscribe to recomputes. Returns the unsubscribe. */
-export async function startStatsFeed(): Promise<() => void> {
+/** Why the last load failed, or null. Lets the screen tell "failed" from "nothing there". */
+export const statsError = writable<string | null>(null);
+
+/**
+ * Publish `next` unless it is older than what is shown. A recompute started
+ * earlier can finish later than one started after it (the watcher's and the
+ * initial invoke's), and its stale result must not overwrite the newer one.
+ */
+function publish(next: StatsSummary): void {
+  statsSummary.update((current) =>
+    current && next.generatedAt && current.generatedAt && next.generatedAt < current.generatedAt
+      ? current
+      : next,
+  );
+}
+
+/** Read the stats now. On failure the previous summary stays and `statsError` says why. */
+export async function reloadStats(): Promise<void> {
   try {
-    statsSummary.set(await getClaudeStats());
+    publish(await getClaudeStats());
+    statsError.set(null);
   } catch (e) {
     log.error("stats", "getClaudeStats failed", e);
+    statsError.set(e instanceof Error ? e.message : String(e));
   } finally {
     statsLoading.set(false);
   }
+}
+
+/** Subscribe to recomputes, then load the cache. Returns the unsubscribe. */
+export async function startStatsFeed(): Promise<() => void> {
+  // Subscribed before the first (full-history) load so an update emitted while
+  // it runs is not missed.
+  let unsubscribe = () => {};
   try {
-    return await onStatsUpdate((s) => statsSummary.set(s));
+    unsubscribe = await onStatsUpdate(publish);
   } catch (e) {
     log.error("stats", "stats-update subscription failed", e);
-    return () => {};
   }
+  await reloadStats();
+  return unsubscribe;
 }

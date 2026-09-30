@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::BufRead;
 
@@ -23,6 +24,19 @@ pub(crate) fn jsonl_lines<R: BufRead>(reader: R) -> impl Iterator<Item = String>
             Err(_) => None,
         })
         .flatten()
+}
+
+/// `dir` with symlinks resolved when it exists, `dir` itself otherwise.
+///
+/// notify's macOS backend reports real paths, so a watched root reached through
+/// a symlink (a dotfile-managed `~/.claude`) must be compared as its real path
+/// or none of its events match. Not done on Windows, where `canonicalize`
+/// returns `\\?\` verbatim paths that nothing else in the app expects.
+pub(crate) fn resolve_symlinks(dir: std::path::PathBuf) -> std::path::PathBuf {
+    if cfg!(windows) {
+        return dir;
+    }
+    dir.canonicalize().unwrap_or(dir)
 }
 
 // ── Pricing ───────────────────────────────────────────────────────────────────
@@ -45,6 +59,10 @@ fn is_legacy_opus(m: &str) -> bool {
     m.contains("3-opus") || m.contains("opus-4-1") || m.contains("opus-4-2025")
 }
 
+/// **A change to a price or to `model_family` needs a `STATS_FILE_VERSION` bump
+/// in `commands::stats`:** costs are computed at parse time and cached per
+/// transcript, so unchanged files would otherwise keep their old cost.
+///
 /// Approximate API-equivalent pricing per million tokens, from Anthropic's
 /// published list prices (checked 2026-09-09). `cache_write` is the 5-minute
 /// rate — a transcript's `cache_creation_input_tokens` does not say which TTL
@@ -153,13 +171,94 @@ pub(crate) fn context_window_for(model: &str) -> u64 {
 /// autocompact fires. Can exceed 1.0 with autocompact off; the views clamp.
 pub(crate) fn context_pct(tokens: u64, model: &str) -> f64 {
     let window = context_window_for(model);
-    if window == 0 {
-        return 0.0;
-    }
     tokens as f64 / window as f64
 }
 
+// ── Activity over time ────────────────────────────────────────────────────────
+
+/// Width of one activity bucket. Every real UTC offset, and every DST shift, is a
+/// multiple of 15 minutes, so a bucket never straddles a local midnight.
+const SLOT_SECS: i64 = 15 * 60;
+
+/// The bucket a transcript timestamp (RFC 3339) falls in, as 15-minute periods
+/// since the Unix epoch.
+pub(crate) fn activity_slot(timestamp: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(timestamp)
+        .ok()
+        .map(|dt| dt.timestamp().div_euclid(SLOT_SECS))
+}
+
+/// When a bucket begins.
+pub(crate) fn slot_start(slot: i64) -> Option<chrono::DateTime<chrono::Utc>> {
+    chrono::DateTime::from_timestamp(slot.saturating_mul(SLOT_SECS), 0)
+}
+
+/// What a session did in one 15-minute period. Stored per record so usage can
+/// be attributed to the day it happened, not the day the session started.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityBucket {
+    pub slot: i64,
+    pub output_tokens: u64,
+    pub cost: f64,
+    pub user_messages: u32,
+    pub peak_context: u64,
+}
+
+/// Collects `ActivityBucket`s while a transcript is parsed. Work whose line had
+/// no usable timestamp lands on `fallback` in `finish` (the session's start).
+#[derive(Default)]
+pub(crate) struct ActivityLog(std::collections::BTreeMap<Option<i64>, ActivityBucket>);
+
+impl ActivityLog {
+    pub fn add_usage(&mut self, slot: Option<i64>, output_tokens: u64, cost: f64, context: u64) {
+        let bucket = self.0.entry(slot).or_default();
+        bucket.output_tokens += output_tokens;
+        bucket.cost += cost;
+        bucket.peak_context = bucket.peak_context.max(context);
+    }
+
+    pub fn add_request(&mut self, req: &ReqData) {
+        self.add_usage(req.slot, req.output_tokens, req.cost(), req.context());
+    }
+
+    pub fn add_message(&mut self, slot: Option<i64>) {
+        self.0.entry(slot).or_default().user_messages += 1;
+    }
+
+    pub fn finish(self, fallback: Option<i64>) -> Vec<ActivityBucket> {
+        let mut merged: std::collections::BTreeMap<i64, ActivityBucket> =
+            std::collections::BTreeMap::new();
+        for (slot, bucket) in self.0 {
+            let Some(slot) = slot.or(fallback) else {
+                continue;
+            };
+            let into = merged.entry(slot).or_default();
+            into.slot = slot;
+            into.output_tokens += bucket.output_tokens;
+            into.cost += bucket.cost;
+            into.user_messages += bucket.user_messages;
+            into.peak_context = into.peak_context.max(bucket.peak_context);
+        }
+        merged.into_values().collect()
+    }
+}
+
 // ── Per-request accumulation ──────────────────────────────────────────────────
+
+/// Largest token count taken from a transcript field. No real request comes
+/// within orders of magnitude of it; it exists so a corrupt or hostile line
+/// carrying `u64::MAX` cannot overflow the sums built from these fields (a
+/// panic in debug builds, a silent wrap in release).
+const MAX_TOKEN_COUNT: u64 = 1 << 40;
+
+/// A token count read from a JSON field, clamped to `MAX_TOKEN_COUNT`.
+pub(crate) fn token_count(value: Option<&Value>) -> u64 {
+    value
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0)
+        .min(MAX_TOKEN_COUNT)
+}
 
 /// One API request's accumulated data. Several assistant lines share a
 /// `requestId` and each repeats the same `usage` block, so usage is taken from
@@ -171,13 +270,16 @@ pub(crate) struct ReqData {
     pub cache_create: u64,
     pub output_tokens: u64,
     pub tool_names: Vec<String>,
+    /// `activity_slot` of the line the request was first seen on; set by the
+    /// bulk parsers, which bucket spend by when it happened.
+    pub slot: Option<i64>,
 }
 
 impl ReqData {
     /// Read `message.usage` for a request first seen on this line.
     pub fn from_message(model: &str, msg: &Value) -> Self {
         let usage = msg.get("usage").unwrap_or(&Value::Null);
-        let field = |name: &str| usage.get(name).and_then(|v| v.as_u64()).unwrap_or(0);
+        let field = |name: &str| token_count(usage.get(name));
         ReqData {
             model: model.to_string(),
             input_tokens: field("input_tokens"),
@@ -185,6 +287,7 @@ impl ReqData {
             cache_create: field("cache_creation_input_tokens"),
             output_tokens: field("output_tokens"),
             tool_names: Vec::new(),
+            slot: None,
         }
     }
 
@@ -218,6 +321,10 @@ pub(crate) struct ModelSessionData {
     pub user_chars: u64,
     #[serde(default)]
     pub user_messages: u32,
+    /// Errored `tool_result`s for tool calls this family issued. Per family, not
+    /// the session's total, so summing families does not count an error twice.
+    #[serde(default)]
+    pub tool_errors: u32,
     /// Chars/count of prompts this model family sent when spawning a subagent
     /// (the `Agent` tool's `prompt` input) — distinct from the human's own messages.
     #[serde(default)]
@@ -331,13 +438,47 @@ pub(crate) fn tool_results(obj: &Value) -> Vec<ToolResult<'_>> {
         .collect()
 }
 
-/// `message.content` of a `user` line when it is a plain string — a real typed
-/// message rather than an array of `tool_result` blocks.
-pub(crate) fn user_text(obj: &Value) -> Option<&str> {
-    obj.get("message")
-        .and_then(|m| m.get("content"))
-        .and_then(|v| v.as_str())
+/// What a human typed on a `user` line, or `None` for a line that is not a
+/// prompt.
+///
+/// Claude Code writes a plain prompt as a string, but a prompt with a pasted
+/// image or attachment as an array of `text` and `image`/`document` blocks. The
+/// array form is joined from its `text` blocks. An array holding a
+/// `tool_result` is a tool's answer, not a prompt, and `[Request interrupted by
+/// user…]` is Claude Code's marker for an interrupt, not something the human
+/// said.
+pub(crate) fn user_text(obj: &Value) -> Option<Cow<'_, str>> {
+    let text = match obj.get("message")?.get("content")? {
+        Value::String(s) => Cow::Borrowed(s.as_str()),
+        Value::Array(blocks) => {
+            let is_type = |b: &Value, ty: &str| b.get("type").and_then(|t| t.as_str()) == Some(ty);
+            if blocks.iter().any(|b| is_type(b, "tool_result")) {
+                return None;
+            }
+            let mut texts = blocks
+                .iter()
+                .filter(|b| is_type(b, "text"))
+                .filter_map(|b| b.get("text").and_then(|t| t.as_str()));
+            let first = texts.next()?;
+            match texts.next() {
+                None => Cow::Borrowed(first),
+                Some(second) => {
+                    let mut joined = format!("{first}\n{second}");
+                    for rest in texts {
+                        joined.push('\n');
+                        joined.push_str(rest);
+                    }
+                    Cow::Owned(joined)
+                }
+            }
+        }
+        _ => return None,
+    };
+    (!text.starts_with(INTERRUPT_MARKER)).then_some(text)
 }
+
+/// Start of the text Claude Code writes when the user interrupts a turn.
+const INTERRUPT_MARKER: &str = "[Request interrupted by user";
 
 #[cfg(test)]
 mod tests {

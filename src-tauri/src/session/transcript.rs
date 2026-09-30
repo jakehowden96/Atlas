@@ -2,23 +2,21 @@
 //! belongs to a Claude session Atlas started with `claude --session-id <uuid>`.
 
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::SystemTime;
 
 use crate::commands::stats::claude_projects_dir;
 
-/// Longest a single backoff step may sleep while waiting for a transcript.
-const MAX_POLL_INTERVAL: Duration = Duration::from_millis(500);
-
 /// `^[0-9a-fA-F-]{36}$` — the shape `claude --session-id` accepts. Rejects `/`,
 /// `\` and `..` by construction, so the value is safe to join onto a path.
-fn is_valid_session_uuid(session_uuid: &str) -> bool {
+pub(crate) fn is_valid_session_uuid(session_uuid: &str) -> bool {
     session_uuid.len() == 36
         && session_uuid
             .chars()
             .all(|c| c.is_ascii_hexdigit() || c == '-')
 }
 
-/// Glob `<projects_dir>/*/<uuid>.jsonl`.
+/// Glob `<projects_dir>/*/<uuid>.jsonl`, newest first if a session was resumed
+/// from another directory and so exists in more than one project.
 ///
 /// Claude Code derives the project subdirectory from a slug of the session's
 /// cwd. That algorithm is undocumented, so we scan the project dirs instead of
@@ -28,43 +26,31 @@ fn find_transcript_in(projects_dir: &Path, session_uuid: &str) -> Option<PathBuf
         return None;
     }
     let file_name = format!("{}.jsonl", session_uuid);
+    let mut newest: Option<(SystemTime, PathBuf)> = None;
     for project in std::fs::read_dir(projects_dir).ok()?.flatten() {
         if !project.file_type().map(|t| t.is_dir()).unwrap_or(false) {
             continue;
         }
         let candidate = project.path().join(&file_name);
-        if candidate.is_file() {
-            return Some(candidate);
+        let Ok(meta) = std::fs::metadata(&candidate) else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        let modified = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+        if newest.as_ref().is_none_or(|(best, _)| modified > *best) {
+            newest = Some((modified, candidate));
         }
     }
-    None
+    newest.map(|(_, path)| path)
 }
 
-/// Locate the transcript for `session_uuid` under `~/.claude/projects/`.
+/// Locate the transcript for `session_uuid` under `~/.claude/projects/`. Does
+/// blocking directory IO; call it off the async runtime.
 pub fn find_transcript(session_uuid: &str) -> Option<PathBuf> {
     let projects_dir = claude_projects_dir().ok()?;
     find_transcript_in(&projects_dir, session_uuid)
-}
-
-/// Poll for the transcript, backing off, up to `timeout`. Claude does not write
-/// the file the instant it starts. Returns None if it never appears.
-pub async fn await_transcript(session_uuid: &str, timeout: Duration) -> Option<PathBuf> {
-    if !is_valid_session_uuid(session_uuid) {
-        return None;
-    }
-    let deadline = Instant::now() + timeout;
-    let mut interval = Duration::from_millis(50);
-    loop {
-        if let Some(path) = find_transcript(session_uuid) {
-            return Some(path);
-        }
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            return None;
-        }
-        tokio::time::sleep(interval.min(remaining)).await;
-        interval = (interval * 2).min(MAX_POLL_INTERVAL);
-    }
 }
 
 #[cfg(test)]
@@ -145,24 +131,29 @@ mod tests {
         assert!(is_valid_session_uuid(&UUID.to_uppercase()));
     }
 
-    #[tokio::test]
-    async fn await_transcript_gives_up_on_an_invalid_uuid_without_waiting() {
-        let started = Instant::now();
-        assert_eq!(
-            await_transcript("../etc/passwd", Duration::from_secs(30)).await,
-            None
-        );
-        assert!(started.elapsed() < Duration::from_secs(1));
-    }
+    /// A session resumed from another directory exists in two projects. Which
+    /// one is tailed must not depend on `read_dir` order.
+    #[test]
+    fn the_newest_copy_wins_when_a_session_exists_in_two_projects() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut paths = Vec::new();
+        for project in ["-old-project", "-new-project"] {
+            let dir = dir.path().join(project);
+            std::fs::create_dir_all(&dir).unwrap();
+            let path = dir.join(format!("{UUID}.jsonl"));
+            std::fs::write(&path, "{}\n").unwrap();
+            paths.push(path);
+        }
+        let set_modified = |path: &Path, secs: u64| {
+            let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+            file.set_modified(SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(secs))
+                .unwrap();
+        };
+        set_modified(&paths[0], 1_000);
+        set_modified(&paths[1], 2_000);
+        assert_eq!(find_transcript_in(dir.path(), UUID), Some(paths[1].clone()));
 
-    #[tokio::test]
-    async fn await_transcript_times_out_when_the_file_never_appears() {
-        let missing = "00000000-0000-4000-8000-0000000000ff";
-        let started = Instant::now();
-        assert_eq!(
-            await_transcript(missing, Duration::from_millis(120)).await,
-            None
-        );
-        assert!(started.elapsed() >= Duration::from_millis(120));
+        set_modified(&paths[0], 3_000);
+        assert_eq!(find_transcript_in(dir.path(), UUID), Some(paths[0].clone()));
     }
 }

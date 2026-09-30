@@ -3,9 +3,17 @@
 //!
 //! A `stats-update` watcher already sits on `~/.claude/projects` (see
 //! `commands::stats::start_stats_watcher`), but it debounces a full recompute
-//! over every historical transcript at 1s. The live path must not wait on that,
-//! so it keeps its own watcher on the same directory with a 250ms per-session
+//! over every historical transcript. The live path must not wait on that, so it
+//! keeps its own watcher on the same directory with a 250ms per-session
 //! debounce and an incremental read.
+//!
+//! # Locking
+//!
+//! Reading a tail's file and parsing it can take a while (a resumed transcript
+//! is megabytes), so that work runs under the tail's own mutex and never under
+//! the shared maps: they are held only to look an entry up or change the set of
+//! tracked sessions. When more than one is needed the order is always
+//! `tails`, then `pending` or `omp_watches`.
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
@@ -31,18 +39,11 @@ pub struct SessionUpdateEvent {
 
 /// One session's tail, from whichever harness is running it.
 enum Tail {
-    Claude(SessionTail),
-    Omp(OmpTail),
+    Claude(Box<SessionTail>),
+    Omp(Box<OmpTail>),
 }
 
 impl Tail {
-    fn path(&self) -> &Path {
-        match self {
-            Tail::Claude(tail) => tail.path(),
-            Tail::Omp(tail) => tail.path(),
-        }
-    }
-
     fn session(&self) -> &LiveSession {
         match self {
             Tail::Claude(tail) => tail.session(),
@@ -56,13 +57,43 @@ impl Tail {
             Tail::Omp(tail) => tail.poll(),
         }
     }
+}
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Harness {
+    Claude,
+    Omp,
+}
+
+/// A tail plus what it answers to. The transcript path is fixed for the life
+/// of the entry, so ownership can be decided without taking the tail's mutex,
+/// which is held for the whole of a read.
+struct Tracked {
+    harness: Harness,
+    transcript: PathBuf,
+    tail: Mutex<Tail>,
+}
+
+impl Tracked {
     /// True when `path` is `uuid`'s transcript, or one of its sidecar writes.
     fn owns(&self, uuid: &str, path: &Path) -> bool {
-        match self {
-            Tail::Claude(_) => self.path() == path || owns_sidecar(self.path(), uuid, path),
-            Tail::Omp(tail) => tail.owns(path),
+        match self.harness {
+            Harness::Claude => {
+                self.transcript == path || owns_sidecar(&self.transcript, uuid, path)
+            }
+            Harness::Omp => omp::owns_transcript(&self.transcript, path),
         }
+    }
+
+    fn claude(session_uuid: &str, path: PathBuf) -> Arc<Self> {
+        Arc::new(Tracked {
+            harness: Harness::Claude,
+            tail: Mutex::new(Tail::Claude(Box::new(SessionTail::new(
+                session_uuid.to_string(),
+                path.clone(),
+            )))),
+            transcript: path,
+        })
     }
 }
 
@@ -74,9 +105,17 @@ struct OmpWatch {
     since: SystemTime,
 }
 
+/// The filesystem watcher, shared so an OMP directory that appears after launch
+/// can still be added to it.
+struct LiveWatch {
+    watcher: RecommendedWatcher,
+    omp_dir: Option<PathBuf>,
+    omp_watched: bool,
+}
+
 #[derive(Clone, Default)]
 pub struct LiveSessionManager {
-    tails: Arc<Mutex<HashMap<String, Tail>>>,
+    tails: Arc<Mutex<HashMap<String, Arc<Tracked>>>>,
     /// Sessions Atlas has spawned whose transcript does not exist yet.
     ///
     /// Claude Code writes the file well after the spawn — cold start plus the
@@ -89,6 +128,7 @@ pub struct LiveSessionManager {
     /// OMP sessions being resolved through their terminal's breadcrumb rather
     /// than a known transcript path.
     omp_watches: Arc<Mutex<HashMap<String, OmpWatch>>>,
+    watch: Arc<Mutex<Option<LiveWatch>>>,
 }
 
 impl LiveSessionManager {
@@ -96,15 +136,55 @@ impl LiveSessionManager {
         Self::default()
     }
 
-    /// Begin tailing `path` for `session_uuid`, returning the state read so far.
-    /// Starting an already-tracked session just returns its current state.
-    pub fn start(&self, session_uuid: &str, path: PathBuf) -> Result<LiveSession, String> {
-        let mut tails = self.tails.lock().map_err(|e| e.to_string())?;
-        let tail = tails
-            .entry(session_uuid.to_string())
-            .or_insert_with(|| Tail::Claude(SessionTail::new(session_uuid.to_string(), path)));
+    fn tracked(&self, session_uuid: &str) -> Option<Arc<Tracked>> {
+        self.tails.lock().ok()?.get(session_uuid).cloned()
+    }
+
+    /// Begin tailing `path` for a session registered with `expect`, returning
+    /// the state read so far. `None` when the session has been stopped since it
+    /// was registered: a `stop` that lands while the caller was looking for the
+    /// transcript must win, or the tail would outlive its tab.
+    ///
+    /// A session the watcher already attached (the transcript appeared first)
+    /// just reports its current state.
+    pub fn start_if_pending(&self, session_uuid: &str, path: PathBuf) -> Option<LiveSession> {
+        let tracked = {
+            let mut tails = self.tails.lock().ok()?;
+            let was_pending = self.pending.lock().ok()?.remove(session_uuid);
+            match tails.get(session_uuid) {
+                Some(tracked) => tracked.clone(),
+                None if was_pending => tails
+                    .entry(session_uuid.to_string())
+                    .or_insert_with(|| Tracked::claude(session_uuid, path))
+                    .clone(),
+                None => return None,
+            }
+        };
+        let mut tail = tracked.tail.lock().ok()?;
         tail.poll();
-        Ok(tail.session().clone())
+        Some(tail.session().clone())
+    }
+
+    /// Make sure the OMP directory is being watched, adding it now if it did
+    /// not exist when Atlas launched. Failure is logged, never fatal: Claude
+    /// tailing does not depend on it.
+    fn ensure_omp_watched(&self) {
+        let Ok(mut guard) = self.watch.lock() else {
+            return;
+        };
+        let Some(live) = guard.as_mut() else {
+            return;
+        };
+        if live.omp_watched {
+            return;
+        }
+        let Some(dir) = live.omp_dir.clone().filter(|dir| dir.exists()) else {
+            return;
+        };
+        match live.watcher.watch(&dir, RecursiveMode::Recursive) {
+            Ok(()) => live.omp_watched = true,
+            Err(e) => log::warn!("Failed to watch {}: {}", dir.display(), e),
+        }
     }
 
     /// Begin tailing an OMP session through its terminal's breadcrumb file,
@@ -119,6 +199,7 @@ impl LiveSessionManager {
         if let Ok(mut watches) = self.omp_watches.lock() {
             watches.insert(session_uuid.to_string(), OmpWatch { breadcrumb, since });
         }
+        self.ensure_omp_watched();
         self.resolve_omp(session_uuid)
     }
 
@@ -134,38 +215,63 @@ impl LiveSessionManager {
             return None;
         }
 
-        let mut tails = self.tails.lock().ok()?;
-        match tails.get_mut(session_uuid) {
-            Some(Tail::Omp(tail)) if tail.path() == target => {
-                tail.poll().then(|| tail.session().clone())
-            }
-            _ => {
-                let mut tail = OmpTail::new(session_uuid.to_string(), target);
-                tail.poll();
-                let session = tail.session().clone();
-                tails.insert(session_uuid.to_string(), Tail::Omp(tail));
-                Some(session)
+        if let Some(tracked) = self.tracked(session_uuid) {
+            if tracked.harness == Harness::Omp && tracked.transcript == target {
+                let mut tail = tracked.tail.lock().ok()?;
+                return tail.poll().then(|| tail.session().clone());
             }
         }
+
+        // A new file: read it before it is shared, so no lock is held for the read.
+        let mut tail = OmpTail::new(session_uuid.to_string(), target.clone());
+        tail.poll();
+        let session = tail.session().clone();
+        let tracked = Arc::new(Tracked {
+            harness: Harness::Omp,
+            transcript: target,
+            tail: Mutex::new(Tail::Omp(Box::new(tail))),
+        });
+
+        let mut tails = self.tails.lock().ok()?;
+        // `stop` removes the watch before the tail, so a watch that is gone here
+        // means the session was stopped while its file was being read.
+        if !self.omp_watches.lock().ok()?.contains_key(session_uuid) {
+            return None;
+        }
+        tails.insert(session_uuid.to_string(), tracked);
+        Some(session)
     }
 
-    /// Every OMP watch whose transcript `path` may belong to. Nothing is read:
-    /// the watcher resolves each one when its throttle comes due, so a write
-    /// inside the window is folded in then rather than read and dropped.
+    /// Every OMP watch whose transcript `path` may belong to. Nothing is read
+    /// from the transcripts: the watcher resolves each one when its throttle
+    /// comes due, so a write inside the window is folded in then rather than
+    /// read and dropped.
     fn omp_owners(&self, path: &Path) -> Vec<String> {
         let Ok(watches) = self.omp_watches.lock() else {
             return Vec::new();
         };
-        let Ok(tails) = self.tails.lock() else {
-            return Vec::new();
-        };
-        watches
+        let watches: Vec<(String, OmpWatch)> = watches
             .iter()
+            .map(|(uuid, watch)| (uuid.clone(), watch.clone()))
+            .collect();
+        watches
+            .into_iter()
             .filter(|(uuid, watch)| {
-                path == watch.breadcrumb
-                    || tails.get(*uuid).is_none_or(|tail| tail.owns(uuid, path))
+                if path == watch.breadcrumb {
+                    return true;
+                }
+                match self.tracked(uuid) {
+                    None => true,
+                    Some(tracked) => {
+                        tracked.owns(uuid, path)
+                            // The breadcrumb can name a file before that file
+                            // exists; its creation then belongs to this watch too.
+                            || omp::read_breadcrumb(&watch.breadcrumb, watch.since).as_deref()
+                                == Some(path)
+                    }
+                }
             })
-            .map(|(uuid, _)| uuid.clone())
+            .map(|(uuid, _)| uuid)
             .collect()
     }
 
@@ -188,16 +294,17 @@ impl LiveSessionManager {
         Ok(())
     }
 
+    /// Forget a session. Its pending registration and OMP watch go first, so a
+    /// start or a resolve racing with this sees it gone and does not re-add a tail.
     pub fn stop(&self, session_uuid: &str) -> Result<(), String> {
-        let mut tails = self.tails.lock().map_err(|e| e.to_string())?;
-        tails.remove(session_uuid);
-        drop(tails);
         if let Ok(mut pending) = self.pending.lock() {
             pending.remove(session_uuid);
         }
         if let Ok(mut watches) = self.omp_watches.lock() {
             watches.remove(session_uuid);
         }
+        let mut tails = self.tails.lock().map_err(|e| e.to_string())?;
+        tails.remove(session_uuid);
         Ok(())
     }
 
@@ -208,6 +315,19 @@ impl LiveSessionManager {
             .lock()
             .map(|p| p.contains(session_uuid))
             .unwrap_or(false)
+    }
+
+    /// True while `session_uuid` has a tail or an OMP watch.
+    fn is_tracked(&self, session_uuid: &str) -> bool {
+        let tailed = self
+            .tails
+            .lock()
+            .is_ok_and(|tails| tails.contains_key(session_uuid));
+        tailed
+            || self
+                .omp_watches
+                .lock()
+                .is_ok_and(|watches| watches.contains_key(session_uuid))
     }
 
     /// If `path` is the transcript of a pending session, begin tailing it.
@@ -221,16 +341,13 @@ impl LiveSessionManager {
             return None;
         }
         let uuid = path.file_stem()?.to_str()?.to_string();
-        {
-            let mut pending = self.pending.lock().ok()?;
-            if !pending.remove(&uuid) {
-                return None;
-            }
-        }
         let mut tails = self.tails.lock().ok()?;
+        if !self.pending.lock().ok()?.remove(&uuid) {
+            return None;
+        }
         tails
             .entry(uuid.clone())
-            .or_insert_with(|| Tail::Claude(SessionTail::new(uuid.clone(), path.to_path_buf())));
+            .or_insert_with(|| Tracked::claude(&uuid, path.to_path_buf()));
         Some(uuid)
     }
 
@@ -238,8 +355,11 @@ impl LiveSessionManager {
     /// updates arrive as `session-update` events.
     #[cfg(test)]
     pub fn get(&self, session_uuid: &str) -> Result<Option<LiveSession>, String> {
-        let tails = self.tails.lock().map_err(|e| e.to_string())?;
-        Ok(tails.get(session_uuid).map(|t| t.session().clone()))
+        let Some(tracked) = self.tracked(session_uuid) else {
+            return Ok(None);
+        };
+        let tail = tracked.tail.lock().map_err(|e| e.to_string())?;
+        Ok(Some(tail.session().clone()))
     }
 
     /// The session whose transcript is `path`, if it is one we track.
@@ -247,14 +367,14 @@ impl LiveSessionManager {
         let tails = self.tails.lock().ok()?;
         tails
             .iter()
-            .find(|(uuid, tail)| tail.owns(uuid, path))
+            .find(|(uuid, tracked)| tracked.owns(uuid, path))
             .map(|(uuid, _)| uuid.clone())
     }
 
     /// Fold in whatever has been appended. `None` when nothing changed.
     fn poll(&self, session_uuid: &str) -> Option<LiveSession> {
-        let mut tails = self.tails.lock().ok()?;
-        let tail = tails.get_mut(session_uuid)?;
+        let tracked = self.tracked(session_uuid)?;
+        let mut tail = tracked.tail.lock().ok()?;
         tail.poll().then(|| tail.session().clone())
     }
 }
@@ -313,12 +433,23 @@ impl Throttle {
         }
         due
     }
+
+    /// Drop what is remembered about a session that is no longer tracked, so a
+    /// long-lived app does not accumulate one entry per session it ever ran.
+    fn forget(&mut self, uuid: &str) {
+        self.last_emit.remove(uuid);
+        self.dirty.remove(uuid);
+    }
 }
 
-/// Holds the watcher alive for the life of the app. `Manager::manage` is keyed
-/// by type and the panel and stats watchers are both bare `RecommendedWatcher`,
-/// so ours needs a type of its own or it would be dropped on registration.
-pub struct LiveWatcher(#[allow(dead_code)] RecommendedWatcher);
+/// Holds the live watcher alive for the life of the app. `Manager::manage` is
+/// keyed by type and the panel and stats watchers are both bare
+/// `RecommendedWatcher`, so ours needs a type of its own or it would be
+/// dropped on registration.
+pub struct LiveWatcher(
+    // Held only so the watcher is dropped with app state, never read through this handle.
+    #[allow(dead_code)] Arc<Mutex<Option<LiveWatch>>>,
+);
 
 pub fn start_live_watcher(
     app_handle: AppHandle,
@@ -330,10 +461,13 @@ pub fn start_live_watcher(
     let (tx, rx) = mpsc::channel();
 
     let mut watcher = RecommendedWatcher::new(
-        move |res: Result<Event, notify::Error>| {
-            if let Ok(event) = res {
+        move |res: Result<Event, notify::Error>| match res {
+            Ok(event) => {
                 let _ = tx.send(event);
             }
+            // FSEvents overflow and rescan errors land here; sessions then go
+            // stale until their next write, which is worth a line in the log.
+            Err(e) => log::warn!("live session watcher error: {}", e),
         },
         notify::Config::default().with_poll_interval(Duration::from_millis(250)),
     )
@@ -343,15 +477,26 @@ pub fn start_live_watcher(
         .watch(&projects_dir, RecursiveMode::Recursive)
         .map_err(|e| e.to_string())?;
 
+    // OMP is optional. A failure to watch its directory must not take Claude
+    // tailing down with it, and a directory that does not exist yet is added
+    // by `ensure_omp_watched` when the first OMP session starts.
     let omp_dir = omp::agent_dir();
-    if let Some(dir) = &omp_dir {
-        if dir.exists() {
-            watcher
-                .watch(dir, RecursiveMode::Recursive)
-                .map_err(|e| e.to_string())?;
+    let mut omp_watched = false;
+    if let Some(dir) = omp_dir.as_ref().filter(|dir| dir.exists()) {
+        match watcher.watch(dir, RecursiveMode::Recursive) {
+            Ok(()) => omp_watched = true,
+            Err(e) => log::warn!("Failed to watch {}: {}", dir.display(), e),
         }
     }
+    if let Ok(mut slot) = manager.watch.lock() {
+        *slot = Some(LiveWatch {
+            watcher,
+            omp_dir: omp_dir.clone(),
+            omp_watched,
+        });
+    }
 
+    let manager_watch = manager.watch.clone();
     std::thread::spawn(move || {
         let mut throttle = Throttle::default();
 
@@ -381,20 +526,25 @@ pub fn start_live_watcher(
             }
 
             for uuid in throttle.take_due(Instant::now()) {
-                if let Some(session) = manager.refresh(&uuid) {
-                    let _ = app_handle.emit(
-                        "session-update",
-                        SessionUpdateEvent {
-                            session_uuid: uuid,
-                            session,
-                        },
-                    );
+                match manager.refresh(&uuid) {
+                    Some(session) => {
+                        let _ = app_handle.emit(
+                            "session-update",
+                            SessionUpdateEvent {
+                                session_uuid: uuid,
+                                session,
+                            },
+                        );
+                    }
+                    None if !manager.is_tracked(&uuid) => throttle.forget(&uuid),
+                    None => {}
                 }
             }
         }
+        log::error!("live session watcher stopped; session updates will no longer arrive");
     });
 
-    Ok(LiveWatcher(watcher))
+    Ok(LiveWatcher(manager_watch))
 }
 
 #[cfg(test)]
@@ -413,13 +563,21 @@ mod tests {
 
     const USER_LINE: &str = r#"{"type":"user","message":{"role":"user","content":"hello"},"timestamp":"2026-01-01T00:00:00Z"}"#;
 
+    /// What `start_session_tail` does once it has found the transcript.
+    fn start(manager: &LiveSessionManager, path: PathBuf) -> LiveSession {
+        manager.expect(UUID).unwrap();
+        manager
+            .start_if_pending(UUID, path)
+            .expect("the session was registered")
+    }
+
     #[test]
     fn start_reads_the_transcript_and_get_returns_it() {
         let dir = tempfile::tempdir().unwrap();
         let path = transcript(dir.path(), USER_LINE);
         let manager = LiveSessionManager::new();
 
-        let session = manager.start(UUID, path).unwrap();
+        let session = start(&manager, path);
         assert_eq!(session.session_uuid, UUID);
         assert_eq!(session.lines.len(), 1);
 
@@ -484,7 +642,7 @@ mod tests {
         let path = transcript(dir.path(), USER_LINE);
         let manager = LiveSessionManager::new();
 
-        manager.start(UUID, path).unwrap();
+        start(&manager, path);
         manager.stop(UUID).unwrap();
         assert!(manager.get(UUID).unwrap().is_none());
     }
@@ -494,7 +652,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = transcript(dir.path(), USER_LINE);
         let manager = LiveSessionManager::new();
-        manager.start(UUID, path.clone()).unwrap();
+        start(&manager, path.clone());
 
         assert!(manager.poll(UUID).is_none(), "nothing appended yet");
 
@@ -514,7 +672,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = transcript(dir.path(), USER_LINE);
         let manager = LiveSessionManager::new();
-        manager.start(UUID, path.clone()).unwrap();
+        start(&manager, path.clone());
 
         assert_eq!(manager.uuid_for_path(&path).as_deref(), Some(UUID));
         assert_eq!(manager.uuid_for_path(&dir.path().join("other.jsonl")), None);
@@ -526,8 +684,8 @@ mod tests {
         let path = transcript(dir.path(), USER_LINE);
         let manager = LiveSessionManager::new();
 
-        manager.start(UUID, path.clone()).unwrap();
-        let again = manager.start(UUID, path).unwrap();
+        start(&manager, path.clone());
+        let again = start(&manager, path);
         assert_eq!(
             again.lines.len(),
             1,
@@ -540,7 +698,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = transcript(dir.path(), USER_LINE);
         let manager = LiveSessionManager::new();
-        manager.start(UUID, path).unwrap();
+        start(&manager, path);
 
         assert_eq!(
             manager.uuid_for_path(&dir.path().join(UUID).join("workflows").join("wf_x.json")),
@@ -681,5 +839,93 @@ mod tests {
             "trailing edge"
         );
         assert_eq!(throttle.next_due(t0 + DEBOUNCE), None, "nothing left dirty");
+    }
+
+    /// A resumed session's transcript already exists, so nothing will change
+    /// it and the watcher has nothing to report: the start itself must hand
+    /// back the state, or the tile stays empty until the next write.
+    #[test]
+    fn starting_on_an_existing_transcript_returns_its_state_and_leaves_nothing_for_refresh() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = transcript(dir.path(), USER_LINE);
+        let manager = LiveSessionManager::new();
+
+        let session = start(&manager, path);
+        assert_eq!(session.lines.len(), 1);
+        assert!(manager.refresh(UUID).is_none());
+    }
+
+    /// `stop_session_tail` can land while `start_session_tail` is still looking
+    /// for the transcript. The stop must win: no tail, and nothing left pending.
+    #[test]
+    fn a_stop_that_lands_before_the_start_completes_wins() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = transcript(dir.path(), USER_LINE);
+        let manager = LiveSessionManager::new();
+
+        manager.expect(UUID).unwrap();
+        manager.stop(UUID).unwrap();
+
+        assert!(manager.start_if_pending(UUID, path).is_none());
+        assert!(manager.get(UUID).unwrap().is_none());
+        assert!(!manager.is_pending(UUID));
+    }
+
+    /// File IO runs under a tail's own lock, not the shared map's: a slow read
+    /// of one session must not stall the rest.
+    #[test]
+    fn a_tail_busy_reading_does_not_block_other_sessions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = transcript(dir.path(), USER_LINE);
+        let manager = LiveSessionManager::new();
+        start(&manager, path.clone());
+
+        let busy = manager.tracked(UUID).unwrap();
+        let _reading = busy.tail.lock().unwrap();
+
+        assert_eq!(manager.uuid_for_path(&path).as_deref(), Some(UUID));
+        manager.expect("other").unwrap();
+        manager.stop("other").unwrap();
+        assert!(manager.is_tracked(UUID));
+    }
+
+    /// A breadcrumb can be rewritten to name a transcript OMP has not created
+    /// yet; when it appears, its creation event has to reach this watch.
+    #[test]
+    fn a_file_the_breadcrumb_names_before_it_exists_is_claimed_when_created() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.jsonl");
+        write_omp_title(&first, "first");
+        let breadcrumb = dir.path().join("breadcrumb");
+        write_breadcrumb(&breadcrumb, &first);
+
+        let manager = LiveSessionManager::new();
+        manager
+            .watch_omp(
+                "uuid-1",
+                breadcrumb.clone(),
+                std::time::SystemTime::UNIX_EPOCH,
+            )
+            .unwrap();
+
+        let second = dir.path().join("second.jsonl");
+        write_breadcrumb(&breadcrumb, &second);
+        assert!(manager.refresh("uuid-1").is_none(), "nothing to read yet");
+
+        write_omp_title(&second, "second");
+        assert!(manager.omp_owners(&second).contains(&"uuid-1".to_string()));
+    }
+
+    #[test]
+    fn a_stopped_session_is_dropped_from_the_throttle() {
+        let mut throttle = Throttle::default();
+        let t0 = Instant::now();
+        throttle.mark("a".into());
+        throttle.take_due(t0);
+        throttle.mark("a".into());
+
+        throttle.forget("a");
+        assert!(throttle.last_emit.is_empty());
+        assert_eq!(throttle.next_due(t0), None);
     }
 }

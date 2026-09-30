@@ -14,14 +14,18 @@ use super::live::{
     TranscriptLine, MAX_LINES, REPLY_SUMMARY,
 };
 use crate::commands::stats::{merge_model_data, SessionRecord};
-use crate::transcript::{context_pct, jsonl_lines, model_family, ModelSessionData};
+use crate::transcript::{
+    activity_slot, context_pct, jsonl_lines, model_family, ActivityLog, ModelSessionData,
+};
 
 // ── Paths ────────────────────────────────────────────────────────────────────
 
-/// `~/.omp/agent`. `PI_CODING_AGENT_DIR`/`XDG_STATE_HOME` overrides are not
-/// read — this is where a default install writes.
+/// `~/.omp/agent`, resolved through symlinks when it exists (see
+/// `resolve_symlinks`). `PI_CODING_AGENT_DIR`/`XDG_STATE_HOME` overrides are
+/// not read — this is where a default install writes.
 pub fn agent_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".omp").join("agent"))
+    let dir = dirs::home_dir().map(|h| h.join(".omp").join("agent"))?;
+    Some(crate::transcript::resolve_symlinks(dir))
 }
 
 /// The breadcrumb file OMP writes for one terminal, keyed by its tty:
@@ -48,6 +52,22 @@ pub fn read_breadcrumb(path: &Path, since: SystemTime) -> Option<PathBuf> {
     }
 }
 
+/// True for the transcript, its write lock, or a subagent's transcript (whose
+/// locks sit in the same sidecar directory) — a rewritten breadcrumb only ever
+/// names the parent file.
+///
+/// The write lock is `.<transcript file name>.lock`, beside the transcript. OMP
+/// appends through a long-lived descriptor, and FSEvents reports nothing for
+/// those writes; the lock it creates and removes around each append is the only
+/// event the transcript's growth produces.
+pub fn owns_transcript(transcript: &Path, path: &Path) -> bool {
+    let lock = transcript.with_file_name(format!(
+        ".{}.lock",
+        transcript.file_name().unwrap_or_default().to_string_lossy()
+    ));
+    path == transcript || path == lock || path.starts_with(transcript.with_extension(""))
+}
+
 // ── The tail ──────────────────────────────────────────────────────────────────
 
 /// One OMP session's transcript tail plus the state folded out of it.
@@ -56,11 +76,6 @@ pub struct OmpTail {
     /// `<transcript path>` without its extension — the directory OMP writes
     /// each `task` subagent's own transcript into, `<name>.jsonl`.
     sidecar: PathBuf,
-    /// `.<transcript file name>.lock`, beside it. OMP appends through a
-    /// long-lived descriptor, and FSEvents reports nothing for those writes;
-    /// the lock it creates and removes around each append is the only event
-    /// the transcript's growth produces.
-    lock: PathBuf,
     reader: LineReader,
     /// Keyed by the Atlas session uuid, never OMP's own `session.id`.
     session: LiveSession,
@@ -86,13 +101,8 @@ pub struct OmpTail {
 impl OmpTail {
     pub fn new(session_uuid: String, path: PathBuf) -> Self {
         let sidecar = path.with_extension("");
-        let lock = path.with_file_name(format!(
-            ".{}.lock",
-            path.file_name().unwrap_or_default().to_string_lossy()
-        ));
         OmpTail {
             path,
-            lock,
             sidecar,
             reader: LineReader::new(),
             session: LiveSession::new(session_uuid),
@@ -106,34 +116,31 @@ impl OmpTail {
         }
     }
 
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
     pub fn session(&self) -> &LiveSession {
         &self.session
-    }
-
-    /// True for the transcript, its write lock, or a subagent's transcript
-    /// (whose locks sit in the same sidecar directory) — a rewritten
-    /// breadcrumb only ever names the parent file.
-    pub fn owns(&self, path: &Path) -> bool {
-        path == self.path || path == self.lock || path.starts_with(&self.sidecar)
     }
 
     /// Fold in everything appended since the last call. Returns true when
     /// anything changed, i.e. when a `session-update` is worth emitting.
     pub fn poll(&mut self) -> bool {
         self.clear_working_marker();
-        let (lines, rewound) = self.reader.read_new(&self.path);
-        if rewound {
-            self.rebuild();
-        }
-        for raw in &lines {
-            self.fold(raw);
+        let mut read_anything = false;
+        loop {
+            let batch = self.reader.read_new(&self.path);
+            if batch.rewound {
+                self.rebuild();
+                read_anything = true;
+            }
+            read_anything |= !batch.lines.is_empty();
+            for raw in &batch.lines {
+                self.fold(raw);
+            }
+            if !batch.more {
+                break;
+            }
         }
         let subagents_changed = self.poll_subagent_files();
-        if lines.is_empty() && !rewound && !subagents_changed {
+        if !read_anything && !subagents_changed {
             self.apply_working_marker();
             return false;
         }
@@ -402,7 +409,7 @@ impl OmpTail {
                 .as_deref()
                 .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                 .zip(duration_ms)
-                .and_then(|(dt, dur)| iso_from_epoch_ms(dt.timestamp_millis() + dur))
+                .and_then(|(dt, dur)| iso_from_epoch_ms(dt.timestamp_millis().saturating_add(dur)))
                 .or_else(|| timestamp.clone());
             self.finish_subagent(idx, finished_at);
         }
@@ -494,75 +501,81 @@ impl OmpTail {
             } else {
                 None
             };
-            let file = self
-                .subagent_files
-                .entry(path.clone())
-                .or_insert_with(SubagentFile::new);
-            let (lines, rewound) = file.reader.read_new(&path);
-            if rewound {
-                self.session.output_tokens -= file.output_tokens;
-                self.session.cost_estimate -= file.cost;
-                file.tool_count = 0;
-                file.output_tokens = 0;
-                file.cost = 0.0;
-            }
-            if lines.is_empty() && !rewound {
-                continue;
-            }
-
-            let mut finishes: Vec<Option<String>> = Vec::new();
-            for raw in &lines {
-                let Ok(obj) = serde_json::from_str::<Value>(raw) else {
-                    continue;
-                };
-                if obj.get("type").and_then(|v| v.as_str()) != Some("message") {
+            let mut more = true;
+            while more {
+                let file = self
+                    .subagent_files
+                    .entry(path.clone())
+                    .or_insert_with(SubagentFile::new);
+                let batch = file.reader.read_new(&path);
+                more = batch.more;
+                let (lines, rewound) = (batch.lines, batch.rewound);
+                if rewound {
+                    self.session.output_tokens -= file.output_tokens;
+                    self.session.cost_estimate -= file.cost;
+                    file.tool_count = 0;
+                    file.output_tokens = 0;
+                    file.cost = 0.0;
+                }
+                if lines.is_empty() && !rewound {
                     continue;
                 }
-                let msg = obj.get("message").unwrap_or(&Value::Null);
-                match msg.get("role").and_then(|v| v.as_str()) {
-                    Some("assistant") => {
-                        if let Some(content) = msg.get("content").and_then(|v| v.as_array()) {
-                            file.tool_count += content
-                                .iter()
-                                .filter(|b| {
-                                    b.get("type").and_then(|v| v.as_str()) == Some("toolCall")
-                                })
-                                .count() as u32;
-                        }
-                        if let Some(usage) = msg.get("usage").map(Usage::from) {
-                            file.output_tokens += usage.output;
-                            file.cost += usage.cost;
-                            self.session.output_tokens += usage.output;
-                            self.session.cost_estimate += usage.cost;
-                        }
-                    }
-                    Some("toolResult") => {
-                        let is_yield =
-                            msg.get("toolName").and_then(|v| v.as_str()) == Some("yield");
-                        let is_error = msg
-                            .get("isError")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        if is_yield && !is_error {
-                            finishes.push(
-                                obj.get("timestamp")
-                                    .and_then(|v| v.as_str())
-                                    .map(str::to_string),
-                            );
-                        }
-                    }
-                    _ => {}
-                }
-            }
 
-            let tool_count = file.tool_count;
-            if let Some(idx) = idx {
-                self.session.subagents[idx].tool_count = tool_count;
-                for ts in finishes {
-                    self.finish_subagent(idx, ts);
+                let mut finishes: Vec<Option<String>> = Vec::new();
+                for raw in &lines {
+                    let Ok(obj) = serde_json::from_str::<Value>(raw) else {
+                        continue;
+                    };
+                    if obj.get("type").and_then(|v| v.as_str()) != Some("message") {
+                        continue;
+                    }
+                    let msg = obj.get("message").unwrap_or(&Value::Null);
+                    match msg.get("role").and_then(|v| v.as_str()) {
+                        Some("assistant") => {
+                            if let Some(content) = msg.get("content").and_then(|v| v.as_array()) {
+                                file.tool_count += content
+                                    .iter()
+                                    .filter(|b| {
+                                        b.get("type").and_then(|v| v.as_str()) == Some("toolCall")
+                                    })
+                                    .count()
+                                    as u32;
+                            }
+                            if let Some(usage) = msg.get("usage").map(Usage::from) {
+                                file.output_tokens += usage.output;
+                                file.cost += usage.cost;
+                                self.session.output_tokens += usage.output;
+                                self.session.cost_estimate += usage.cost;
+                            }
+                        }
+                        Some("toolResult") => {
+                            let is_yield =
+                                msg.get("toolName").and_then(|v| v.as_str()) == Some("yield");
+                            let is_error = msg
+                                .get("isError")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            if is_yield && !is_error {
+                                finishes.push(
+                                    obj.get("timestamp")
+                                        .and_then(|v| v.as_str())
+                                        .map(str::to_string),
+                                );
+                            }
+                        }
+                        _ => {}
+                    }
                 }
+
+                let tool_count = file.tool_count;
+                if let Some(idx) = idx {
+                    self.session.subagents[idx].tool_count = tool_count;
+                    for ts in finishes {
+                        self.finish_subagent(idx, ts);
+                    }
+                }
+                changed = true;
             }
-            changed = true;
         }
         changed
     }
@@ -631,6 +644,12 @@ fn subagent_transcripts(sidecar: &Path) -> Vec<PathBuf> {
     found
 }
 
+/// The subagent transcripts beneath an OMP session's transcript, for the stats
+/// cache key: their spend is folded into the parent's record.
+pub(crate) fn sidecar_files(transcript: &Path) -> Vec<PathBuf> {
+    subagent_transcripts(&transcript.with_extension(""))
+}
+
 /// One `task` subagent's own transcript, read incrementally, and what it has
 /// contributed so far — kept so a rewound file can take its share back out.
 struct SubagentFile {
@@ -663,7 +682,7 @@ struct Usage {
 
 impl Usage {
     fn from(usage: &Value) -> Self {
-        let tokens = |key: &str| usage.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
+        let tokens = |key: &str| crate::transcript::token_count(usage.get(key));
         Usage {
             input: tokens("input"),
             output: tokens("output"),
@@ -782,7 +801,7 @@ fn file_mtime_size(path: &Path) -> (u64, u64) {
                 .modified()
                 .map(|t| {
                     t.duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
+                        .map(|d| d.as_millis() as u64)
                         .unwrap_or(0)
                 })
                 .unwrap_or(0);
@@ -822,6 +841,7 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
     let mut tool_name_by_id: HashMap<String, String> = HashMap::new();
     let mut subagents: u32 = 0;
     let mut by_model: HashMap<String, ModelSessionData> = HashMap::new();
+    let mut activity = ActivityLog::default();
 
     for line in jsonl_lines(reader) {
         if line.trim().is_empty() {
@@ -837,6 +857,11 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
             }
             last_timestamp = Some(ts.to_string());
         }
+
+        let slot = obj
+            .get("timestamp")
+            .and_then(|v| v.as_str())
+            .and_then(activity_slot);
 
         match obj.get("type").and_then(|v| v.as_str()).unwrap_or("") {
             "session" => {
@@ -862,6 +887,7 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
                             let text = text_blocks(msg.get("content").unwrap_or(&Value::Null));
                             if !text.is_empty() {
                                 user_messages += 1;
+                                activity.add_message(slot);
                                 user_chars += text.chars().count() as u64;
                             }
                         }
@@ -877,6 +903,7 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
                             output_tokens += usage.output;
                             cache_creation_tokens += usage.cache_write;
                             cost_estimate += usage.cost;
+                            activity.add_usage(slot, usage.output, usage.cost, usage.context());
                             peak_context = peak_context.max(usage.context());
                             if let Some(family) = &family {
                                 usage.add_to(by_model.entry(family.clone()).or_default());
@@ -954,6 +981,14 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
             output_tokens += sub_data.output_tokens;
             cache_creation_tokens += sub_data.cache_creation_tokens;
             cost_estimate += sub_data.cost_estimate;
+            // Subagent messages are not bucketed by their own time; the spend is
+            // dated to the end of the session that launched them.
+            activity.add_usage(
+                last_timestamp.as_deref().and_then(activity_slot),
+                sub_data.output_tokens,
+                sub_data.cost_estimate,
+                0,
+            );
         }
         merge_model_data(&mut by_model_subagents, sub_usage);
     }
@@ -972,6 +1007,8 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
             _ => 0,
         }
     };
+
+    let activity = activity.finish(first_timestamp.as_deref().and_then(activity_slot));
 
     Ok(SessionRecord {
         session_id,
@@ -1000,6 +1037,8 @@ pub(crate) fn parse_omp_session(path: &Path) -> Result<SessionRecord, String> {
         by_model_subagents,
         subagent_invocations,
         harness: Some("omp".to_string()),
+        activity,
+        ..Default::default()
     })
 }
 
@@ -1057,9 +1096,15 @@ mod tests {
     #[test]
     fn the_transcripts_write_lock_counts_as_its_own_write() {
         let dir = Path::new("/sessions/-code-atlas");
-        let tail = OmpTail::new(UUID.to_string(), dir.join("2026-01-01T00-00-00Z_abc.jsonl"));
-        assert!(tail.owns(&dir.join(".2026-01-01T00-00-00Z_abc.jsonl.lock")));
-        assert!(!tail.owns(&dir.join(".2026-01-01T00-00-00Z_other.jsonl.lock")));
+        let transcript = dir.join("2026-01-01T00-00-00Z_abc.jsonl");
+        assert!(owns_transcript(
+            &transcript,
+            &dir.join(".2026-01-01T00-00-00Z_abc.jsonl.lock")
+        ));
+        assert!(!owns_transcript(
+            &transcript,
+            &dir.join(".2026-01-01T00-00-00Z_other.jsonl.lock")
+        ));
     }
 
     /// Write `lines` into a temp dir as `session.jsonl`, and return the tail
@@ -1489,5 +1534,20 @@ mod tests {
         std::fs::write(&path, "line one\nline two\n").unwrap();
         let since = SystemTime::now() + std::time::Duration::from_secs(60);
         assert_eq!(read_breadcrumb(&path, since), None);
+    }
+
+    #[test]
+    fn absurd_usage_does_not_overflow() {
+        let assistant = serde_json::json!({
+            "type": "message", "timestamp": "2026-01-01T00:00:00Z",
+            "message": {"role": "assistant", "model": "anthropic/claude-opus-5-5", "stopReason": "stop",
+                "content": [{"type": "text", "text": "done"}],
+                "usage": {"input": u64::MAX, "output": 5, "cacheRead": 1, "cacheWrite": u64::MAX,
+                    "cost": {"total": 0.01}}}
+        })
+        .to_string();
+        let (_dir, mut tail) = tail_with(&[assistant]);
+        assert!(tail.poll());
+        assert!(tail.session().context_tokens > 0);
     }
 }

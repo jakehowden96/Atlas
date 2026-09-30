@@ -3,10 +3,14 @@
 //! Claude Code runs in the alternate screen buffer, so the xterm buffer holds
 //! TUI chrome rather than a conversation. The structured source is the
 //! session's own `~/.claude/projects/<slug>/<uuid>.jsonl`, which this module
-//! reads incrementally — never from the start, because it reaches megabytes.
+//! reads incrementally. A newly attached tail reads the file once from the
+//! start, in bounded chunks, because cost and context need the whole history;
+//! after that it only reads what was appended.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::borrow::Cow;
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -183,12 +187,48 @@ impl LiveSession {
 
 // ── Incremental line reading ──────────────────────────────────────────────────
 
+/// Most bytes one `read_new` takes from the file. A transcript resumed after a
+/// long session is megabytes; reading it in bounded chunks and folding each
+/// before the next keeps memory at one chunk instead of a few copies of the file.
+const READ_CHUNK: u64 = 1 << 20;
+
+/// Most bytes from the start of the file kept to tell an append from a
+/// replacement: the first line, which carries the session id and a timestamp.
+/// Capped because the first line of a `file-history-snapshot` can be long, and
+/// because the fixed prefix every Claude transcript line begins with (`{"parentUuid":null,…`)
+/// is not enough on its own to tell two files apart.
+const HEAD_LEN: usize = 1024;
+
+/// What one `LineReader::read_new` call produced.
+pub(super) struct ReadBatch {
+    /// Complete lines, in file order.
+    pub lines: Vec<String>,
+    /// The file was replaced or shrank: the reader restarted at byte 0 and the
+    /// caller must drop the state it folded from the old contents first.
+    pub rewound: bool,
+    /// More of the file is waiting; call again before treating the tail as current.
+    pub more: bool,
+}
+
+impl ReadBatch {
+    fn nothing(rewound: bool) -> Self {
+        ReadBatch {
+            lines: Vec::new(),
+            rewound,
+            more: false,
+        }
+    }
+}
+
 /// Remembers where it stopped in a growing file so the file is never re-read
 /// from the start. The trailing bytes of an incomplete line are held back until
 /// the newline arrives, so a line written in two flushes still parses once.
 pub(super) struct LineReader {
     offset: u64,
     partial: Vec<u8>,
+    /// The first line of the file (at most `HEAD_LEN` bytes) as last seen, or
+    /// what there is of it while it is still being written.
+    head: Vec<u8>,
 }
 
 impl LineReader {
@@ -196,41 +236,61 @@ impl LineReader {
         LineReader {
             offset: 0,
             partial: Vec::new(),
+            head: Vec::new(),
         }
     }
 
     fn reset(&mut self) {
         self.offset = 0;
         self.partial.clear();
+        self.head.clear();
     }
 
-    /// Complete lines appended since the last call. The bool is true when the
-    /// file shrank (rotation/rewrite) and the caller must rebuild its state.
-    pub(super) fn read_new(&mut self, path: &Path) -> (Vec<String>, bool) {
+    /// Whether the file still starts with the bytes it started with.
+    fn head_matches(&self, file: &mut std::fs::File) -> bool {
+        let mut now = vec![0; self.head.len()];
+        file.seek(SeekFrom::Start(0)).is_ok()
+            && file.read_exact(&mut now).is_ok()
+            && now == self.head
+    }
+
+    /// Up to `READ_CHUNK` bytes of what was appended since the last call, as
+    /// complete lines. A file that shrank, or grew but no longer begins with
+    /// the bytes it began with, is a rewrite: the reader restarts at 0.
+    pub(super) fn read_new(&mut self, path: &Path) -> ReadBatch {
         let Ok(meta) = std::fs::metadata(path) else {
-            return (Vec::new(), false);
+            return ReadBatch::nothing(false);
         };
         let len = meta.len();
-        let rewound = len < self.offset;
+        let mut rewound = len < self.offset;
         if rewound {
             self.reset();
         }
         if len == self.offset {
-            return (Vec::new(), rewound);
+            return ReadBatch::nothing(rewound);
         }
 
         let Ok(mut file) = std::fs::File::open(path) else {
-            return (Vec::new(), rewound);
+            return ReadBatch::nothing(rewound);
         };
-        if file.seek(SeekFrom::Start(self.offset)).is_err() {
-            return (Vec::new(), rewound);
+        if self.offset > 0 && !self.head_matches(&mut file) {
+            self.reset();
+            rewound = true;
         }
-        let mut buf = Vec::new();
-        let Ok(read) = file.read_to_end(&mut buf) else {
-            return (Vec::new(), rewound);
+        if file.seek(SeekFrom::Start(self.offset)).is_err() {
+            return ReadBatch::nothing(rewound);
+        }
+        let Ok(read) = file
+            .by_ref()
+            .take(READ_CHUNK)
+            .read_to_end(&mut self.partial)
+        else {
+            return ReadBatch::nothing(rewound);
         };
         self.offset += read as u64;
-        self.partial.extend_from_slice(&buf);
+        if self.head.len() < HEAD_LEN && !self.head.contains(&b'\n') {
+            self.remember_head(&mut file);
+        }
 
         let mut lines = Vec::new();
         let mut start = 0;
@@ -240,7 +300,47 @@ impl LineReader {
             start = end + 1;
         }
         self.partial.drain(..start);
-        (lines, rewound)
+        ReadBatch {
+            lines,
+            rewound,
+            more: self.offset < len,
+        }
+    }
+
+    fn remember_head(&mut self, file: &mut std::fs::File) {
+        let mut head = Vec::with_capacity(HEAD_LEN);
+        if file.seek(SeekFrom::Start(0)).is_ok()
+            && file
+                .by_ref()
+                .take(HEAD_LEN as u64)
+                .read_to_end(&mut head)
+                .is_ok()
+        {
+            if let Some(newline) = head.iter().position(|b| *b == b'\n') {
+                head.truncate(newline + 1);
+            }
+            self.head = head;
+        }
+    }
+}
+
+/// Output tokens, cost and the largest context over the requests added so far.
+///
+/// A request's usage never changes once it is first seen, so the totals are
+/// kept as requests arrive instead of re-pricing every request of a
+/// thousand-request session on each poll.
+#[derive(Default)]
+struct Spend {
+    output_tokens: u64,
+    cost: f64,
+    peak_context: u64,
+}
+
+impl Spend {
+    fn add(&mut self, req: &ReqData) {
+        self.output_tokens += req.output_tokens;
+        self.cost += req.cost();
+        self.peak_context = self.peak_context.max(req.context());
     }
 }
 
@@ -256,8 +356,9 @@ impl LineReader {
 struct SubagentCounter {
     reader: LineReader,
     tool_count: u32,
-    /// requestId -> usage, deduplicated the same way as the parent's.
-    requests: HashMap<String, ReqData>,
+    /// Keys of the requests already counted, deduplicated the same way as the parent's.
+    seen: HashSet<String>,
+    spend: Spend,
 }
 
 impl SubagentCounter {
@@ -265,37 +366,43 @@ impl SubagentCounter {
         SubagentCounter {
             reader: LineReader::new(),
             tool_count: 0,
-            requests: HashMap::new(),
+            seen: HashSet::new(),
+            spend: Spend::default(),
         }
     }
 
     /// Returns true when the count or the usage changed.
     fn poll(&mut self, path: &Path) -> bool {
-        let (lines, rewound) = self.reader.read_new(path);
-        if rewound {
-            self.tool_count = 0;
-            self.requests.clear();
-        }
-        if lines.is_empty() {
-            return rewound;
-        }
-        let before = (self.tool_count, self.requests.len());
-        for raw in &lines {
-            let Ok(obj) = serde_json::from_str::<Value>(raw) else {
-                continue;
-            };
-            if line_type(&obj) != "assistant" {
-                continue;
+        let before = (self.tool_count, self.seen.len());
+        let mut changed = false;
+        loop {
+            let batch = self.reader.read_new(path);
+            if batch.rewound {
+                self.tool_count = 0;
+                self.seen.clear();
+                self.spend = Spend::default();
+                changed = true;
             }
-            let msg = obj.get("message").unwrap_or(&Value::Null);
-            self.tool_count += tool_uses(msg).len() as u32;
-            if let (Some(model), Some(key)) = (assistant_model(&obj), request_key(&obj)) {
-                self.requests
-                    .entry(key)
-                    .or_insert_with(|| ReqData::from_message(model, msg));
+            for raw in &batch.lines {
+                let Ok(obj) = serde_json::from_str::<Value>(raw) else {
+                    continue;
+                };
+                if line_type(&obj) != "assistant" {
+                    continue;
+                }
+                let msg = obj.get("message").unwrap_or(&Value::Null);
+                self.tool_count += tool_uses(msg).len() as u32;
+                if let (Some(model), Some(key)) = (assistant_model(&obj), request_key(&obj)) {
+                    if self.seen.insert(key) {
+                        self.spend.add(&ReqData::from_message(model, msg));
+                    }
+                }
+            }
+            if !batch.more {
+                break;
             }
         }
-        rewound || (self.tool_count, self.requests.len()) != before
+        changed || (self.tool_count, self.seen.len()) != before
     }
 }
 
@@ -315,12 +422,19 @@ pub struct SessionTail {
     /// Key into `requests` of the newest request seen. The map has no order, and
     /// current context is the newest request's, not the biggest.
     last_request: Option<String>,
+    /// Spend over `requests`, kept current as requests are first seen.
+    spend: Spend,
+    /// `tool_use` blocks over `requests`.
+    tool_calls: u32,
     /// Unanswered `tool_use` blocks in call order: (id, name, input summary).
     outstanding: Vec<(String, String, String)>,
     /// `tool_use` id -> index into `session.subagents`.
     subagent_index: HashMap<String, usize>,
     /// Subagent file stem -> its incremental tool counter.
     subagent_files: HashMap<String, SubagentCounter>,
+    /// Subagent file stem -> the parent `tool_use` id its `meta.json` names. Only
+    /// a complete read is remembered, so a meta file still being written is retried.
+    subagent_tool_ids: HashMap<String, String>,
     /// Indices into `session.subagents` of the ones launched in the background.
     background_subagents: HashSet<usize>,
     /// Workflow run file -> (len, mtime) at the last poll. Claude Code rewrites
@@ -339,6 +453,9 @@ pub struct SessionTail {
     last_stop_reason: Option<String>,
     /// Line currently displayed as `Working`, and the role it really has.
     working: Option<(usize, LineRole)>,
+    /// Lines that were not JSON. Counted so a format change is logged once
+    /// instead of every line silently vanishing.
+    skipped_lines: u64,
 }
 
 impl SessionTail {
@@ -359,6 +476,9 @@ impl SessionTail {
             session: LiveSession::new(session_uuid),
             requests: HashMap::new(),
             last_request: None,
+            spend: Spend::default(),
+            tool_calls: 0,
+            subagent_tool_ids: HashMap::new(),
             outstanding: Vec::new(),
             subagent_index: HashMap::new(),
             subagent_files: HashMap::new(),
@@ -368,11 +488,8 @@ impl SessionTail {
             seen_background_count: false,
             last_stop_reason: None,
             working: None,
+            skipped_lines: 0,
         }
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
     }
 
     pub fn session(&self) -> &LiveSession {
@@ -391,18 +508,26 @@ impl SessionTail {
     pub fn poll(&mut self) -> bool {
         // Withdrawn first, while the recorded line index is still valid.
         self.clear_working_marker();
-        let (lines, rewound) = self.reader.read_new(&self.path);
-        if rewound {
-            self.rebuild();
-        }
-        for raw in &lines {
-            self.fold(raw);
+        let mut read_anything = false;
+        loop {
+            let batch = self.reader.read_new(&self.path);
+            if batch.rewound {
+                self.rebuild();
+                read_anything = true;
+            }
+            read_anything |= !batch.lines.is_empty();
+            for raw in &batch.lines {
+                self.fold(raw);
+            }
+            if !batch.more {
+                break;
+            }
         }
         // After folding: a subagent is only tracked once its `Agent` call is read.
         let counts_changed = self.poll_subagents();
         let workflow_changed = self.poll_workflow_agents();
         let subagents_changed = counts_changed || workflow_changed;
-        if lines.is_empty() && !rewound && !subagents_changed {
+        if !read_anything && !subagents_changed {
             self.apply_working_marker();
             return false;
         }
@@ -417,6 +542,9 @@ impl SessionTail {
         self.session = LiveSession::new(uuid);
         self.requests.clear();
         self.last_request = None;
+        self.spend = Spend::default();
+        self.tool_calls = 0;
+        self.subagent_tool_ids.clear();
         self.outstanding.clear();
         self.subagent_index.clear();
         self.subagent_files.clear();
@@ -430,6 +558,15 @@ impl SessionTail {
 
     fn fold(&mut self, raw: &str) {
         let Ok(obj) = serde_json::from_str::<Value>(raw) else {
+            if !raw.trim().is_empty() {
+                if self.skipped_lines == 0 {
+                    log::warn!(
+                        "{}: skipping a line that is not JSON (later ones are not logged)",
+                        self.path.display()
+                    );
+                }
+                self.skipped_lines += 1;
+            }
             return;
         };
 
@@ -464,6 +601,7 @@ impl SessionTail {
         // `isMeta` marks content injected by a hook or skill, not typed by the human.
         let is_meta = obj.get("isMeta").and_then(|v| v.as_bool()).unwrap_or(false);
         if let Some(text) = user_text(obj) {
+            let text: &str = &text;
             // How a background subagent reports that it stopped. Read before the
             // early return, because a notification arrives as plain user text
             // rather than as the `tool_result` of the call that spawned it.
@@ -487,6 +625,17 @@ impl SessionTail {
                 // A notification or local command is plumbing, not something
                 // said — the card's feed shows the prompt the user typed.
                 if let Some(prompt) = prompt_text(text) {
+                    // A typed prompt (image-bearing ones included) starts a turn
+                    // the model has not answered yet, so the previous turn's
+                    // `end_turn` no longer describes the session, and a tool call
+                    // still unanswered from before it never will be: Claude Code
+                    // does not always write a result for a call killed mid-run.
+                    // A slash command may be handled locally with no reply at all,
+                    // so it leaves the state alone.
+                    if tagged(text, "command-name").is_none() {
+                        self.last_stop_reason = None;
+                        self.outstanding.clear();
+                    }
                     self.push_line(LineRole::User, format!("> {}", prompt), timestamp);
                     self.session.last_prompt = Some(prompt);
                     self.session.last_reply = None;
@@ -528,6 +677,10 @@ impl SessionTail {
         let msg = obj.get("message").unwrap_or(&Value::Null);
         if let Some(stop) = msg.get("stop_reason").and_then(|v| v.as_str()) {
             self.last_stop_reason = Some(stop.to_string());
+            // The turn is over, so no call it made can still be running.
+            if stop == "end_turn" {
+                self.outstanding.clear();
+            }
         }
 
         if let Some(content) = msg.get("content").and_then(|v| v.as_array()) {
@@ -585,11 +738,16 @@ impl SessionTail {
         if let (Some(model), Some(key)) = (assistant_model(obj), request_key(obj)) {
             self.session.model = Some(model.to_string());
             self.last_request = Some(key.clone());
-            let entry = self
-                .requests
-                .entry(key)
-                .or_insert_with(|| ReqData::from_message(model, msg));
-            entry.tool_names.extend(new_tools);
+            let req = match self.requests.entry(key) {
+                Entry::Occupied(occupied) => occupied.into_mut(),
+                Entry::Vacant(vacant) => {
+                    let req = ReqData::from_message(model, msg);
+                    self.spend.add(&req);
+                    vacant.insert(req)
+                }
+            };
+            self.tool_calls += u32::try_from(new_tools.len()).unwrap_or(u32::MAX);
+            req.tool_names.extend(new_tools);
         }
     }
 
@@ -656,25 +814,15 @@ impl SessionTail {
     }
 
     fn finalize(&mut self) {
-        let mut output_tokens = 0;
-        let mut cost_estimate = 0.0;
-        let mut peak_context = 0;
-        let mut tool_calls = 0;
-        for req in self.requests.values() {
-            output_tokens += req.output_tokens;
-            cost_estimate += req.cost();
-            peak_context = peak_context.max(req.context());
-            tool_calls += req.tool_names.len() as u32;
-        }
+        let mut output_tokens = self.spend.output_tokens;
+        let mut cost_estimate = self.spend.cost;
+        let peak_context = self.spend.peak_context;
+        let tool_calls = self.tool_calls;
         // A subagent's requests are billed to this session but never written
         // into its transcript. Spend only: its context and tools are its own.
-        for req in self
-            .subagent_files
-            .values()
-            .flat_map(|c| c.requests.values())
-        {
-            output_tokens += req.output_tokens;
-            cost_estimate += req.cost();
+        for counter in self.subagent_files.values() {
+            output_tokens += counter.spend.output_tokens;
+            cost_estimate += counter.spend.cost;
         }
         // Newest request, not biggest: after a compact or a `/clear` the window
         // really is emptier, and a peak would stay pinned to the old high while
@@ -761,21 +909,20 @@ impl SessionTail {
             else {
                 continue;
             };
-            let stem = stem.to_string();
-            let Some(tool_use_id) = std::fs::read_to_string(&meta_path)
-                .ok()
-                .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-                .and_then(|v| {
-                    v.get("toolUseId")
-                        .and_then(|t| t.as_str())
-                        .map(|s| s.to_string())
-                })
+            if !self.subagent_tool_ids.contains_key(stem) {
+                let Some(id) = read_tool_use_id(&meta_path) else {
+                    continue;
+                };
+                self.subagent_tool_ids.insert(stem.to_string(), id);
+            }
+            let Some(&idx) = self
+                .subagent_tool_ids
+                .get(stem)
+                .and_then(|id| self.subagent_index.get(id.as_str()))
             else {
                 continue;
             };
-            let Some(&idx) = self.subagent_index.get(&tool_use_id) else {
-                continue;
-            };
+            let stem = stem.to_string();
             let jsonl = self.subagents_dir.join(format!("{}.jsonl", stem));
             let counter = self
                 .subagent_files
@@ -838,29 +985,41 @@ impl SessionTail {
 /// One line, trimmed and capped — transcript text is multi-line and long.
 pub(super) fn excerpt(text: &str) -> String {
     let first = text.trim().lines().next().unwrap_or("").trim();
-    if first.chars().count() <= EXCERPT {
-        return first.to_string();
-    }
-    let cut: String = first.chars().take(EXCERPT).collect();
-    format!("{}…", cut)
+    capped(first, EXCERPT)
 }
 
 /// `text` capped at `max` chars, with an ellipsis marking the cut.
 pub(super) fn capped(text: &str, max: usize) -> String {
-    if text.chars().count() <= max {
-        return text.to_string();
+    match text.char_indices().nth(max) {
+        None => text.to_string(),
+        Some((cut, _)) => format!("{}…", &text[..cut]),
     }
-    let cut: String = text.chars().take(max).collect();
-    format!("{}…", cut)
+}
+
+/// `text` with whitespace runs collapsed to one space, stopped once it is
+/// longer than `max` chars: the caller caps it, so the rest of an unbounded
+/// assistant text or prompt need not be copied.
+fn collapsed_head(text: &str, max: usize) -> String {
+    let mut out = String::new();
+    let mut chars = 0;
+    for word in text.split_whitespace() {
+        if !out.is_empty() {
+            out.push(' ');
+            chars += 1;
+        }
+        out.push_str(word);
+        chars += word.chars().count();
+        if chars > max {
+            break;
+        }
+    }
+    out
 }
 
 /// An assistant text block as one transcript line: whitespace collapsed and
 /// capped, so the feed can clamp it to a few lines rather than the first.
 pub(super) fn note_text(text: &str) -> String {
-    capped(
-        &text.split_whitespace().collect::<Vec<_>>().join(" "),
-        NOTE_SUMMARY,
-    )
+    capped(&collapsed_head(text, NOTE_SUMMARY), NOTE_SUMMARY)
 }
 
 /// The newest user prompt, for the Sessions grid card. None for a
@@ -875,7 +1034,7 @@ pub(super) fn prompt_text(text: &str) -> Option<String> {
     } else {
         text.to_string()
     };
-    let collapsed = base.split_whitespace().collect::<Vec<_>>().join(" ");
+    let collapsed = collapsed_head(&base, PROMPT_SUMMARY);
     if collapsed.is_empty() {
         None
     } else {
@@ -884,16 +1043,21 @@ pub(super) fn prompt_text(text: &str) -> Option<String> {
 }
 
 /// `tool_result.content` is usually a string but can be an array of blocks.
-pub(super) fn result_text(content: &Value) -> String {
+pub(super) fn result_text(content: &Value) -> Cow<'_, str> {
     match content {
-        Value::String(s) => s.clone(),
-        Value::Array(blocks) => blocks
-            .iter()
-            .filter_map(|b| b.get("text").and_then(|v| v.as_str()))
-            .collect::<Vec<_>>()
-            .join(" "),
-        Value::Null => String::new(),
-        other => other.to_string(),
+        Value::String(s) => Cow::Borrowed(s.as_str()),
+        Value::Array(blocks) => {
+            let texts: Vec<&str> = blocks
+                .iter()
+                .filter_map(|b| b.get("text").and_then(|v| v.as_str()))
+                .collect();
+            match texts.as_slice() {
+                [only] => Cow::Borrowed(only),
+                _ => Cow::Owned(texts.join(" ")),
+            }
+        }
+        Value::Null => Cow::Borrowed(""),
+        other => Cow::Owned(other.to_string()),
     }
 }
 
@@ -913,6 +1077,14 @@ pub(super) fn input_summary(input: &Value) -> String {
         }
     }
     String::new()
+}
+
+/// The `toolUseId` a subagent's `meta.json` names, or None while the file is
+/// missing, unreadable or not yet complete.
+fn read_tool_use_id(meta_path: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(meta_path).ok()?;
+    let meta = serde_json::from_str::<Value>(&text).ok()?;
+    meta.get("toolUseId")?.as_str().map(str::to_string)
 }
 
 fn plan_from_todos(input: &Value) -> Vec<PlanItem> {
@@ -1035,8 +1207,7 @@ fn workflow_agents(run: &Value) -> Vec<(String, Subagent)> {
 
     run["workflowProgress"]
         .as_array()
-        .cloned()
-        .unwrap_or_default()
+        .map_or(&[][..], Vec::as_slice)
         .iter()
         .enumerate()
         .filter(|(_, entry)| entry.get("type").and_then(|v| v.as_str()) == Some("workflow_agent"))
@@ -1065,12 +1236,15 @@ fn workflow_agents(run: &Value) -> Vec<(String, Subagent)> {
                     .and_then(iso_from_epoch_ms)
                     .or_else(|| {
                         started_at_ms.and_then(|start| {
-                            iso_from_epoch_ms(start + entry["durationMs"].as_i64().unwrap_or(0))
+                            iso_from_epoch_ms(
+                                start.saturating_add(entry["durationMs"].as_i64().unwrap_or(0)),
+                            )
                         })
                     })
             };
 
-            let tool_count = entry["toolCalls"].as_u64().unwrap_or(0) as u32;
+            let tool_count =
+                u32::try_from(entry["toolCalls"].as_u64().unwrap_or(0)).unwrap_or(u32::MAX);
 
             let agent_type = entry["agentType"]
                 .as_str()
@@ -2001,5 +2175,189 @@ mod tests {
         assert!(!prompt.contains('\n'));
         assert_eq!(prompt.chars().count(), 401);
         assert!(prompt.ends_with('…'));
+    }
+
+    fn prompt_line(content: &str) -> String {
+        format!(
+            r#"{{"type":"user","message":{{"role":"user","content":{content}}},"timestamp":"2026-09-07T21:52:00.000Z"}}"#
+        )
+    }
+
+    /// A prompt with a pasted image is written as an array of blocks, not a
+    /// string. It is still the human's turn: it becomes the card's prompt and
+    /// clears the previous reply.
+    #[test]
+    fn a_prompt_with_an_image_starts_a_new_turn() {
+        let image_prompt = prompt_line(
+            r#"[{"type":"text","text":"[Image #1] look at this"},{"type":"image","source":{}}]"#,
+        );
+        let (_dir, mut tail) = tail_with(&[usage_line("req_a", 1000, 10), image_prompt]);
+        assert!(tail.poll());
+        let session = tail.session();
+        assert_eq!(
+            session.last_prompt.as_deref(),
+            Some("[Image #1] look at this")
+        );
+        assert_eq!(session.last_reply, None);
+        assert_eq!(session.state, SessionState::Running);
+    }
+
+    #[test]
+    fn an_interrupt_marker_is_not_a_prompt() {
+        let interrupt = prompt_line(r#"[{"type":"text","text":"[Request interrupted by user]"}]"#);
+        let (_dir, mut tail) = tail_with(&[interrupt]);
+        tail.poll();
+        assert_eq!(tail.session().last_prompt, None);
+        assert!(tail.session().lines.is_empty());
+    }
+
+    /// Between the prompt landing and the first reply line the model is
+    /// working, whatever the previous turn ended with.
+    #[test]
+    fn a_new_prompt_after_end_turn_is_running_not_idle() {
+        let (_dir, mut tail) =
+            tail_with(&[usage_line("req_a", 1000, 10), prompt_line(r#""next task""#)]);
+        tail.poll();
+        assert_eq!(tail.session().state, SessionState::Running);
+    }
+
+    /// Claude killed mid-tool leaves a `tool_use` with no `tool_result`. A
+    /// later prompt and a finished turn must not keep the session blocked on it.
+    #[test]
+    fn a_tool_call_that_never_got_a_result_does_not_block_a_later_turn() {
+        let orphan = r#"{"type":"assistant","requestId":"req_t","timestamp":"2026-09-07T21:50:00.000Z","message":{"role":"assistant","model":"claude-opus-5","stop_reason":"tool_use","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"sleep 99"}}],"usage":{"output_tokens":5}}}"#.to_string();
+        let (_dir, mut tail) = tail_with(&[
+            orphan,
+            prompt_line(r#""continue""#),
+            usage_line("req_b", 1000, 10),
+        ]);
+        tail.poll();
+        assert!(tail.session().pending_tool.is_none());
+        assert_eq!(tail.session().state, SessionState::Idle);
+    }
+
+    /// Numbers come straight from a file another process writes. A corrupt
+    /// line must not panic (debug) or wrap (release) the tail.
+    #[test]
+    fn absurd_usage_and_workflow_times_do_not_overflow() {
+        let huge = format!(
+            r#"{{"type":"assistant","requestId":"req_h","timestamp":"2026-09-07T21:50:59.000Z","message":{{"role":"assistant","model":"claude-opus-5","stop_reason":"end_turn","content":[{{"type":"text","text":"ok"}}],"usage":{{"input_tokens":1,"cache_read_input_tokens":{max},"cache_creation_input_tokens":{max},"output_tokens":{max}}}}}}}"#,
+            max = u64::MAX
+        );
+        let (dir, mut tail) = tail_with(&[huge]);
+        write_workflow(
+            dir.path(),
+            UUID,
+            &format!(
+                r#"{{"runId":"wf_test","status":"completed","workflowProgress":[{{"type":"workflow_agent","agentId":"a1","state":"done","startedAt":{},"durationMs":10,"toolCalls":{}}}]}}"#,
+                i64::MAX - 1,
+                u64::MAX
+            ),
+        );
+        tail.poll();
+        assert_eq!(tail.session().subagents[0].tool_count, u32::MAX);
+    }
+
+    /// A transcript resumed after a long session is read in bounded chunks;
+    /// a line and a multibyte character straddling a chunk edge must survive.
+    #[test]
+    fn a_transcript_larger_than_a_chunk_is_read_in_full() {
+        let filler = "é".repeat(500);
+        let lines: Vec<String> = (0..3000)
+            .map(|i| prompt_line(&format!("\"{i} {filler}\"")))
+            .collect();
+        let (dir, mut tail) = tail_with(&lines);
+
+        let mut reader = LineReader::new();
+        let first = reader.read_new(&dir.path().join(format!("{UUID}.jsonl")));
+        assert!(first.more, "3 MiB is more than one chunk");
+        assert!(first.lines.len() < lines.len());
+
+        assert!(tail.poll());
+        let prompt = tail.session().last_prompt.as_deref().unwrap();
+        assert!(prompt.starts_with("2999 é"), "{prompt}");
+    }
+
+    /// A different file that grew past the old offset is not an append.
+    #[test]
+    fn a_replaced_larger_file_is_rebuilt_not_appended_to() {
+        let shared = r#"{"parentUuid":null,"isSidechain":false,"userType":"external","cwd":"/work/project","#;
+        let first_line = |session: &str| {
+            format!(
+                r#"{shared}"sessionId":"{session}","type":"user","message":{{"role":"user","content":"{session} prompt"}}}}"#
+            )
+        };
+        let (dir, mut tail) = tail_with(&[first_line("aaaaaaaa")]);
+        tail.poll();
+        assert_eq!(
+            tail.session().last_prompt.as_deref(),
+            Some("aaaaaaaa prompt")
+        );
+
+        let replacement: Vec<String> = ["bbbbbbbbbbbbbbbbbbbb"; 3]
+            .iter()
+            .map(|s| first_line(s))
+            .collect();
+        let path = dir.path().join(format!("{UUID}.jsonl"));
+        std::fs::write(&path, replacement.join("\n") + "\n").unwrap();
+
+        assert!(tail.poll());
+        assert_eq!(
+            tail.session().last_prompt.as_deref(),
+            Some("bbbbbbbbbbbbbbbbbbbb prompt")
+        );
+        assert_eq!(tail.session().lines.len(), 3);
+        assert!(
+            tail.session().lines[0]
+                .text
+                .contains("bbbbbbbbbbbbbbbbbbbb"),
+            "the old file's line must be gone: {:?}",
+            tail.session().lines[0].text
+        );
+    }
+
+    /// A writer killed mid-line leaves a fragment; the record written after
+    /// the restart must still be read.
+    #[test]
+    fn a_torn_line_does_not_swallow_the_record_after_it() {
+        let (dir, mut tail) = tail_with(&[]);
+        let path = dir.path().join(format!("{UUID}.jsonl"));
+        std::fs::write(&path, r#"{"type":"user","message":{"content":"a""#).unwrap();
+        tail.poll();
+        append(&path, &["".to_string(), prompt_line(r#""b""#)]);
+        tail.poll();
+        assert_eq!(tail.session().last_prompt.as_deref(), Some("b"));
+    }
+
+    /// A `meta.json` caught half-written is retried, and a complete one is
+    /// remembered rather than re-read on every poll.
+    #[test]
+    fn a_subagent_meta_still_being_written_is_retried() {
+        let (dir, mut tail) = tail_with(&fixture_lines());
+        let subagents = dir.path().join(UUID).join("subagents");
+        std::fs::create_dir_all(&subagents).unwrap();
+        let meta = subagents.join("agent-abc.meta.json");
+        std::fs::write(&meta, r#"{"toolUseId":"toolu_agen"#).unwrap();
+        std::fs::write(
+            subagents.join("agent-abc.jsonl"),
+            concat!(
+                r#"{"isSidechain":true,"type":"assistant","requestId":"r1","message":{"model":"claude-opus-5","content":[{"type":"tool_use","id":"s1","name":"Read","input":{}}],"usage":{"output_tokens":5}}}"#,
+                "\n"
+            ),
+        )
+        .unwrap();
+        tail.poll();
+        let count = |tail: &SessionTail| {
+            tail.session()
+                .subagents
+                .iter()
+                .find(|s| s.task == "Check the parser")
+                .map(|s| s.tool_count)
+        };
+        assert_eq!(count(&tail), Some(0));
+
+        std::fs::write(&meta, r#"{"toolUseId":"toolu_agent1"}"#).unwrap();
+        assert!(tail.poll());
+        assert_eq!(count(&tail), Some(1));
     }
 }
