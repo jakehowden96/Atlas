@@ -61,7 +61,7 @@ Everything Atlas owns is under `~/.atlas/`:
 | `logs/` | Daily log files (`atlas-*.log`). |
 | `sessions/<id>/` | Per-session working files: `panel.json` (diff and status for the Changes drawer) and the one-shot hook signals. |
 
-Atlas reads `~/.claude/projects/` (transcripts). `~/.claude/plans/` is shown in Files and editable there on purpose. The only other file Atlas writes in `~/.claude/` is `settings.json`, for the hooks below.
+The bundle identifier is `com.atlas.dev`; changing it later would move the OS-level per-app data and reset the notification permission, which is why it has been left alone. Atlas reads `~/.claude/projects/` (transcripts). `~/.claude/plans/` is shown in Files and editable there on purpose. The only other file Atlas writes in `~/.claude/` is `settings.json`, for the hooks below.
 
 ## Claude Code hooks
 

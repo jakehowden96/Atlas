@@ -74,8 +74,8 @@ defect found in the audit.
 - Font size stepper moves by whole pixels; reserved chords cannot be bound as shortcuts.
 - PTY output is sent as raw bytes (1.004x overhead instead of 3.57x on a 1 MiB burst) with bounded
   back-pressure, and PTY writes/kills no longer block the main thread.
-- The app icon font is a 6.6 KB subset (was 3.9 MB). Release binary: 15.3 MB to 7.9 MB
-  (LTO, `opt-level = "s"`, stripped).
+- The app icon font is a 6.6 KB subset (was 3.9 MB). Release binary: 15.3 MB to 7.1 MB
+  (LTO, `opt-level = "s"`, stripped, unused plugins removed); the macOS dmg is 3.8 MB.
 
 ### Build and release
 
