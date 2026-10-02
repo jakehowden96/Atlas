@@ -1,7 +1,7 @@
 {
-  "$schema": "https://raw.githubusercontent.com/nicegui/nicegui/main/tauri/tauri.conf.json",
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "Atlas",
-  "version": "4.3.0",
+  "version": "2.0.0",
   "identifier": "com.atlas.dev",
   "build": {
     "frontendDist": "../dist",
@@ -10,15 +10,18 @@
     "beforeBuildCommand": "pnpm build"
   },
   "bundle": {
+    "active": true,
+    "targets": ["dmg", "nsis"],
+    "category": "DeveloperTool",
+    "shortDescription": "Mission control for Claude Code sessions",
+    "copyright": "Copyright (c) 2026 Jake Howden",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
+      "icons/icon.ico",
       "icons/icon.png"
-    ],
-    "resources": [
-      "../scripts/atlas-notify-hook.sh"
     ]
   },
   "app": {
@@ -32,18 +35,14 @@
         "fullscreen": false,
         "minWidth": 800,
         "minHeight": 500,
-        "backgroundColor": "#272e33",
+        "backgroundColor": "#0f1012",
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-lcd-text"
       }
     ],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; worker-src 'self'"
-    }
-  },
-  "plugins": {
-    "shell": {
-      "open": true
     }
   }
 }

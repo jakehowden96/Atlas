@@ -1,7 +1,12 @@
 mod diff;
+pub mod files;
+pub mod files_scope;
+pub mod frontend_log;
 pub mod git;
 pub mod panel;
+pub(crate) mod proc;
 pub mod prs;
+pub mod session;
 pub mod stats;
 pub mod terminal;
-mod validate;
+pub(crate) mod validate;

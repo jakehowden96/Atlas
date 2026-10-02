@@ -1,19 +1,102 @@
-use super::validate::{validate_branch_name, validate_cwd, validate_file_paths};
-use crate::panel::types::{BranchInfo, GitStatus, RepoInfo};
-use std::fs;
-use std::process::Command;
+use super::proc::no_window;
+use super::prs::validate_repo_slug;
+use super::validate::{validate_branch_name, validate_cwd};
+use crate::error::AtlasError;
+use crate::panel::types::GitStatus;
+use std::io::Read;
+use std::process::{Command, Stdio};
+use ts_rs::TS;
 
-pub(crate) fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("git")
-        .args([&["-C", cwd], args].concat())
+/// A `git -C <cwd> <args>` command.
+///
+/// `GIT_OPTIONAL_LOCKS=0` stops read-only commands from opportunistically
+/// refreshing the index: Atlas polls constantly and would otherwise collide
+/// with Claude's or the user's own `git add`/`commit` on `.git/index.lock`.
+/// What a `git` spawn says when there is no git to spawn. The UI shows this
+/// text as is, so it carries the fix.
+const GIT_NOT_FOUND: &str = "git was not found on PATH. Install it (macOS: xcode-select --install, Windows: winget install --id Git.Git)";
+
+/// A failed `git` spawn: a missing binary is `ToolMissing`, not the OS's 'No
+/// such file or directory (os error 2)'.
+fn spawn_error(e: &std::io::Error) -> AtlasError {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        AtlasError::tool_missing("git", GIT_NOT_FOUND)
+    } else {
+        AtlasError::tool_failed("git", e.to_string())
+    }
+}
+
+fn git_command(cwd: &str, args: &[&str]) -> Command {
+    let mut cmd = Command::new("git");
+    cmd.args(["-C", cwd])
+        .args(args)
+        .env("GIT_OPTIONAL_LOCKS", "0");
+    no_window(&mut cmd);
+    cmd
+}
+
+/// Run git and return stdout verbatim. Diff and `-z` output is whitespace
+/// significant (a trailing blank context line, NUL separators), so callers
+/// that parse it must not go through the trimming `git_cmd`.
+pub(crate) fn git_raw(cwd: &str, args: &[&str]) -> Result<String, AtlasError> {
+    let output = git_command(cwd, args)
         .output()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| spawn_error(&e))?;
 
     if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+        return Err(AtlasError::tool_failed(
+            "git",
+            String::from_utf8_lossy(&output.stderr),
+        ));
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Run git and return stdout trimmed, for commands that print a single token.
+pub(crate) fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, AtlasError> {
+    git_raw(cwd, args).map(|s| s.trim().to_string())
+}
+
+/// Like `git_raw`, but reads at most `cap` bytes of stdout and then kills the
+/// child. A regenerated lockfile or vendored directory can produce hundreds of
+/// MB of diff; the caller truncates to a couple of MB anyway, so there is no
+/// reason to buffer the rest. Returns the bytes read and whether output was cut.
+pub(crate) fn git_raw_capped(
+    cwd: &str,
+    args: &[&str],
+    cap: usize,
+) -> Result<(String, bool), AtlasError> {
+    let mut child = git_command(cwd, args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| spawn_error(&e))?;
+    let Some(stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(AtlasError::internal("git stdout was not captured"));
+    };
+
+    let mut buf = Vec::new();
+    let read = stdout.take(cap as u64 + 1).read_to_end(&mut buf);
+    let truncated = buf.len() > cap;
+    if truncated {
+        buf.truncate(cap);
+        // Closing the pipe would only stop git on its next write; kill it now.
+        let _ = child.kill();
+    }
+    let status = child.wait()?;
+    read?;
+
+    if !truncated && !status.success() {
+        return Err(AtlasError::tool_failed(
+            "git",
+            format!("git exited with {status}"),
+        ));
+    }
+    Ok((String::from_utf8_lossy(&buf).into_owned(), truncated))
 }
 
 /// Check whether a directory should be skipped during repo scanning.
@@ -23,241 +106,228 @@ pub(crate) fn should_skip_dir(name: &str) -> bool {
     name.starts_with('.') || name == "node_modules" || name == "target"
 }
 
-/// Stage all changes in the given git repo.
-#[tauri::command(async)]
-pub async fn git_stage_all(cwd: String) -> Result<(), String> {
-    validate_cwd(&cwd)?;
-    tokio::task::spawn_blocking(move || {
-        git_cmd(&cwd, &["add", "-A"]).map(|_| ())
-    }).await.map_err(|e| format!("Task join error: {}", e))?
+/// Whether the working tree has changes the "Work on it" checkout would clobber.
+///
+/// One `git status` instead of seven spawns, and a git failure (lock, corrupt
+/// repo) is an error rather than being read as "dirty".
+fn git_status(cwd: &str) -> Result<GitStatus, AtlasError> {
+    let porcelain = git_raw(cwd, &["status", "--porcelain=v1", "-z"])?;
+    Ok(parse_porcelain(&porcelain))
 }
 
-/// Stage specific files in the given git repo.
-#[tauri::command(async)]
-pub async fn git_stage_files(cwd: String, files: Vec<String>) -> Result<(), String> {
-    validate_cwd(&cwd)?;
-    if files.is_empty() {
-        return Ok(());
-    }
-    validate_file_paths(&cwd, &files)?;
-    tokio::task::spawn_blocking(move || {
-        let mut args = vec!["add", "-A", "--"];
-        let refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
-        args.extend(refs);
-        git_cmd(&cwd, &args).map(|_| ())
-    }).await.map_err(|e| format!("Task join error: {}", e))?
-}
-
-/// Discard all working tree changes (unstaged + staged) in the given git repo.
-#[tauri::command(async)]
-pub async fn git_discard_all(cwd: String) -> Result<(), String> {
-    validate_cwd(&cwd)?;
-    tokio::task::spawn_blocking(move || {
-        let _ = git_cmd(&cwd, &["reset", "HEAD", "--"]);
-        git_cmd(&cwd, &["checkout", "--", "."])?;
-        git_cmd(&cwd, &["clean", "-fd"]).map(|_| ())
-    }).await.map_err(|e| format!("Task join error: {}", e))?
-}
-
-/// Get the current git status for determining the adaptive button state.
-#[tauri::command(async)]
-pub async fn get_git_status(cwd: String) -> Result<GitStatus, String> {
-    validate_cwd(&cwd)?;
-    tokio::task::spawn_blocking(move || {
-        // Verify this is actually a git repository
-        git_cmd(&cwd, &["rev-parse", "--git-dir"])?;
-
-        // Check for unstaged changes (working tree vs index)
-        // git diff --quiet exits 1 when there are changes
-        let has_modified = git_cmd(&cwd, &["diff", "--quiet"]).is_err();
-
-        // Check for untracked files
-        let has_untracked = git_cmd(&cwd, &["ls-files", "--others", "--exclude-standard"])
-            .map(|s| !s.is_empty())
-            .unwrap_or(false);
-
-        let has_unstaged = has_modified || has_untracked;
-
-        // Check for staged changes (index vs HEAD)
-        let has_staged = git_cmd(&cwd, &["diff", "--cached", "--quiet"]).is_err();
-
-        // Check for unpushed commits
-        let has_unpushed = git_cmd(&cwd, &["rev-list", "@{u}..HEAD", "--count"])
-            .map(|s| s.trim().parse::<u32>().unwrap_or(0) > 0)
-            .unwrap_or(false);
-
-        // Check for commits behind upstream
-        let commits_behind = git_cmd(&cwd, &["rev-list", "HEAD..@{u}", "--count"])
-            .map(|s| s.trim().parse::<u32>().unwrap_or(0))
-            .unwrap_or(0);
-
-        // Get current branch
-        let branch = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
-            .unwrap_or_default();
-
-        Ok(GitStatus {
-            has_unstaged,
-            has_staged,
-            has_unpushed,
-            commits_behind,
-            branch,
-        })
-    }).await.map_err(|e| format!("Task join error: {}", e))?
-}
-
-/// Commit all changes with the given message. Stages everything first.
-#[tauri::command(async)]
-pub async fn git_commit(cwd: String, message: String) -> Result<(), String> {
-    validate_cwd(&cwd)?;
-    if message.is_empty() {
-        return Err("Commit message cannot be empty".to_string());
-    }
-    if message.contains('\0') {
-        return Err("Commit message contains invalid characters".to_string());
-    }
-    tokio::task::spawn_blocking(move || {
-        git_cmd(&cwd, &["add", "-A"])?;
-        git_cmd(&cwd, &["commit", "-m", &message])?;
-        Ok(())
-    }).await.map_err(|e| format!("Task join error: {}", e))?
-}
-
-/// Push to the upstream remote.
-#[tauri::command(async)]
-pub async fn git_push(cwd: String) -> Result<String, String> {
-    validate_cwd(&cwd)?;
-    tokio::task::spawn_blocking(move || {
-        let has_upstream = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).is_ok();
-
-        if has_upstream {
-            git_cmd(&cwd, &["push"])?;
-            return Ok("Pushed to remote".to_string());
-        }
-
-        let has_origin = git_cmd(&cwd, &["remote", "get-url", "origin"]).is_ok();
-        if !has_origin {
-            return Err("No remote 'origin' configured. Add a remote first.".to_string());
-        }
-
-        let branch = git_cmd(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])?;
-        git_cmd(&cwd, &["push", "-u", "origin", &branch])?;
-        Ok("Pushed and set upstream".to_string())
-    }).await.map_err(|e| format!("Task join error: {}", e))?
-}
-
-/// Fetch from remote with prune.
-#[tauri::command(async)]
-pub async fn git_fetch(cwd: String) -> Result<(), String> {
-    validate_cwd(&cwd)?;
-    tokio::task::spawn_blocking(move || {
-        git_cmd(&cwd, &["fetch", "--prune"]).map(|_| ())
-    }).await.map_err(|e| format!("Task join error: {}", e))?
-}
-
-/// Pull from remote.
-#[tauri::command(async)]
-pub async fn git_pull(cwd: String) -> Result<(), String> {
-    validate_cwd(&cwd)?;
-    tokio::task::spawn_blocking(move || {
-        git_cmd(&cwd, &["pull"]).map(|_| ())
-    }).await.map_err(|e| format!("Task join error: {}", e))?
-}
-
-/// List child git repos with their current branch names.
-#[tauri::command(async)]
-pub async fn get_child_repos(cwd: String) -> Result<Vec<RepoInfo>, String> {
-    validate_cwd(&cwd)?;
-    tokio::task::spawn_blocking(move || {
-        let mut entries: Vec<_> = match fs::read_dir(&cwd) {
-            Ok(e) => e.flatten().collect(),
-            Err(_) => return Ok(Vec::new()),
+/// `XY path` entries, NUL-separated. `X` is the index side, `Y` the worktree
+/// side; `?` marks untracked files, which count as unstaged work. A rename or
+/// copy is followed by a bare second path with no status columns.
+fn parse_porcelain(porcelain: &str) -> GitStatus {
+    let mut status = GitStatus {
+        has_unstaged: false,
+        has_staged: false,
+    };
+    let mut entries = porcelain.split('\0').filter(|e| !e.is_empty());
+    while let Some(entry) = entries.next() {
+        let mut columns = entry.chars();
+        let (Some(index), Some(worktree)) = (columns.next(), columns.next()) else {
+            continue;
         };
-        entries.sort_by_key(|e| e.file_name());
-
-        let mut repos = Vec::new();
-        for entry in entries {
-            if !entry.file_type().map_or(false, |t| t.is_dir()) {
-                continue;
-            }
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy().to_string();
-            let child = entry.path().to_string_lossy().to_string();
-            if should_skip_dir(&name_str) {
-                continue;
-            }
-            if git_cmd(&child, &["rev-parse", "--show-toplevel"]).is_err() {
-                continue;
-            }
-            let branch = git_cmd(&child, &["rev-parse", "--abbrev-ref", "HEAD"])
-                .unwrap_or_default();
-            let commits_behind = git_cmd(&child, &["rev-list", "HEAD..@{u}", "--count"])
-                .map(|s| s.trim().parse::<u32>().unwrap_or(0))
-                .unwrap_or(0);
-            repos.push(RepoInfo { name: name_str, branch, commits_behind });
+        if index == '?' {
+            status.has_unstaged = true;
+            continue;
         }
+        if index != ' ' {
+            status.has_staged = true;
+        }
+        if worktree != ' ' {
+            status.has_unstaged = true;
+        }
+        if matches!(index, 'R' | 'C') || matches!(worktree, 'R' | 'C') {
+            entries.next();
+        }
+    }
+    status
+}
+
+/// Whether the tree has staged or unstaged changes, for the PR checkout guard.
+#[tauri::command(async)]
+pub async fn get_git_status(cwd: String) -> Result<GitStatus, AtlasError> {
+    validate_cwd(&cwd)?;
+    tokio::task::spawn_blocking(move || git_status(&cwd)).await?
+}
+
+/// Parse a git remote URL into an `owner/repo` slug.
+///
+/// Handles both remote forms git hands out: scp-like SSH
+/// (`user@host:owner/repo.git`) and URL-shaped
+/// (`https://host/owner/repo`, `ssh://user@host:22/owner/repo.git`).
+/// Anything that isn't a two-segment path under a hostname — local paths
+/// included — yields `None`.
+pub(crate) fn parse_remote_slug(url: &str) -> Option<String> {
+    let url = url.trim();
+    let path = match url.split_once("://") {
+        // scheme://[user@]host[:port]/owner/repo. `file://` remotes and empty
+        // authorities are local paths, not hosted repos.
+        Some((scheme, rest)) => {
+            if scheme.eq_ignore_ascii_case("file") {
+                return None;
+            }
+            let (authority, path) = rest.split_once('/')?;
+            if authority.is_empty() {
+                return None;
+            }
+            path
+        }
+        None => {
+            // scp-like [user@]host:owner/repo. `C:/repos/foo` also splits on a
+            // colon, so require a dotted hostname to tell the two apart.
+            let (authority, rest) = url.split_once(':')?;
+            if !authority.contains('.') {
+                return None;
+            }
+            rest
+        }
+    };
+    let path = path.trim_end_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    let path = path.trim_end_matches('/');
+
+    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    if segments.len() < 2 {
+        return None;
+    }
+    let slug = format!(
+        "{}/{}",
+        segments[segments.len() - 2],
+        segments[segments.len() - 1]
+    );
+    validate_repo_slug(&slug).ok()?;
+    Some(slug)
+}
+
+/// One git repo Atlas can act in: a workspace, or a repo one level inside it.
+#[derive(serde::Serialize, TS)]
+#[ts(export)]
+pub struct WorkspaceRepo {
+    /// Absolute path of the repo's working tree.
+    pub path: String,
+    /// `owner/repo` from its `origin`, or None when it has no usable remote.
+    pub slug: Option<String>,
+}
+
+/// True when `dir` is the root of a git working tree.
+fn is_git_root(dir: &str) -> bool {
+    git_cmd(dir, &["rev-parse", "--show-toplevel"]).is_ok()
+}
+
+fn repo_at(path: &std::path::Path) -> WorkspaceRepo {
+    let path = path.to_string_lossy().to_string();
+    let slug = git_cmd(&path, &["remote", "get-url", "origin"])
+        .ok()
+        .and_then(|url| parse_remote_slug(&url));
+    WorkspaceRepo { path, slug }
+}
+
+/// Every repo under a workspace: the workspace itself when it is one, and
+/// otherwise the git repos sitting one directory inside it.
+///
+/// A workspace is often a folder that *holds* checkouts rather than being one —
+/// the same shape `build_panel_multi` diffs across. Asking only the workspace
+/// root for a remote leaves those repos with no slug at all, so the PRs screen
+/// could not match a PR to anywhere to start a session.
+///
+/// One level deep, like the panel's scan: deeper nesting is a monorepo's
+/// business, not a checkout layout.
+#[tauri::command(async)]
+pub async fn list_workspace_repos(
+    workspace_path: String,
+) -> Result<Vec<WorkspaceRepo>, AtlasError> {
+    validate_cwd(&workspace_path)?;
+    tokio::task::spawn_blocking(move || {
+        if is_git_root(&workspace_path) {
+            return Ok(vec![repo_at(std::path::Path::new(&workspace_path))]);
+        }
+        let Ok(read_dir) = std::fs::read_dir(&workspace_path) else {
+            return Ok(Vec::new());
+        };
+        let mut repos: Vec<WorkspaceRepo> = Vec::new();
+        for entry in read_dir.flatten() {
+            // `Path::is_dir` follows symlinks: a symlinked checkout is a real repo.
+            if !entry.path().is_dir() {
+                continue;
+            }
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if should_skip_dir(name) || !is_git_root(&path.to_string_lossy()) {
+                continue;
+            }
+            repos.push(repo_at(&path));
+        }
+        repos.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(repos)
-    }).await.map_err(|e| format!("Task join error: {}", e))?
+    })
+    .await?
 }
 
-/// List local branches with the current branch marked.
-#[tauri::command(async)]
-pub async fn git_list_branches(cwd: String) -> Result<Vec<BranchInfo>, String> {
-    validate_cwd(&cwd)?;
-    tokio::task::spawn_blocking(move || {
-        let output = git_cmd(&cwd, &["branch", "--format=%(refname:short)\t%(HEAD)"])?;
-        let mut branches: Vec<BranchInfo> = output
-            .lines()
-            .filter_map(|line| {
-                let parts: Vec<&str> = line.splitn(2, '\t').collect();
-                if parts.len() == 2 {
-                    Some(BranchInfo {
-                        name: parts[0].trim().to_string(),
-                        is_current: parts[1].trim() == "*",
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        let local_names: std::collections::HashSet<String> =
-            branches.iter().map(|b| b.name.clone()).collect();
-        for default_branch in &["main", "master"] {
-            if !local_names.contains(*default_branch) {
-                let remote_ref = format!("origin/{}", default_branch);
-                if git_cmd(&cwd, &["rev-parse", "--verify", &format!("refs/remotes/{}", remote_ref)])
-                    .is_ok()
-                {
-                    branches.push(BranchInfo {
-                        name: default_branch.to_string(),
-                        is_current: false,
-                    });
-                }
-            }
+/// Check out an existing local branch.
+///
+/// `validate_branch_name` only screens the spelling; git would still accept a
+/// remote-only name (DWIM creates a tracking branch), `@{-1}`, a SHA or `HEAD`.
+/// Requiring `refs/heads/<branch>` to exist and passing `--no-guess` and a
+/// trailing `--` pins the meaning to "that local branch", even when a worktree
+/// file shares its name.
+fn checkout_local_branch(cwd: &str, branch: &str) -> Result<(), AtlasError> {
+    let full_ref = format!("refs/heads/{branch}");
+    git_cmd(cwd, &["rev-parse", "--verify", "--quiet", &full_ref]).map_err(|e| match e {
+        // `--verify --quiet` exits non-zero without a word when the ref is absent.
+        AtlasError::ToolFailed { .. } => {
+            AtlasError::not_found(format!("No local branch named '{branch}'"))
         }
-
-        Ok(branches)
-    }).await.map_err(|e| format!("Task join error: {}", e))?
+        other => other,
+    })?;
+    git_cmd(cwd, &["checkout", "--no-guess", branch, "--"]).map(|_| ())
 }
 
-/// Checkout an existing local branch.
 #[tauri::command(async)]
-pub async fn git_checkout_branch(cwd: String, branch: String) -> Result<(), String> {
+pub async fn git_checkout_branch(cwd: String, branch: String) -> Result<(), AtlasError> {
     validate_cwd(&cwd)?;
     validate_branch_name(&branch)?;
-    tokio::task::spawn_blocking(move || {
-        git_cmd(&cwd, &["checkout", &branch]).map(|_| ())
-    }).await.map_err(|e| format!("Task join error: {}", e))?
+    tokio::task::spawn_blocking(move || checkout_local_branch(&cwd, &branch)).await?
 }
 
-/// Create and switch to a new branch via `git checkout -b`.
-#[tauri::command(async)]
-pub async fn git_create_branch(cwd: String, branch: String) -> Result<(), String> {
-    validate_cwd(&cwd)?;
-    validate_branch_name(&branch)?;
-    tokio::task::spawn_blocking(move || {
-        git_cmd(&cwd, &["checkout", "-b", &branch]).map(|_| ())
-    }).await.map_err(|e| format!("Task join error: {}", e))?
+/// Real-repo fixtures shared by the git, diff and panel tests.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::path::Path;
+
+    /// Run git in `dir` with a fixed identity, panicking on failure.
+    pub fn git(dir: &Path, args: &[&str]) {
+        let status = std::process::Command::new("git")
+            .args([
+                "-c",
+                "user.name=Atlas Test",
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "commit.gpgsign=false",
+            ])
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?} failed");
+    }
+
+    pub fn init_repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        git(dir.path(), &["init", "-q", "-b", "main"]);
+        dir
+    }
+
+    pub fn commit_all(dir: &Path, message: &str) {
+        git(dir, &["add", "-A"]);
+        git(dir, &["commit", "-q", "-m", message]);
+    }
 }
 
 #[cfg(test)]
@@ -273,22 +343,232 @@ mod tests {
     }
 
     #[test]
-    fn skip_node_modules_and_target() {
-        assert!(should_skip_dir("node_modules"));
-        assert!(should_skip_dir("target"));
-    }
-
-    #[test]
     fn allow_normal_dirs() {
         assert!(!should_skip_dir("src"));
         assert!(!should_skip_dir("my-project"));
     }
 
+    // --- parse_remote_slug tests ---
+
+    #[test]
+    fn slug_from_scp_ssh_remote() {
+        assert_eq!(
+            parse_remote_slug("git@github.com:jakehowden/Atlas.git"),
+            Some("jakehowden/Atlas".to_string())
+        );
+        assert_eq!(
+            parse_remote_slug("git@github.com:jakehowden/Atlas"),
+            Some("jakehowden/Atlas".to_string())
+        );
+    }
+
+    #[test]
+    fn slug_from_ssh_url_remote() {
+        assert_eq!(
+            parse_remote_slug("ssh://git@github.com/jakehowden/Atlas.git"),
+            Some("jakehowden/Atlas".to_string())
+        );
+        assert_eq!(
+            parse_remote_slug("ssh://git@github.com:22/jakehowden/Atlas.git"),
+            Some("jakehowden/Atlas".to_string())
+        );
+    }
+
+    #[test]
+    fn slug_from_https_remote() {
+        assert_eq!(
+            parse_remote_slug("https://github.com/jakehowden/Atlas.git"),
+            Some("jakehowden/Atlas".to_string())
+        );
+        assert_eq!(
+            parse_remote_slug("https://github.com/jakehowden/Atlas"),
+            Some("jakehowden/Atlas".to_string())
+        );
+        assert_eq!(
+            parse_remote_slug("https://user@github.com/jakehowden/Atlas.git/"),
+            Some("jakehowden/Atlas".to_string())
+        );
+    }
+
+    #[test]
+    fn slug_takes_the_last_two_segments() {
+        assert_eq!(
+            parse_remote_slug("https://gitlab.com/group/subgroup/repo.git"),
+            Some("subgroup/repo".to_string())
+        );
+    }
+
+    #[test]
+    fn slug_rejects_local_paths() {
+        assert_eq!(parse_remote_slug("/home/me/repo.git"), None);
+        assert_eq!(parse_remote_slug("C:/Users/me/repo"), None);
+        assert_eq!(parse_remote_slug("../sibling/repo"), None);
+    }
+
+    #[test]
+    fn slug_rejects_short_or_empty_paths() {
+        assert_eq!(parse_remote_slug(""), None);
+        assert_eq!(parse_remote_slug("https://github.com/repo"), None);
+        assert_eq!(parse_remote_slug("https://github.com/"), None);
+    }
+
+    #[test]
+    fn slug_rejects_invalid_characters() {
+        assert_eq!(parse_remote_slug("https://github.com/own er/repo"), None);
+    }
+
+    #[test]
+    fn slug_rejects_file_urls_and_empty_authority() {
+        assert_eq!(parse_remote_slug("file:///home/me/proj/repo.git"), None);
+        assert_eq!(parse_remote_slug("https:///owner/repo"), None);
+    }
+
     // --- git_cmd error handling ---
+
+    #[test]
+    fn a_missing_git_binary_is_tool_missing_and_other_spawn_failures_are_not() {
+        let missing = std::io::Error::from(std::io::ErrorKind::NotFound);
+        assert!(matches!(
+            spawn_error(&missing),
+            AtlasError::ToolMissing { tool, message } if tool == "git" && message == GIT_NOT_FOUND
+        ));
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        assert!(matches!(
+            spawn_error(&denied),
+            AtlasError::ToolFailed { .. }
+        ));
+    }
 
     #[test]
     fn git_cmd_nonexistent_dir() {
         let result = git_cmd("/nonexistent/path/that/should/not/exist", &["status"]);
         assert!(result.is_err());
+    }
+
+    // --- against real repos ---
+
+    use super::test_support::{commit_all, git, init_repo};
+
+    #[test]
+    fn checkout_targets_the_local_branch_not_a_same_named_file() {
+        let repo = init_repo();
+        let dir = repo.path();
+        std::fs::write(
+            dir.join("feature"),
+            "a file that shares the branch's name\n",
+        )
+        .unwrap();
+        commit_all(dir, "init");
+        git(dir, &["branch", "feature"]);
+
+        checkout_local_branch(dir.to_str().unwrap(), "feature").unwrap();
+
+        let head = git_cmd(
+            dir.to_str().unwrap(),
+            &["rev-parse", "--abbrev-ref", "HEAD"],
+        )
+        .unwrap();
+        assert_eq!(head, "feature");
+    }
+
+    #[test]
+    fn checkout_refuses_anything_but_an_existing_local_branch() {
+        let repo = init_repo();
+        let dir = repo.path();
+        std::fs::write(dir.join("a.txt"), "a\n").unwrap();
+        commit_all(dir, "init");
+        let cwd = dir.to_str().unwrap();
+        let sha = git_cmd(cwd, &["rev-parse", "HEAD"]).unwrap();
+
+        for spelling in ["HEAD", "@{-1}", sha.as_str(), "nonexistent"] {
+            assert!(
+                checkout_local_branch(cwd, spelling).is_err(),
+                "{spelling} must not be treated as a local branch"
+            );
+        }
+    }
+
+    #[test]
+    fn status_tells_staged_from_unstaged_and_untracked() {
+        let repo = init_repo();
+        let dir = repo.path();
+        let cwd = dir.to_str().unwrap();
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+        commit_all(dir, "init");
+
+        let clean = git_status(cwd).unwrap();
+        assert!(!clean.has_staged && !clean.has_unstaged);
+
+        std::fs::write(dir.join("new.txt"), "x\n").unwrap();
+        let untracked = git_status(cwd).unwrap();
+        assert!(!untracked.has_staged && untracked.has_unstaged);
+
+        git(dir, &["add", "new.txt"]);
+        let staged = git_status(cwd).unwrap();
+        assert!(staged.has_staged && !staged.has_unstaged);
+
+        std::fs::write(dir.join("a.txt"), "two\n").unwrap();
+        let both = git_status(cwd).unwrap();
+        assert!(both.has_staged && both.has_unstaged);
+    }
+
+    #[test]
+    fn status_survives_a_staged_rename() {
+        let repo = init_repo();
+        let dir = repo.path();
+        let cwd = dir.to_str().unwrap();
+        std::fs::write(dir.join("old.txt"), "one\n").unwrap();
+        commit_all(dir, "init");
+        git(dir, &["mv", "old.txt", "new.txt"]);
+
+        // The rename's second path (`old.txt`) is not a status entry: read as
+        // one it would look like a file with columns `ol`.
+        let status = git_status(cwd).unwrap();
+        assert!(status.has_staged && !status.has_unstaged);
+    }
+
+    #[test]
+    fn status_outside_a_repo_is_an_error_not_a_dirty_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(git_status(dir.path().to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn capped_git_output_stops_at_the_cap() {
+        let repo = init_repo();
+        let dir = repo.path();
+        let cwd = dir.to_str().unwrap();
+        std::fs::write(dir.join("big.txt"), "old\n".repeat(50_000)).unwrap();
+        commit_all(dir, "init");
+        std::fs::write(dir.join("big.txt"), "new\n".repeat(50_000)).unwrap();
+
+        let (out, truncated) = git_raw_capped(cwd, &["diff"], 1000).unwrap();
+        assert!(truncated);
+        assert_eq!(out.len(), 1000);
+
+        let (small, truncated) = git_raw_capped(cwd, &["rev-parse", "HEAD"], 1000).unwrap();
+        assert!(!truncated);
+        assert_eq!(small.trim().len(), 40);
+    }
+
+    #[test]
+    fn capped_git_output_reports_failure() {
+        let repo = init_repo();
+        let cwd = repo.path().to_str().unwrap();
+        assert!(git_raw_capped(cwd, &["rev-parse", "no-such-ref"], 1000).is_err());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn workspace_scan_finds_a_symlinked_checkout() {
+        let real = init_repo();
+        let workspace = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(real.path(), workspace.path().join("linked")).unwrap();
+
+        let repos = list_workspace_repos(workspace.path().to_string_lossy().to_string())
+            .await
+            .unwrap();
+        assert_eq!(repos.len(), 1);
+        assert!(repos[0].path.ends_with("linked"));
     }
 }

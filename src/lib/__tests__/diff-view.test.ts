@@ -9,8 +9,9 @@ import {
   statusLetter,
   cssEscape,
   totalLines,
-  renderRawForFile,
   toSplitRows,
+  limitHunks,
+  overBudgetKeys,
 } from "../diff-view";
 
 function makeFile(name: string, overrides?: Partial<DiffFile>): DiffFile {
@@ -137,19 +138,11 @@ describe("totalLines", () => {
   });
 });
 
-describe("renderRawForFile", () => {
-  it("re-emits unified diff text without the hunk-header line type", () => {
-    expect(renderRawForFile(makeFile("a.ts"))).toBe(
-      "@@ -1,3 +1,4 @@\n unchanged\n-old line\n+new line\n+another",
-    );
-  });
-});
-
 describe("toSplitRows", () => {
   it("pairs removes with adds and flushes around context", () => {
     const rows = toSplitRows(makeFile("a.ts"));
     expect(rows[0]).toEqual({ kind: "hunk", header: "@@ -1,3 +1,4 @@" });
-    expect(rows[1].kind).toBe("context");
+    expect(rows[1]!.kind).toBe("context");
     // remove paired with first add, second add unpaired
     expect(rows[2]).toMatchObject({
       kind: "change",
@@ -162,5 +155,65 @@ describe("toSplitRows", () => {
       right: { num: 3, content: "another" },
     });
     expect(rows).toHaveLength(4);
+  });
+});
+
+function fileWithLines(name: string, count: number): DiffFile {
+  return {
+    oldName: name,
+    newName: name,
+    changeType: "modified",
+    hunks: [
+      {
+        header: "@@ -1 +1 @@",
+        lines: Array.from({ length: count }, (_, i) => ({
+          type: "add" as const,
+          content: `line ${i}`,
+          oldNum: null,
+          newNum: i + 1,
+        })),
+      },
+    ],
+  };
+}
+
+describe("limitHunks", () => {
+  it("returns everything, untouched, when the file fits", () => {
+    const file = fileWithLines("a.ts", 10);
+    const shown = limitHunks(file.hunks, 10);
+    expect(shown.hunks).toBe(file.hunks);
+    expect(shown.hidden).toBe(0);
+  });
+
+  it("cuts a long hunk at the limit and says how much is left", () => {
+    const shown = limitHunks(fileWithLines("a.ts", 25).hunks, 10);
+    expect(shown.hunks).toHaveLength(1);
+    expect(shown.hunks[0]!.lines).toHaveLength(10);
+    expect(shown.hidden).toBe(15);
+  });
+
+  it("spans hunks and drops those past the limit", () => {
+    const hunks = [...fileWithLines("a.ts", 6).hunks, ...fileWithLines("a.ts", 6).hunks];
+    const shown = limitHunks(hunks, 8);
+    expect(shown.hunks.map((h) => h.lines.length)).toEqual([6, 2]);
+    expect(shown.hidden).toBe(4);
+  });
+});
+
+describe("overBudgetKeys", () => {
+  const flat = (name: string, count: number) => toFlat(fileWithLines(name, count), name);
+
+  it("keeps files inside the budget and collapses the ones after it", () => {
+    const items = [flat("a", 300), flat("b", 300), flat("c", 300)];
+    expect([...overBudgetKeys(items, 700)]).toEqual(["c"]);
+  });
+
+  it("always shows the first file, however large the budget is not", () => {
+    expect([...overBudgetKeys([flat("a", 400)], 100)]).toEqual([]);
+  });
+
+  it("does not spend budget on files that are collapsed for their size anyway", () => {
+    const items = [flat("big", 5000), flat("a", 300), flat("b", 300)];
+    expect([...overBudgetKeys(items, 700)]).toEqual([]);
   });
 });

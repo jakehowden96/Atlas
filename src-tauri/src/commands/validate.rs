@@ -1,80 +1,81 @@
+use crate::error::AtlasError;
+
 // --- Input validation ---
 
-pub(crate) fn validate_session_id(id: &str) -> Result<(), String> {
+/// Session IDs are UUIDs or Atlas-generated tab ids and become directory names
+/// and the `ATLAS_SESSION_ID` env value, so only plain ASCII is allowed: a
+/// non-ASCII letter has composed and decomposed spellings that name different
+/// directories on macOS.
+pub(crate) fn validate_session_id(id: &str) -> Result<(), AtlasError> {
+    const MAX_LEN: usize = 128;
     if id.is_empty() {
-        return Err("Session ID cannot be empty".to_string());
+        return Err(AtlasError::invalid_input("Session ID cannot be empty"));
     }
-    if id.contains('/') || id.contains('\\') || id.contains("..") {
-        return Err("Session ID contains invalid characters".to_string());
+    if id.len() > MAX_LEN {
+        return Err(AtlasError::invalid_input(format!(
+            "Session ID longer than {MAX_LEN} characters"
+        )));
     }
-    // Allow UUID format and simple alphanumeric-hyphen IDs
-    if !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
-        return Err("Session ID contains invalid characters".to_string());
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(AtlasError::invalid_input(
+            "Session ID contains invalid characters",
+        ));
     }
     Ok(())
 }
 
-pub(crate) fn validate_cwd(cwd: &str) -> Result<(), String> {
+pub(crate) fn validate_cwd(cwd: &str) -> Result<(), AtlasError> {
     if cwd.is_empty() {
-        return Err("Working directory cannot be empty".to_string());
+        return Err(AtlasError::invalid_input(
+            "Working directory cannot be empty",
+        ));
     }
     let path = std::path::Path::new(cwd);
     if !path.is_absolute() {
-        return Err("Working directory must be an absolute path".to_string());
+        return Err(AtlasError::invalid_input(
+            "Working directory must be an absolute path",
+        ));
     }
     if !path.is_dir() {
-        return Err(format!("Working directory does not exist: {}", cwd));
+        return Err(AtlasError::not_found(format!(
+            "Working directory does not exist: {cwd}"
+        )));
     }
     Ok(())
 }
 
-pub(crate) fn validate_branch_name(branch: &str) -> Result<(), String> {
+pub(crate) fn validate_branch_name(branch: &str) -> Result<(), AtlasError> {
     if branch.is_empty() {
-        return Err("Branch name cannot be empty".to_string());
+        return Err(AtlasError::invalid_input("Branch name cannot be empty"));
     }
     if branch.starts_with('-') {
-        return Err("Branch name cannot start with '-'".to_string());
+        return Err(AtlasError::invalid_input(
+            "Branch name cannot start with '-'",
+        ));
     }
     if branch.contains("..") {
-        return Err("Branch name cannot contain '..'".to_string());
+        return Err(AtlasError::invalid_input("Branch name cannot contain '..'"));
     }
     if branch.ends_with(".lock") {
-        return Err("Branch name cannot end with '.lock'".to_string());
+        return Err(AtlasError::invalid_input(
+            "Branch name cannot end with '.lock'",
+        ));
     }
     let invalid_chars = [' ', '~', '^', ':', '?', '*', '[', '\\', '\x7f'];
     for ch in invalid_chars {
         if branch.contains(ch) {
-            return Err(format!("Branch name contains invalid character '{}'", ch));
+            return Err(AtlasError::invalid_input(format!(
+                "Branch name contains invalid character '{ch}'"
+            )));
         }
     }
     if branch.bytes().any(|b| b < 0x20 || b == 0x7f) {
-        return Err("Branch name contains control characters".to_string());
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_file_paths(cwd: &str, files: &[String]) -> Result<(), String> {
-    let base = match std::fs::canonicalize(cwd) {
-        Ok(p) => p,
-        Err(_) => return Err(format!("Cannot resolve working directory: {}", cwd)),
-    };
-    for file in files {
-        if file.is_empty() {
-            return Err("File path cannot be empty".to_string());
-        }
-        if std::path::Path::new(file).is_absolute() {
-            return Err(format!("File path must be relative: {}", file));
-        }
-        // Reject any path containing .. components to prevent traversal
-        if file.split('/').any(|c| c == "..") || file.split('\\').any(|c| c == "..") {
-            return Err(format!("File path contains '..': {}", file));
-        }
-        let resolved = base.join(file);
-        let normalized = resolved.to_string_lossy();
-        let base_str = base.to_string_lossy();
-        if !normalized.starts_with(base_str.as_ref()) {
-            return Err(format!("File path escapes repository: {}", file));
-        }
+        return Err(AtlasError::invalid_input(
+            "Branch name contains control characters",
+        ));
     }
     Ok(())
 }
@@ -118,6 +119,13 @@ mod tests {
     }
 
     #[test]
+    fn validate_session_id_rejects_non_ascii_and_overlong() {
+        assert!(validate_session_id("é").is_err());
+        assert!(validate_session_id(&"a".repeat(129)).is_err());
+        assert!(validate_session_id(&"a".repeat(128)).is_ok());
+    }
+
+    #[test]
     fn validate_cwd_rejects_empty() {
         assert!(validate_cwd("").is_err());
     }
@@ -134,7 +142,8 @@ mod tests {
 
     #[test]
     fn validate_cwd_accepts_existing_dir() {
-        assert!(validate_cwd("/tmp").is_ok());
+        let tmp = std::env::temp_dir();
+        assert!(validate_cwd(tmp.to_str().unwrap()).is_ok());
     }
 
     #[test]
@@ -173,26 +182,6 @@ mod tests {
     #[test]
     fn validate_branch_name_rejects_lock_suffix() {
         assert!(validate_branch_name("refs/heads/main.lock").is_err());
-    }
-
-    #[test]
-    fn validate_file_paths_rejects_absolute_path() {
-        assert!(validate_file_paths("/tmp", &["/etc/passwd".to_string()]).is_err());
-    }
-
-    #[test]
-    fn validate_file_paths_rejects_traversal() {
-        assert!(validate_file_paths("/tmp", &["../../etc/passwd".to_string()]).is_err());
-    }
-
-    #[test]
-    fn validate_file_paths_accepts_relative() {
-        assert!(validate_file_paths("/tmp", &["subdir/file.txt".to_string()]).is_ok());
-    }
-
-    #[test]
-    fn validate_file_paths_rejects_empty() {
-        assert!(validate_file_paths("/tmp", &["".to_string()]).is_err());
     }
 
     #[test]

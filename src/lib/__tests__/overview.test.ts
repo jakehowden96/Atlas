@@ -1,0 +1,814 @@
+import { describe, expect, it } from "vitest";
+
+import type { LiveSession } from "../../types/generated/LiveSession";
+import type { SessionState } from "../../types/generated/SessionState";
+import type { TranscriptLine } from "../../types/generated/TranscriptLine";
+import {
+  activity,
+  buildTiles,
+  classifyRows,
+  detectPermissionPrompt,
+  compareByAttention,
+  compareByOpened,
+  compareByWorkspace,
+  feedItems,
+  filterByWorkspace,
+  formatElapsed,
+  handleGridKey,
+  openQuestion,
+  pinKey,
+  type SessionTile,
+  screenPreview,
+  shouldNotify,
+  shortToolName,
+  splitReply,
+  tileComparator,
+} from "../overview";
+import type { DiffStats, Workspace } from "../stores/workspace";
+
+function live(sessionUuid: string, overrides: Partial<LiveSession> = {}): LiveSession {
+  return {
+    sessionUuid,
+    state: "running",
+    startedAt: null,
+    lastActivity: null,
+    title: null,
+    model: null,
+    gitBranch: null,
+    lines: [],
+    plan: [],
+    subagents: [],
+    toolCalls: 0,
+    lastTool: null,
+    pendingTool: null,
+    outputTokens: 0,
+    costEstimate: 0,
+    contextTokens: 0,
+    peakContext: 0,
+    contextPct: 0,
+    lastPrompt: null,
+    lastReply: null,
+    turnEndedAt: null,
+    turnDurationMs: null,
+    ...overrides,
+  };
+}
+
+function workspace(
+  path: string,
+  sessions: { id: string; claudeSessionId: string | null; terminalTabId: string | null }[],
+): Workspace {
+  return {
+    path,
+    name: path.split("/").pop() ?? path,
+    color: "#2fa37a",
+    sessions: sessions.map((s) => ({
+      id: s.id,
+      label: `Session ${s.id}`,
+      status: "running" as const,
+      age: "",
+      terminalTabId: s.terminalTabId,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      claudeSessionId: s.claudeSessionId,
+      harnessId: null,
+    })),
+  };
+}
+
+const diff = (linesAdded: number, linesRemoved: number): DiffStats => ({
+  filesChanged: 1,
+  linesAdded,
+  linesRemoved,
+});
+
+describe("compareByWorkspace", () => {
+  const rows = [
+    { workspaceName: "Zebra", label: "b" },
+    { workspaceName: "Atlas", label: "b" },
+    { workspaceName: "Atlas", label: "a" },
+  ];
+
+  it("groups by workspace, then orders by label", () => {
+    expect([...rows].sort(compareByWorkspace)).toEqual([
+      { workspaceName: "Atlas", label: "a" },
+      { workspaceName: "Atlas", label: "b" },
+      { workspaceName: "Zebra", label: "b" },
+    ]);
+  });
+});
+
+describe("tileComparator", () => {
+  it("orders by attention, by workspace name, and by when the session was opened", () => {
+    const t = (id: string, state: SessionState, workspaceName: string, createdAt: string) =>
+      ({
+        sessionUuid: id,
+        atlasSessionId: "",
+        state,
+        workspaceName,
+        label: id,
+        createdAt,
+      }) as SessionTile;
+    const tiles = [
+      t("a", "idle", "zeta", "2026-01-03T00:00:00Z"),
+      t("b", "needsYou", "alpha", "2026-01-02T00:00:00Z"),
+      t("c", "running", "mid", "2026-01-01T00:00:00Z"),
+    ];
+    const sorted = (ordering: Parameters<typeof tileComparator>[0]) =>
+      [...tiles].sort(tileComparator(ordering)!).map((x) => x.sessionUuid);
+
+    expect(sorted("attention")).toEqual(["b", "c", "a"]);
+    expect(sorted("workspace")).toEqual(["b", "c", "a"]);
+    expect(sorted("opened")).toEqual(["c", "b", "a"]);
+  });
+
+  it("returns null for manual, leaving arrival order alone", () => {
+    expect(tileComparator("manual")).toBeNull();
+  });
+
+  describe("with pinned tiles", () => {
+    // The comparator only reads these fields off a tile. `atlasSessionId` is
+    // blank so these pin by transcript UUID, the unowned-session case.
+    const tile = (sessionUuid: string, state: SessionState, label = sessionUuid) =>
+      ({ sessionUuid, atlasSessionId: "", state, label, workspaceName: "ws" }) as SessionTile;
+
+    const order = (
+      tiles: SessionTile[],
+      ordering: Parameters<typeof tileComparator>[0],
+      pinned: string[],
+    ) => {
+      const cmp = tileComparator(ordering, new Set(pinned));
+      return (cmp ? [...tiles].sort(cmp) : [...tiles]).map((t) => t.sessionUuid);
+    };
+
+    it("lifts pinned tiles above the rest", () => {
+      const tiles = [tile("a", "idle"), tile("b", "needsYou"), tile("c", "idle")];
+      expect(order(tiles, "attention", ["c"])).toEqual(["c", "b", "a"]);
+    });
+
+    it("still orders within each group", () => {
+      const tiles = [tile("a", "idle"), tile("b", "needsYou"), tile("c", "running")];
+      expect(order(tiles, "attention", ["a", "b"])).toEqual(["b", "a", "c"]);
+    });
+
+    it("keeps arrival order under manual, pinned first", () => {
+      const tiles = [tile("a", "idle"), tile("b", "idle"), tile("c", "idle")];
+      expect(order(tiles, "manual", ["c", "b"])).toEqual(["b", "c", "a"]);
+    });
+
+    it("leaves manual unsorted whether or not anything is pinned", () => {
+      expect(tileComparator("manual", new Set())).toBeNull();
+    });
+
+    it("pins an Atlas-owned session by its row id, not its transcript uuid", () => {
+      const owned = {
+        sessionUuid: "uuid-b",
+        atlasSessionId: "row-b",
+        state: "idle",
+        label: "b",
+        workspaceName: "ws",
+      } as SessionTile;
+      expect(pinKey(owned)).toBe("row-b");
+      expect(order([tile("a", "idle"), owned], "manual", ["row-b"])).toEqual(["uuid-b", "a"]);
+      // The transcript uuid is not what the pin is stored under.
+      expect(order([tile("a", "idle"), owned], "manual", ["uuid-b"])).toEqual(["a", "uuid-b"]);
+    });
+  });
+});
+
+describe("compareByAttention", () => {
+  const ordered = (states: SessionState[]) =>
+    states
+      .map((state) => ({ state }))
+      .sort(compareByAttention)
+      .map((t) => t.state);
+
+  it("puts needs-you first, then running/error, then idle", () => {
+    expect(ordered(["idle", "running", "needsYou", "error"])).toEqual([
+      "needsYou",
+      "running",
+      "error",
+      "idle",
+    ]);
+  });
+
+  it("ranks running and error equally, keeping arrival order", () => {
+    expect(compareByAttention({ state: "running" }, { state: "error" })).toBe(0);
+    expect(ordered(["error", "running"])).toEqual(["error", "running"]);
+  });
+
+  it("re-sorts when a running session starts needing you", () => {
+    const tiles: { id: string; state: SessionState }[] = [
+      { id: "a", state: "running" },
+      { id: "b", state: "idle" },
+      { id: "c", state: "running" },
+    ];
+    tiles[2]!.state = "needsYou";
+    expect([...tiles].sort(compareByAttention).map((t) => t.id)).toEqual(["c", "a", "b"]);
+  });
+});
+
+describe("compareByOpened", () => {
+  it("sorts strictly by creation time, oldest first", () => {
+    const tiles = [
+      { id: "b", createdAt: "2026-01-02T00:00:00.000Z" },
+      { id: "a", createdAt: "2026-01-01T00:00:00.000Z" },
+      { id: "c", createdAt: "2026-01-03T00:00:00.000Z" },
+    ];
+    expect([...tiles].sort(compareByOpened).map((t) => t.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("does not re-sort when a tile's status changes — it never reads state", () => {
+    const tiles = [
+      { id: "a", createdAt: "2026-01-01T00:00:00.000Z", state: "idle" as SessionState },
+      { id: "b", createdAt: "2026-01-02T00:00:00.000Z", state: "idle" as SessionState },
+    ];
+    tiles[0]!.state = "needsYou";
+    expect([...tiles].sort(compareByOpened).map((t) => t.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("filterByWorkspace", () => {
+  const tiles = [
+    { workspacePath: "/code/atlas" },
+    { workspacePath: "/code/docs" },
+    { workspacePath: "/code/atlas" },
+  ];
+
+  it('returns everything for "all"', () => {
+    expect(filterByWorkspace(tiles, "all")).toHaveLength(3);
+  });
+
+  it("keeps only the matching workspace", () => {
+    expect(filterByWorkspace(tiles, "/code/atlas")).toEqual([
+      { workspacePath: "/code/atlas" },
+      { workspacePath: "/code/atlas" },
+    ]);
+  });
+
+  it("returns nothing for an unknown workspace", () => {
+    expect(filterByWorkspace(tiles, "/code/gone")).toEqual([]);
+  });
+});
+
+describe("buildTiles", () => {
+  const workspaceList = [
+    workspace("/code/atlas", [{ id: "row-a", claudeSessionId: "uuid-a", terminalTabId: "tab-a" }]),
+    workspace("/code/docs", [{ id: "row-b", claudeSessionId: "uuid-b", terminalTabId: "tab-b" }]),
+  ];
+
+  it("joins diff stats through the terminal tab id, not the Claude uuid", () => {
+    const stats = new Map([
+      ["tab-a", diff(10, 2)],
+      ["tab-b", diff(99, 99)],
+      // Same key space as the Claude uuids: picking these up would be the bug.
+      ["uuid-a", diff(1, 1)],
+    ]);
+    const [a, b] = buildTiles([live("uuid-a"), live("uuid-b")], workspaceList, stats, new Set());
+    expect(a!.diff).toEqual(diff(10, 2));
+    expect(b!.diff).toEqual(diff(99, 99));
+  });
+
+  it("carries workspace identity across from the owning row", () => {
+    const tiles = buildTiles([live("uuid-b")], workspaceList, new Map(), new Set());
+    const tile = tiles.find((t) => t.sessionUuid === "uuid-b");
+    expect(tile).toMatchObject({
+      atlasSessionId: "row-b",
+      terminalTabId: "tab-b",
+      workspacePath: "/code/docs",
+      workspaceName: "docs",
+      workspaceColour: "#2fa37a",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+  });
+
+  it("still renders a session no workspace row owns", () => {
+    const tiles = buildTiles([live("orphan")], workspaceList, new Map(), new Set());
+    const tile = tiles.find((t) => t.sessionUuid === "orphan");
+    expect(tile).toBeDefined();
+    expect(tile?.atlasSessionId).toBe("");
+    expect(tile?.terminalTabId).toBeNull();
+    expect(tile?.diff).toBeNull();
+    expect(tile?.label).toBe("Session");
+  });
+
+  it("takes an orphan tile's createdAt off the live session, since no row owns it", () => {
+    const tiles = buildTiles(
+      [live("orphan", { startedAt: "2026-02-01T00:00:00.000Z" })],
+      workspaceList,
+      new Map(),
+      new Set(),
+    );
+    expect(tiles.find((t) => t.sessionUuid === "orphan")?.createdAt).toBe(
+      "2026-02-01T00:00:00.000Z",
+    );
+  });
+
+  /* A spawned session has a PTY long before its transcript exists, and with
+     transcript saving off it never gets one. Neither may hide it. */
+  it("renders an open session that has no transcript yet", () => {
+    const tiles = buildTiles([], workspaceList, new Map(), new Set());
+    expect(tiles).toHaveLength(2);
+    const tile = tiles.find((t) => t.sessionUuid === "uuid-a");
+    expect(tile).toMatchObject({
+      atlasSessionId: "row-a",
+      terminalTabId: "tab-a",
+      workspacePath: "/code/atlas",
+      state: "running",
+      label: "Session row-a",
+    });
+    expect(tile?.live.lines).toEqual([]);
+    expect(tile?.live.costEstimate).toBe(0);
+  });
+
+  it("does not tile a persisted session that is not open", () => {
+    const closed = [
+      workspace("/code/atlas", [{ id: "row-a", claudeSessionId: "uuid-a", terminalTabId: null }]),
+    ];
+    expect(buildTiles([], closed, new Map(), new Set())).toHaveLength(0);
+  });
+
+  /* Regression: cmd+shift+w while Claude is still writing to the transcript.
+     The row is detached (terminalTabId → null) but a trailing session-update
+     for its UUID can still land afterwards and repopulate `liveSessionList`.
+     That UUID belongs to `row-a`, closed or not, so it must never fall
+     through to the "no workspace row owns this" loop and render an orphan
+     tile that outlives the session and opens onto whatever tab is active. */
+  it("does not resurrect a closed session as an orphan tile", () => {
+    const closed = [
+      workspace("/code/atlas", [{ id: "row-a", claudeSessionId: "uuid-a", terminalTabId: null }]),
+    ];
+    const tiles = buildTiles([live("uuid-a")], closed, new Map(), new Set());
+    expect(tiles).toHaveLength(0);
+  });
+
+  it("does not double-count a row whose live session has arrived", () => {
+    const tiles = buildTiles([live("uuid-a")], workspaceList, new Map(), new Set());
+    expect(tiles.filter((t) => t.sessionUuid === "uuid-a")).toHaveLength(1);
+  });
+
+  it("prefers the transcript title, falling back to the workspace label", () => {
+    const tiles = buildTiles(
+      [live("uuid-a", { title: "Fix the race" }), live("uuid-b")],
+      workspaceList,
+      new Map(),
+      new Set(),
+    );
+    expect(tiles.find((t) => t.sessionUuid === "uuid-a")?.label).toBe("Fix the race");
+    expect(tiles.find((t) => t.sessionUuid === "uuid-b")?.label).toBe("Session row-b");
+  });
+
+  it("promotes a session to needsYou when its tab was flagged by the hook", () => {
+    const tile = buildTiles([live("uuid-a")], workspaceList, new Map(), new Set(["tab-a"]))[0]!;
+    expect(tile.state).toBe("needsYou");
+  });
+
+  it("leaves other sessions' states alone", () => {
+    const [, b] = buildTiles(
+      [live("uuid-a"), live("uuid-b", { state: "idle" })],
+      workspaceList,
+      new Map(),
+      new Set(["tab-a"]),
+    );
+    expect(b!.state).toBe("idle");
+  });
+
+  /* The top-bar counts used to be filtered off `liveSessionList` directly,
+     which cannot work: the transcript cannot see a permission prompt, so the
+     backend only ever reports Running or Idle and `needsYou` was always 0
+     while the blocked session was counted as running. Counting off the tiles
+     is the fix — these are the numbers the top bar shows. */
+  it("counts needs-you off the tiles, where the raw live states cannot", () => {
+    const sessions = [live("uuid-a"), live("uuid-b", { state: "idle" })];
+    expect(sessions.filter((s) => s.state === "needsYou")).toHaveLength(0);
+
+    const tiles = buildTiles(sessions, workspaceList, new Map(), new Set(["tab-a"]));
+    const count = (state: SessionState) => tiles.filter((t) => t.state === state).length;
+    expect(count("needsYou")).toBe(1);
+    expect(count("running")).toBe(0);
+    expect(count("idle")).toBe(1);
+  });
+
+  it("treats an idle reply ending on a question as needs-you, unflagged", () => {
+    const tile = buildTiles(
+      [live("uuid-a", { state: "idle", lastReply: "Done.\n\nPush it?" })],
+      workspaceList,
+      new Map(),
+      new Set(),
+    )[0]!;
+    expect(tile.state).toBe("needsYou");
+  });
+
+  it("leaves a running session with the same reply alone", () => {
+    const tile = buildTiles(
+      [live("uuid-a", { state: "running", lastReply: "Done.\n\nPush it?" })],
+      workspaceList,
+      new Map(),
+      new Set(),
+    )[0]!;
+    expect(tile.state).toBe("running");
+  });
+
+  it("leaves an idle session with no question idle", () => {
+    const tile = buildTiles(
+      [live("uuid-a", { state: "idle", lastReply: "Done." })],
+      workspaceList,
+      new Map(),
+      new Set(),
+    )[0]!;
+    expect(tile.state).toBe("idle");
+  });
+
+  it("keeps a backend needs-you and lifts the question it is blocked on", () => {
+    const session = live("uuid-a", {
+      state: "needsYou",
+      pendingTool: { name: "ask", inputSummary: "Which routes default to All?" },
+    });
+    const tile = buildTiles([session], workspaceList, new Map(), new Set())[0]!;
+    expect(tile.state).toBe("needsYou");
+    expect(openQuestion(session)).toBe("Which routes default to All?");
+  });
+});
+
+describe("shortToolName", () => {
+  it("shortens an MCP tool to its server and tool name", () => {
+    expect(shortToolName("mcp__claude_ai_Linear__list_issues")).toBe("Linear · list_issues");
+  });
+
+  it("leaves an ordinary tool name alone", () => {
+    expect(shortToolName("Bash")).toBe("Bash");
+  });
+
+  it("reads null as no pending tool", () => {
+    expect(shortToolName(null)).toBe("—");
+  });
+});
+
+describe("splitReply", () => {
+  it("splits a closing question off from the body", () => {
+    expect(splitReply("Done the thing.\n\nWant me to push?")).toEqual({
+      body: "Done the thing.",
+      question: "Want me to push?",
+    });
+  });
+
+  it("counts a question wrapped in markdown emphasis", () => {
+    expect(splitReply("Done.\n\n**Push it?**")).toEqual({
+      body: "Done.",
+      question: "**Push it?**",
+    });
+  });
+
+  it("does not split a question in the middle of the reply", () => {
+    expect(splitReply("Should I push?\n\nDoing it now.")).toEqual({
+      body: "Should I push?\n\nDoing it now.",
+      question: null,
+    });
+  });
+
+  it("is empty for null", () => {
+    expect(splitReply(null)).toEqual({ body: "", question: null });
+  });
+});
+
+describe("activity", () => {
+  const clock = () => "11:04";
+
+  it("names the pending tool and its input for a running session", () => {
+    const session = live("uuid-a", {
+      state: "running",
+      pendingTool: { name: "Bash", inputSummary: "git push" },
+    });
+    expect(activity(session, clock)).toEqual({ running: true, text: "Bash · git push" });
+  });
+
+  it("shows Working… for a running session with nothing pending", () => {
+    const session = live("uuid-a", { state: "running", pendingTool: null });
+    expect(activity(session, clock)).toEqual({ running: true, text: "Working…" });
+  });
+
+  it("counts the background agents a running session is waiting on", () => {
+    const agent = { task: "t", agentType: null, startedAt: null, finishedAt: null, toolCount: 0 };
+    const session = live("uuid-a", {
+      state: "running",
+      subagents: [
+        { ...agent, done: false },
+        { ...agent, done: false },
+        { ...agent, done: true },
+      ],
+    });
+    expect(activity(session, clock)).toEqual({ running: true, text: "Waiting on 2 agents" });
+  });
+
+  it("shows when the turn ended and how long it took", () => {
+    const session = live("uuid-a", {
+      state: "idle",
+      turnEndedAt: "2026-01-01T00:00:00.000Z",
+      turnDurationMs: 77_000,
+    });
+    expect(activity(session, clock)).toEqual({
+      running: false,
+      text: "Finished 11:04 · worked 1m 17s",
+    });
+  });
+
+  it("falls back to lastActivity with no turn duration to report", () => {
+    const session = live("uuid-a", {
+      state: "idle",
+      turnEndedAt: null,
+      turnDurationMs: null,
+      lastActivity: "2026-01-01T00:00:00.000Z",
+    });
+    expect(activity(session, clock)).toEqual({ running: false, text: "Finished 11:04" });
+  });
+});
+
+describe("feedItems", () => {
+  const line = (text: string, role: TranscriptLine["role"] = "note"): TranscriptLine => ({
+    role,
+    text,
+    timestamp: null,
+  });
+
+  it("reads roles off the text, so the working-dressed newest line keeps its kind", () => {
+    const items = feedItems([
+      line("> go ahead", "user"),
+      line("* mcp__claude_ai_Linear__list_issues team PAR", "working"),
+    ]);
+    expect(items).toEqual([
+      { kind: "you", text: "go ahead", tool: null },
+      { kind: "step", text: "team PAR", tool: "Linear · list_issues" },
+    ]);
+  });
+
+  it("drops successful tool results but keeps failures as alerts", () => {
+    const items = feedItems([
+      line("* Bash pnpm test", "step"),
+      line("  12 passed", "tool"),
+      line("  could not compile", "alert"),
+    ]);
+    expect(items.map((i) => i.kind)).toEqual(["step", "alert"]);
+  });
+
+  it("cuts the callout's question off the newest note, dropping it when nothing is left", () => {
+    const lines = [line("> hi", "user"), line("Done. **Push it?**")];
+    const items = feedItems(lines, "**Push it?**");
+    expect(items[items.length - 1]).toEqual({
+      kind: "note",
+      text: "Done.",
+      tool: null,
+    });
+    expect(feedItems([line("> hi", "user"), line("Push it?")], "Push it?")).toHaveLength(1);
+  });
+});
+
+describe("formatElapsed", () => {
+  const start = Date.parse("2026-01-01T00:00:00.000Z");
+
+  it("is empty without a start timestamp", () => {
+    expect(formatElapsed(null, start)).toBe("");
+    expect(formatElapsed("not a date", start)).toBe("");
+  });
+
+  it("pads seconds under an hour", () => {
+    expect(formatElapsed("2026-01-01T00:00:00.000Z", start + 134_000)).toBe("2m 14s");
+    expect(formatElapsed("2026-01-01T00:00:00.000Z", start + 3_000)).toBe("0m 03s");
+  });
+
+  it("switches to hours past an hour", () => {
+    expect(formatElapsed("2026-01-01T00:00:00.000Z", start + 3_840_000)).toBe("1h 04m");
+  });
+
+  it("never goes negative on clock skew", () => {
+    expect(formatElapsed("2026-01-01T00:00:00.000Z", start - 5_000)).toBe("0m 00s");
+  });
+});
+
+describe("handleGridKey", () => {
+  // Seven tiles over three columns: rows [0 1 2] [3 4 5] [6].
+  const press = (key: string, index: number, total = 7, columns = 3) =>
+    handleGridKey({ key }, index, total, columns);
+
+  it("steps one tile along the row", () => {
+    expect(press("ArrowRight", 0).index).toBe(1);
+    expect(press("ArrowLeft", 4).index).toBe(3);
+  });
+
+  it("stops at the ends of a row rather than rolling onto the next", () => {
+    expect(press("ArrowRight", 2).index).toBe(2);
+    expect(press("ArrowLeft", 3).index).toBe(3);
+    expect(press("ArrowRight", 6).index).toBe(6);
+  });
+
+  it("moves a whole row at a time, by the column count", () => {
+    expect(press("ArrowDown", 1).index).toBe(4);
+    expect(press("ArrowUp", 4).index).toBe(1);
+    expect(press("ArrowDown", 0, 7, 2).index).toBe(2);
+  });
+
+  it("stays put when the row below is not there", () => {
+    expect(press("ArrowDown", 4).index).toBe(4);
+    expect(press("ArrowDown", 6).index).toBe(6);
+  });
+
+  it("hands focus back to the chips off the top row", () => {
+    expect(press("ArrowUp", 1).effect).toBe("chips");
+    expect(press("ArrowUp", 1).index).toBe(1);
+    expect(press("ArrowUp", 3).effect).toBeNull();
+  });
+
+  it("takes Home and End to the first and last tile", () => {
+    expect(press("Home", 5).index).toBe(0);
+    expect(press("End", 0).index).toBe(6);
+  });
+
+  it("consumes every key it moves on, so the grid does not also scroll", () => {
+    for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"]) {
+      expect(press(key, 2).handled).toBe(true);
+    }
+  });
+
+  it("leaves other keys alone", () => {
+    expect(press("Enter", 2)).toEqual({ index: 2, effect: null, handled: false });
+    expect(press("y", 2).handled).toBe(false);
+  });
+
+  it("walks a one-column grid with ↑/↓ only", () => {
+    expect(press("ArrowRight", 0, 3, 1).index).toBe(0);
+    expect(press("ArrowLeft", 1, 3, 1).index).toBe(1);
+    expect(press("ArrowDown", 0, 3, 1).index).toBe(1);
+    expect(press("ArrowUp", 0, 3, 1).effect).toBe("chips");
+  });
+
+  it("survives an empty grid and an index that outran the tiles", () => {
+    expect(press("ArrowDown", 0, 0)).toEqual({ index: 0, effect: null, handled: false });
+    expect(press("ArrowLeft", 99).index).toBe(6);
+  });
+});
+
+/* Shared with classifyRows below, which also needs to tell a rule row from
+   real content. */
+const RULE = "─".repeat(60);
+
+describe("screenPreview", () => {
+  /* Rows come straight off the xterm buffer, so the bottom of the screen is
+     whatever the TUI left there: blank rows below the last paint, and Claude
+     Code's own prompt box. Neither belongs on a tile whose job is to show
+     what the session is doing. */
+  const STATUS = "  ? for shortcuts                       Opus · 12% context";
+
+  it("drops trailing blank rows", () => {
+    expect(screenPreview(["⏺ Read(src/a.ts)", "", "   ", ""])).toEqual(["⏺ Read(src/a.ts)"]);
+  });
+
+  it("removes the prompt box and the status line under it", () => {
+    const rows = ["⏺ Running tests…", "", RULE, "> ", RULE, STATUS, ""];
+    expect(screenPreview(rows)).toEqual(["⏺ Running tests…"]);
+  });
+
+  it("removes the boxed variant with corners", () => {
+    const rows = ["Done.", "╭" + "─".repeat(58) + "╮", "│ > type here", "╰" + "─".repeat(58) + "╯"];
+    expect(screenPreview(rows)).toEqual(["Done."]);
+  });
+
+  it("leaves a screen with no rule rows alone", () => {
+    const rows = ["Allow Bash(rm -rf dist)?", "  1. Yes", "  2. No"];
+    expect(screenPreview(rows)).toEqual(rows);
+  });
+
+  it("does not mistake a lone rule far up the screen for a prompt box", () => {
+    const rows = [RULE, ...Array.from({ length: 20 }, (_, i) => `line ${i}`), RULE];
+    expect(screenPreview(rows)).toEqual(rows);
+  });
+
+  it("keeps a rule the TUI drew as a divider in the output", () => {
+    const rows = ["Summary", RULE, "3 files changed"];
+    expect(screenPreview(rows)).toEqual(rows);
+  });
+});
+
+describe("classifyRows", () => {
+  it("classifies user input and its indented wrap as the same block", () => {
+    const rows = ["> fix the auth bug", "  that keeps logging users out"];
+    expect(classifyRows(rows)).toEqual(["user", "user"]);
+  });
+
+  it("classifies a tool call, its ⎿ result and an indented continuation as one block", () => {
+    const rows = ["⏺ Bash(pnpm test)", "  ⎿  total 48", "     24 passed"];
+    expect(classifyRows(rows)).toEqual(["tool", "tool", "tool"]);
+  });
+
+  it("classifies bare ⏺ prose as claude, not a tool call", () => {
+    expect(classifyRows(["⏺ Running tests…"])).toEqual(["claude"]);
+  });
+
+  it("treats blank and rule rows as boundaries that break the carried block", () => {
+    const rows = ["⏺ Bash(pnpm test)", "  ⎿  total 48", RULE, "Done running tests."];
+    expect(classifyRows(rows)).toEqual(["tool", "tool", null, "claude"]);
+  });
+
+  it("starts a fresh user block right after a ⎿ row", () => {
+    const rows = ["⏺ Bash(pnpm test)", "  ⎿  total 48", "> run it again"];
+    expect(classifyRows(rows)).toEqual(["tool", "tool", "user"]);
+  });
+
+  it("returns an empty array for an empty screen", () => {
+    expect(classifyRows([])).toEqual([]);
+  });
+
+  it("classifies one entry per screenPreview row, in the same order", () => {
+    const rows = [
+      "> fix the auth bug",
+      "⏺ I'll look at the auth flow.",
+      "⏺ Bash(pnpm test)",
+      "  ⎿  total 48",
+      "",
+      RULE,
+      "> ",
+      RULE,
+      "  ? for shortcuts                       Opus · 12% context",
+      "",
+    ];
+    const preview = screenPreview(rows);
+    expect(classifyRows(preview).length).toBe(preview.length);
+  });
+});
+
+describe("detectPermissionPrompt", () => {
+  const bash = [
+    "⏺ Bash(git push origin main)",
+    "",
+    " Bash command",
+    "",
+    "   git push origin main",
+    "   Push the branch",
+    "",
+    " Do you want to proceed?",
+    " ❯ 1. Yes",
+    "   2. Yes, and don't ask again for git push commands in /work/atlas",
+    "   3. No, and tell Claude what to do differently (esc)",
+    "",
+  ];
+
+  it("recognises the tool-permission list with the first option highlighted", () => {
+    expect(detectPermissionPrompt(bash)).toBe(true);
+  });
+
+  it("recognises the list inside the dialog's box border", () => {
+    const boxed = bash.map((row) => (row ? `│ ${row.padEnd(70)} │` : row));
+    expect(detectPermissionPrompt(boxed)).toBe(true);
+  });
+
+  it("does not offer Allow once the cursor moved off the first option", () => {
+    const moved = bash.map((row) =>
+      row.replace("❯ 1. Yes", "  1. Yes").replace("  3. No", "❯ 3. No"),
+    );
+    expect(detectPermissionPrompt(moved)).toBe(false);
+  });
+
+  it("reads an ordinary screen as no prompt", () => {
+    expect(
+      detectPermissionPrompt([
+        "> fix the bug",
+        "⏺ Done.",
+        "",
+        "─".repeat(40),
+        "> ",
+        "─".repeat(40),
+      ]),
+    ).toBe(false);
+    expect(detectPermissionPrompt([])).toBe(false);
+  });
+
+  it("reads an elicitation-style form as no prompt", () => {
+    const form = ["Server needs some information", "", " Name: ", " ❯ Continue", "   Cancel"];
+    expect(detectPermissionPrompt(form)).toBe(false);
+  });
+
+  it("ignores a prompt that has scrolled far above the bottom of the screen", () => {
+    const later = [...bash, ...Array.from({ length: 30 }, (_, i) => `⏺ output line ${i}`)];
+    expect(detectPermissionPrompt(later)).toBe(false);
+  });
+
+  it("needs the No option below Yes, not just the question and Yes", () => {
+    expect(detectPermissionPrompt(bash.slice(0, 9))).toBe(false);
+  });
+});
+
+describe("shouldNotify", () => {
+  it("is quiet only when that very prompt is on screen in the focused window", () => {
+    expect(shouldNotify("t1", "t1", "session", true)).toBe(false);
+  });
+
+  it("notifies for a session that is not the active tab", () => {
+    expect(shouldNotify("t2", "t1", "session", true)).toBe(true);
+  });
+
+  it("notifies when the active tab's terminal is not the screen being shown", () => {
+    expect(shouldNotify("t1", "t1", "sessions", true)).toBe(true);
+    expect(shouldNotify("t1", "t1", "prs", true)).toBe(true);
+  });
+
+  it("notifies when another application has focus, even for the active tab", () => {
+    expect(shouldNotify("t1", "t1", "session", false)).toBe(true);
+  });
+});
