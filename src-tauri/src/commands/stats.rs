@@ -1,6 +1,7 @@
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -67,13 +68,13 @@ fn stats_path() -> Result<PathBuf, AtlasError> {
 /// from `transcript::pricing_for`, so **a change to a price or to the model
 /// family mapping needs a bump here too**, or unchanged transcripts keep their
 /// old cost until they next change.
-const STATS_FILE_VERSION: u32 = 8;
+const STATS_FILE_VERSION: u32 = 9;
 
 /// Oldest file version whose records are carried forward across a bump. Fields
 /// added since deserialize to their defaults, so such a record is complete
 /// enough to keep its totals but not the newer breakdowns. It is only kept for
 /// a transcript that no longer exists: one that is still on disk is re-parsed.
-const MIN_CARRIED_VERSION: u32 = 7;
+const MIN_CARRIED_VERSION: u32 = 9;
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
@@ -407,9 +408,14 @@ fn parse_model_usage(path: &Path, activity: &mut ActivityLog) -> HashMap<String,
             continue;
         };
         let new_tools: Vec<String> = tool_uses(msg).iter().map(|t| t.name.to_string()).collect();
-        let entry = requests
-            .entry(req_key)
-            .or_insert_with(|| ReqData::from_message(model, msg));
+        let entry = match requests.entry(req_key) {
+            Entry::Occupied(occupied) => {
+                let entry = occupied.into_mut();
+                entry.set_usage(msg);
+                entry
+            }
+            Entry::Vacant(vacant) => vacant.insert(ReqData::from_message(model, msg)),
+        };
         entry.tool_names.extend(new_tools);
     }
 
@@ -684,11 +690,18 @@ fn parse_session_skipping(
                     .get("timestamp")
                     .and_then(|v| v.as_str())
                     .and_then(activity_slot);
-                let entry = requests.entry(req_key).or_insert_with(|| {
-                    let mut req = ReqData::from_message(model, msg);
-                    req.slot = slot;
-                    req
-                });
+                let entry = match requests.entry(req_key) {
+                    Entry::Occupied(occupied) => {
+                        let entry = occupied.into_mut();
+                        entry.set_usage(msg);
+                        entry
+                    }
+                    Entry::Vacant(vacant) => {
+                        let mut req = ReqData::from_message(model, msg);
+                        req.slot = slot;
+                        vacant.insert(req)
+                    }
+                };
                 entry.tool_names.extend(new_tools);
             }
             "ai-title" => {
@@ -1627,6 +1640,21 @@ mod tests {
         assert_eq!(parse_session(f.path()).unwrap().user_messages, 1);
     }
 
+    /// A request's lines repeat its `usage` with `output_tokens` rising as it
+    /// streams; the last line is the final count, and tools from every line count.
+    #[test]
+    fn the_last_line_of_a_request_wins() {
+        let f = write_lines(&[
+            r#"{"type":"assistant","requestId":"r1","message":{"model":"claude-opus-5","content":[{"type":"tool_use","id":"t1","name":"Read","input":{}}],"usage":{"input_tokens":10,"output_tokens":5}},"timestamp":"2026-01-01T00:00:00Z"}"#,
+            r#"{"type":"assistant","requestId":"r1","message":{"model":"claude-opus-5","content":[{"type":"tool_use","id":"t2","name":"Grep","input":{}}],"usage":{"input_tokens":10,"output_tokens":90}},"timestamp":"2026-01-01T00:00:01Z"}"#,
+        ]);
+        let rec = parse_session(f.path()).unwrap();
+        assert_eq!(rec.output_tokens, 90);
+        let by_model = parse_model_usage(f.path(), &mut ActivityLog::default());
+        assert_eq!(by_model["Opus"].output_tokens, 90);
+        assert_eq!(by_model["Opus"].tool_calls, 2);
+    }
+
     #[test]
     fn counts_typed_prompts_including_ones_with_an_image() {
         let f = write_lines(&[
@@ -2020,9 +2048,10 @@ mod tests {
         assert_eq!(tree.saved().sessions.len(), 1, "a fresh file replaced it");
     }
 
-    /// A bump must not erase sessions whose transcripts Claude Code has pruned.
+    /// v8 costs undercount (first-line usage, no 1h cache rate), so v9 drops
+    /// its pruned sessions rather than carrying the wrong totals.
     #[test]
-    fn a_previous_version_carries_its_pruned_sessions_forward_and_is_backed_up() {
+    fn the_previous_version_is_backed_up_and_its_pruned_sessions_dropped() {
         let tree = Tree::new();
         tree.session("p", "a", &[PROMPT]);
         let old = StatsFile {
@@ -2035,10 +2064,7 @@ mod tests {
 
         let summary = tree.recompute();
 
-        assert_eq!(
-            summary.totals_all.sessions, 2,
-            "the pruned one and the live one"
-        );
+        assert_eq!(summary.totals_all.sessions, 1, "only the live one");
         let backup = sibling(&tree.stats(), &format!(".v{}.bak", STATS_FILE_VERSION - 1));
         assert_eq!(std::fs::read_to_string(backup).unwrap(), old_json);
         assert_eq!(tree.saved().version, STATS_FILE_VERSION);

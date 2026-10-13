@@ -1,5 +1,6 @@
 import { get, writable } from "svelte/store";
 import type { NeedsInputKind, TabItem } from "../../types/terminal";
+import type { ScreenTail } from "../overview";
 import { panelData } from "./panel";
 import { activeWorkspacePath } from "./workspace";
 
@@ -13,6 +14,7 @@ export function addTab(tab: TabItem, opts?: { activate?: boolean }) {
 
 export function removeTab(id: string) {
   setPermissionPromptVisible(id, false);
+  setLiveScreenTail(id, null);
 
   const wasActive = get(activeTabId) === id;
   const removedTab = get(tabs).find((t) => t.id === id);
@@ -89,6 +91,7 @@ export function setTabSpawnError(id: string, spawnError: string) {
  */
 export function markTabExited(id: string) {
   setPermissionPromptVisible(id, false);
+  setLiveScreenTail(id, null);
   tabs.update((t) =>
     t.map((tab) =>
       tab.id === id
@@ -129,6 +132,21 @@ export function setPermissionPromptVisible(id: string, visible: boolean) {
   if (visible) next.add(id);
   else next.delete(id);
   permissionPromptTabs.set(next);
+}
+
+/** What each tab's terminal screen currently shows, parsed for the Sessions
+ *  grid's tiles. Kept out of `tabs` for the same reason as `permissionPromptTabs`. */
+export const liveScreenTails = writable<ReadonlyMap<string, ScreenTail>>(new Map());
+
+export function setLiveScreenTail(id: string, tail: ScreenTail | null) {
+  const current = get(liveScreenTails);
+  const prev = current.get(id);
+  if (tail === null && prev === undefined) return;
+  if (tail && prev && JSON.stringify(prev) === JSON.stringify(tail)) return;
+  const next = new Map(current);
+  if (tail) next.set(id, tail);
+  else next.delete(id);
+  liveScreenTails.set(next);
 }
 
 /**

@@ -29,7 +29,7 @@ function snippetOf(text: string): string {
  */
 export function formatReviewPrompt(comments: ReviewComment[]): string {
   const lines: string[] = [];
-  lines.push("Please address these review comments from Atlas, in order.");
+  lines.push("Here's my review of your changes. Please address these comments in order.");
   lines.push("");
 
   for (const [i, c] of comments.entries()) {

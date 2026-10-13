@@ -105,7 +105,7 @@ export function planCounts(plan: PlanItem[]): { done: number; total: number } {
 
 export type PlanRowState = "done" | "current" | "pending";
 
-/** `TodoWrite`'s three statuses, mapped to the design's three checkbox states. */
+/** The plan's three statuses, mapped to the design's three checkbox states. */
 export function planRowState(item: PlanItem): PlanRowState {
   if (item.status === "completed") return "done";
   if (item.status === "in_progress") return "current";

@@ -464,16 +464,18 @@
 
   /* ── Diff lines ────────────────────────────────────────────────────────── */
   .lines {
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
     background: var(--surface);
     font: var(--fs-sm)/1.7 var(--font-mono);
     contain: content;
   }
 
-  /* Rows fill the column and long lines wrap, so nothing ever needs a
-     sideways scroll to be read. */
+  /* Lines never wrap. The drawer grows to fit the longest one; past the
+     viewport, `.lines` scrolls sideways and rows stay as wide as their content. */
   .rows {
-    width: 100%;
+    width: max-content;
+    min-width: 100%;
   }
 
   .row {
@@ -499,8 +501,7 @@
   }
 
   .code {
-    white-space: pre-wrap;
-    word-break: break-all;
+    white-space: pre;
   }
 
   /* Additions / deletions — design tokens, tinted over whatever is behind. */

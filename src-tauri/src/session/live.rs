@@ -86,7 +86,7 @@ pub struct TranscriptLine {
 #[serde(rename_all = "camelCase")]
 pub struct PlanItem {
     pub text: String,
-    /// `pending` | `in_progress` | `completed`, straight from `TodoWrite`.
+    /// `pending` | `in_progress` | `completed`, from `TodoWrite`, `TaskUpdate` or omp's todo phases.
     pub status: String,
 }
 
@@ -129,7 +129,7 @@ pub struct LiveSession {
     pub git_branch: Option<String>,
     /// Newest `MAX_LINES` lines, oldest first.
     pub lines: Vec<TranscriptLine>,
-    /// Todos from the most recent `TodoWrite`; last one wins.
+    /// The task list from `TaskCreate`/`TaskUpdate`; without one, the newest `TodoWrite`'s todos or the newest `ExitPlanMode` plan's title.
     pub plan: Vec<PlanItem>,
     pub subagents: Vec<Subagent>,
     pub tool_calls: u32,
@@ -332,8 +332,8 @@ impl LineReader {
 
 /// Output tokens, cost and the largest context over the requests added so far.
 ///
-/// A request's usage never changes once it is first seen, so the totals are
-/// kept as requests arrive instead of re-pricing every request of a
+/// A request's usage is replaced as later lines of it arrive (`replace`), so the
+/// totals are kept current instead of re-pricing every request of a
 /// thousand-request session on each poll.
 #[derive(Default)]
 struct Spend {
@@ -347,6 +347,13 @@ impl Spend {
         self.output_tokens += req.output_tokens;
         self.cost += req.cost();
         self.peak_context = self.peak_context.max(req.context());
+    }
+
+    /// Swap a request's earlier usage for its latest. `peak_context` only grows.
+    fn replace(&mut self, old: &ReqData, new: &ReqData) {
+        self.output_tokens -= old.output_tokens;
+        self.cost -= old.cost();
+        self.add(new);
     }
 }
 
@@ -362,8 +369,8 @@ impl Spend {
 struct SubagentCounter {
     reader: LineReader,
     tool_count: u32,
-    /// Keys of the requests already counted, deduplicated the same way as the parent's.
-    seen: HashSet<String>,
+    /// The requests already counted, deduplicated the same way as the parent's.
+    seen: HashMap<String, ReqData>,
     spend: Spend,
 }
 
@@ -372,14 +379,14 @@ impl SubagentCounter {
         SubagentCounter {
             reader: LineReader::new(),
             tool_count: 0,
-            seen: HashSet::new(),
+            seen: HashMap::new(),
             spend: Spend::default(),
         }
     }
 
     /// Returns true when the count or the usage changed.
     fn poll(&mut self, path: &Path) -> bool {
-        let before = (self.tool_count, self.seen.len());
+        let before = (self.tool_count, self.seen.len(), self.spend.output_tokens);
         let mut changed = false;
         loop {
             let batch = self.reader.read_new(path);
@@ -399,8 +406,16 @@ impl SubagentCounter {
                 let msg = obj.get("message").unwrap_or(&Value::Null);
                 self.tool_count += tool_uses(msg).len() as u32;
                 if let (Some(model), Some(key)) = (assistant_model(&obj), request_key(&obj)) {
-                    if self.seen.insert(key) {
-                        self.spend.add(&ReqData::from_message(model, msg));
+                    let new = ReqData::from_message(model, msg);
+                    match self.seen.entry(key) {
+                        Entry::Occupied(mut occupied) => {
+                            self.spend.replace(occupied.get(), &new);
+                            occupied.insert(new);
+                        }
+                        Entry::Vacant(vacant) => {
+                            self.spend.add(&new);
+                            vacant.insert(new);
+                        }
                     }
                 }
             }
@@ -408,7 +423,7 @@ impl SubagentCounter {
                 break;
             }
         }
-        changed || (self.tool_count, self.seen.len()) != before
+        changed || (self.tool_count, self.seen.len(), self.spend.output_tokens) != before
     }
 }
 
@@ -432,6 +447,10 @@ pub struct SessionTail {
     spend: Spend,
     /// `tool_use` blocks over `requests`.
     tool_calls: u32,
+    /// Claude Code task ids, parallel to `session.plan` while the plan is a task list.
+    task_ids: Vec<String>,
+    /// `TaskCreate` tool_use id -> subject, until its result names the task id.
+    pending_tasks: HashMap<String, String>,
     /// Unanswered `tool_use` blocks in call order: (id, name, input summary).
     outstanding: Vec<(String, String, String)>,
     /// `tool_use` id -> index into `session.subagents`.
@@ -485,6 +504,8 @@ impl SessionTail {
             spend: Spend::default(),
             tool_calls: 0,
             subagent_tool_ids: HashMap::new(),
+            task_ids: Vec::new(),
+            pending_tasks: HashMap::new(),
             outstanding: Vec::new(),
             subagent_index: HashMap::new(),
             subagent_files: HashMap::new(),
@@ -552,6 +573,8 @@ impl SessionTail {
         self.tool_calls = 0;
         self.subagent_tool_ids.clear();
         self.outstanding.clear();
+        self.task_ids.clear();
+        self.pending_tasks.clear();
         self.subagent_index.clear();
         self.subagent_files.clear();
         self.background_subagents.clear();
@@ -657,6 +680,11 @@ impl SessionTail {
         for result in tool_results(obj) {
             self.outstanding
                 .retain(|(id, _, _)| id != result.tool_use_id);
+            if let Some(subject) = self.pending_tasks.remove(result.tool_use_id) {
+                if let (false, Some(id)) = (result.is_error, created_task_id(obj)) {
+                    self.add_task(id.to_string(), subject);
+                }
+            }
             if let Some(&idx) = self.subagent_index.get(result.tool_use_id) {
                 // A background spawn's result is a launch receipt, not a
                 // completion: it lands seconds in while the agent runs for
@@ -676,6 +704,42 @@ impl SessionTail {
             };
             let text = format!("  {}", excerpt(&result_text(result.content)));
             self.push_line(role, text, timestamp.clone());
+        }
+    }
+
+    fn add_task(&mut self, id: String, text: String) {
+        if self.task_ids.len() != self.session.plan.len() {
+            // The plan came from TodoWrite or ExitPlanMode; a task list replaces it.
+            self.task_ids.clear();
+            self.session.plan.clear();
+        }
+        self.task_ids.push(id);
+        self.session.plan.push(PlanItem {
+            text,
+            status: "pending".into(),
+        });
+    }
+
+    fn update_task(&mut self, input: &Value) {
+        // `task_id` is the older CLI's name for `taskId`.
+        let Some(id) = input
+            .get("taskId")
+            .or_else(|| input.get("task_id"))
+            .and_then(|v| v.as_str())
+        else {
+            return;
+        };
+        // A task can be created outside this file.
+        let Some(idx) = self.task_ids.iter().position(|t| t == id) else {
+            return;
+        };
+        match input.get("status").and_then(|v| v.as_str()) {
+            Some("deleted") => {
+                self.task_ids.remove(idx);
+                self.session.plan.remove(idx);
+            }
+            Some(s) => self.session.plan[idx].status = s.to_string(),
+            None => {}
         }
     }
 
@@ -722,8 +786,24 @@ impl SessionTail {
             self.session.last_tool = Some(tool.name.to_string());
             new_tools.push(tool.name.to_string());
 
-            if tool.name == "TodoWrite" {
-                self.session.plan = plan_from_todos(tool.input);
+            match tool.name {
+                "TodoWrite" => {
+                    self.session.plan = plan_from_todos(tool.input);
+                    self.task_ids.clear();
+                }
+                "TaskCreate" => {
+                    if let Some(subject) = tool.input.get("subject").and_then(|v| v.as_str()) {
+                        self.pending_tasks
+                            .insert(tool.id.to_string(), subject.to_string());
+                    }
+                }
+                "TaskUpdate" => self.update_task(tool.input),
+                "ExitPlanMode" if self.task_ids.is_empty() => {
+                    if let Some(item) = plan_title(tool.input) {
+                        self.session.plan = vec![item];
+                    }
+                }
+                _ => {}
             }
             // `Agent` is this CLI's spawn tool; `Task` is the name the design uses.
             if tool.name == "Agent" || tool.name == "Task" {
@@ -740,12 +820,18 @@ impl SessionTail {
             }
         }
 
-        // Usage is repeated on every line of a request — take it once.
+        // A request's usage grows across its lines — the last line's is final.
         if let (Some(model), Some(key)) = (assistant_model(obj), request_key(obj)) {
             self.session.model = Some(model.to_string());
             self.last_request = Some(key.clone());
             let req = match self.requests.entry(key) {
-                Entry::Occupied(occupied) => occupied.into_mut(),
+                Entry::Occupied(occupied) => {
+                    let req = occupied.into_mut();
+                    let latest = ReqData::from_message(&req.model, msg);
+                    self.spend.replace(req, &latest);
+                    req.set_usage(msg);
+                    req
+                }
                 Entry::Vacant(vacant) => {
                     let req = ReqData::from_message(model, msg);
                     self.spend.add(&req);
@@ -1131,6 +1217,28 @@ fn is_async_launch(obj: &Value) -> bool {
         .unwrap_or(false)
 }
 
+/// The id of the task a `TaskCreate` result created. It is only on the result,
+/// and there is one `tool_result` per user line (see `is_async_launch`).
+fn created_task_id(obj: &Value) -> Option<&str> {
+    obj.get("toolUseResult")?.get("task")?.get("id")?.as_str()
+}
+
+/// An `ExitPlanMode` plan's title as a single in-progress item. The plan is free
+/// markdown whose bullets are context, not steps, so only its title is shown.
+fn plan_title(input: &Value) -> Option<PlanItem> {
+    let line = input
+        .get("plan")?
+        .as_str()?
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())?;
+    let text = line.trim_start_matches('#').trim();
+    (!text.is_empty()).then(|| PlanItem {
+        text: text.to_string(),
+        status: "in_progress".into(),
+    })
+}
+
 /// The `<tool-use-id>` and `<status>` of a `<task-notification>`, which is how a
 /// background subagent reports that it stopped — minutes after the launch
 /// receipt. None for ordinary user text.
@@ -1464,6 +1572,85 @@ mod tests {
         assert_eq!(plan[0].status, "completed");
         assert_eq!(plan[1].status, "in_progress");
         assert_eq!(plan[2].status, "pending");
+    }
+
+    fn tool_call(id: &str, name: &str, input: &str) -> String {
+        format!(
+            r#"{{"type":"assistant","requestId":"req_{id}","message":{{"model":"claude-opus-5","content":[{{"type":"tool_use","id":"{id}","name":"{name}","input":{input}}}]}},"timestamp":"2026-09-07T21:50:00.000Z"}}"#
+        )
+    }
+
+    fn tool_reply(id: &str, result: &str, is_error: bool) -> String {
+        format!(
+            r#"{{"type":"user","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"{id}","content":"ok","is_error":{is_error}}}]}},"toolUseResult":{result},"timestamp":"2026-09-07T21:50:01.000Z"}}"#
+        )
+    }
+
+    #[test]
+    fn task_create_and_update_build_the_plan() {
+        let mut lines = Vec::new();
+        for (n, subject) in [("1", "A"), ("2", "B"), ("3", "C")] {
+            lines.push(tool_call(
+                &format!("tc{n}"),
+                "TaskCreate",
+                &format!(r#"{{"subject":"{subject}"}}"#),
+            ));
+            lines.push(tool_reply(
+                &format!("tc{n}"),
+                &format!(r#"{{"task":{{"id":"{n}"}}}}"#),
+                false,
+            ));
+        }
+        lines.push(tool_call("tc4", "TaskCreate", "{}"));
+        lines.push(tool_reply("tc4", "{}", true));
+        for (i, input) in [
+            r#"{"taskId":"1","status":"completed"}"#,
+            r#"{"task_id":"2","status":"in_progress"}"#,
+            r#"{"taskId":"3","status":"deleted"}"#,
+            r#"{"taskId":"9","status":"completed"}"#,
+        ]
+        .iter()
+        .enumerate()
+        {
+            lines.push(tool_call(&format!("tu{i}"), "TaskUpdate", input));
+        }
+        let (_dir, mut tail) = tail_with(&lines);
+        tail.poll();
+        let plan: Vec<_> = tail
+            .session()
+            .plan
+            .iter()
+            .map(|p| (p.text.as_str(), p.status.as_str()))
+            .collect();
+        assert_eq!(plan, [("A", "completed"), ("B", "in_progress")]);
+    }
+
+    #[test]
+    fn exit_plan_mode_shows_the_plan_title_until_a_task_list_exists() {
+        let (dir, mut tail) = tail_with(&[tool_call(
+            "ep1",
+            "ExitPlanMode",
+            r##"{"plan":"# Fix the rail\n\n## Context\n- a bullet","planFilePath":"/x.md"}"##,
+        )]);
+        tail.poll();
+        let plan = &tail.session().plan;
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].text, "Fix the rail");
+        assert_eq!(plan[0].status, "in_progress");
+
+        let path = dir.path().join(format!("{}.jsonl", UUID));
+        append(
+            &path,
+            &[
+                tool_call("tc1", "TaskCreate", r#"{"subject":"Only task"}"#),
+                tool_reply("tc1", r#"{"task":{"id":"1"}}"#, false),
+            ],
+        );
+        tail.poll();
+        let plan = &tail.session().plan;
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].text, "Only task");
+        assert_eq!(plan[0].status, "pending");
     }
 
     #[test]
@@ -2448,6 +2635,32 @@ mod tests {
         format!(
             r#"{{"type":"assistant","requestId":"{req}","message":{{"model":"{model}","content":[],"usage":{usage}}},"timestamp":"2026-09-07T21:52:00.000Z"}}"#
         )
+    }
+
+    /// Output tokens rise across a request's lines; the last line is final, and
+    /// the live totals agree with the bulk parser.
+    #[test]
+    fn the_last_line_of_a_request_wins() {
+        let lines = [
+            assistant_line(
+                "r1",
+                "claude-opus-5",
+                r#"{"input_tokens":10,"output_tokens":5}"#,
+            ),
+            assistant_line(
+                "r1",
+                "claude-opus-5",
+                r#"{"input_tokens":10,"output_tokens":90}"#,
+            ),
+        ];
+        let (dir, mut tail) = tail_with(&lines);
+        tail.poll();
+        assert_eq!(tail.session().output_tokens, 90);
+
+        let path = dir.path().join(format!("{}.jsonl", UUID));
+        let record = crate::commands::stats::parse_session(&path).unwrap();
+        assert_eq!(record.output_tokens, 90);
+        assert!((tail.session().cost_estimate - record.cost_estimate).abs() < 1e-9);
     }
 
     /// The Stats page and the live card must price the same tokens the same

@@ -16,13 +16,18 @@ import {
   formatElapsed,
   handleGridKey,
   openQuestion,
+  parseScreenTail,
   pinKey,
+  type FeedItem,
+  type ScreenTail,
   type SessionTile,
   screenPreview,
   shouldNotify,
   shortToolName,
   splitReply,
   tileComparator,
+  withLiveStatus,
+  withLiveTail,
 } from "../overview";
 import type { DiffStats, Workspace } from "../stores/workspace";
 
@@ -810,5 +815,136 @@ describe("shouldNotify", () => {
 
   it("notifies when another application has focus, even for the active tab", () => {
     expect(shouldNotify("t1", "t1", "session", false)).toBe(true);
+  });
+});
+
+describe("parseScreenTail", () => {
+  it("joins a wrapped continuation row into one note", () => {
+    const rows = ["⏺ Here is a long reply that", "  wraps onto a second row"];
+    expect(parseScreenTail(rows).items).toEqual([
+      { kind: "note", text: "Here is a long reply that wraps onto a second row", tool: null },
+    ]);
+  });
+
+  it("parses a tool call into a step", () => {
+    expect(parseScreenTail(["⏺ Bash(pnpm test)"]).items).toEqual([
+      { kind: "step", tool: "Bash", text: "pnpm test" },
+    ]);
+  });
+
+  it("ignores ⎿ output and does not extend the previous note across it", () => {
+    const rows = ["⏺ Some prose", "  ⎿  output", "     more output"];
+    expect(parseScreenTail(rows).items).toEqual([{ kind: "note", text: "Some prose", tool: null }]);
+  });
+
+  it("reads the spinner as status, not an item, and drops the interrupt hint", () => {
+    const rows = ["⏺ Half a reply", "", "✻ Thinking… (12s · ↑ 1.2k tokens · esc to interrupt)"];
+    const tail = parseScreenTail(rows);
+    expect(tail.status).toBe("Thinking… (12s · ↑ 1.2k tokens)");
+    expect(tail.items).toHaveLength(1);
+  });
+
+  it("strips the prompt box below the content", () => {
+    const rows = ["⏺ Running tests", "", RULE, "> ", RULE, "  ? for shortcuts", ""];
+    expect(parseScreenTail(rows)).toEqual({
+      items: [{ kind: "note", text: "Running tests", tool: null }],
+      status: null,
+    });
+  });
+
+  it("returns nothing for a screen with no Claude Code rows", () => {
+    expect(parseScreenTail(["omp v1.0", "working on it", "  done"])).toEqual({
+      items: [],
+      status: null,
+    });
+  });
+});
+
+describe("withLiveTail", () => {
+  const you = (text: string): FeedItem => ({ kind: "you", text, tool: null });
+  const note = (text: string): FeedItem => ({ kind: "note", text, tool: null });
+  const step = (tool: string, text = ""): FeedItem => ({ kind: "step", tool, text });
+  const tail = (items: FeedItem[]): ScreenTail => ({ items, status: null });
+
+  it("returns the same feed when there is no tail", () => {
+    const feed = [you("hi")];
+    expect(withLiveTail(feed, undefined)).toBe(feed);
+  });
+
+  it("appends only what follows the last shared step", () => {
+    const feed = [you("fix it"), step("Bash", "ls")];
+    const t = tail([you("fix it"), step("Bash", "ls"), note("Streaming now")]);
+    expect(withLiveTail(feed, t)).toEqual([...feed, note("Streaming now")]);
+  });
+
+  it("appends nothing when the screen note is already the feed's last note", () => {
+    const feed = [you("fix it"), note("All done here")];
+    const t = tail([you("fix it"), note("All done here")]);
+    expect(withLiveTail(feed, t)).toBe(feed);
+  });
+
+  it("appends the turn when the feed ends on a prompt and the screen has no prompt row", () => {
+    const feed = [you("fix it")];
+    const t = tail([note("On it"), step("Read", "a.ts")]);
+    expect(withLiveTail(feed, t)).toEqual([...feed, note("On it"), step("Read", "a.ts")]);
+  });
+
+  it("appends nothing when the screen prompt differs from the feed's", () => {
+    const feed = [you("fix it"), note("Done")];
+    const t = tail([you("something else"), note("Streaming")]);
+    expect(withLiveTail(feed, t)).toBe(feed);
+  });
+
+  it("appends nothing when the anchor is not on screen", () => {
+    const feed = [you("fix it"), step("Bash", "ls")];
+    const t = tail([you("fix it"), note("Other")]);
+    expect(withLiveTail(feed, t)).toBe(feed);
+  });
+
+  it("appends only the last three new items", () => {
+    const feed = [you("fix it")];
+    const t = tail([note("one"), note("two"), note("three"), note("four"), note("five")]);
+    expect(withLiveTail(feed, t)).toEqual([...feed, note("three"), note("four"), note("five")]);
+  });
+
+  it("never appends a prompt", () => {
+    const feed = [you("first"), note("Done")];
+    const t = tail([you("first"), note("Done"), you("second")]);
+    expect(withLiveTail(feed, t)).toBe(feed);
+  });
+});
+
+describe("withLiveStatus", () => {
+  const working = { running: true, text: "Working…" };
+
+  it("replaces Working… with the spinner status", () => {
+    const s = live("a", { state: "running" });
+    expect(withLiveStatus(working, s, "Thinking… (3s)")).toEqual({
+      running: true,
+      text: "Thinking… (3s)",
+    });
+  });
+
+  it("leaves a pending-tool activity alone", () => {
+    const s = live("a", { pendingTool: { name: "Bash", inputSummary: "ls" } });
+    const act = activity(s);
+    expect(withLiveStatus(act, s, "Thinking…")).toBe(act);
+  });
+
+  it("leaves a waiting-on-agents activity alone", () => {
+    const agent = { task: "t", agentType: null, startedAt: null, finishedAt: null, toolCount: 0 };
+    const s = live("a", { subagents: [{ ...agent, done: false }] });
+    const act = activity(s);
+    expect(withLiveStatus(act, s, "Thinking…")).toBe(act);
+  });
+
+  it("leaves an idle activity alone", () => {
+    const s = live("a", { state: "idle", turnEndedAt: "2026-01-01T00:00:00.000Z" });
+    const act = activity(s);
+    expect(withLiveStatus(act, s, "Thinking…")).toBe(act);
+  });
+
+  it("returns the activity when there is no status", () => {
+    expect(withLiveStatus(working, live("a"), null)).toBe(working);
   });
 });

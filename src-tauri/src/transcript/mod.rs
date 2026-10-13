@@ -45,6 +45,7 @@ pub(crate) struct Pricing {
     pub input: f64,
     pub output: f64,
     pub cache_write: f64,
+    pub cache_write_1h: f64,
     pub cache_read: f64,
 }
 
@@ -65,8 +66,8 @@ fn is_legacy_opus(m: &str) -> bool {
 ///
 /// Approximate API-equivalent pricing per million tokens, from Anthropic's
 /// published list prices (checked 2026-09-09). `cache_write` is the 5-minute
-/// rate — a transcript's `cache_creation_input_tokens` does not say which TTL
-/// was written, and 5 minutes is what an interactive session uses.
+/// rate and `cache_write_1h` the 1-hour rate (2x input); a transcript's
+/// `usage.cache_creation` says how many tokens were written at each TTL.
 ///
 /// Matched on model *family*, with a version arm only where a family changed
 /// price, so a model newer than this table is priced as its family instead of
@@ -81,30 +82,35 @@ pub(crate) fn pricing_for(model: &str) -> Pricing {
             input: 10.0,
             output: 50.0,
             cache_write: 12.5,
+            cache_write_1h: 20.0,
             cache_read: if m.contains("fable-5-1") { 0.25 } else { 1.0 },
         },
         "Opus" if is_legacy_opus(&m) => Pricing {
             input: 15.0,
             output: 75.0,
             cache_write: 18.75,
+            cache_write_1h: 30.0,
             cache_read: 1.5,
         },
         "Opus" => Pricing {
             input: 5.0,
             output: 25.0,
             cache_write: 6.25,
+            cache_write_1h: 10.0,
             cache_read: 0.5,
         },
         "Sonnet" if m.contains("sonnet-5") => Pricing {
             input: 2.0,
             output: 10.0,
             cache_write: 2.5,
+            cache_write_1h: 4.0,
             cache_read: 0.2,
         },
         "Sonnet" => Pricing {
             input: 3.0,
             output: 15.0,
             cache_write: 3.75,
+            cache_write_1h: 6.0,
             cache_read: 0.3,
         },
         // Version-first ids again — `claude-3-5-haiku-…`, `claude-3-haiku-…`.
@@ -112,27 +118,50 @@ pub(crate) fn pricing_for(model: &str) -> Pricing {
             input: 0.8,
             output: 4.0,
             cache_write: 1.0,
+            cache_write_1h: 1.6,
             cache_read: 0.08,
         },
         "Haiku" if m.contains("3-haiku") => Pricing {
             input: 0.25,
             output: 1.25,
             cache_write: 0.3,
+            cache_write_1h: 0.5,
             cache_read: 0.03,
         },
         "Haiku" => Pricing {
             input: 1.0,
             output: 5.0,
             cache_write: 1.25,
+            cache_write_1h: 2.0,
             cache_read: 0.1,
         },
         // A model from no family we know — mid-range Sonnet-tier fallback.
-        _ => Pricing {
-            input: 3.0,
-            output: 15.0,
-            cache_write: 3.75,
-            cache_read: 0.3,
-        },
+        _ => {
+            warn_unknown_model(model);
+            Pricing {
+                input: 3.0,
+                output: 15.0,
+                cache_write: 3.75,
+                cache_write_1h: 6.0,
+                cache_read: 0.3,
+            }
+        }
+    }
+}
+
+/// Log, once per model id for the life of the process, that `model` is priced
+/// at the Sonnet-tier fallback. `pricing_for` runs for every request.
+fn warn_unknown_model(model: &str) {
+    static WARNED: std::sync::Mutex<Option<std::collections::HashSet<String>>> =
+        std::sync::Mutex::new(None);
+    let Ok(mut warned) = WARNED.lock() else {
+        return;
+    };
+    if warned
+        .get_or_insert_with(Default::default)
+        .insert(model.to_string())
+    {
+        log::warn!("Unknown model {model:?}: pricing it at the Sonnet-4 fallback rates");
     }
 }
 
@@ -261,13 +290,18 @@ pub(crate) fn token_count(value: Option<&Value>) -> u64 {
 }
 
 /// One API request's accumulated data. Several assistant lines share a
-/// `requestId` and each repeats the same `usage` block, so usage is taken from
-/// whichever line is seen first and tool names are appended from all of them.
+/// `requestId`, and `output_tokens` rises as the response streams in, so usage
+/// is taken from the last line seen and tool names are appended from all of them.
 pub(crate) struct ReqData {
     pub model: String,
     pub input_tokens: u64,
     pub cache_read: u64,
+    /// All cache writes, whatever the TTL.
     pub cache_create: u64,
+    /// The part of `cache_create` written at the 5-minute TTL.
+    pub cache_create_5m: u64,
+    /// The part of `cache_create` written at the 1-hour TTL.
+    pub cache_create_1h: u64,
     pub output_tokens: u64,
     pub tool_names: Vec<String>,
     /// `activity_slot` of the line the request was first seen on; set by the
@@ -278,16 +312,39 @@ pub(crate) struct ReqData {
 impl ReqData {
     /// Read `message.usage` for a request first seen on this line.
     pub fn from_message(model: &str, msg: &Value) -> Self {
-        let usage = msg.get("usage").unwrap_or(&Value::Null);
-        let field = |name: &str| token_count(usage.get(name));
-        ReqData {
+        let mut req = ReqData {
             model: model.to_string(),
-            input_tokens: field("input_tokens"),
-            cache_read: field("cache_read_input_tokens"),
-            cache_create: field("cache_creation_input_tokens"),
-            output_tokens: field("output_tokens"),
+            input_tokens: 0,
+            cache_read: 0,
+            cache_create: 0,
+            cache_create_5m: 0,
+            cache_create_1h: 0,
+            output_tokens: 0,
             tool_names: Vec::new(),
             slot: None,
+        };
+        req.set_usage(msg);
+        req
+    }
+
+    /// Replace the usage with `message.usage` from a later line of the request.
+    pub fn set_usage(&mut self, msg: &Value) {
+        let usage = msg.get("usage").unwrap_or(&Value::Null);
+        let field = |name: &str| token_count(usage.get(name));
+        self.input_tokens = field("input_tokens");
+        self.cache_read = field("cache_read_input_tokens");
+        self.cache_create = field("cache_creation_input_tokens");
+        self.output_tokens = field("output_tokens");
+        // Without the per-TTL split, every cache write is billed at the 5m rate.
+        match usage.get("cache_creation").filter(|v| v.is_object()) {
+            Some(split) => {
+                self.cache_create_5m = token_count(split.get("ephemeral_5m_input_tokens"));
+                self.cache_create_1h = token_count(split.get("ephemeral_1h_input_tokens"));
+            }
+            None => {
+                self.cache_create_5m = self.cache_create;
+                self.cache_create_1h = 0;
+            }
         }
     }
 
@@ -299,7 +356,8 @@ impl ReqData {
     pub fn cost(&self) -> f64 {
         let p = pricing_for(&self.model);
         (self.input_tokens as f64 * p.input
-            + self.cache_create as f64 * p.cache_write
+            + self.cache_create_5m as f64 * p.cache_write
+            + self.cache_create_1h as f64 * p.cache_write_1h
             + self.cache_read as f64 * p.cache_read
             + self.output_tokens as f64 * p.output)
             / 1_000_000.0
@@ -525,6 +583,28 @@ mod tests {
         assert_ne!(legacy, current);
         assert_eq!(rates(pricing_for("claude-opus-4-20250514")), legacy);
         assert_eq!(rates(pricing_for("claude-opus-4-1-20250805")), legacy);
+    }
+
+    #[test]
+    fn one_hour_cache_writes_cost_twice_input() {
+        let msg = serde_json::json!({"usage": {
+            "cache_creation_input_tokens": 3_000_000,
+            "cache_creation": {
+                "ephemeral_5m_input_tokens": 1_000_000,
+                "ephemeral_1h_input_tokens": 2_000_000
+            }
+        }});
+        let req = ReqData::from_message("claude-opus-5", &msg);
+        // 1M at 6.25 plus 2M at 10.0.
+        assert!((req.cost() - 26.25).abs() < 1e-9);
+        assert_eq!(req.context(), 3_000_000);
+    }
+
+    #[test]
+    fn cache_writes_without_a_ttl_split_are_billed_at_the_5m_rate() {
+        let msg = serde_json::json!({"usage": {"cache_creation_input_tokens": 1_000_000}});
+        let req = ReqData::from_message("claude-opus-5", &msg);
+        assert!((req.cost() - 6.25).abs() < 1e-9);
     }
 
     #[test]

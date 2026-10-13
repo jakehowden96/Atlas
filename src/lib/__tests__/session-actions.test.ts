@@ -22,7 +22,8 @@ import {
   handleTerminalExit,
   spawnHarnessSession,
 } from "../session-actions";
-import { liveSessions, upsertLiveSession } from "../stores/liveSessions";
+import { liveSessions, resetLiveSessions, upsertLiveSession } from "../stores/liveSessions";
+import { liveTiles } from "../stores/liveTiles";
 import { sessionTouchedFiles, setSessionTouchedFiles } from "../stores/panel";
 import { addComment, reviewComments } from "../stores/reviewComments";
 import { toasts } from "../stores/toast";
@@ -169,6 +170,7 @@ describe("session ids typed into the shell", () => {
     tabs.set([]);
     activeTabId.set("");
     workspaces.set([{ path: "/w", name: "w", sessions: [row({ terminalTabId: null })] }]);
+    resetLiveSessions();
     vi.clearAllMocks();
   });
 
@@ -230,7 +232,7 @@ describe("resuming a conversation that is already open", () => {
 describe("ending a session's transcript tail", () => {
   beforeEach(() => {
     tabs.set([]);
-    liveSessions.set(new Map());
+    resetLiveSessions();
     vi.clearAllMocks();
   });
 
@@ -250,6 +252,34 @@ describe("ending a session's transcript tail", () => {
     await closing;
 
     expect(get(liveSessions).has(UUID)).toBe(false);
+  });
+
+  it("does not leave a second tile for the pre-/clear session when its last update lands after the stop", async () => {
+    workspaces.set([{ path: "/w", name: "w", sessions: [row()] }]);
+    upsertLiveSession(live(UUID));
+
+    await handleClaudeSessionStart("t1", OTHER_UUID);
+    upsertLiveSession(live(UUID));
+
+    expect(get(liveSessions).has(UUID)).toBe(false);
+    expect(get(liveTiles).map((t) => t.sessionUuid)).toEqual([OTHER_UUID]);
+  });
+
+  it("accepts updates again for a conversation resumed after close", async () => {
+    workspaces.set([
+      { path: "/w", name: "w", sessions: [row({ terminalTabId: null, status: "idle" })] },
+    ]);
+    upsertLiveSession(live(UUID));
+    await closeSession("row-1");
+
+    await spawnHarnessSession("/w", {
+      existingSessionId: "row-1",
+      resumeSessionId: UUID,
+      harnessId: "claude-code",
+    });
+    upsertLiveSession(live(UUID));
+
+    expect(get(liveSessions).has(UUID)).toBe(true);
   });
 });
 
@@ -289,7 +319,7 @@ describe("a shell that exits on its own", () => {
   beforeEach(() => {
     tabs.set([]);
     activeTabId.set("");
-    liveSessions.set(new Map());
+    resetLiveSessions();
     toasts.set([]);
     vi.clearAllMocks();
     vi.mocked(stopSessionTail).mockResolvedValue(undefined);

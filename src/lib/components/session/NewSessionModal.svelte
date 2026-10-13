@@ -328,10 +328,10 @@
   open={$newSessionOpen}
   onClose={close}
   align="top"
-  width={view.mode === "resume" ? "860px" : "640px"}
+  width={view.mode === "resume" ? "960px" : "640px"}
 >
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="new-session" onkeydown={onKeydown}>
+  <div class="new-session" class:resuming={view.mode === "resume"} onkeydown={onKeydown}>
     <div class="bar">
       <span class="glyph">›_</span>
       <input
@@ -497,6 +497,11 @@
     display: flex;
     flex-direction: column;
     height: 420px;
+    transition: height 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .new-session.resuming {
+    height: min(620px, calc(100vh - 100px));
   }
 
   /* ── Top bar ───────────────────────────────────────────────────────────── */
@@ -832,9 +837,10 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+    flex: 1;
     min-height: 0;
     overflow: auto;
-    /* Delayed so it lands after the 640→860px width transition has started. */
+    /* Delayed so it lands after the 640→960px width transition has started. */
     animation: atlasSlideIn 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) 0.08s both;
   }
 

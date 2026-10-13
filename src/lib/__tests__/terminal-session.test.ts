@@ -110,7 +110,7 @@ import {
 } from "../ipc";
 import { parseOsc7, TerminalSession } from "../terminal-session";
 import { toasts } from "../stores/toast";
-import { addTab, tabs } from "../stores/terminal";
+import { addTab, liveScreenTails, tabs } from "../stores/terminal";
 import { updateSessionLabelByTabId } from "../stores/workspace";
 
 type SpawnHandlers = Parameters<typeof ptySpawn>[2];
@@ -454,6 +454,56 @@ describe("TerminalSession resizing", () => {
 
   it("settles a parked terminal once after a burst of window resizes", async () => {
     expect(await resizedCalls(false, 10)).toBe(1);
+  });
+});
+
+describe("live screen tail", () => {
+  const ROWS = ["⏺ Half a reply", "", "✻ Thinking… (3s · esc to interrupt)"];
+
+  function showRows(terminal: { buffer: { active: { getLine: unknown } } }, rows: string[]) {
+    terminal.buffer.active.getLine = (y: number) => ({ translateToString: () => rows[y] ?? "" });
+  }
+
+  function publish(session: TerminalSession) {
+    (session as unknown as { publishScreen(): void }).publishScreen();
+  }
+
+  beforeEach(() => liveScreenTails.set(new Map()));
+
+  it("publishes the parsed screen for its tab", () => {
+    const { session, terminal } = makeSession();
+    showRows(terminal, ROWS);
+
+    publish(session);
+
+    expect(get(liveScreenTails).get("tab-1")).toEqual({
+      items: [{ kind: "note", text: "Half a reply", tool: null }],
+      status: "Thinking… (3s)",
+    });
+  });
+
+  it("drops the entry once the process exited", async () => {
+    const channel = spawnCapturingHandlers();
+    const { session, terminal } = makeSession();
+    await vi.advanceTimersByTimeAsync(0);
+    showRows(terminal, ROWS);
+    publish(session);
+    expect(get(liveScreenTails).has("tab-1")).toBe(true);
+
+    channel.handlers.onExit(EXIT);
+    publish(session);
+
+    expect(get(liveScreenTails).has("tab-1")).toBe(false);
+  });
+
+  it("drops the entry on destroy", () => {
+    const { session, terminal } = makeSession();
+    showRows(terminal, ROWS);
+    publish(session);
+
+    session.destroy();
+
+    expect(get(liveScreenTails).has("tab-1")).toBe(false);
   });
 });
 

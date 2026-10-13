@@ -2,6 +2,6 @@
 
 export type PlanItem = { text: string, 
 /**
- * `pending` | `in_progress` | `completed`, straight from `TodoWrite`.
+ * `pending` | `in_progress` | `completed`, from `TodoWrite`, `TaskUpdate` or omp's todo phases.
  */
 status: string, };

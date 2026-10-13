@@ -1,5 +1,5 @@
-use super::diff::{count_diff_stats, discover_diff, fit_to_budget, MAX_PANEL_DIFF_SIZE};
-use super::git::{git_cmd, should_skip_dir};
+use super::diff::{count_diff_stats, discover_diff, fit_to_budget, DiffPart, MAX_PANEL_DIFF_SIZE};
+use super::git::{git_cmd, nested_worktrees, should_skip_dir};
 use super::validate::{validate_cwd, validate_session_id};
 use crate::atomic_write::write_atomic;
 use crate::error::AtlasError;
@@ -54,6 +54,9 @@ pub fn get_panel_data(session_id: String) -> Result<Option<PanelData>, AtlasErro
 /// If CWD is inside a git repo → discover diff for that repo.
 /// If CWD is NOT a git repo → scan child directories for git repos,
 /// collect diffs from all repos with changes (like sift's scanForRepos).
+///
+/// Linked worktrees nested under a repo (Claude's `.claude/worktrees/*`) are
+/// separate checkouts; each dirty one shows as its own project.
 #[tauri::command(async)]
 pub async fn refresh_panel(
     session_id: String,
@@ -99,6 +102,27 @@ fn build_panel_single(
     panel_path: &std::path::Path,
 ) -> Result<Option<PanelData>, AtlasError> {
     let bundle = discover_diff(git_root);
+    let worktrees = worktree_parts(git_root, "");
+
+    if !worktrees.is_empty() {
+        let mut projects = Vec::new();
+        let mut budget = MAX_PANEL_DIFF_SIZE;
+        if !bundle.full.text.is_empty() {
+            push_project(&mut projects, ".".to_string(), bundle.full, &mut budget);
+        }
+        for (name, part) in worktrees {
+            push_project(&mut projects, name, part, &mut budget);
+        }
+        let data = PanelData {
+            version: 1,
+            timestamp: now_iso8601(),
+            cwd: git_root.to_string(),
+            diff: Some(projects_diff(projects)),
+            issue: None,
+        };
+        write_panel(session_id, &data, panel_path);
+        return Ok(Some(data));
+    }
 
     if bundle.full.text.is_empty() {
         // Write the cleared state rather than deleting the file: a deletion
@@ -165,9 +189,6 @@ fn build_panel_multi(
     dir_entries.sort_by_key(|e| e.file_name());
 
     let mut projects = Vec::new();
-    let mut total_files: u32 = 0;
-    let mut total_added: u32 = 0;
-    let mut total_removed: u32 = 0;
     let mut found_any_repo = false;
     let mut budget = MAX_PANEL_DIFF_SIZE;
 
@@ -192,29 +213,17 @@ fn build_panel_multi(
         found_any_repo = true;
 
         let bundle = discover_diff(&child_str);
-        if bundle.full.text.is_empty() {
-            continue;
+        if !bundle.full.text.is_empty() {
+            push_project(
+                &mut projects,
+                name_str.to_string(),
+                bundle.full,
+                &mut budget,
+            );
         }
-
-        // One repo's cap is not enough on its own: N repos would still add up
-        // to N times as much. Later repos get what earlier ones left over.
-        let part = fit_to_budget(bundle.full, budget);
-        budget -= part.text.len();
-
-        let (shown_files, la, lr) = count_diff_stats(&part.text);
-        let fc = part.truncated.map_or(shown_files, |t| t.total_files);
-        total_files += fc;
-        total_added += la;
-        total_removed += lr;
-
-        projects.push(ProjectDiff {
-            name: name_str.to_string(),
-            raw: part.text,
-            files_changed: fc,
-            lines_added: la,
-            lines_removed: lr,
-            truncated: part.truncated,
-        });
+        for (name, part) in worktree_parts(&child_str, &name_str) {
+            push_project(&mut projects, name, part, &mut budget);
+        }
     }
 
     if projects.is_empty() {
@@ -240,25 +249,74 @@ fn build_panel_multi(
         version: 1,
         timestamp: now_iso8601(),
         cwd: root.to_string(),
-        diff: Some(
-            DiffData {
-                raw: String::new(),
-                files_changed: total_files,
-                lines_added: total_added,
-                lines_removed: total_removed,
-                fingerprint: String::new(),
-                truncated: None,
-                projects: Some(projects),
-                local_raw: None,
-                local_truncated: None,
-            }
-            .sealed(),
-        ),
+        diff: Some(projects_diff(projects)),
         issue: None,
     };
 
     write_panel(session_id, &data, panel_path);
     Ok(Some(data))
+}
+
+/// Add one project to the panel. One repo's cap is not enough on its own: N
+/// projects would still add up to N times as much, so later ones get what
+/// earlier ones left over.
+fn push_project(projects: &mut Vec<ProjectDiff>, name: String, full: DiffPart, budget: &mut usize) {
+    let part = fit_to_budget(full, *budget);
+    *budget -= part.text.len();
+
+    let (shown_files, lines_added, lines_removed) = count_diff_stats(&part.text);
+    let files_changed = part.truncated.map_or(shown_files, |t| t.total_files);
+
+    projects.push(ProjectDiff {
+        name,
+        raw: part.text,
+        files_changed,
+        lines_added,
+        lines_removed,
+        truncated: part.truncated,
+    });
+}
+
+/// The multi-project `DiffData`, with totals summed over its projects.
+fn projects_diff(projects: Vec<ProjectDiff>) -> DiffData {
+    DiffData {
+        raw: String::new(),
+        files_changed: projects.iter().map(|p| p.files_changed).sum(),
+        lines_added: projects.iter().map(|p| p.lines_added).sum(),
+        lines_removed: projects.iter().map(|p| p.lines_removed).sum(),
+        fingerprint: String::new(),
+        truncated: None,
+        projects: Some(projects),
+        local_raw: None,
+        local_truncated: None,
+    }
+    .sealed()
+}
+
+/// The dirty linked worktrees under `git_root`, named by their path relative
+/// to it (behind `prefix` when the root is itself a child of the workspace).
+fn worktree_parts(git_root: &str, prefix: &str) -> Vec<(String, DiffPart)> {
+    let Ok(root) = fs::canonicalize(git_root) else {
+        return Vec::new();
+    };
+    let mut parts = Vec::new();
+    for path in nested_worktrees(git_root) {
+        let bundle = discover_diff(&path.to_string_lossy());
+        if bundle.full.text.is_empty() {
+            continue;
+        }
+        let Ok(relative) = path.strip_prefix(&root) else {
+            continue;
+        };
+        let relative = relative.to_string_lossy().replace('\\', "/");
+        let name = if prefix.is_empty() {
+            relative
+        } else {
+            format!("{prefix}/{relative}")
+        };
+        parts.push((name, bundle.full));
+    }
+    parts
 }
 
 /// Write `panel.json` for a session through a temp file and a rename, under the
@@ -621,6 +679,95 @@ mod tests {
         assert!(truncated.shown_files < truncated.total_files);
         // The flag survives the trip through panel.json.
         assert_eq!(read_panel(&panel).diff.unwrap().truncated, Some(truncated));
+    }
+
+    fn add_worktree(repo: &std::path::Path, rel: &str) -> std::path::PathBuf {
+        super::super::git::test_support::git(repo, &["worktree", "add", "-q", rel, "-b", "wt"]);
+        repo.join(rel)
+    }
+
+    fn project_names(data: &PanelData) -> Vec<String> {
+        data.diff
+            .as_ref()
+            .unwrap()
+            .projects
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|p| p.name.clone())
+            .collect()
+    }
+
+    #[test]
+    fn a_dirty_nested_worktree_shows_as_its_own_project() {
+        let repo = init_repo();
+        let dir = repo.path();
+        fs::write(dir.join("a.txt"), "one\n").unwrap();
+        commit_all(dir, "init");
+        let wt = add_worktree(dir, ".claude/worktrees/agent");
+        fs::write(wt.join("a.txt"), "two\n").unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let panel = panel_file(state.path());
+
+        let data = build_panel_single("wt-only", dir.to_str().unwrap(), &panel)
+            .unwrap()
+            .unwrap();
+        assert_eq!(data.diff.as_ref().unwrap().raw, "");
+        assert_eq!(project_names(&data), [".claude/worktrees/agent"]);
+    }
+
+    #[test]
+    fn the_main_checkout_and_a_dirty_worktree_both_show() {
+        let repo = init_repo();
+        let dir = repo.path();
+        fs::write(dir.join("a.txt"), "one\n").unwrap();
+        commit_all(dir, "init");
+        let wt = add_worktree(dir, ".claude/worktrees/agent");
+        fs::write(wt.join("a.txt"), "two\n").unwrap();
+        fs::write(dir.join("a.txt"), "three\n").unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let panel = panel_file(state.path());
+
+        let data = build_panel_single("wt-both", dir.to_str().unwrap(), &panel)
+            .unwrap()
+            .unwrap();
+        assert_eq!(project_names(&data), [".", ".claude/worktrees/agent"]);
+        assert_eq!(data.diff.unwrap().files_changed, 2);
+    }
+
+    #[test]
+    fn a_clean_nested_worktree_keeps_the_single_repo_shape() {
+        let repo = init_repo();
+        let dir = repo.path();
+        fs::write(dir.join("a.txt"), "one\n").unwrap();
+        commit_all(dir, "init");
+        add_worktree(dir, ".claude/worktrees/agent");
+        fs::write(dir.join("a.txt"), "two\n").unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let panel = panel_file(state.path());
+
+        let diff = build_panel_single("wt-clean", dir.to_str().unwrap(), &panel)
+            .unwrap()
+            .unwrap()
+            .diff
+            .unwrap();
+        assert!(diff.projects.is_none());
+        assert!(!diff.raw.is_empty());
+    }
+
+    #[test]
+    fn a_multi_repo_panel_includes_a_child_repos_dirty_worktree() {
+        let workspace = workspace_with_repos(&["api"], 10);
+        let api = workspace.path().join("api");
+        let wt = add_worktree(&api, ".claude/worktrees/w");
+        fs::write(wt.join("a.txt"), "changed\n").unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let panel = panel_file(state.path());
+
+        let data = build_panel_multi("multi-wt", workspace.path().to_str().unwrap(), &panel)
+            .unwrap()
+            .unwrap();
+        assert_eq!(project_names(&data), ["api", "api/.claude/worktrees/w"]);
     }
 
     #[test]

@@ -628,3 +628,163 @@ export function detectPermissionPrompt(rows: readonly string[]): boolean {
   if (yes === -1) return false;
   return tail.some((row, i) => i > yes && PERMISSION_NO_OPTION.test(row));
 }
+
+// ── Live screen tail ──────────────────────────────────────────────────────────
+
+/** What the parked terminal shows right now, parsed into feed rows. */
+export interface ScreenTail {
+  items: FeedItem[];
+  /** The spinner line's verb and detail, e.g. `Thinking… (12s)`. */
+  status: string | null;
+}
+
+const SCREEN_STEP = /^⏺\s+([A-Za-z][A-Za-z0-9_-]*)\((.*)$/;
+const SCREEN_NOTE = /^⏺\s+(.*)$/;
+const SCREEN_OUTPUT = /^\s*⎿/;
+const SPINNER = /^[·✢✳✶✻✽]\s+(\S[^(]*…)\s*(?:\((.*)\))?\s*$/;
+/** How far up from the bottom of the screen the spinner line is searched for. */
+const STATUS_SEARCH_ROWS = 6;
+/** The most in-progress rows a tile adds beneath the transcript's feed. */
+const LIVE_TAIL_MAX = 3;
+
+/**
+ * Parses a screen's visible rows into feed rows plus the spinner status.
+ *
+ * The transcript is silent mid-block: streaming prose, thinking and long
+ * tool runs only reach the JSONL once they finish. The screen is never
+ * behind the transcript, so this is how a tile sees work in progress. Rows
+ * the grammar does not recognise end the item being extended, so unknown
+ * TUI output is dropped rather than glued onto a note.
+ */
+export function parseScreenTail(rows: readonly string[]): ScreenTail {
+  const lines = screenPreview(rows);
+  const items: FeedItem[] = [];
+  let status: string | null = null;
+  let current: FeedItem | null = null;
+
+  lines.forEach((row, i) => {
+    const spinner = row.match(SPINNER);
+    if (spinner) {
+      if (i >= lines.length - STATUS_SEARCH_ROWS) {
+        const parts = (spinner[2] ?? "")
+          .split("·")
+          .map((p) => p.trim())
+          .filter((p) => p !== "" && !/esc to interrupt|ctrl\+/i.test(p));
+        status = `${spinner[1]}${parts.length > 0 ? ` (${parts.join(" · ")})` : ""}`;
+      }
+      current = null;
+      return;
+    }
+    if (/^>\s/.test(row)) {
+      current = { kind: "you", text: plainText(row.slice(2).trim()), tool: null };
+      items.push(current);
+      return;
+    }
+    const step = row.match(SCREEN_STEP);
+    if (step) {
+      current = {
+        kind: "step",
+        tool: shortToolName(step[1] ?? null),
+        text: (step[2] ?? "").replace(/\)\s*$/, "").trim(),
+      };
+      items.push(current);
+      return;
+    }
+    const note = row.match(SCREEN_NOTE);
+    if (note) {
+      current = { kind: "note", text: plainText((note[1] ?? "").trim()), tool: null };
+      items.push(current);
+      return;
+    }
+    if (SCREEN_OUTPUT.test(row)) {
+      current = null;
+      return;
+    }
+    if (/^\s{2,}\S/.test(row) && current && (current.kind === "you" || current.kind === "note")) {
+      current.text += ` ${plainText(row.trim())}`;
+      return;
+    }
+    if (row.trim() === "") return;
+    current = null;
+  });
+
+  return { items, status };
+}
+
+function norm(s: string): string {
+  return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function sameText(a: string, b: string): boolean {
+  const na = norm(a);
+  const nb = norm(b);
+  const n = Math.min(40, na.length, nb.length);
+  return n > 0 && na.slice(0, n) === nb.slice(0, n);
+}
+
+function sameItem(screen: FeedItem, feed: FeedItem): boolean {
+  if (screen.kind !== feed.kind) return false;
+  if (screen.kind === "step") return screen.tool === feed.tool;
+  if (screen.kind === "note") return sameText(screen.text, feed.text);
+  return false;
+}
+
+/**
+ * Appends the rows the screen shows but the transcript has not written yet.
+ *
+ * The transcript is silent mid-block, and the screen is never behind it, so
+ * the screen's current turn is lined up against the feed's by its last
+ * shared note or step; whatever follows that point is new. When the two
+ * cannot be lined up (a different prompt, no shared anchor) the feed is
+ * returned untouched rather than risk showing rows twice or out of order.
+ * A prompt is never appended: the transcript always owns those.
+ */
+export function withLiveTail(feed: FeedItem[], tail: ScreenTail | undefined): FeedItem[] {
+  if (!tail) return feed;
+  const sYou = tail.items.map((i) => i.kind).lastIndexOf("you");
+  const turn = tail.items.slice(sYou + 1);
+  if (turn.length === 0) return feed;
+
+  const fYou = feed.map((i) => i.kind).lastIndexOf("you");
+  const screenYou = tail.items[sYou];
+  const feedYou = feed[fYou];
+  if (screenYou && feedYou && !sameText(screenYou.text, feedYou.text)) return feed;
+
+  const anchor = feed
+    .slice(fYou + 1)
+    .reverse()
+    .find((i) => i.kind === "note" || i.kind === "step");
+  let extra: FeedItem[];
+  if (!anchor) {
+    extra = turn;
+  } else {
+    let k = -1;
+    for (let i = turn.length - 1; i >= 0; i--) {
+      const item = turn[i];
+      if (item && sameItem(item, anchor)) {
+        k = i;
+        break;
+      }
+    }
+    if (k === -1) return feed;
+    extra = turn.slice(k + 1);
+  }
+  return extra.length === 0 ? feed : [...feed, ...extra.slice(-LIVE_TAIL_MAX)];
+}
+
+/**
+ * Swaps the generic "Working…" line for the spinner's own text.
+ *
+ * The transcript has nothing to say mid-block, so a running session reads
+ * "Working…" while the screen says "Thinking… (12s)". A pending tool or
+ * background agents are more specific than the spinner and are left alone.
+ */
+export function withLiveStatus(
+  act: ReturnType<typeof activity>,
+  live: LiveSession,
+  status: string | null,
+): ReturnType<typeof activity> {
+  if (!status || live.state !== "running" || live.pendingTool !== null) return act;
+  if (live.subagents.some((a) => !a.done)) return act;
+  return { running: true, text: status };
+}

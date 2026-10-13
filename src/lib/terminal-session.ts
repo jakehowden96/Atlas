@@ -6,6 +6,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { getPanelData, openUrl, ptyKill, ptyResize, ptySpawn, ptyWrite, refreshPanel } from "./ipc";
 import {
   activeTabId,
+  setLiveScreenTail,
   setPermissionPromptVisible,
   setTabNeedsInput,
   setTabReady,
@@ -19,7 +20,13 @@ import { updateSessionLabelByTabId } from "./stores/workspace";
 import { get } from "svelte/store";
 import { showToast } from "./stores/toast";
 import { activeBlockTints, activeXtermTheme, themeMode } from "./theme";
-import { classifyRows, detectPermissionPrompt, screenPreview, type RowBlock } from "./overview";
+import {
+  classifyRows,
+  detectPermissionPrompt,
+  parseScreenTail,
+  screenPreview,
+  type RowBlock,
+} from "./overview";
 import { log } from "./logger";
 import { errorMessage } from "./ipc-error";
 
@@ -318,7 +325,8 @@ export class TerminalSession {
    * TUI repaint would repaint several half-painted screens; coalescing to the
    * next animation frame repaints the finished one. The rows are read from
    * `baseY`, not `viewportY`: a pane the user has scrolled back still tints
-   * off the live bottom of the buffer.
+   * off the live bottom of the buffer. The same read feeds the Sessions
+   * grid's live tail.
    */
   private scheduleScreenPublish() {
     if (this.screenFrame !== null) return;
@@ -336,6 +344,7 @@ export class TerminalSession {
       plain.push(line?.translateToString(true) ?? "");
     }
     setPermissionPromptVisible(this.tabId, detectPermissionPrompt(plain));
+    setLiveScreenTail(this.tabId, this.exited ? null : parseScreenTail(plain));
     this.paintRowTints(plain);
   }
 
@@ -714,6 +723,7 @@ export class TerminalSession {
     this.resizeObserver?.disconnect();
     clearTimeout(this.spawnFallback ?? undefined);
     if (this.screenFrame !== null) cancelAnimationFrame(this.screenFrame);
+    setLiveScreenTail(this.tabId, null);
     this.tints = [];
     this.unsubscribeTheme?.();
     this.unsubscribeFontSize?.();

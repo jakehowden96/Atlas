@@ -16,6 +16,8 @@ import {
   canAnswerPermission,
   hasLivePty,
   markTabExited,
+  liveScreenTails,
+  setLiveScreenTail,
 } from "../stores/terminal";
 import { activeWorkspacePath } from "../stores/workspace";
 import { panelData } from "../stores/panel";
@@ -204,5 +206,50 @@ describe("a tab whose shell exited", () => {
     expect(ended).toMatchObject({ id: "t1", exited: true, ready: true, needsInput: false });
     expect(hasLivePty(ended)).toBe(false);
     expect(canAnswerPermission(ended, new Set(["t1"]))).toBe(false);
+  });
+});
+
+describe("live screen tails", () => {
+  const tail = { items: [{ kind: "note" as const, text: "Hi", tool: null }], status: null };
+
+  beforeEach(() => {
+    tabs.set([]);
+    liveScreenTails.set(new Map());
+    vi.clearAllMocks();
+  });
+
+  it("stores a tail", () => {
+    setLiveScreenTail("t1", tail);
+    expect(get(liveScreenTails).get("t1")).toEqual(tail);
+  });
+
+  it("does not notify when the same tail is set again", () => {
+    setLiveScreenTail("t1", tail);
+    const seen = vi.fn();
+    const unsubscribe = liveScreenTails.subscribe(seen);
+    seen.mockClear();
+    setLiveScreenTail("t1", { items: [{ ...tail.items[0]! }], status: null });
+    unsubscribe();
+    expect(seen).not.toHaveBeenCalled();
+  });
+
+  it("deletes the entry on null", () => {
+    setLiveScreenTail("t1", tail);
+    setLiveScreenTail("t1", null);
+    expect(get(liveScreenTails).has("t1")).toBe(false);
+  });
+
+  it("is cleared when the tab is removed", () => {
+    addTab(makeTerminalTab({ id: "t1" }));
+    setLiveScreenTail("t1", tail);
+    removeTab("t1");
+    expect(get(liveScreenTails).has("t1")).toBe(false);
+  });
+
+  it("is cleared when the tab's shell exits", () => {
+    addTab(makeTerminalTab({ id: "t1" }));
+    setLiveScreenTail("t1", tail);
+    markTabExited("t1");
+    expect(get(liveScreenTails).has("t1")).toBe(false);
   });
 });

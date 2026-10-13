@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { get } from "svelte/store";
 
-import { liveSessions, removeLiveSession, upsertLiveSession } from "../stores/liveSessions";
+import {
+  liveSessions,
+  removeLiveSession,
+  resetLiveSessions,
+  reviveLiveSession,
+  upsertLiveSession,
+} from "../stores/liveSessions";
 import type { LiveSession } from "../../types/generated/LiveSession";
 
 function session(sessionUuid: string, overrides: Partial<LiveSession> = {}): LiveSession {
@@ -34,7 +40,7 @@ function session(sessionUuid: string, overrides: Partial<LiveSession> = {}): Liv
 
 describe("liveSessions store", () => {
   beforeEach(() => {
-    liveSessions.set(new Map());
+    resetLiveSessions();
   });
 
   it("replaces an existing session rather than duplicating it", () => {
@@ -65,5 +71,20 @@ describe("liveSessions store", () => {
     const before = get(liveSessions);
     removeLiveSession("nope");
     expect(get(liveSessions)).toBe(before);
+  });
+
+  it("drops an update that lands after the session was removed", () => {
+    upsertLiveSession(session("a"));
+    removeLiveSession("a");
+    upsertLiveSession(session("a"));
+    expect(get(liveSessions).has("a")).toBe(false);
+  });
+
+  it("accepts updates again once the session is revived", () => {
+    upsertLiveSession(session("a"));
+    removeLiveSession("a");
+    reviveLiveSession("a");
+    upsertLiveSession(session("a"));
+    expect(get(liveSessions).has("a")).toBe(true);
   });
 });

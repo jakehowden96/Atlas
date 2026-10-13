@@ -386,9 +386,11 @@
     flex-direction: column;
     /* Reviewing a diff and watching the session are separate activities, so the
        drawer takes most of the viewport rather than sharing it with the pane. */
-    width: min(1080px, 92%);
-    /* The drawer itself never scrolls sideways — only `.lines` inside a file
-       card does. */
+    width: max-content;
+    min-width: min(1080px, 92%);
+    max-width: 92%;
+    /* The drawer grows to fit the longest diff line, up to the cap. It never
+       scrolls sideways itself — only `.lines` inside a file card does. */
     overflow: hidden;
     border-left: 1px solid var(--border2);
     background: var(--surface);

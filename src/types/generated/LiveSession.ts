@@ -15,7 +15,7 @@ startedAt: string | null, lastActivity: string | null, title: string | null, mod
  */
 lines: Array<TranscriptLine>, 
 /**
- * Todos from the most recent `TodoWrite`; last one wins.
+ * The task list from `TaskCreate`/`TaskUpdate`; without one, the newest `TodoWrite`'s todos or the newest `ExitPlanMode` plan's title.
  */
 plan: Array<PlanItem>, subagents: Array<Subagent>, toolCalls: number, lastTool: string | null, 
 /**

@@ -11,6 +11,8 @@
     plainText,
     type SessionTile,
     shortToolName,
+    withLiveStatus,
+    withLiveTail,
   } from "../../overview";
   import { allowPendingTool, closeSession, denyPendingTool } from "../../session-actions";
   import { subagentMeta } from "../../session-view";
@@ -18,6 +20,7 @@
   import {
     activeTabId,
     canAnswerPermission,
+    liveScreenTails,
     permissionPromptTabs,
     tabs,
   } from "../../stores/terminal";
@@ -72,9 +75,12 @@
       ),
   );
   let question = $derived(openQuestion(live));
-  let feed = $derived(feedItems(live.lines, question));
+  let screenTail = $derived(
+    live.state === "running" ? $liveScreenTails.get(tile.terminalTabId ?? "") : undefined,
+  );
+  let feed = $derived(withLiveTail(feedItems(live.lines, question), screenTail));
   let agents = $derived(live.subagents.filter((a) => !a.done));
-  let act = $derived(activity(live));
+  let act = $derived(withLiveStatus(activity(live), live, screenTail?.status ?? null));
   let emptyMeta = $derived([live.model, tile.workspacePath].filter(Boolean).join(" · "));
 
   /* The feed is bottom-anchored and clips its oldest rows by the room the card
@@ -229,9 +235,10 @@
     </div>
   {/if}
 
-  <!-- The conversation's tail from the transcript, in place of a terminal
-       preview: prompts, Claude's prose and the tools it ran, newest at the
-       bottom. Older rows fall off the top as the card runs out of room. -->
+  <!-- The conversation's tail: the transcript's, plus the in-progress rows the
+       terminal shows but the transcript hasn't written yet. Prompts, Claude's
+       prose and the tools it ran, newest at the bottom. Older rows fall off
+       the top as the card runs out of room. -->
   <div class="sum" bind:this={sumEl}>
     {#if feed.length === 0}
       {#if !tailing}

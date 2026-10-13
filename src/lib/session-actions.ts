@@ -9,7 +9,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { get } from "svelte/store";
 import { ptyKill, ptyWrite, startOmpTail, startSessionTail, stopSessionTail } from "./ipc";
 import { log } from "./logger";
-import { removeLiveSession } from "./stores/liveSessions";
+import { removeLiveSession, reviveLiveSession } from "./stores/liveSessions";
 import { setSessionTouchedFiles } from "./stores/panel";
 import { clearForSession } from "./stores/reviewComments";
 import { showToast } from "./stores/toast";
@@ -59,17 +59,16 @@ import { errorMessage } from "./ipc-error";
 const spawningSessionIds = new Set<string>();
 
 /** Drop a session's transcript tail and its live state once its PTY is gone.
- *  The live entry goes after the tail has stopped: an update already computed
- *  when the stop was requested still lands first, and removing before it would
- *  let it re-insert a session nothing will ever remove. */
+ *  The entry is removed and the UUID retired first, so any update still in
+ *  flight, during or after the stop, gets dropped by `upsertLiveSession`. */
 async function endSessionTail(claudeSessionId: string | null | undefined) {
   if (!claudeSessionId) return;
+  removeLiveSession(claudeSessionId);
   try {
     await stopSessionTail(claudeSessionId);
   } catch (e) {
     log.warn("session", `stopSessionTail failed for ${claudeSessionId}: ${errorMessage(e)}`);
   }
-  removeLiveSession(claudeSessionId);
 }
 
 /** Kill a terminal tab's PTY, if it has one, and drop the tab with the review
@@ -168,6 +167,7 @@ export async function spawnHarnessSession(
   const tabId = crypto.randomUUID();
   let session: { id: string };
   const claudeSessionId = resumeSessionId ?? crypto.randomUUID();
+  reviveLiveSession(claudeSessionId);
 
   if (opts?.existingSessionId) {
     await resumeSession(opts.existingSessionId, tabId, claudeSessionId);
@@ -299,6 +299,7 @@ export async function handleClaudeSessionStart(tabId: string, claudeSessionId: s
   if (!rebound) return;
 
   await endSessionTail(previous);
+  reviveLiveSession(claudeSessionId);
   if (get(tailTranscripts)) {
     startSessionTail(claudeSessionId).catch((e) =>
       log.warn("session", `startSessionTail failed for ${claudeSessionId}: ${errorMessage(e)}`),

@@ -294,6 +294,28 @@ pub async fn git_checkout_branch(cwd: String, branch: String) -> Result<(), Atla
     tokio::task::spawn_blocking(move || checkout_local_branch(&cwd, &branch)).await?
 }
 
+/// Linked worktrees that live inside the repo root. Claude's
+/// `.claude/worktrees/*` are separate checkouts, so the root's own diff never
+/// shows their changes. Worktrees elsewhere on disk are left out.
+pub(crate) fn nested_worktrees(git_root: &str) -> Vec<std::path::PathBuf> {
+    let Ok(listing) = git_raw(git_root, &["worktree", "list", "--porcelain"]) else {
+        return Vec::new();
+    };
+    // Canonical on both sides: macOS reports /private/var for /var, and a
+    // pruned worktree's directory may be gone.
+    let Ok(root) = std::fs::canonicalize(git_root) else {
+        return Vec::new();
+    };
+    let mut found: Vec<std::path::PathBuf> = listing
+        .lines()
+        .filter_map(|line| line.strip_prefix("worktree "))
+        .filter_map(|path| std::fs::canonicalize(path).ok())
+        .filter(|p| *p != root && p.starts_with(&root) && p.is_dir())
+        .collect();
+    found.sort();
+    found
+}
+
 /// Real-repo fixtures shared by the git, diff and panel tests.
 #[cfg(test)]
 pub(crate) mod test_support {
@@ -570,5 +592,50 @@ mod tests {
             .unwrap();
         assert_eq!(repos.len(), 1);
         assert!(repos[0].path.ends_with("linked"));
+    }
+
+    #[test]
+    fn nested_worktrees_finds_a_worktree_under_the_root() {
+        let repo = init_repo();
+        let dir = repo.path();
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+        commit_all(dir, "init");
+        git(
+            dir,
+            &["worktree", "add", "-q", ".claude/worktrees/w", "-b", "w"],
+        );
+
+        let found = nested_worktrees(dir.to_str().unwrap());
+        assert_eq!(found.len(), 1);
+        assert!(found[0].ends_with(".claude/worktrees/w"));
+    }
+
+    #[test]
+    fn nested_worktrees_ignores_a_worktree_outside_the_root() {
+        let repo = init_repo();
+        let dir = repo.path();
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+        commit_all(dir, "init");
+        let elsewhere = tempfile::tempdir().unwrap();
+        let outside = elsewhere.path().join("w");
+        git(
+            dir,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                outside.to_str().unwrap(),
+                "-b",
+                "w",
+            ],
+        );
+
+        assert!(nested_worktrees(dir.to_str().unwrap()).is_empty());
+    }
+
+    #[test]
+    fn nested_worktrees_of_a_non_repo_is_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(nested_worktrees(dir.path().to_str().unwrap()).is_empty());
     }
 }
