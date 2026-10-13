@@ -1,0 +1,8 @@
+# `#[ts(export)]` types are written here by `cargo test` and committed.
+# Relative to the directory that holds `.cargo`, i.e. `src-tauri/`.
+[env]
+TS_RS_EXPORT_DIR = { value = "../src/types/generated", relative = true }
+# Every integer that crosses IPC is a JSON number that JavaScript reads as a
+# double, so all of them must stay below 2^53. ts-rs would otherwise type u64
+# as bigint, which JSON.parse never produces.
+TS_RS_LARGE_INT = "number"

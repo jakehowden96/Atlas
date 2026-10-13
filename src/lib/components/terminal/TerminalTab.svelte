@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { closeSessionForTab, handleTerminalExit } from "../../session-actions";
   import { TerminalSession } from "../../terminal-session";
   import "@xterm/xterm/css/xterm.css";
 
@@ -7,12 +8,25 @@
     tabId: string;
     visible: boolean;
     ready?: boolean;
+    /** Set once the PTY failed to spawn; replaces the loading overlay. */
+    spawnError?: string;
+    /** Names the harness in the loading overlay. */
+    harnessLabel?: string;
     onPtyReady: (ptyId: number) => void;
+    onSpawnError: (message: string) => void;
     cwd?: string;
-    onData?: (data: string) => void;
   }
 
-  let { tabId, visible, ready = true, onPtyReady, cwd, onData }: Props = $props();
+  let {
+    tabId,
+    visible,
+    ready = true,
+    spawnError,
+    harnessLabel = "session",
+    onPtyReady,
+    onSpawnError,
+    cwd,
+  }: Props = $props();
 
   let containerEl: HTMLDivElement;
   let session: TerminalSession | null = null;
@@ -23,8 +37,9 @@
       container: containerEl,
       visible,
       onPtyReady,
+      onSpawnError,
+      onExit: () => void handleTerminalExit(tabId),
       cwd,
-      onData,
     });
   });
 
@@ -36,8 +51,8 @@
     session?.handleVisibilityChange(visible);
   });
 
-  // Re-fit terminal when ready transitions to true — the container was
-  // position:absolute while hidden, so xterm had incorrect dimensions.
+  // Re-fit terminal when ready transitions to true, in case the container
+  // was resized while the loading overlay covered it.
   $effect(() => {
     if (visible && ready) {
       session?.fitTerminal();
@@ -45,70 +60,96 @@
   });
 </script>
 
-{#if visible && !ready}
+{#if spawnError}
+  <div class="loading-overlay" role="alert">
+    <span class="loading-text">Could not start the terminal.</span>
+    <span class="error-detail">{spawnError}</span>
+    <button type="button" class="close-session" onclick={() => void closeSessionForTab(tabId)}>
+      Close session
+    </button>
+  </div>
+{:else if !ready}
   <div class="loading-overlay">
     <span class="material-symbols-outlined loading-spinner">progress_activity</span>
-    <span class="loading-text">Starting Claude Code...</span>
+    <span class="loading-text">Starting {harnessLabel}...</span>
   </div>
 {/if}
-<div
-  class="terminal-container"
-  class:hidden={!visible || !ready}
-  bind:this={containerEl}
-></div>
+<div class="terminal-container" bind:this={containerEl}></div>
 
 <style>
   .terminal-container {
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: var(--surface);
-  }
-
-  .terminal-container.hidden {
-    visibility: hidden;
-    position: absolute;
-    top: 0;
-    left: 0;
-    pointer-events: none;
+    background: var(--term-bg);
   }
 
   .terminal-container :global(.xterm) {
     padding: 0 0 0 6px;
     height: 100%;
     margin-top: 2px;
-    background: var(--surface);
+    background: var(--term-bg);
   }
 
   .terminal-container :global(.xterm .xterm-viewport) {
-    background-color: var(--surface) !important;
+    background-color: var(--term-bg) !important;
   }
 
+  /* Absolute rather than a sibling in flow: the container beneath it is
+     always mounted now (visibility is purely "which parent holds the host"),
+     so the overlay has to cover it in place instead of pushing it down. Its
+     positioned ancestor is the registry's host div — see
+     `terminal-registry.svelte.ts`. */
   .loading-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 0.75rem;
-    width: 100%;
-    height: 100%;
-    background: var(--surface);
+    background: var(--term-bg);
   }
 
   .loading-spinner {
     font-size: 1.5rem;
-    color: var(--primary);
+    color: var(--accent);
     animation: spin 1s linear infinite;
   }
 
   .loading-text {
-    font-size: 0.8rem;
-    color: var(--on-surface-variant);
-    font-family: var(--font-body);
+    color: var(--muted);
+    font-family: var(--font-ui);
+    font-size: var(--fs-sm);
+  }
+
+  .error-detail {
+    max-width: 32rem;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+
+  .close-session {
+    padding: 0.35rem 0.9rem;
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    background: var(--surface2);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: var(--fs-sm);
+    cursor: pointer;
   }
 
   @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
 </style>

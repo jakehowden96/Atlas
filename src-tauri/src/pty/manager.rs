@@ -1,73 +1,289 @@
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::HashMap;
 use std::io::Read;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock};
 use std::thread;
-use tauri::ipc::Channel;
+use std::time::{Duration, Instant};
+use tauri::ipc::{Channel, InvokeResponseBody};
 
 use super::session::PtySession;
+use crate::error::AtlasError;
+use ts_rs::TS;
+
+/// The interactive shell to run inside a PTY, plus its startup arguments.
+///
+/// `SHELL` is authoritative on Unix. On Windows it is deliberately ignored
+/// unless it names a real Windows executable: MSYS/Git Bash export POSIX paths
+/// such as `/bin/bash`, and handing one of those to `CreateProcessW` fails with
+/// "The system cannot find the path specified" (os error 3) — which is exactly
+/// how a hardcoded `/bin/zsh` used to break every session on Windows.
+fn default_shell() -> (String, Vec<String>) {
+    #[cfg(windows)]
+    {
+        if let Some(sh) = std::env::var("SHELL").ok().filter(|s| is_windows_exe(s)) {
+            return (sh, Vec::new());
+        }
+        if let Some(pwsh) = find_on_path("pwsh.exe") {
+            return (pwsh, vec!["-NoLogo".to_string()]);
+        }
+        if let Some(ps) = find_on_path("powershell.exe") {
+            return (ps, vec!["-NoLogo".to_string()]);
+        }
+        (
+            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string()),
+            Vec::new(),
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        // `-l` (login shell) is a POSIX-shell convention; it has no Windows analogue.
+        let fallback = if cfg!(target_os = "macos") {
+            "/bin/zsh"
+        } else {
+            "/bin/bash"
+        };
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| fallback.to_string());
+        (shell, vec!["-l".to_string()])
+    }
+}
+
+/// True when `s` looks like a Windows executable path rather than a POSIX one.
+#[cfg(windows)]
+fn is_windows_exe(s: &str) -> bool {
+    !s.starts_with('/') && std::path::Path::new(s).is_file()
+}
+
+/// Resolve a bare executable name against `PATH`.
+#[cfg(windows)]
+fn find_on_path(exe: &str) -> Option<String> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(exe))
+        .find(|candidate| candidate.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Claude Code session markers that must not reach a session Atlas spawns.
+/// Deliberately an explicit list rather than a `CLAUDE*` prefix sweep: user
+/// configuration such as `CLAUDE_CONFIG_DIR` shares the prefix and must survive.
+const INHERITED_CLAUDE_MARKERS: &[&str] = &[
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_EFFORT",
+    "CLAUDE_PID",
+];
+
+/// How a shell ended, as the last message on its output channel.
+#[derive(serde::Serialize, TS)]
+#[ts(export)]
+struct PtyExit {
+    /// `None` when the status could not be collected (the shell was killed by
+    /// the app, or had not finished winding down).
+    code: Option<u32>,
+    signal: Option<String>,
+}
+
+/// The final message of a PTY's output channel: `{"exit":{"code":…,"signal":…}}`
+/// as JSON, where every earlier message is a raw byte body. It follows the last
+/// byte of output and is sent exactly once per session.
+fn exit_message(status: Option<&portable_pty::ExitStatus>) -> InvokeResponseBody {
+    #[derive(serde::Serialize)]
+    struct Message {
+        exit: PtyExit,
+    }
+    let exit = PtyExit {
+        code: status.map(|s| s.exit_code()),
+        signal: status.and_then(|s| s.signal()).map(str::to_owned),
+    };
+    // A struct of an integer and strings always serialises.
+    InvokeResponseBody::Json(serde_json::to_string(&Message { exit }).unwrap_or_default())
+}
+
+/// Bytes read from one PTY per `read` call.
+const READ_CHUNK: usize = 8192;
+
+/// Output is sent to the webview in batches of about this size at most.
+const MAX_BATCH: usize = 128 * 1024;
+
+/// Minimum gap between two sends. A PTY read returns at most 1 KiB on macOS,
+/// so sending each read on its own is a thousand IPC round trips per MiB; under
+/// a flood (`yes`, `cat bigfile`) reads are coalesced for this long instead.
+/// The first output after a quiet spell goes out at once, so keystroke echo
+/// does not wait.
+const MIN_SEND_INTERVAL: Duration = Duration::from_millis(4);
+
+/// Output the reader has produced and the sender has not yet delivered.
+struct Pending {
+    bytes: Vec<u8>,
+    /// The reader is done; send what is left and stop.
+    eof: bool,
+    /// `send` refused a batch (the webview is gone); stop reading.
+    sink_closed: bool,
+}
+
+fn lock(pending: &Mutex<Pending>) -> MutexGuard<'_, Pending> {
+    // Nothing panics while holding this lock, and the data stays consistent.
+    pending.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Forward everything `reader` produces to `send`, in order and byte for byte,
+/// in batches (see `MIN_SEND_INTERVAL`). `send` returns false once nobody is
+/// listening. Returns true if the output ended at EOF, false if the read failed
+/// or `send` gave up.
+///
+/// Memory is bounded: once `MAX_BATCH` bytes are waiting the reader stops
+/// reading, which fills the PTY's own buffer and holds the shell back, rather
+/// than queueing without limit.
+fn pump_output<R: Read>(mut reader: R, send: impl FnMut(Vec<u8>) -> bool + Send) -> bool {
+    let shared = (
+        Mutex::new(Pending {
+            bytes: Vec::new(),
+            eof: false,
+            sink_closed: false,
+        }),
+        Condvar::new(),
+    );
+    let (pending, changed) = &shared;
+
+    thread::scope(|scope| {
+        scope.spawn(move || send_batches(pending, changed, send));
+
+        let mut buf = [0u8; READ_CHUNK];
+        let reached_eof = loop {
+            let n = match reader.read(&mut buf) {
+                Ok(0) => break true,
+                Ok(n) => n,
+                Err(_) => break false,
+            };
+            let mut state = lock(pending);
+            while state.bytes.len() >= MAX_BATCH && !state.sink_closed {
+                state = changed.wait(state).unwrap_or_else(PoisonError::into_inner);
+            }
+            if state.sink_closed {
+                break false;
+            }
+            state.bytes.extend_from_slice(&buf[..n]);
+            changed.notify_all();
+        };
+
+        lock(pending).eof = true;
+        changed.notify_all();
+        reached_eof
+    })
+}
+
+/// The sending half of `pump_output`: paces and delivers what the reader
+/// accumulates, until the reader is done and nothing is left.
+fn send_batches(
+    pending: &Mutex<Pending>,
+    changed: &Condvar,
+    mut send: impl FnMut(Vec<u8>) -> bool,
+) {
+    let mut last_sent: Option<Instant> = None;
+    loop {
+        {
+            let mut state = lock(pending);
+            while state.bytes.is_empty() && !state.eof {
+                state = changed.wait(state).unwrap_or_else(PoisonError::into_inner);
+            }
+            if state.bytes.is_empty() {
+                return;
+            }
+        }
+
+        // Output that arrives while this sleeps joins the batch.
+        if let Some(sent) = last_sent {
+            thread::sleep(MIN_SEND_INTERVAL.saturating_sub(sent.elapsed()));
+        }
+
+        let batch = std::mem::take(&mut lock(pending).bytes);
+        changed.notify_all();
+        last_sent = Some(Instant::now());
+        if !send(batch) {
+            lock(pending).sink_closed = true;
+            changed.notify_all();
+            return;
+        }
+    }
+}
 
 pub struct PtyManager {
     sessions: Arc<RwLock<HashMap<u32, PtySession>>>,
-    shutdown_flags: Arc<RwLock<HashMap<u32, Arc<AtomicBool>>>>,
-    next_id: Arc<Mutex<u32>>,
+    next_id: AtomicU32,
 }
 
 impl PtyManager {
     pub fn new() -> Self {
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
-            shutdown_flags: Arc::new(RwLock::new(HashMap::new())),
-            next_id: Arc::new(Mutex::new(1)),
+            next_id: AtomicU32::new(1),
         }
     }
 
+    /// Start the user's shell in a new PTY. `on_data` receives its output as
+    /// raw byte messages, then one JSON `{"exit": …}` message when it is gone
+    /// (see `exit_message`).
     pub fn spawn(
         &self,
         cols: u16,
         rows: u16,
         cwd: Option<String>,
         env_vars: Option<HashMap<String, String>>,
-        on_data: Channel<Vec<u8>>,
-    ) -> Result<u32, String> {
-        let pty_system = native_pty_system();
-
+        on_data: Channel<InvokeResponseBody>,
+    ) -> Result<u32, AtlasError> {
+        let (shell, shell_args) = default_shell();
         let size = PtySize {
             rows,
             cols,
             pixel_width: 0,
             pixel_height: 0,
         };
+        self.spawn_program(&shell, &shell_args, size, cwd, env_vars, on_data)
+    }
 
-        let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
+    fn spawn_program(
+        &self,
+        program: &str,
+        args: &[String],
+        size: PtySize,
+        cwd: Option<String>,
+        env_vars: Option<HashMap<String, String>>,
+        on_data: Channel<InvokeResponseBody>,
+    ) -> Result<u32, AtlasError> {
+        let pair = native_pty_system().openpty(size).map_err(AtlasError::io)?;
 
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-        let mut cmd = CommandBuilder::new(&shell);
-        cmd.arg("-l"); // login shell
+        // `CommandBuilder::new` seeds the child's environment from this process,
+        // so the shell inherits everything Atlas was launched with.
+        let mut cmd = CommandBuilder::new(program);
+        for arg in args {
+            cmd.arg(arg);
+        }
 
         if let Some(dir) = cwd {
             cmd.cwd(dir);
         }
 
-        // Inherit safe environment variables (whitelist approach to avoid leaking secrets)
-        const SAFE_PREFIXES: &[&str] = &[
-            "HOME", "USER", "LOGNAME", "SHELL", "PATH", "LANG", "LC_",
-            "TERM", "COLORTERM", "EDITOR", "VISUAL", "PAGER", "LESS",
-            "XDG_", "SSH_AUTH_SOCK", "DISPLAY", "TMPDIR", "TZ",
-            "HOMEBREW_", "NVM_", "VOLTA_", "CARGO_HOME", "RUSTUP_HOME",
-            "GOPATH", "GOROOT", "JAVA_HOME", "PYENV_",
-            "FNM_", "BUN_INSTALL", "DENO_INSTALL",
-        ];
-        for (key, value) in std::env::vars() {
-            if SAFE_PREFIXES.iter().any(|p| key.starts_with(p)) {
-                cmd.env(key, value);
-            }
+        // A session Atlas spawns is a top-level Claude Code session. When Atlas
+        // itself was launched from inside one (running `pnpm tauri dev` from a
+        // Claude Code session, say), `CommandBuilder` seeds the child env from
+        // this process, so the parent's session markers leak in: Claude then
+        // sees CLAUDE_CODE_CHILD_SESSION, turns transcript saving off, and the
+        // whole live-session engine goes dark with only a warning in the pane.
+        // The messaging socket/token are worse — they are live handles to the
+        // parent session's IPC.
+        for key in INHERITED_CLAUDE_MARKERS {
+            cmd.env_remove(key);
         }
 
         // Set TERM_PROGRAM so zsh/bash emit OSC 7 (CWD reporting)
         cmd.env("TERM_PROGRAM", "Atlas");
-        cmd.env("TERM_PROGRAM_VERSION", "0.1.0");
+        cmd.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
         cmd.env("TERM", "xterm-256color");
 
         // Add custom env vars (restricted to ATLAS_ prefix for security)
@@ -81,105 +297,455 @@ impl PtyManager {
             }
         }
 
-        let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+        let child = pair.slave.spawn_command(cmd).map_err(AtlasError::io)?;
 
-        let writer = pair
-            .master
-            .take_writer()
-            .map_err(|e| e.to_string())?;
+        let writer = pair.master.take_writer().map_err(AtlasError::io)?;
 
-        let mut reader = pair
-            .master
-            .try_clone_reader()
-            .map_err(|e| e.to_string())?;
+        let reader = pair.master.try_clone_reader().map_err(AtlasError::io)?;
 
         // Assign ID
-        let id = {
-            let mut next = self.next_id.lock().map_err(|e| e.to_string())?;
-            let id = *next;
-            *next += 1;
-            id
-        };
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
 
-        let session = PtySession {
-            master: Mutex::new(pair.master),
-            child: Mutex::new(child),
-            writer: Arc::new(Mutex::new(writer)),
-        };
+        let session = PtySession::new(pair.master, child, writer)?;
 
-        let shutdown = Arc::new(AtomicBool::new(false));
+        self.sessions.write()?.insert(id, session);
 
-        self.sessions
-            .write()
-            .map_err(|e| e.to_string())?
-            .insert(id, session);
-
-        self.shutdown_flags
-            .write()
-            .map_err(|e| e.to_string())?
-            .insert(id, Arc::clone(&shutdown));
-
-        // Spawn reader thread with shutdown signal
+        // The reader ends on EOF, which killing the child (or the shell
+        // exiting) produces by closing the slave side.
         let sessions = Arc::clone(&self.sessions);
-        let flags = Arc::clone(&self.shutdown_flags);
         let session_id = id;
         thread::spawn(move || {
-            let mut buf = [0u8; 8192];
-            loop {
-                if shutdown.load(Ordering::Relaxed) {
-                    break;
-                }
-                match reader.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let data = buf[..n].to_vec();
-                        if on_data.send(data).is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-            // Clean up session and shutdown flag when reader exits
-            if let Ok(mut sessions) = sessions.write() {
-                sessions.remove(&session_id);
-            }
-            if let Ok(mut flags) = flags.write() {
-                flags.remove(&session_id);
-            }
+            let reached_eof = pump_output(reader, |bytes| {
+                on_data.send(InvokeResponseBody::Raw(bytes)).is_ok()
+            });
+            // Clean up the session when the reader exits, and reap a shell that
+            // exited on its own so it does not stay a zombie until Atlas quits.
+            // The session is gone from the table before the exit message goes
+            // out, so a write the webview makes in reaction to it is refused.
+            let removed = sessions
+                .write()
+                .ok()
+                .and_then(|mut sessions| sessions.remove(&session_id));
+            let status = match (reached_eof, removed) {
+                (true, Some(session)) => session.reap(Duration::from_secs(2)),
+                _ => None,
+            };
+            // The webview may be gone too; nobody is left to tell then.
+            let _ = on_data.send(exit_message(status.as_ref()));
         });
 
         Ok(id)
     }
 
-    pub fn write(&self, id: u32, data: &[u8]) -> Result<(), String> {
-        let sessions = self.sessions.read().map_err(|e| e.to_string())?;
+    pub fn write(&self, id: u32, data: Vec<u8>) -> Result<(), AtlasError> {
+        let sessions = self.sessions.read()?;
         let session = sessions
             .get(&id)
-            .ok_or_else(|| format!("Session {} not found", id))?;
+            .ok_or_else(|| AtlasError::not_found(format!("Terminal {id} not found")))?;
         session.write(data)
     }
 
-    pub fn resize(&self, id: u32, cols: u16, rows: u16) -> Result<(), String> {
-        let sessions = self.sessions.read().map_err(|e| e.to_string())?;
+    pub fn resize(&self, id: u32, cols: u16, rows: u16) -> Result<(), AtlasError> {
+        let sessions = self.sessions.read()?;
         let session = sessions
             .get(&id)
-            .ok_or_else(|| format!("Session {} not found", id))?;
+            .ok_or_else(|| AtlasError::not_found(format!("Terminal {id} not found")))?;
         session.resize(cols, rows)
     }
 
-    pub fn kill(&self, id: u32) -> Result<(), String> {
-        // Signal the reader thread to stop
-        if let Ok(flags) = self.shutdown_flags.read() {
-            if let Some(flag) = flags.get(&id) {
-                flag.store(true, Ordering::Relaxed);
+    /// Kill a session's shell. The session leaves the table first and is
+    /// killed after the lock is released: `kill` waits out a shell that ignores
+    /// SIGHUP, and every other tab's write and resize would queue behind it.
+    pub fn kill(&self, id: u32) -> Result<(), AtlasError> {
+        let removed = self.sessions.write()?.remove(&id);
+        match removed {
+            Some(session) => session.kill(),
+            None => Ok(()),
+        }
+    }
+
+    /// Kill every shell, in parallel so that quitting with several tabs open
+    /// costs one kill grace period rather than one per tab. Called on app exit.
+    pub fn kill_all(&self) {
+        let drained: Vec<PtySession> = match self.sessions.write() {
+            Ok(mut sessions) => sessions.drain().map(|(_, session)| session).collect(),
+            Err(_) => return,
+        };
+        thread::scope(|scope| {
+            for session in &drained {
+                scope.spawn(move || {
+                    if let Err(e) = session.kill() {
+                        log::warn!("Could not kill a terminal on exit: {}", e);
+                    }
+                });
+            }
+        });
+    }
+
+    /// The tty device a session's shell runs on, e.g. `/dev/ttys001` — the
+    /// breadcrumb OMP keys its own terminal-session files by.
+    pub fn tty_name(&self, id: u32) -> Option<String> {
+        let sessions = self.sessions.read().ok()?;
+        let session = sessions.get(&id)?;
+        let master = session.master.lock().ok()?;
+        master.tty_name().map(|p| p.to_string_lossy().into_owned())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{default_shell, PtyManager};
+    use crate::error::AtlasError;
+
+    /// A live PTY session running `sleep`, inserted without a frontend channel.
+    #[cfg(unix)]
+    fn sleeping_session(manager: &PtyManager, id: u32) {
+        use crate::pty::session::testing::session_with_writer;
+
+        let session = session_with_writer("sleep", &["60"], Box::new(std::io::sink()));
+        manager.sessions.write().unwrap().insert(id, session);
+    }
+
+    #[test]
+    fn writing_or_resizing_a_terminal_that_is_gone_is_not_found() {
+        let manager = PtyManager::new();
+        assert!(matches!(
+            manager.write(9, b"x".to_vec()),
+            Err(AtlasError::NotFound { .. })
+        ));
+        assert!(matches!(
+            manager.resize(9, 80, 24),
+            Err(AtlasError::NotFound { .. })
+        ));
+        assert!(
+            manager.kill(9).is_ok(),
+            "killing a gone terminal is a no-op"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn kill_all_stops_every_shell_and_forgets_them() {
+        let manager = PtyManager::new();
+        sleeping_session(&manager, 1);
+        sleeping_session(&manager, 2);
+        let pids: Vec<u32> = manager
+            .sessions
+            .read()
+            .unwrap()
+            .values()
+            .map(|s| s.child.lock().unwrap().process_id().unwrap())
+            .collect();
+
+        manager.kill_all();
+
+        assert!(manager.sessions.read().unwrap().is_empty());
+        for pid in pids {
+            // Signal 0 probes for existence; a reaped process is gone (ESRCH).
+            let alive = std::process::Command::new("kill")
+                .args(["-0", &pid.to_string()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success();
+            assert!(!alive, "pid {pid} survived kill_all");
+        }
+    }
+
+    /// Closing one tab must not freeze the others: `kill` waits out a shell
+    /// that ignores SIGHUP (portable-pty escalates to SIGKILL only after a
+    /// grace period), and it must do that without holding the session table.
+    #[cfg(unix)]
+    #[test]
+    fn killing_a_slow_shell_does_not_stall_other_sessions() {
+        use crate::pty::session::testing::session_with_writer;
+        use std::sync::Arc;
+        use std::time::{Duration, Instant};
+
+        let manager = Arc::new(PtyManager::new());
+        let stubborn = session_with_writer(
+            "sh",
+            &["-c", "trap '' HUP; while :; do sleep 1; done"],
+            Box::new(std::io::sink()),
+        );
+        let bystander = session_with_writer("sleep", &["60"], Box::new(std::io::sink()));
+        {
+            let mut sessions = manager.sessions.write().unwrap();
+            sessions.insert(1, stubborn);
+            sessions.insert(2, bystander);
+        }
+        // Let the shell install its trap before it is signalled.
+        std::thread::sleep(Duration::from_millis(300));
+
+        let killer = {
+            let manager = Arc::clone(&manager);
+            std::thread::spawn(move || manager.kill(1))
+        };
+        std::thread::sleep(Duration::from_millis(30));
+
+        let started = Instant::now();
+        manager.write(2, b"x".to_vec()).unwrap();
+        let waited = started.elapsed();
+
+        killer.join().unwrap().unwrap();
+        manager.kill(2).unwrap();
+        assert!(
+            waited < Duration::from_millis(100),
+            "a write to another tab waited {waited:?} behind a kill"
+        );
+    }
+
+    /// Hands out `data` in reads of `chunk` bytes, like a PTY does.
+    struct Chunked {
+        data: Vec<u8>,
+        pos: usize,
+        chunk: usize,
+    }
+
+    impl std::io::Read for Chunked {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let n = self.chunk.min(buf.len()).min(self.data.len() - self.pos);
+            buf[..n].copy_from_slice(&self.data[self.pos..self.pos + n]);
+            self.pos += n;
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn output_is_delivered_byte_for_byte_and_in_order_in_few_messages() {
+        use super::{pump_output, MAX_BATCH, READ_CHUNK};
+
+        // Every byte value, in a non-repeating order, 1 KiB per read.
+        let data: Vec<u8> = (0..1 << 20)
+            .map(|i: usize| (i.wrapping_mul(31) ^ (i >> 8)) as u8)
+            .collect();
+        let reader = Chunked {
+            data: data.clone(),
+            pos: 0,
+            chunk: 1024,
+        };
+
+        let mut messages: Vec<Vec<u8>> = Vec::new();
+        let reached_eof = pump_output(reader, |bytes| {
+            messages.push(bytes);
+            true
+        });
+
+        assert!(reached_eof);
+        assert_eq!(messages.concat(), data);
+        assert!(
+            messages.iter().all(|m| m.len() < MAX_BATCH + READ_CHUNK),
+            "a batch exceeded the cap"
+        );
+        assert!(
+            messages.len() < 100,
+            "1024 reads were sent as {} messages",
+            messages.len()
+        );
+    }
+
+    #[test]
+    fn output_after_a_quiet_spell_is_sent_without_waiting_for_a_full_batch() {
+        use super::pump_output;
+        use std::io::Read;
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        /// One short read, then silence until released, then EOF.
+        struct OneKeystroke {
+            release: mpsc::Receiver<()>,
+            sent: bool,
+        }
+        impl Read for OneKeystroke {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if !self.sent {
+                    self.sent = true;
+                    buf[..3].copy_from_slice(b"$ l");
+                    return Ok(3);
+                }
+                let _ = self.release.recv();
+                Ok(0)
             }
         }
-        let mut sessions = self.sessions.write().map_err(|e| e.to_string())?;
-        if let Some(session) = sessions.get(&id) {
-            session.kill()?;
+
+        let (release_tx, release) = mpsc::channel();
+        let (delivered_tx, delivered) = mpsc::channel();
+        let pump = std::thread::spawn(move || {
+            pump_output(
+                OneKeystroke {
+                    release,
+                    sent: false,
+                },
+                move |bytes| delivered_tx.send(bytes).is_ok(),
+            )
+        });
+
+        // The reader is still blocked: only an eager send can satisfy this.
+        let first = delivered.recv_timeout(Duration::from_secs(2));
+        release_tx.send(()).unwrap();
+        assert!(pump.join().unwrap());
+        assert_eq!(first.unwrap(), b"$ l");
+    }
+
+    #[test]
+    fn pump_stops_reading_once_the_webview_stops_listening() {
+        use super::pump_output;
+
+        let endless = Chunked {
+            data: vec![b'y'; 1 << 30],
+            pos: 0,
+            chunk: 8192,
+        };
+        let mut sent = 0;
+        let reached_eof = pump_output(endless, |_| {
+            sent += 1;
+            false
+        });
+
+        assert!(!reached_eof);
+        assert_eq!(sent, 1, "kept sending after the sink refused a batch");
+    }
+
+    /// What a spawned session's output channel has received, oldest first.
+    #[cfg(unix)]
+    type Received = std::sync::Arc<std::sync::Mutex<Vec<tauri::ipc::InvokeResponseBody>>>;
+
+    /// Spawn `sh -c script` on a PTY whose channel records every message.
+    #[cfg(unix)]
+    fn spawn_script(manager: &PtyManager, script: &str) -> (u32, Received) {
+        use portable_pty::PtySize;
+        use std::sync::{Arc, Mutex};
+        use tauri::ipc::{Channel, InvokeResponseBody};
+
+        let received: Received = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&received);
+        let channel = Channel::<InvokeResponseBody>::new(move |body| {
+            sink.lock().unwrap().push(body);
+            Ok(())
+        });
+        let id = manager
+            .spawn_program(
+                "sh",
+                &["-c".to_string(), script.to_string()],
+                PtySize::default(),
+                None,
+                None,
+                channel,
+            )
+            .unwrap();
+        (id, received)
+    }
+
+    /// The JSON messages received so far; every other message is raw output.
+    #[cfg(unix)]
+    fn exit_messages(received: &Received) -> Vec<serde_json::Value> {
+        use tauri::ipc::InvokeResponseBody;
+        received
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|body| match body {
+                InvokeResponseBody::Json(json) => Some(serde_json::from_str(json).unwrap()),
+                InvokeResponseBody::Raw(_) => None,
+            })
+            .collect()
+    }
+
+    /// Wait for the exit message, then long enough for a duplicate to show up.
+    #[cfg(unix)]
+    fn wait_for_exit(received: &Received) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while exit_messages(received).is_empty() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "no exit message arrived"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
-        sessions.remove(&id);
-        Ok(())
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_shell_that_exits_reports_its_status_once_after_its_output() {
+        use tauri::ipc::InvokeResponseBody;
+
+        let manager = PtyManager::new();
+        let (_, received) = spawn_script(&manager, "printf hello; exit 3");
+        wait_for_exit(&received);
+
+        let received = received.lock().unwrap();
+        let exits: Vec<_> = received
+            .iter()
+            .filter_map(|body| match body {
+                InvokeResponseBody::Json(json) => Some(json.as_str()),
+                InvokeResponseBody::Raw(_) => None,
+            })
+            .collect();
+        assert_eq!(exits, [r#"{"exit":{"code":3,"signal":null}}"#]);
+        assert!(
+            matches!(received.last(), Some(InvokeResponseBody::Json(_))),
+            "the exit message must follow the last byte of output"
+        );
+        let output: Vec<u8> = received
+            .iter()
+            .filter_map(|body| match body {
+                InvokeResponseBody::Raw(bytes) => Some(bytes.clone()),
+                InvokeResponseBody::Json(_) => None,
+            })
+            .flatten()
+            .collect();
+        assert!(String::from_utf8_lossy(&output).contains("hello"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn writing_to_a_shell_that_exited_is_refused_not_lost() {
+        let manager = PtyManager::new();
+        let (id, received) = spawn_script(&manager, "exit 0");
+        wait_for_exit(&received);
+
+        assert!(manager.write(id, b"ls\r".to_vec()).is_err());
+        assert!(manager.resize(id, 100, 30).is_err());
+        // Closing the tab afterwards is still fine.
+        manager.kill(id).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_killed_shell_also_ends_with_exactly_one_exit_message() {
+        let manager = PtyManager::new();
+        let (id, received) = spawn_script(&manager, "sleep 60");
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
+        manager.kill(id).unwrap();
+        wait_for_exit(&received);
+
+        assert_eq!(exit_messages(&received).len(), 1);
+    }
+
+    #[test]
+    fn default_shell_is_runnable_on_this_platform() {
+        let (shell, args) = default_shell();
+        assert!(!shell.is_empty(), "shell must not be empty");
+
+        if cfg!(windows) {
+            // The old hardcoded POSIX path is what CreateProcessW choked on.
+            assert!(
+                !shell.starts_with('/'),
+                "Windows shell must not be a POSIX path, got {shell}"
+            );
+            assert!(
+                std::path::Path::new(&shell).is_file() || shell.eq_ignore_ascii_case("cmd.exe"),
+                "Windows shell must resolve to a real executable, got {shell}"
+            );
+            assert!(
+                !args.iter().any(|a| a == "-l"),
+                "-l is a POSIX login-shell flag and must not be passed on Windows"
+            );
+        } else {
+            assert!(shell.starts_with('/'), "unix shell should be absolute");
+            assert_eq!(args, vec!["-l".to_string()]);
+        }
     }
 }
