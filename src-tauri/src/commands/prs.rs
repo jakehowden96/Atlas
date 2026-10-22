@@ -1,11 +1,41 @@
+use super::proc::no_window;
+use crate::error::AtlasError;
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use std::io::Read;
+use std::process::{Command, ExitStatus, Output, Stdio};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::{OnceCell, Semaphore};
 use tokio::task::JoinSet;
+use ts_rs::TS;
+
+/// The combined state of a pull request's checks.
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, TS)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum CiState {
+    Passed,
+    Failed,
+    Pending,
+    None,
+}
+
+/// Where a pull request stands with its reviewers.
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, TS)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewState {
+    Approved,
+    ChangesRequested,
+    ReviewRequired,
+    None,
+}
 
 /// One open pull request. We over-fetch from gh and then collapse the noisy
 /// `statusCheckRollup` / `reviewDecision` / `comments` fields into small
 /// scalars the UI can switch on directly.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct Pr {
     pub number: u64,
@@ -15,11 +45,15 @@ pub struct Pr {
     pub created_at: String,
     pub updated_at: String,
     pub is_draft: bool,
+    /// The head branch lives in a fork. Its name is the fork's, so it says
+    /// nothing about which commit a local branch of that name points at.
+    pub is_cross_repository: bool,
     pub head_ref_name: String,
-    /// "passed" | "failed" | "pending" | "none"
-    pub ci_state: String,
-    /// "approved" | "changes_requested" | "review_required" | "none"
-    pub review_state: String,
+    pub ci_state: CiState,
+    pub review_state: ReviewState,
+    /// Logins of individually requested reviewers. Team requests carry no
+    /// login and are dropped — "Needs my review" matches the viewer's login.
+    pub review_request_logins: Vec<String>,
     pub comments_count: u32,
 }
 
@@ -35,17 +69,22 @@ struct RawPr {
     updated_at: String,
     #[serde(rename = "isDraft", default)]
     is_draft: bool,
+    #[serde(rename = "isCrossRepository", default)]
+    is_cross_repository: bool,
     #[serde(rename = "headRefName", default)]
     head_ref_name: String,
     #[serde(rename = "reviewDecision", default)]
     review_decision: String,
+    #[serde(rename = "reviewRequests", default)]
+    review_requests: Vec<serde_json::Value>,
     #[serde(rename = "statusCheckRollup", default)]
     status_check_rollup: Vec<serde_json::Value>,
     #[serde(default)]
     comments: Vec<serde_json::Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(export)]
 pub struct PrAuthor {
     #[serde(default)]
     pub login: String,
@@ -54,9 +93,9 @@ pub struct PrAuthor {
 /// Collapse `gh`'s mixed StatusContext + CheckRun rollup into a single state.
 /// Any failure dominates; otherwise any in-progress means pending; otherwise
 /// if every check is good it's "passed"; an empty rollup is "none".
-fn rollup_ci_state(checks: &[serde_json::Value]) -> &'static str {
+fn rollup_ci_state(checks: &[serde_json::Value]) -> CiState {
     if checks.is_empty() {
-        return "none";
+        return CiState::None;
     }
     let mut any_pending = false;
     let mut any_success = false;
@@ -65,7 +104,9 @@ fn rollup_ci_state(checks: &[serde_json::Value]) -> &'static str {
         // StatusContext: state="SUCCESS"/"FAILURE"/"ERROR"/"PENDING"
         if let Some(conclusion) = c.get("conclusion").and_then(|v| v.as_str()) {
             match conclusion {
-                "FAILURE" | "TIMED_OUT" | "ACTION_REQUIRED" | "STARTUP_FAILURE" => return "failed",
+                "FAILURE" | "TIMED_OUT" | "ACTION_REQUIRED" | "STARTUP_FAILURE" => {
+                    return CiState::Failed
+                }
                 "CANCELLED" => {}
                 "SUCCESS" => any_success = true,
                 "NEUTRAL" | "SKIPPED" => {}
@@ -81,7 +122,7 @@ fn rollup_ci_state(checks: &[serde_json::Value]) -> &'static str {
             }
         } else if let Some(state) = c.get("state").and_then(|v| v.as_str()) {
             match state {
-                "FAILURE" | "ERROR" => return "failed",
+                "FAILURE" | "ERROR" => return CiState::Failed,
                 "PENDING" | "EXPECTED" => any_pending = true,
                 "SUCCESS" => any_success = true,
                 _ => {}
@@ -89,21 +130,32 @@ fn rollup_ci_state(checks: &[serde_json::Value]) -> &'static str {
         }
     }
     if any_pending {
-        "pending"
+        CiState::Pending
     } else if any_success {
-        "passed"
+        CiState::Passed
     } else {
-        "none"
+        CiState::None
     }
 }
 
-fn map_review(decision: &str) -> &'static str {
+fn map_review(decision: &str) -> ReviewState {
     match decision {
-        "APPROVED" => "approved",
-        "CHANGES_REQUESTED" => "changes_requested",
-        "REVIEW_REQUIRED" => "review_required",
-        _ => "none",
+        "APPROVED" => ReviewState::Approved,
+        "CHANGES_REQUESTED" => ReviewState::ChangesRequested,
+        "REVIEW_REQUIRED" => ReviewState::ReviewRequired,
+        _ => ReviewState::None,
     }
+}
+
+/// Pull the individual reviewer logins out of gh's `reviewRequests`. The
+/// array mixes `User` entries (which have `login`) with `Team` entries (which
+/// do not); only users can be matched against the viewer.
+fn review_request_logins(requests: &[serde_json::Value]) -> Vec<String> {
+    requests
+        .iter()
+        .filter_map(|r| r.get("login").and_then(|v| v.as_str()))
+        .map(|s| s.to_string())
+        .collect()
 }
 
 fn flatten(raw: RawPr) -> Pr {
@@ -115,129 +167,282 @@ fn flatten(raw: RawPr) -> Pr {
         created_at: raw.created_at,
         updated_at: raw.updated_at,
         is_draft: raw.is_draft,
+        is_cross_repository: raw.is_cross_repository,
         head_ref_name: raw.head_ref_name,
-        ci_state: rollup_ci_state(&raw.status_check_rollup).to_string(),
-        review_state: map_review(&raw.review_decision).to_string(),
+        ci_state: rollup_ci_state(&raw.status_check_rollup),
+        review_state: map_review(&raw.review_decision),
+        review_request_logins: review_request_logins(&raw.review_requests),
         comments_count: raw.comments.len() as u32,
     }
 }
 
-/// Per-repo result. `error` carries the stderr of a failed `gh` call so the UI
-/// can show "this one repo broke" without poisoning the whole snapshot.
-#[derive(Debug, Serialize, Clone)]
+/// Why a `gh` call produced nothing. The first two are things the user fixes
+/// outside Atlas (install, sign in), so the UI shows the fix rather than gh's
+/// raw output.
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, TS)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum GhErrorKind {
+    /// No `gh` on PATH.
+    NotInstalled,
+    /// `gh` ran and said it has no credentials.
+    NotAuthenticated,
+    /// `gh` did not answer within `GH_TIMEOUT` and was killed.
+    TimedOut,
+    /// Anything else; `message` carries gh's stderr.
+    Failed,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, TS)]
+#[ts(export)]
+pub struct GhError {
+    pub kind: GhErrorKind,
+    pub message: String,
+}
+
+impl GhError {
+    fn failed(message: impl Into<String>) -> Self {
+        Self {
+            kind: GhErrorKind::Failed,
+            message: message.into(),
+        }
+    }
+}
+
+/// A `gh` failure that a command (unlike the PR list) has to reject with.
+impl From<GhError> for AtlasError {
+    fn from(error: GhError) -> Self {
+        match error.kind {
+            GhErrorKind::NotInstalled => AtlasError::tool_missing("gh", error.message),
+            GhErrorKind::TimedOut => AtlasError::timeout("gh", error.message),
+            GhErrorKind::NotAuthenticated | GhErrorKind::Failed => {
+                AtlasError::tool_failed("gh", error.message)
+            }
+        }
+    }
+}
+
+/// Per-repo result. `error` describes a failed `gh` call so the UI can show
+/// "this one repo broke" without poisoning the whole snapshot.
+#[derive(Debug, Serialize, Clone, TS)]
+#[ts(export)]
 pub struct RepoPrs {
     pub repo: String,
     pub prs: Vec<Pr>,
-    pub error: Option<String>,
+    pub error: Option<GhError>,
 }
 
 /// Reject anything that isn't a plain `owner/repo` slug. Mirrors GitHub's own
 /// constraints (letters, digits, dot, underscore, hyphen) — keeps stray shell
 /// metacharacters out of the `--repo` argument even though we never go through
 /// a shell.
-fn validate_repo_slug(slug: &str) -> Result<(), String> {
+pub(crate) fn validate_repo_slug(slug: &str) -> Result<(), AtlasError> {
     if slug.is_empty() {
-        return Err("Repo slug cannot be empty".to_string());
+        return Err(AtlasError::invalid_input("Repo slug cannot be empty"));
     }
     let parts: Vec<&str> = slug.split('/').collect();
     if parts.len() != 2 {
-        return Err(format!("Expected owner/repo, got '{}'", slug));
+        return Err(AtlasError::invalid_input(format!(
+            "Expected owner/repo, got '{slug}'"
+        )));
     }
     for part in &parts {
+        if *part == "." || *part == ".." {
+            return Err(AtlasError::invalid_input(format!(
+                "Invalid path segment in '{slug}'"
+            )));
+        }
         if part.is_empty() {
-            return Err(format!("Empty owner or repo in '{}'", slug));
+            return Err(AtlasError::invalid_input(format!(
+                "Empty owner or repo in '{slug}'"
+            )));
         }
         if !part
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
         {
-            return Err(format!("Invalid characters in '{}'", slug));
+            return Err(AtlasError::invalid_input(format!(
+                "Invalid characters in '{slug}'"
+            )));
         }
     }
     Ok(())
 }
 
-fn fetch_one(repo: &str) -> RepoPrs {
-    if let Err(e) = validate_repo_slug(repo) {
-        return RepoPrs { repo: repo.to_string(), prs: vec![], error: Some(e) };
-    }
+/// How long one `gh` call may run before it is killed. A hung network call
+/// would otherwise pin a blocking-pool thread and leave the screen loading.
+const GH_TIMEOUT: Duration = Duration::from_secs(30);
 
-    let output = Command::new("gh")
-        .args([
-            "pr",
-            "list",
-            "--repo",
-            repo,
-            "--state",
-            "open",
-            "--json",
-            "number,title,author,createdAt,updatedAt,url,isDraft,headRefName,reviewDecision,statusCheckRollup,comments",
-            "--limit",
-            "50",
-        ])
-        .output();
+/// `gh pr list` calls running at once. Watching many repos would otherwise fan
+/// out one process each and trip GitHub's secondary rate limits.
+const GH_CONCURRENCY: usize = 4;
 
-    let output = match output {
-        Ok(o) => o,
-        Err(e) => {
-            return RepoPrs {
-                repo: repo.to_string(),
-                prs: vec![],
-                error: Some(format!("Failed to run gh: {}", e)),
-            };
-        }
+/// Run `cmd` to completion, or kill it after `timeout`. `Ok(None)` means it was
+/// killed. stdout and stderr are drained on their own threads: a child that
+/// fills a pipe would otherwise block forever and look like a hang.
+fn run_with_timeout(cmd: &mut Command, timeout: Duration) -> std::io::Result<Option<Output>> {
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut buf);
+            }
+            buf
+        })
     };
+    let stdout = drain(child.stdout.take().map(|p| Box::new(p) as _));
+    let stderr = drain(child.stderr.take().map(|p| Box::new(p) as _));
 
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break Some(status);
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    // The pipes close with the process, so these joins return promptly.
+    let stdout = stdout.join().unwrap_or_default();
+    let stderr = stderr.join().unwrap_or_default();
+    Ok(status.map(|status| Output {
+        status,
+        stdout,
+        stderr,
+    }))
+}
+
+/// Sort a finished `gh` call that did not succeed. gh exits 4 when it needs
+/// authentication; the stderr wording covers versions and paths that do not.
+fn classify_failure(status: &ExitStatus, stderr: &str) -> GhError {
+    let message = if stderr.is_empty() {
+        format!("gh exited with status {status}")
+    } else {
+        stderr.to_string()
+    };
+    let unauthenticated = status.code() == Some(4)
+        || stderr.contains("gh auth login")
+        || stderr.contains("not logged in");
+    GhError {
+        kind: if unauthenticated {
+            GhErrorKind::NotAuthenticated
+        } else {
+            GhErrorKind::Failed
+        },
+        message,
+    }
+}
+
+/// Run `program` (`gh`) with `args`, in `cwd` when given; success returns its
+/// stdout.
+fn run_gh(
+    program: &str,
+    cwd: Option<&str>,
+    timeout: Duration,
+    args: &[&str],
+) -> Result<String, GhError> {
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    if let Some(cwd) = cwd {
+        cmd.current_dir(cwd);
+    }
+    no_window(&mut cmd);
+    let output = match run_with_timeout(&mut cmd, timeout) {
+        Ok(Some(output)) => output,
+        Ok(None) => {
+            return Err(GhError {
+                kind: GhErrorKind::TimedOut,
+                message: format!("gh did not answer within {}s", timeout.as_secs()),
+            })
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(GhError {
+                kind: GhErrorKind::NotInstalled,
+                message: "The GitHub CLI (gh) was not found on PATH".to_string(),
+            })
+        }
+        Err(e) => return Err(GhError::failed(format!("Failed to run gh: {e}"))),
+    };
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return RepoPrs {
-            repo: repo.to_string(),
-            prs: vec![],
-            error: Some(if stderr.is_empty() {
-                format!("gh exited with status {}", output.status)
-            } else {
-                stderr
-            }),
-        };
+        return Err(classify_failure(&output.status, &stderr));
     }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    match serde_json::from_str::<Vec<RawPr>>(&stdout) {
+fn fetch_one(program: &str, repo: &str) -> RepoPrs {
+    let result = validate_repo_slug(repo)
+        .map_err(|e| GhError::failed(e.message()))
+        .and_then(|()| {
+        let stdout = run_gh(
+            program,
+            None,
+            GH_TIMEOUT,
+            &[
+                "pr",
+                "list",
+                "--repo",
+                repo,
+                "--state",
+                "open",
+                "--json",
+                "number,title,author,createdAt,updatedAt,url,isDraft,isCrossRepository,headRefName,reviewDecision,reviewRequests,statusCheckRollup,comments",
+                "--limit",
+                "50",
+            ],
+        )?;
+        serde_json::from_str::<Vec<RawPr>>(&stdout)
+            .map_err(|e| GhError::failed(format!("Could not parse gh output: {e}")))
+    });
+    match result {
         Ok(raws) => RepoPrs {
             repo: repo.to_string(),
             prs: raws.into_iter().map(flatten).collect(),
             error: None,
         },
-        Err(e) => RepoPrs {
+        Err(error) => RepoPrs {
             repo: repo.to_string(),
             prs: vec![],
-            error: Some(format!("Could not parse gh output: {}", e)),
+            error: Some(error),
         },
     }
 }
 
-/// Fan out `gh pr list` across every watched repo in parallel. Per-repo failures
-/// land in `error` rather than propagating, so the UI can render the partial
-/// snapshot. Order of the returned vec matches the input order.
+/// Fan out `gh pr list` across every watched repo, a few at a time. Per-repo
+/// failures land in `error` rather than propagating, so the UI can render the
+/// partial snapshot. Order of the returned vec matches the input order.
 #[tauri::command(async)]
-pub async fn list_repo_prs(repos: Vec<String>) -> Result<Vec<RepoPrs>, String> {
+pub async fn list_repo_prs(repos: Vec<String>) -> Result<Vec<RepoPrs>, AtlasError> {
     if repos.is_empty() {
         return Ok(vec![]);
     }
 
+    let permits = Arc::new(Semaphore::new(GH_CONCURRENCY));
     let mut set = JoinSet::new();
     for (index, repo) in repos.into_iter().enumerate() {
+        let permits = permits.clone();
         set.spawn(async move {
-            let result = tokio::task::spawn_blocking(move || fetch_one(&repo))
-                .await
-                .map_err(|e| format!("Task join error: {}", e));
+            let result = match permits.acquire_owned().await {
+                Ok(_permit) => tokio::task::spawn_blocking(move || fetch_one("gh", &repo))
+                    .await
+                    .map_err(AtlasError::from),
+                Err(e) => Err(AtlasError::internal(format!("gh semaphore closed: {e}"))),
+            };
             (index, result)
         });
     }
 
     let mut results: Vec<Option<RepoPrs>> = Vec::new();
     while let Some(joined) = set.join_next().await {
-        let (index, result) = joined.map_err(|e| format!("Task join error: {}", e))?;
+        let (index, result) = joined?;
         let repo_prs = result?;
         if results.len() <= index {
             results.resize_with(index + 1, || None);
@@ -248,29 +453,181 @@ pub async fn list_repo_prs(repos: Vec<String>) -> Result<Vec<RepoPrs>, String> {
     Ok(results.into_iter().flatten().collect())
 }
 
-/// Open an external URL in the user's default browser. macOS-targeted (uses
-/// `open`); rejects anything that isn't `https://`. Tauri 2 doesn't ship the
-/// opener plugin in this project, so we shell out ourselves.
-#[tauri::command(async)]
-pub async fn open_url(url: String) -> Result<(), String> {
-    if !url.starts_with("https://") {
-        return Err("Only https:// URLs are allowed".to_string());
+/// The signed-in GitHub user, as reported by `gh`.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, TS)]
+#[ts(export)]
+pub struct GhViewer {
+    pub login: String,
+}
+
+/// The answer to "who is signed in": the user, or why there is none.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, TS)]
+#[ts(export)]
+pub struct GhViewerResult {
+    pub viewer: Option<GhViewer>,
+    pub error: Option<GhError>,
+}
+
+impl GhViewerResult {
+    fn signed_in(viewer: &GhViewer) -> Self {
+        Self {
+            viewer: Some(viewer.clone()),
+            error: None,
+        }
     }
-    tokio::task::spawn_blocking(move || {
-        Command::new("open")
-            .arg(&url)
-            .status()
-            .map_err(|e| format!("Failed to open URL: {}", e))
-            .and_then(|status| {
-                if status.success() {
-                    Ok(())
-                } else {
-                    Err(format!("open exited with status {}", status))
-                }
-            })
+}
+
+/// Cached for the life of the process: the login cannot change without a new
+/// `gh auth login`, and this sits on every Pull-requests render path. Only
+/// successful lookups are cached, so signing in mid-session still resolves.
+static VIEWER: OnceCell<GhViewer> = OnceCell::const_new();
+
+fn fetch_viewer_login(program: &str) -> Result<String, GhError> {
+    let stdout = run_gh(
+        program,
+        None,
+        GH_TIMEOUT,
+        &["api", "user", "--jq", ".login"],
+    )?;
+    let login = stdout.trim().to_string();
+    if login.is_empty() {
+        Err(GhError::failed("gh returned no login"))
+    } else {
+        Ok(login)
+    }
+}
+
+/// Who "me" is, for the Mine / Needs-my-review filters.
+///
+/// `gh` missing or signed out is not an error: the result says which, so the
+/// screen can show the fix and degrade to All-only meanwhile.
+#[tauri::command(async)]
+pub async fn gh_viewer() -> Result<GhViewerResult, AtlasError> {
+    if let Some(viewer) = VIEWER.get() {
+        return Ok(GhViewerResult::signed_in(viewer));
+    }
+    let login = tokio::task::spawn_blocking(|| fetch_viewer_login("gh")).await?;
+    Ok(match login {
+        Ok(login) => {
+            let viewer = GhViewer { login };
+            let _ = VIEWER.set(viewer.clone());
+            GhViewerResult::signed_in(&viewer)
+        }
+        Err(error) => GhViewerResult {
+            viewer: None,
+            error: Some(error),
+        },
     })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// A checkout fetches the PR's commits, which a large repo can take a while over.
+const GH_CHECKOUT_TIMEOUT: Duration = Duration::from_secs(120);
+
+fn checkout_pr(program: &str, cwd: &str, number: u64, repo: &str) -> Result<(), AtlasError> {
+    validate_repo_slug(repo)?;
+    if number == 0 {
+        return Err(AtlasError::invalid_input("Pull request numbers start at 1"));
+    }
+    // A branch of our own naming: the default is the PR's head branch name,
+    // which for a fork is whatever the fork called it (`main` is common) and
+    // must not land on a local branch that already means something else.
+    let branch = format!("pr-{number}");
+    run_gh(
+        program,
+        Some(cwd),
+        GH_CHECKOUT_TIMEOUT,
+        &[
+            "pr",
+            "checkout",
+            &number.to_string(),
+            "--repo",
+            repo,
+            "--branch",
+            &branch,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Check a pull request out into the repo at `cwd` with `gh pr checkout`.
+///
+/// Unlike checking out `headRefName`, this fetches the PR's own commits, so it
+/// works for fork PRs whose branch name only exists in the fork (or collides
+/// with a local branch that is something else).
+#[tauri::command(async)]
+pub async fn gh_pr_checkout(cwd: String, number: u64, repo: String) -> Result<(), AtlasError> {
+    super::validate::validate_cwd(&cwd)?;
+    tokio::task::spawn_blocking(move || checkout_pr("gh", &cwd, number, &repo)).await?
+}
+
+/// The platform's "open this in the default handler" launcher.
+/// Tauri 2 doesn't ship the opener plugin in this project, so we shell out.
+fn browser_launcher(url: &str) -> Command {
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut cmd = Command::new("open");
+        cmd.arg(url);
+        cmd
+    };
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut cmd = Command::new("cmd");
+        // The empty "" is `start`'s window-title argument — without it `start`
+        // consumes the URL as the title and opens nothing.
+        cmd.args(["/C", "start", "", url]);
+        cmd
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let mut cmd = {
+        let mut cmd = Command::new("xdg-open");
+        cmd.arg(url);
+        cmd
+    };
+    no_window(&mut cmd);
+    cmd
+}
+
+/// The scheme check is the guard against launching arbitrary handlers: only
+/// `https://` URLs may be opened.
+fn check_open_url(url: &str) -> Result<(), AtlasError> {
+    if !url.starts_with("https://") {
+        return Err(AtlasError::invalid_input("Only https:// URLs are allowed"));
+    }
+    // `cmd /C start` re-parses its command line, so a shell metacharacter in
+    // the URL would escape argument quoting on Windows. The other launchers
+    // take the URL as a single argument, where `&` in a query string is just
+    // a character.
+    #[cfg(windows)]
+    {
+        if url.contains(['&', '|', '^', '<', '>', '"', '%']) {
+            return Err(AtlasError::invalid_input(
+                "URL contains characters that cannot be passed to the shell",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Open an external URL in the user's default browser.
+#[tauri::command(async)]
+pub async fn open_url(url: String) -> Result<(), AtlasError> {
+    check_open_url(&url)?;
+    tokio::task::spawn_blocking(move || {
+        let mut launcher = browser_launcher(&url);
+        let tool = launcher.get_program().to_string_lossy().into_owned();
+        let status = launcher
+            .status()
+            .map_err(|e| AtlasError::tool_failed(&tool, format!("Failed to open URL: {e}")))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(AtlasError::tool_failed(
+                &tool,
+                format!("URL launcher exited with status {status}"),
+            ))
+        }
+    })
+    .await?
 }
 
 #[cfg(test)]
@@ -320,7 +677,7 @@ mod tests {
 
     #[test]
     fn rollup_none_when_empty() {
-        assert_eq!(rollup_ci_state(&[]), "none");
+        assert_eq!(rollup_ci_state(&[]), CiState::None);
     }
 
     #[test]
@@ -330,40 +687,259 @@ mod tests {
             check("COMPLETED", "FAILURE"),
             check("COMPLETED", "SUCCESS"),
         ];
-        assert_eq!(rollup_ci_state(&checks), "failed");
+        assert_eq!(rollup_ci_state(&checks), CiState::Failed);
     }
 
     #[test]
     fn rollup_pending_when_queued() {
         let checks = vec![check("COMPLETED", "SUCCESS"), check("QUEUED", "")];
-        assert_eq!(rollup_ci_state(&checks), "pending");
+        assert_eq!(rollup_ci_state(&checks), CiState::Pending);
     }
 
     #[test]
     fn rollup_passed_when_all_success() {
         let checks = vec![check("COMPLETED", "SUCCESS"), check("COMPLETED", "SUCCESS")];
-        assert_eq!(rollup_ci_state(&checks), "passed");
+        assert_eq!(rollup_ci_state(&checks), CiState::Passed);
     }
 
     #[test]
     fn rollup_skipped_neutral_dont_count() {
         let checks = vec![check("COMPLETED", "SKIPPED"), check("COMPLETED", "NEUTRAL")];
-        assert_eq!(rollup_ci_state(&checks), "none");
+        assert_eq!(rollup_ci_state(&checks), CiState::None);
     }
 
     #[test]
     fn rollup_handles_status_context() {
-        assert_eq!(rollup_ci_state(&[ctx("SUCCESS")]), "passed");
-        assert_eq!(rollup_ci_state(&[ctx("PENDING")]), "pending");
-        assert_eq!(rollup_ci_state(&[ctx("FAILURE")]), "failed");
+        assert_eq!(rollup_ci_state(&[ctx("SUCCESS")]), CiState::Passed);
+        assert_eq!(rollup_ci_state(&[ctx("PENDING")]), CiState::Pending);
+        assert_eq!(rollup_ci_state(&[ctx("FAILURE")]), CiState::Failed);
+    }
+
+    /// The UI switches on these exact words (`ciState === "failed"`).
+    #[test]
+    fn states_serialise_as_the_words_the_ui_switches_on() {
+        assert_eq!(serde_json::json!(CiState::Passed), "passed");
+        assert_eq!(serde_json::json!(CiState::None), "none");
+        assert_eq!(
+            serde_json::json!(ReviewState::ChangesRequested),
+            "changes_requested"
+        );
+        assert_eq!(
+            serde_json::json!(ReviewState::ReviewRequired),
+            "review_required"
+        );
     }
 
     #[test]
     fn map_review_states() {
-        assert_eq!(map_review("APPROVED"), "approved");
-        assert_eq!(map_review("CHANGES_REQUESTED"), "changes_requested");
-        assert_eq!(map_review("REVIEW_REQUIRED"), "review_required");
-        assert_eq!(map_review(""), "none");
-        assert_eq!(map_review("anything-else"), "none");
+        assert_eq!(map_review("APPROVED"), ReviewState::Approved);
+        assert_eq!(
+            map_review("CHANGES_REQUESTED"),
+            ReviewState::ChangesRequested
+        );
+        assert_eq!(map_review("REVIEW_REQUIRED"), ReviewState::ReviewRequired);
+        assert_eq!(map_review(""), ReviewState::None);
+        assert_eq!(map_review("anything-else"), ReviewState::None);
+    }
+
+    #[test]
+    fn review_requests_keep_users_and_drop_teams() {
+        let requests = vec![
+            serde_json::json!({ "__typename": "User", "login": "octocat" }),
+            serde_json::json!({ "__typename": "Team", "slug": "reviewers", "name": "Reviewers" }),
+            serde_json::json!({ "__typename": "User", "login": "hubot" }),
+        ];
+        assert_eq!(review_request_logins(&requests), vec!["octocat", "hubot"]);
+    }
+
+    #[test]
+    fn review_requests_empty_when_none() {
+        assert!(review_request_logins(&[]).is_empty());
+    }
+
+    #[test]
+    fn open_url_accepts_https_with_a_query_string() {
+        assert!(check_open_url("https://example.com/?a=1&b=2").is_ok());
+    }
+
+    #[test]
+    fn open_url_rejects_non_https_schemes() {
+        assert!(check_open_url("file:///etc/passwd").is_err());
+        assert!(check_open_url("http://example.com").is_err());
+        assert!(check_open_url("calculator").is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn open_url_rejects_cmd_metacharacters_on_windows() {
+        assert!(check_open_url("https://example.com/&calc").is_err());
+        assert!(check_open_url("https://example.com/a|b").is_err());
+    }
+
+    #[test]
+    fn slug_rejects_dot_segments() {
+        assert!(validate_repo_slug("./repo").is_err());
+        assert!(validate_repo_slug("owner/..").is_err());
+    }
+
+    // --- gh states ---
+
+    const NO_SUCH_GH: &str = "atlas-test-no-such-gh-binary";
+
+    #[test]
+    fn a_missing_gh_is_reported_as_not_installed_on_every_repo() {
+        let repo = fetch_one(NO_SUCH_GH, "owner/repo");
+        let error = repo.error.expect("no gh, no PRs");
+        assert_eq!(error.kind, GhErrorKind::NotInstalled);
+        assert!(repo.prs.is_empty());
+    }
+
+    #[test]
+    fn a_missing_gh_is_reported_as_not_installed_for_the_viewer() {
+        let error = fetch_viewer_login(NO_SUCH_GH).unwrap_err();
+        assert_eq!(error.kind, GhErrorKind::NotInstalled);
+    }
+
+    #[test]
+    fn an_invalid_slug_never_reaches_gh() {
+        let repo = fetch_one(NO_SUCH_GH, "not a slug");
+        // A validation failure, not the NotInstalled that spawning would give.
+        assert_eq!(repo.error.unwrap().kind, GhErrorKind::Failed);
+    }
+
+    #[cfg(unix)]
+    fn exit_status(code: i32) -> ExitStatus {
+        use std::os::unix::process::ExitStatusExt;
+        ExitStatus::from_raw(code << 8)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn gh_exit_4_and_login_hints_mean_not_signed_in() {
+        let by_code = classify_failure(&exit_status(4), "");
+        assert_eq!(by_code.kind, GhErrorKind::NotAuthenticated);
+
+        let by_text = classify_failure(
+            &exit_status(1),
+            "To get started with GitHub CLI, please run:  gh auth login",
+        );
+        assert_eq!(by_text.kind, GhErrorKind::NotAuthenticated);
+        assert!(by_text.message.contains("gh auth login"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn other_gh_failures_keep_their_stderr() {
+        let error = classify_failure(
+            &exit_status(1),
+            "GraphQL: Could not resolve to a Repository",
+        );
+        assert_eq!(error.kind, GhErrorKind::Failed);
+        assert_eq!(error.message, "GraphQL: Could not resolve to a Repository");
+        assert!(classify_failure(&exit_status(1), "")
+            .message
+            .contains("exited"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_hung_command_is_killed_at_the_timeout() {
+        let started = Instant::now();
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "sleep 30"]);
+        let output = run_with_timeout(&mut cmd, Duration::from_millis(200)).unwrap();
+        assert!(output.is_none());
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_command_that_finishes_returns_all_of_its_output() {
+        let mut cmd = Command::new("sh");
+        // More than a pipe buffer on stdout, so an undrained pipe would hang.
+        cmd.args(["-c", "head -c 300000 /dev/zero | tr '\\0' x; echo err >&2"]);
+        let output = run_with_timeout(&mut cmd, Duration::from_secs(20))
+            .unwrap()
+            .expect("finishes in time");
+        assert_eq!(output.stdout.len(), 300_000);
+        assert_eq!(String::from_utf8_lossy(&output.stderr).trim(), "err");
+    }
+
+    // --- gh pr checkout ---
+
+    /// A stand-in `gh` that records where it ran and what it was given.
+    #[cfg(unix)]
+    fn fake_gh(dir: &std::path::Path, exit_code: i32) -> String {
+        use std::os::unix::fs::PermissionsExt;
+        let script = dir.join("gh");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\npwd > \"{d}/cwd\"\nprintf '%s\\n' \"$@\" > \"{d}/args\"\nexit {exit_code}\n",
+                d = dir.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        script.to_string_lossy().into_owned()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_pr_is_checked_out_by_number_from_the_named_repo_into_its_own_branch() {
+        let bin = tempfile::tempdir().unwrap();
+        let work = tempfile::tempdir().unwrap();
+        let gh = fake_gh(bin.path(), 0);
+
+        checkout_pr(&gh, work.path().to_str().unwrap(), 42, "octo/fork-target").unwrap();
+
+        let args = std::fs::read_to_string(bin.path().join("args")).unwrap();
+        assert_eq!(
+            args.lines().collect::<Vec<_>>(),
+            [
+                "pr",
+                "checkout",
+                "42",
+                "--repo",
+                "octo/fork-target",
+                "--branch",
+                "pr-42"
+            ]
+        );
+        let ran_in = std::fs::read_to_string(bin.path().join("cwd")).unwrap();
+        assert_eq!(
+            std::fs::canonicalize(ran_in.trim()).unwrap(),
+            std::fs::canonicalize(work.path()).unwrap()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_checkout_carries_gh_s_verdict() {
+        let bin = tempfile::tempdir().unwrap();
+        let gh = fake_gh(bin.path(), 4);
+        let error = checkout_pr(&gh, bin.path().to_str().unwrap(), 1, "o/r").unwrap_err();
+        assert!(
+            matches!(&error, AtlasError::ToolFailed { tool, .. } if tool == "gh"),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn a_checkout_rejects_a_bad_slug_or_number_before_running_gh() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().to_str().unwrap();
+        assert!(matches!(
+            checkout_pr(NO_SUCH_GH, cwd, 1, "--upload-pack=x/y"),
+            Err(AtlasError::InvalidInput { .. })
+        ));
+        assert!(matches!(
+            checkout_pr(NO_SUCH_GH, cwd, 0, "o/r"),
+            Err(AtlasError::InvalidInput { .. })
+        ));
+        assert!(matches!(
+            checkout_pr(NO_SUCH_GH, cwd, 1, "o/r"),
+            Err(AtlasError::ToolMissing { .. })
+        ));
     }
 }

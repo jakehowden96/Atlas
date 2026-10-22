@@ -6,15 +6,10 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["src/**"]
+    "includes": ["src/**", "!src/types/generated"]
   },
   "formatter": {
     "enabled": false
-  },
-  "css": {
-    "parser": {
-      "tailwindDirectives": true
-    }
   },
   "linter": {
     "enabled": true,

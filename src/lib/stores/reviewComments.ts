@@ -17,7 +17,7 @@ export interface ReviewAnchor {
 }
 
 export interface ReviewComment {
-  id: string;          // internal uuid
+  id: string; // internal uuid
   sessionId: string;
   anchor: ReviewAnchor;
   body: string;
@@ -46,11 +46,7 @@ function mutate(sessionId: string, fn: (list: ReviewComment[]) => ReviewComment[
   });
 }
 
-export function addComment(
-  sessionId: string,
-  anchor: ReviewAnchor,
-  body: string,
-): ReviewComment {
+export function addComment(sessionId: string, anchor: ReviewAnchor, body: string): ReviewComment {
   const comment: ReviewComment = {
     id: crypto.randomUUID(),
     sessionId,
