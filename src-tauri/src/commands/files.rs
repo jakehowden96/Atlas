@@ -419,7 +419,14 @@ fn resolve_doc(scope: &FilesScope, path: &str) -> Result<PathBuf, AtlasError> {
 
 fn read_file(scope: &FilesScope, path: &str) -> Result<TextFile, AtlasError> {
     let path = resolve_doc(scope, path)?;
-    let file = std::fs::File::open(&path).map_err(|e| AtlasError::io_at(&path, &e))?;
+    let file = std::fs::File::open(&path).map_err(|e| {
+        // Windows refuses to open a directory ("Access is denied"); name it as one.
+        if path.is_dir() {
+            AtlasError::invalid_input(format!("{} is not a regular file", path.display()))
+        } else {
+            AtlasError::io_at(&path, &e)
+        }
+    })?;
     // A `.md` symlink to `/dev/zero` reports length 0, so check the handle is
     // a regular file, and cap the read itself rather than trusting a size that
     // can change between stat and read.
