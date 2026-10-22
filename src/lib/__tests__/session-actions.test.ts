@@ -4,7 +4,6 @@ import { get } from "svelte/store";
 vi.mock("../ipc", () => ({
   ptyKill: vi.fn(),
   ptyWrite: vi.fn(),
-  startOmpTail: vi.fn(),
   startSessionTail: vi.fn(),
   stopSessionTail: vi.fn(),
 }));

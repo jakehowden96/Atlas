@@ -13,7 +13,6 @@ vi.mock("../ipc", () => ({
   listRepoPrs: vi.fn(),
   listWorkspaceRepos: vi.fn(),
   startSessionTail: vi.fn(),
-  startOmpTail: vi.fn(),
   stopSessionTail: vi.fn(),
   ptyWrite: vi.fn(),
   ptyKill: vi.fn(),

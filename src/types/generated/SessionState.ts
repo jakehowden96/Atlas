@@ -4,9 +4,7 @@
  * Claude Code's tail only ever constructs `Running` and `Idle` — its
  * `finalize` picks between them from the transcript, which cannot see a
  * permission prompt; `buildTiles` in `overview.ts` folds that needs-you in
- * from the Notification hook's per-tab flag. OMP has no such hook, but its
- * `ask` tool is in the transcript, so `omp::OmpTail` sets `NeedsYou` itself
- * while one is unanswered. `Error` is produced entirely on the frontend:
+ * from the Notification hook's per-tab flag. `Error` is produced entirely on the frontend:
  * `pendingLive` maps a workspace row whose `status` is `"error"`.
  */
 export type SessionState = "running" | "needsYou" | "idle" | "error";

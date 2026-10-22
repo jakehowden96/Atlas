@@ -381,15 +381,6 @@ impl PtyManager {
             }
         });
     }
-
-    /// The tty device a session's shell runs on, e.g. `/dev/ttys001` — the
-    /// breadcrumb OMP keys its own terminal-session files by.
-    pub fn tty_name(&self, id: u32) -> Option<String> {
-        let sessions = self.sessions.read().ok()?;
-        let session = sessions.get(&id)?;
-        let master = session.master.lock().ok()?;
-        master.tty_name().map(|p| p.to_string_lossy().into_owned())
-    }
 }
 
 #[cfg(test)]

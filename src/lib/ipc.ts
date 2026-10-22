@@ -171,15 +171,6 @@ export async function stopSessionTail(sessionUuid: string): Promise<void> {
   return call("stop_session_tail", { sessionUuid });
 }
 
-/**
- * Start tailing an OMP session through its terminal's breadcrumb file.
- * Updates then arrive as `session-update` events until `stopSessionTail`.
- */
-export async function startOmpTail(sessionUuid: string, ptyId: number): Promise<void> {
-  log.info("ipc", `startOmpTail ${sessionUuid} ptyId=${ptyId}`);
-  return call("start_omp_tail", { sessionUuid, ptyId });
-}
-
 /** Never rejects for a missing `claude` — every field degrades instead. */
 export async function claudeInfo(): Promise<ClaudeInfo> {
   return call("claude_info");

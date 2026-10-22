@@ -7,7 +7,7 @@
  */
 import { open } from "@tauri-apps/plugin-dialog";
 import { get } from "svelte/store";
-import { ptyKill, ptyWrite, startOmpTail, startSessionTail, stopSessionTail } from "./ipc";
+import { ptyKill, ptyWrite, startSessionTail, stopSessionTail } from "./ipc";
 import { log } from "./logger";
 import { removeLiveSession, reviveLiveSession } from "./stores/liveSessions";
 import { setSessionTouchedFiles } from "./stores/panel";
@@ -18,7 +18,6 @@ import {
   harnesses,
   lastHarnessId,
   tailTranscripts,
-  transcriptKind,
   type HarnessConfig,
 } from "./stores/settings";
 import { focusedSessionId, showView } from "./stores/view";
@@ -127,7 +126,7 @@ function resolveArgs(args: string[], claudeSessionId: string): string[] {
 
 /**
  * Spawn a terminal tab in the given workspace directory and launch a harness
- * in it — Claude Code, `omp`, or a bare Terminal with nothing typed.
+ * in it — Claude Code or a bare Terminal with nothing typed.
  *
  * `existingSessionId` reattaches an existing Atlas session row to the new tab.
  * `resumeSessionId` is the Claude session UUID to `--resume`; without it a
@@ -244,17 +243,12 @@ export async function spawnHarnessSession(
       // command depends on the harness, and a bare Terminal has none at all —
       // unless the user has turned transcript tailing off in Settings.
       if (get(tailTranscripts)) {
-        const kind = transcriptKind(harness);
-        if (kind === "claude") {
+        if (harness.resumable) {
           startSessionTail(claudeSessionId).catch((e) =>
             log.warn(
               "session",
               `startSessionTail failed for ${claudeSessionId}: ${errorMessage(e)}`,
             ),
-          );
-        } else if (kind === "omp") {
-          startOmpTail(claudeSessionId, current.ptyId).catch((e) =>
-            log.warn("session", `startOmpTail failed for ${claudeSessionId}: ${errorMessage(e)}`),
           );
         }
       }

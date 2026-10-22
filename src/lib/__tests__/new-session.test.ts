@@ -18,7 +18,6 @@ import {
   rankJumpRows,
   recencyOf,
   setMode,
-  toggleColumn,
   type JumpRow,
   type NewSessionCounts,
   type NewSessionState,
@@ -102,7 +101,7 @@ describe("expandHome", () => {
 
 describe("harnessIndexFor", () => {
   const list = [
-    { id: "omp", resumable: false },
+    { id: "aider", resumable: false },
     { id: "claude", resumable: true },
     { id: "term", resumable: false },
   ];
@@ -238,52 +237,9 @@ describe("keyboard model", () => {
     expect(r.effect).toBeNull();
   });
 
-  it("leaves bare left/right to the filter input's caret", () => {
+  it("leaves bare left/right to the filter input's caret when there is one harness", () => {
     expect(handleKey({ key: "ArrowLeft" }, state(), counts(3, 2)).handled).toBe(false);
     expect(handleKey({ key: "ArrowRight" }, state(), counts(3, 2)).handled).toBe(false);
-  });
-
-  it("Shift+←/→ moves between the columns, directionally", () => {
-    const c = counts(3, 2);
-    const onWorkspaces = state({ mode: "resume" });
-    const right = handleKey({ key: "ArrowRight", shiftKey: true }, onWorkspaces, c);
-    expect(right.state.column).toBe("resume");
-    expect(right.handled).toBe(true);
-    expect(handleKey({ key: "ArrowLeft", shiftKey: true }, right.state, c).state.column).toBe(
-      "workspaces",
-    );
-  });
-
-  it("Shift+←/→ never moves the wrong way, and is a no-op at either end", () => {
-    const c = counts(3, 2);
-    const onResume = state({ mode: "resume", column: "resume" });
-    // Shift+→ while already on the right must not toggle back to the left.
-    expect(handleKey({ key: "ArrowRight", shiftKey: true }, onResume, c).state.column).toBe(
-      "resume",
-    );
-    expect(
-      handleKey({ key: "ArrowLeft", shiftKey: true }, state({ mode: "resume" }), c).state.column,
-    ).toBe("workspaces");
-  });
-
-  it("Shift+←/→ still claims the key when there is no second column", () => {
-    // Fresh mode has one column; the chord must not fall through to the input's
-    // text selection just because nothing moved.
-    const r = handleKey({ key: "ArrowRight", shiftKey: true }, state(), counts(3, 2));
-    expect(r.state.column).toBe("workspaces");
-    expect(r.handled).toBe(true);
-    expect(
-      handleKey({ key: "ArrowRight", shiftKey: true }, state({ mode: "resume" }), counts(3, 0))
-        .state.column,
-    ).toBe("workspaces");
-  });
-
-  it("toggleColumn only reaches Resume when that mode has rows", () => {
-    const resumeState = state({ mode: "resume", column: "resume" });
-    expect(toggleColumn(resumeState, counts(3, 2)).column).toBe("workspaces");
-    expect(toggleColumn(state({ mode: "resume" }), counts(3, 2)).column).toBe("resume");
-    expect(toggleColumn(state({ mode: "resume" }), counts(3, 0)).column).toBe("workspaces");
-    expect(toggleColumn(state({ mode: "fresh" }), counts(3, 2)).column).toBe("workspaces");
   });
 
   it("leaves an unmodified Backspace to the filter input", () => {
@@ -305,20 +261,21 @@ describe("harness picker", () => {
     expect(s.harnessIndex).toBe(2);
   });
 
-  it("⌥←/→ cycles the harness, and ⌥ wins over Shift when both are held", () => {
+  it("bare ←/→ cycle the harness; modified arrows are left to the OS", () => {
     const c = counts(3, 2, 2);
-    const right = handleKey({ key: "ArrowRight", altKey: true }, state(), c);
+    const right = handleKey({ key: "ArrowRight" }, state(), c);
     expect(right.state.harnessIndex).toBe(1);
     expect(right.handled).toBe(true);
     expect(right.state.column).toBe("workspaces");
 
-    const both = handleKey(
-      { key: "ArrowRight", altKey: true, shiftKey: true },
-      state({ mode: "resume" }),
-      c,
-    );
-    expect(both.state.harnessIndex).toBe(1);
-    expect(both.state.column).toBe("workspaces");
+    for (const mods of [
+      { shiftKey: true },
+      { altKey: true },
+      { metaKey: true },
+      { ctrlKey: true },
+    ]) {
+      expect(handleKey({ key: "ArrowRight", ...mods }, state(), c).handled).toBe(false);
+    }
   });
 
   it("clampState pulls a stale harness index back in range", () => {
@@ -485,19 +442,10 @@ describe("the keys the modal advertises", () => {
     expect(labels).toContain("New / Resume");
   });
 
-  it("hides the column key until there is a Resume column to move into", () => {
-    const column = KEY_HINTS.find((h) => h.label === "column");
-    expect(column?.resumeOnly).toBe(true);
-    // Everything else is unconditional — those keys always work.
-    for (const hint of KEY_HINTS.filter((h) => h.label !== "column")) {
-      expect(hint.resumeOnly).toBeUndefined();
-    }
-  });
-
   it("hides the harness key until more than one harness is configured", () => {
     const harness = KEY_HINTS.find((h) => h.label === "harness");
     expect(harness?.multiHarnessOnly).toBe(true);
-    expect(harness?.probe).toEqual({ key: "ArrowRight", altKey: true });
+    expect(harness?.probe).toEqual({ key: "ArrowRight" });
     // Everything else is unconditional — those keys always work.
     for (const hint of KEY_HINTS.filter((h) => h.label !== "harness")) {
       expect(hint.multiHarnessOnly).toBeUndefined();

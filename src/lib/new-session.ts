@@ -162,7 +162,7 @@ export function moveWithin(
   return { ...state, wsIndex: wrap(state.wsIndex, counts.workspaces + 1, delta) };
 }
 
-/** ⌥←/→ cycles the harness picker, wrapping at both ends. */
+/** ←/→ cycles the harness picker, wrapping at both ends. */
 export function cycleHarness(
   state: NewSessionState,
   counts: NewSessionCounts,
@@ -213,20 +213,6 @@ export function leaveResumeIfUnsupported(
 }
 
 /**
- * Move between the workspace list and the Resume list — what `Shift+←/→` does.
- *
- * Bare ←/→ stay with the filter input's caret: a path is the thing people type
- * in that box, and a column key that only fired at the caret's ends would be a
- * key that mostly does nothing. Shift+Arrow's text selection is the cheaper
- * thing to give up in a one-line filter.
- */
-export function toggleColumn(state: NewSessionState, counts: NewSessionCounts): NewSessionState {
-  if (state.column === "resume") return { ...state, column: "workspaces" };
-  if (state.mode !== "resume" || counts.resumable === 0) return state;
-  return { ...state, column: "resume" };
-}
-
-/**
  * The modal's whole keyboard contract. The caller applies `state` and acts on
  * `effect`; `handled` says whether to `preventDefault`.
  */
@@ -258,19 +244,12 @@ export function handleKey(
       };
     case "ArrowLeft":
     case "ArrowRight": {
-      // Alt cycles the harness picker; Shift still switches columns. The two
-      // are mutually exclusive, but Alt wins if somehow both are held.
-      if (e.altKey) {
-        return {
-          state: cycleHarness(s, counts, e.key === "ArrowRight" ? 1 : -1),
-          effect: null,
-          handled: true,
-        };
-      }
-      if (!e.shiftKey) return { state: s, effect: null, handled: false };
-      const want: NewSessionColumn = e.key === "ArrowRight" ? "resume" : "workspaces";
+      // Bare arrows cycle the harness picker. Any modifier is the OS's
+      // (word-jump, selection in the filter box), not ours.
+      if (mod || e.altKey || e.shiftKey) return { state: s, effect: null, handled: false };
+      if (counts.harnesses < 2) return { state: s, effect: null, handled: false };
       return {
-        state: s.column === want ? s : toggleColumn(s, counts),
+        state: cycleHarness(s, counts, e.key === "ArrowRight" ? 1 : -1),
         effect: null,
         handled: true,
       };
@@ -297,26 +276,18 @@ export interface KeyHint {
   /** Rendered inside the `<kbd>`, already platform-shaped. */
   keys: string;
   label: string;
-  /** Hidden until the Resume column has rows to move into. */
-  resumeOnly?: boolean;
   /** Hidden until there is more than one harness configured to cycle through. */
   multiHarnessOnly?: boolean;
-  probe: { key: string; metaKey?: boolean; shiftKey?: boolean; altKey?: boolean };
+  probe: { key: string; metaKey?: boolean };
 }
 
 export const KEY_HINTS: KeyHint[] = [
   { keys: "↑↓", label: "select", probe: { key: "ArrowDown" } },
   {
-    keys: "⇧←→",
-    label: "column",
-    resumeOnly: true,
-    probe: { key: "ArrowRight", shiftKey: true },
-  },
-  {
-    keys: "⌥←→",
+    keys: "←→",
     label: "harness",
     multiHarnessOnly: true,
-    probe: { key: "ArrowRight", altKey: true },
+    probe: { key: "ArrowRight" },
   },
   { keys: "tab", label: "New / Resume", probe: { key: "Tab" } },
   { keys: enterLabel(), label: "start", probe: { key: "Enter" } },

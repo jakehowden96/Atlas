@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import { get } from "svelte/store";
 
 vi.mock("../ipc", () => ({
-  startOmpTail: vi.fn(),
   startSessionTail: vi.fn(),
   stopSessionTail: vi.fn(),
   stateLoad: vi.fn(),
@@ -47,7 +46,6 @@ import {
   soundOnNeedsYou,
   tailTranscripts,
   terminalFontSize,
-  transcriptKind,
   watchedRepos,
   type HarnessConfig,
 } from "../stores/settings";
@@ -59,7 +57,6 @@ import { workspaces } from "../stores/workspace";
 import { toasts } from "../stores/toast";
 import {
   setClaudeHook,
-  startOmpTail,
   startSessionTail,
   stopSessionTail,
   stateLoad,
@@ -258,19 +255,19 @@ describe("settings store", () => {
 
   describe("harnesses", () => {
     const customHarness: HarnessConfig = {
-      id: "omp",
-      label: "omp",
-      command: "omp",
+      id: "aider",
+      label: "aider",
+      command: "aider",
       args: [],
       resumable: false,
       readyMode: "immediate",
     };
 
     it("loads a valid harnesses list from file", async () => {
-      mockFile(JSON.stringify({ harnesses: [customHarness], lastHarnessId: "omp" }));
+      mockFile(JSON.stringify({ harnesses: [customHarness], lastHarnessId: "aider" }));
       await loadSettings();
       expect(get(harnesses)).toEqual([customHarness]);
-      expect(get(lastHarnessId)).toBe("omp");
+      expect(get(lastHarnessId)).toBe("aider");
     });
 
     it("drops a malformed entry, keeping the defaults if that empties the list", async () => {
@@ -303,31 +300,11 @@ describe("settings store", () => {
     it("setHarnesses and setLastHarnessId persist and round-trip", async () => {
       allowWrites();
       await setHarnesses([...DEFAULT_HARNESSES, customHarness]);
-      await setLastHarnessId("omp");
+      await setLastHarnessId("aider");
       expect(get(harnesses)).toEqual([...DEFAULT_HARNESSES, customHarness]);
-      expect(get(lastHarnessId)).toBe("omp");
+      expect(get(lastHarnessId)).toBe("aider");
       expect(lastWritten().harnesses).toEqual([...DEFAULT_HARNESSES, customHarness]);
-      expect(lastWritten().lastHarnessId).toBe("omp");
-    });
-  });
-
-  describe("transcriptKind", () => {
-    it("classifies each default harness", () => {
-      expect(transcriptKind(DEFAULT_HARNESSES[0])).toBe("claude"); // claude-code
-      expect(transcriptKind(DEFAULT_HARNESSES[1]!)).toBe("omp"); // omp
-      expect(transcriptKind(DEFAULT_HARNESSES[2]!)).toBeNull(); // terminal
-    });
-
-    it("classifies a custom omp-shaped harness by command, not id", () => {
-      const custom: HarnessConfig = {
-        id: "my-omp",
-        label: "My OMP",
-        command: "omp",
-        args: [],
-        resumable: false,
-        readyMode: "immediate",
-      };
-      expect(transcriptKind(custom)).toBe("omp");
+      expect(lastWritten().lastHarnessId).toBe("aider");
     });
   });
 
@@ -571,7 +548,7 @@ describe("settings store", () => {
       expect(startSessionTail).toHaveBeenCalledWith("uuid-a");
     });
 
-    it("re-arms an omp session with its tab's pty id", async () => {
+    it("leaves a non-resumable harness session untailed", async () => {
       allowWrites();
       workspaces.set([
         {
@@ -585,16 +562,14 @@ describe("settings store", () => {
               terminalTabId: "tab-1",
               createdAt: "",
               claudeSessionId: "uuid-a",
-              harnessId: "omp",
+              harnessId: "terminal",
             },
           ],
         },
       ]);
-      tabs.set([{ id: "tab-1", ptyId: 7 }] as never);
 
       await setTailTranscripts(true);
 
-      expect(startOmpTail).toHaveBeenCalledWith("uuid-a", 7);
       expect(startSessionTail).not.toHaveBeenCalled();
     });
   });

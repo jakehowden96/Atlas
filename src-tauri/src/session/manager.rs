@@ -13,18 +13,17 @@
 //! is megabytes), so that work runs under the tail's own mutex and never under
 //! the shared maps: they are held only to look an entry up or change the set of
 //! tracked sessions. When more than one is needed the order is always
-//! `tails`, then `pending` or `omp_watches`.
+//! `tails`, then `pending`.
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 use super::live::{LiveSession, SessionTail};
-use super::omp::{self, OmpTail};
 use crate::commands::stats::claude_projects_dir;
 use crate::error::AtlasError;
 use ts_rs::TS;
@@ -40,80 +39,26 @@ pub struct SessionUpdateEvent {
     pub session: LiveSession,
 }
 
-/// One session's tail, from whichever harness is running it.
-enum Tail {
-    Claude(Box<SessionTail>),
-    Omp(Box<OmpTail>),
-}
-
-impl Tail {
-    fn session(&self) -> &LiveSession {
-        match self {
-            Tail::Claude(tail) => tail.session(),
-            Tail::Omp(tail) => tail.session(),
-        }
-    }
-
-    fn poll(&mut self) -> bool {
-        match self {
-            Tail::Claude(tail) => tail.poll(),
-            Tail::Omp(tail) => tail.poll(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Harness {
-    Claude,
-    Omp,
-}
-
 /// A tail plus what it answers to. The transcript path is fixed for the life
 /// of the entry, so ownership can be decided without taking the tail's mutex,
 /// which is held for the whole of a read.
 struct Tracked {
-    harness: Harness,
     transcript: PathBuf,
-    tail: Mutex<Tail>,
+    tail: Mutex<SessionTail>,
 }
 
 impl Tracked {
     /// True when `path` is `uuid`'s transcript, or one of its sidecar writes.
     fn owns(&self, uuid: &str, path: &Path) -> bool {
-        match self.harness {
-            Harness::Claude => {
-                self.transcript == path || owns_sidecar(&self.transcript, uuid, path)
-            }
-            Harness::Omp => omp::owns_transcript(&self.transcript, path),
-        }
+        self.transcript == path || owns_sidecar(&self.transcript, uuid, path)
     }
 
     fn claude(session_uuid: &str, path: PathBuf) -> Arc<Self> {
         Arc::new(Tracked {
-            harness: Harness::Claude,
-            tail: Mutex::new(Tail::Claude(Box::new(SessionTail::new(
-                session_uuid.to_string(),
-                path.clone(),
-            )))),
+            tail: Mutex::new(SessionTail::new(session_uuid.to_string(), path.clone())),
             transcript: path,
         })
     }
-}
-
-/// A terminal Atlas is watching for OMP's own breadcrumb — see
-/// `omp::read_breadcrumb`.
-#[derive(Clone)]
-struct OmpWatch {
-    breadcrumb: PathBuf,
-    since: SystemTime,
-}
-
-/// The filesystem watcher, shared so an OMP directory that appears after launch
-/// can still be added to it.
-struct LiveWatch {
-    watcher: RecommendedWatcher,
-    omp_dir: Option<PathBuf>,
-    omp_watched: bool,
 }
 
 #[derive(Clone, Default)]
@@ -128,10 +73,7 @@ pub struct LiveSessionManager {
     /// write under `~/.claude/projects`, attaches the tail the moment the file
     /// turns up.
     pending: Arc<Mutex<HashSet<String>>>,
-    /// OMP sessions being resolved through their terminal's breadcrumb rather
-    /// than a known transcript path.
-    omp_watches: Arc<Mutex<HashMap<String, OmpWatch>>>,
-    watch: Arc<Mutex<Option<LiveWatch>>>,
+    watch: Arc<Mutex<Option<RecommendedWatcher>>>,
 }
 
 impl LiveSessionManager {
@@ -168,128 +110,6 @@ impl LiveSessionManager {
         Some(tail.session().clone())
     }
 
-    /// Make sure the OMP directory is being watched, adding it now if it did
-    /// not exist when Atlas launched. Failure is logged, never fatal: Claude
-    /// tailing does not depend on it.
-    fn ensure_omp_watched(&self) {
-        let Ok(mut guard) = self.watch.lock() else {
-            return;
-        };
-        let Some(live) = guard.as_mut() else {
-            return;
-        };
-        if live.omp_watched {
-            return;
-        }
-        let Some(dir) = live.omp_dir.clone().filter(|dir| dir.exists()) else {
-            return;
-        };
-        match live.watcher.watch(&dir, RecursiveMode::Recursive) {
-            Ok(()) => live.omp_watched = true,
-            Err(e) => log::warn!("Failed to watch {}: {}", dir.display(), e),
-        }
-    }
-
-    /// Begin tailing an OMP session through its terminal's breadcrumb file,
-    /// returning the state read so far. Re-watching an already-tracked session
-    /// just re-resolves the breadcrumb — see `resolve_omp`.
-    pub fn watch_omp(
-        &self,
-        session_uuid: &str,
-        breadcrumb: PathBuf,
-        since: SystemTime,
-    ) -> Option<LiveSession> {
-        if let Ok(mut watches) = self.omp_watches.lock() {
-            watches.insert(session_uuid.to_string(), OmpWatch { breadcrumb, since });
-        }
-        self.ensure_omp_watched();
-        self.resolve_omp(session_uuid)
-    }
-
-    /// Read `session_uuid`'s breadcrumb and attach or advance its tail. `None`
-    /// when the breadcrumb names nothing yet, or nothing changed.
-    fn resolve_omp(&self, session_uuid: &str) -> Option<LiveSession> {
-        let watch = {
-            let watches = self.omp_watches.lock().ok()?;
-            watches.get(session_uuid)?.clone()
-        };
-        let target = omp::read_breadcrumb(&watch.breadcrumb, watch.since)?;
-        if !target.is_file() {
-            return None;
-        }
-
-        if let Some(tracked) = self.tracked(session_uuid) {
-            if tracked.harness == Harness::Omp && tracked.transcript == target {
-                let mut tail = tracked.tail.lock().ok()?;
-                return tail.poll().then(|| tail.session().clone());
-            }
-        }
-
-        // A new file: read it before it is shared, so no lock is held for the read.
-        let mut tail = OmpTail::new(session_uuid.to_string(), target.clone());
-        tail.poll();
-        let session = tail.session().clone();
-        let tracked = Arc::new(Tracked {
-            harness: Harness::Omp,
-            transcript: target,
-            tail: Mutex::new(Tail::Omp(Box::new(tail))),
-        });
-
-        let mut tails = self.tails.lock().ok()?;
-        // `stop` removes the watch before the tail, so a watch that is gone here
-        // means the session was stopped while its file was being read.
-        if !self.omp_watches.lock().ok()?.contains_key(session_uuid) {
-            return None;
-        }
-        tails.insert(session_uuid.to_string(), tracked);
-        Some(session)
-    }
-
-    /// Every OMP watch whose transcript `path` may belong to. Nothing is read
-    /// from the transcripts: the watcher resolves each one when its throttle
-    /// comes due, so a write inside the window is folded in then rather than
-    /// read and dropped.
-    fn omp_owners(&self, path: &Path) -> Vec<String> {
-        let Ok(watches) = self.omp_watches.lock() else {
-            return Vec::new();
-        };
-        let watches: Vec<(String, OmpWatch)> = watches
-            .iter()
-            .map(|(uuid, watch)| (uuid.clone(), watch.clone()))
-            .collect();
-        watches
-            .into_iter()
-            .filter(|(uuid, watch)| {
-                if path == watch.breadcrumb {
-                    return true;
-                }
-                match self.tracked(uuid) {
-                    None => true,
-                    Some(tracked) => {
-                        tracked.owns(uuid, path)
-                            // The breadcrumb can name a file before that file
-                            // exists; its creation then belongs to this watch too.
-                            || omp::read_breadcrumb(&watch.breadcrumb, watch.since).as_deref()
-                                == Some(path)
-                    }
-                }
-            })
-            .map(|(uuid, _)| uuid)
-            .collect()
-    }
-
-    /// Fold in whatever `session_uuid`'s transcript gained since the last
-    /// read, re-resolving an OMP session's breadcrumb first. `None` when
-    /// nothing changed.
-    fn refresh(&self, session_uuid: &str) -> Option<LiveSession> {
-        let is_omp = self.omp_watches.lock().ok()?.contains_key(session_uuid);
-        if is_omp {
-            self.resolve_omp(session_uuid)
-        } else {
-            self.poll(session_uuid)
-        }
-    }
-
     /// Register a session to be tailed as soon as its transcript appears.
     pub fn expect(&self, session_uuid: &str) -> Result<(), AtlasError> {
         let mut pending = self.pending.lock()?;
@@ -297,14 +117,11 @@ impl LiveSessionManager {
         Ok(())
     }
 
-    /// Forget a session. Its pending registration and OMP watch go first, so a
-    /// start or a resolve racing with this sees it gone and does not re-add a tail.
+    /// Forget a session. Its pending registration goes first, so a start racing
+    /// with this sees it gone and does not re-add a tail.
     pub fn stop(&self, session_uuid: &str) -> Result<(), AtlasError> {
         if let Ok(mut pending) = self.pending.lock() {
             pending.remove(session_uuid);
-        }
-        if let Ok(mut watches) = self.omp_watches.lock() {
-            watches.remove(session_uuid);
         }
         let mut tails = self.tails.lock()?;
         tails.remove(session_uuid);
@@ -320,24 +137,18 @@ impl LiveSessionManager {
             .unwrap_or(false)
     }
 
-    /// True while `session_uuid` has a tail or an OMP watch.
+    /// True while `session_uuid` has a tail.
     fn is_tracked(&self, session_uuid: &str) -> bool {
-        let tailed = self
-            .tails
+        self.tails
             .lock()
-            .is_ok_and(|tails| tails.contains_key(session_uuid));
-        tailed
-            || self
-                .omp_watches
-                .lock()
-                .is_ok_and(|watches| watches.contains_key(session_uuid))
+            .is_ok_and(|tails| tails.contains_key(session_uuid))
     }
 
     /// If `path` is the transcript of a pending session, begin tailing it.
     /// Returns the uuid when a tail was newly attached.
     ///
-    /// The tail is attached unread: the watcher's next `refresh` does the
-    /// first read and so reports it. Reading here would leave that refresh
+    /// The tail is attached unread: the watcher's next `poll` does the
+    /// first read and so reports it. Reading here would leave that poll
     /// with nothing new, and the first turn unshown until the file grew again.
     fn adopt_pending(&self, path: &Path) -> Option<String> {
         if path.extension()? != "jsonl" {
@@ -397,8 +208,8 @@ fn owns_sidecar(transcript: &Path, uuid: &str, path: &Path) -> bool {
 /// Per-session emit throttle with a trailing edge.
 ///
 /// A write inside `DEBOUNCE` of the last emit used to be skipped outright, so
-/// the last write of a burst — an OMP `toolResult` lands milliseconds after
-/// its `toolCall` — was never reported until the file grew again, and a card
+/// the last write of a burst — a `tool_result` lands milliseconds after
+/// its `tool_use` — was never reported until the file grew again, and a card
 /// sat on a finished tool until the next turn. Marking the session instead
 /// and flushing it once the window closes keeps the leading-edge emit and
 /// guarantees the trailing one.
@@ -451,7 +262,7 @@ impl Throttle {
 /// dropped on registration.
 pub struct LiveWatcher(
     // Held only so the watcher is dropped with app state, never read through this handle.
-    #[allow(dead_code)] Arc<Mutex<Option<LiveWatch>>>,
+    #[allow(dead_code)] Arc<Mutex<Option<RecommendedWatcher>>>,
 );
 
 pub fn start_live_watcher(
@@ -477,23 +288,8 @@ pub fn start_live_watcher(
 
     watcher.watch(&projects_dir, RecursiveMode::Recursive)?;
 
-    // OMP is optional. A failure to watch its directory must not take Claude
-    // tailing down with it, and a directory that does not exist yet is added
-    // by `ensure_omp_watched` when the first OMP session starts.
-    let omp_dir = omp::agent_dir();
-    let mut omp_watched = false;
-    if let Some(dir) = omp_dir.as_ref().filter(|dir| dir.exists()) {
-        match watcher.watch(dir, RecursiveMode::Recursive) {
-            Ok(()) => omp_watched = true,
-            Err(e) => log::warn!("Failed to watch {}: {}", dir.display(), e),
-        }
-    }
     if let Ok(mut slot) = manager.watch.lock() {
-        *slot = Some(LiveWatch {
-            watcher,
-            omp_dir: omp_dir.clone(),
-            omp_watched,
-        });
+        *slot = Some(watcher);
     }
 
     let manager_watch = manager.watch.clone();
@@ -508,11 +304,7 @@ pub fn start_live_watcher(
             match received {
                 Ok(event) if matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) => {
                     for path in &event.paths {
-                        if omp_dir.as_deref().is_some_and(|dir| path.starts_with(dir)) {
-                            for uuid in manager.omp_owners(path) {
-                                throttle.mark(uuid);
-                            }
-                        } else if let Some(uuid) = manager
+                        if let Some(uuid) = manager
                             .uuid_for_path(path)
                             // A pending session's file may be appearing for the first time.
                             .or_else(|| manager.adopt_pending(path))
@@ -526,7 +318,7 @@ pub fn start_live_watcher(
             }
 
             for uuid in throttle.take_due(Instant::now()) {
-                match manager.refresh(&uuid) {
+                match manager.poll(&uuid) {
                     Some(session) => {
                         let _ = app_handle.emit(
                             "session-update",
@@ -604,7 +396,7 @@ mod tests {
         assert_eq!(adopted, UUID);
         assert!(!manager.is_pending(UUID), "no longer pending once tailed");
         let session = manager
-            .refresh(UUID)
+            .poll(UUID)
             .expect("the first read is reported, not swallowed by adoption");
         assert_eq!(session.lines.len(), 1);
     }
@@ -724,98 +516,7 @@ mod tests {
         );
     }
 
-    fn write_breadcrumb(path: &Path, target: &Path) {
-        std::fs::write(path, format!("pid 1\n{}\n", target.display())).unwrap();
-    }
-
-    fn write_omp_title(path: &Path, title: &str) {
-        std::fs::write(
-            path,
-            format!(
-                "{}\n",
-                serde_json::json!({"type": "title", "timestamp": "2026-01-01T00:00:00Z", "title": title})
-            ),
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn an_omp_watch_attaches_when_the_breadcrumb_names_an_existing_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("session.jsonl");
-        write_omp_title(&target, "first");
-        let breadcrumb = dir.path().join("breadcrumb");
-        write_breadcrumb(&breadcrumb, &target);
-
-        let manager = LiveSessionManager::new();
-        let session = manager
-            .watch_omp("uuid-1", breadcrumb, std::time::SystemTime::UNIX_EPOCH)
-            .expect("the breadcrumb names an existing file");
-        assert_eq!(session.session_uuid, "uuid-1");
-        assert_eq!(session.title.as_deref(), Some("first"));
-    }
-
-    #[test]
-    fn a_rewritten_breadcrumb_switches_the_tail_to_the_new_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let first = dir.path().join("first.jsonl");
-        write_omp_title(&first, "first");
-        let breadcrumb = dir.path().join("breadcrumb");
-        write_breadcrumb(&breadcrumb, &first);
-
-        let manager = LiveSessionManager::new();
-        let session = manager
-            .watch_omp(
-                "uuid-1",
-                breadcrumb.clone(),
-                std::time::SystemTime::UNIX_EPOCH,
-            )
-            .unwrap();
-        assert_eq!(session.title.as_deref(), Some("first"));
-
-        let second = dir.path().join("second.jsonl");
-        write_omp_title(&second, "second");
-        write_breadcrumb(&breadcrumb, &second);
-
-        let session = manager
-            .watch_omp("uuid-1", breadcrumb, std::time::SystemTime::UNIX_EPOCH)
-            .expect("resolves to the new target");
-        assert_eq!(
-            session.title.as_deref(),
-            Some("second"),
-            "the tail switched files"
-        );
-    }
-
-    #[test]
-    fn stop_drops_the_omp_watch() {
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("session.jsonl");
-        write_omp_title(&target, "first");
-        let breadcrumb = dir.path().join("breadcrumb");
-        write_breadcrumb(&breadcrumb, &target);
-
-        let manager = LiveSessionManager::new();
-        manager
-            .watch_omp(
-                "uuid-1",
-                breadcrumb.clone(),
-                std::time::SystemTime::UNIX_EPOCH,
-            )
-            .unwrap();
-        manager.stop("uuid-1").unwrap();
-
-        assert!(
-            manager.get("uuid-1").unwrap().is_none(),
-            "the tail is dropped"
-        );
-        assert!(
-            manager.omp_owners(&breadcrumb).is_empty(),
-            "a stopped session's watch no longer claims writes"
-        );
-    }
-
-    /// An OMP `toolResult` lands milliseconds after the `toolCall` that was
+    /// A `tool_result` lands milliseconds after the `tool_use` that was
     /// just emitted. That second write must still be reported once the window
     /// closes — dropping it left a card on a finished tool until the next turn.
     #[test]
@@ -845,14 +546,14 @@ mod tests {
     /// it and the watcher has nothing to report: the start itself must hand
     /// back the state, or the tile stays empty until the next write.
     #[test]
-    fn starting_on_an_existing_transcript_returns_its_state_and_leaves_nothing_for_refresh() {
+    fn starting_on_an_existing_transcript_returns_its_state_and_leaves_nothing_for_poll() {
         let dir = tempfile::tempdir().unwrap();
         let path = transcript(dir.path(), USER_LINE);
         let manager = LiveSessionManager::new();
 
         let session = start(&manager, path);
         assert_eq!(session.lines.len(), 1);
-        assert!(manager.refresh(UUID).is_none());
+        assert!(manager.poll(UUID).is_none());
     }
 
     /// `stop_session_tail` can land while `start_session_tail` is still looking
@@ -887,33 +588,6 @@ mod tests {
         manager.expect("other").unwrap();
         manager.stop("other").unwrap();
         assert!(manager.is_tracked(UUID));
-    }
-
-    /// A breadcrumb can be rewritten to name a transcript OMP has not created
-    /// yet; when it appears, its creation event has to reach this watch.
-    #[test]
-    fn a_file_the_breadcrumb_names_before_it_exists_is_claimed_when_created() {
-        let dir = tempfile::tempdir().unwrap();
-        let first = dir.path().join("first.jsonl");
-        write_omp_title(&first, "first");
-        let breadcrumb = dir.path().join("breadcrumb");
-        write_breadcrumb(&breadcrumb, &first);
-
-        let manager = LiveSessionManager::new();
-        manager
-            .watch_omp(
-                "uuid-1",
-                breadcrumb.clone(),
-                std::time::SystemTime::UNIX_EPOCH,
-            )
-            .unwrap();
-
-        let second = dir.path().join("second.jsonl");
-        write_breadcrumb(&breadcrumb, &second);
-        assert!(manager.refresh("uuid-1").is_none(), "nothing to read yet");
-
-        write_omp_title(&second, "second");
-        assert!(manager.omp_owners(&second).contains(&"uuid-1".to_string()));
     }
 
     #[test]

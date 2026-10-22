@@ -7,7 +7,7 @@ Mission control for [Claude Code](https://claude.com/claude-code). Run several s
 
 ## Features
 
-- **Overview grid** — every running session as a live tile: state, the conversation's tail (your prompts, Claude's replies and the tools it called), running subagents, what it is doing right now, context, cost (subagents included) and diff counts. Sorted in the order you opened them by default, or needs-you first (Settings > General). When a permission prompt is showing on the session's screen, the tile offers Allow / Deny and types the answer into the real TUI; an OMP session blocked on its `ask` tool shows the question.
+- **Overview grid** — every running session as a live tile: state, the conversation's tail (your prompts, Claude's replies and the tools it called), running subagents, what it is doing right now, context, cost (subagents included) and diff counts. Sorted in the order you opened them by default, or needs-you first (Settings > General). When a permission prompt is showing on the session's screen, the tile offers Allow / Deny and types the answer into the real TUI.
 - **Session view** — the actual Claude Code terminal, so `/mcp`, `/resume`, `/model`, plan mode and Shift+Tab all keep working. Highlighting text copies it, whichever harness is running. Beside it, an activity rail with the plan checklist, subagents, turn stats and files touched. If the shell exits, the tab says so.
 - **Resumable sessions** — Atlas spawns `claude --session-id <uuid>` and remembers it, so quitting and relaunching lets you pick a prior conversation back up with its history intact. The New Session modal offers Fresh or Resume per workspace.
 - **Changes drawer** — the session's git diff as a slide-over: file tree, unified or split, viewed-state tracking, and inline review comments you can send back to the session as a prompt. Very large diffs are cut at a size cap and the drawer says how much was shown.
@@ -89,7 +89,7 @@ Settings are managed from the in-app Settings modal (gear icon) and persisted to
 - **Workspaces** — colour tag, linked repo and session count per workspace; add or remove folders; per-workspace language servers
 - **Pull requests** — watched `owner/repo` list, auto-add repos from workspaces, and the refresh interval (1 / 3 / 10 minutes)
 - **Claude Code** — the hooks switch, the transcript-tailing toggle, and the detected `claude` binary and version
-- **Harnesses** — the commands New Session can launch (Claude Code, omp, a plain terminal, or your own)
+- **Harnesses** — the commands New Session can launch (Claude Code, a plain terminal, or your own)
 
 ## Development
 

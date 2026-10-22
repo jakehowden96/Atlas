@@ -968,8 +968,13 @@
     text-transform: uppercase;
   }
 
+  /* Fills whatever height the row's other cards give this one (height: 0 keeps
+     50 rows from stretching the row) and scrolls past it; never shorter than
+     the old fixed cap. */
   .recent-list {
-    max-height: 216px;
+    flex: 1 1 0;
+    height: 0;
+    min-height: 216px;
     overflow-y: auto;
   }
 

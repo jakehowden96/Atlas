@@ -51,7 +51,7 @@ export interface SessionTile {
  * `needsInputTabs` are the terminal tabs the Notification hook has flagged
  * (`TabItem.needsInput`). Claude Code's tail never sets `needsYou` itself —
  * the transcript cannot see a permission prompt — so that flag is its only
- * signal. OMP's tail does, while its `ask` tool waits on an answer.
+ * signal.
  *
  * Folding it in needs a terminal tab id, which only the workspace row carries,
  * so the second loop's rowless tiles can never read needs-you. That costs
@@ -325,13 +325,11 @@ export function splitReply(reply: string | null): { body: string; question: stri
 }
 
 /**
- * The question the session is still waiting on: an OMP `ask` it is blocked
- * on — the only `needsYou` the backend reports — or an idle session's closing
- * question. Once it is running again the question has been answered, or the
- * session moved past it, and lifting it into the callout would pin a stale ask.
+ * The question an idle session closed on. Once it is running again the
+ * question has been answered, or the session moved past it, and lifting it
+ * into the callout would pin a stale ask.
  */
 export function openQuestion(live: LiveSession): string | null {
-  if (live.state === "needsYou") return live.pendingTool?.inputSummary || null;
   return live.state === "idle" ? splitReply(live.lastReply).question : null;
 }
 

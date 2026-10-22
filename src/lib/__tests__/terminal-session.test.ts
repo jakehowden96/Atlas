@@ -87,7 +87,6 @@ vi.mock("../ipc", () => ({
   refreshPanel: vi.fn(),
   getPanelData: vi.fn(),
   openUrl: vi.fn(),
-  startOmpTail: vi.fn(),
   startSessionTail: vi.fn(),
   stopSessionTail: vi.fn(),
 }));

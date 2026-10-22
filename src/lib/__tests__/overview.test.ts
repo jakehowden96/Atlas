@@ -15,7 +15,6 @@ import {
   filterByWorkspace,
   formatElapsed,
   handleGridKey,
-  openQuestion,
   parseScreenTail,
   pinKey,
   type FeedItem,
@@ -421,16 +420,6 @@ describe("buildTiles", () => {
       new Set(),
     )[0]!;
     expect(tile.state).toBe("idle");
-  });
-
-  it("keeps a backend needs-you and lifts the question it is blocked on", () => {
-    const session = live("uuid-a", {
-      state: "needsYou",
-      pendingTool: { name: "ask", inputSummary: "Which routes default to All?" },
-    });
-    const tile = buildTiles([session], workspaceList, new Map(), new Set())[0]!;
-    expect(tile.state).toBe("needsYou");
-    expect(openQuestion(session)).toBe("Which routes default to All?");
   });
 });
 
@@ -853,7 +842,7 @@ describe("parseScreenTail", () => {
   });
 
   it("returns nothing for a screen with no Claude Code rows", () => {
-    expect(parseScreenTail(["omp v1.0", "working on it", "  done"])).toEqual({
+    expect(parseScreenTail(["claude v1.0", "working on it", "  done"])).toEqual({
       items: [],
       status: null,
     });

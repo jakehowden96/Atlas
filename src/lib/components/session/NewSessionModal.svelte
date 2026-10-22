@@ -78,7 +78,7 @@
   });
   /** `nav` with indices pulled back in range after the lists changed under it. */
   let view = $derived(clampState(nav, counts));
-  /** The harness the session will launch — driven by ⌥←/→. */
+  /** The harness the session will launch — driven by ←/→. */
   let selectedHarness = $derived<HarnessConfig | null>($harnesses[view.harnessIndex] ?? null);
   /**
    * "Add workspace…" is an action, not a selection, so the highlight landing on it
@@ -142,7 +142,7 @@
   });
 
   // The Resume list follows the selected workspace, but only exists for a
-  // harness that can be resumed — omp and Terminal have nothing to list, so
+  // harness that can be resumed — Terminal has nothing to list, so
   // this never calls the IPC for them.
   $effect(() => {
     const resumableHarness = selectedHarness?.resumable ?? false;
@@ -292,13 +292,15 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
+    // With text in the filter box, bare ←/→ move its caret instead.
+    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !e.shiftKey && query !== "") return;
     const result = handleKey(e, nav, counts);
     if (!result.handled) return;
     e.preventDefault();
     // Escape and ⌘O are also global chords; the modal answers them first.
     e.stopPropagation();
-    // The Resume UI depends on a resumable harness — omp and Terminal have
-    // nothing to resume — so neither Tab nor ⌥←/→ may land in it for one.
+    // The Resume UI depends on a resumable harness — Terminal has nothing to
+    // resume — so neither Tab nor ←/→ may land in it for one.
     nav = leaveResumeIfUnsupported(
       result.state,
       $harnesses[result.state.harnessIndex]?.resumable ?? false,
@@ -324,14 +326,9 @@
   }
 </script>
 
-<Modal
-  open={$newSessionOpen}
-  onClose={close}
-  align="top"
-  width={view.mode === "resume" ? "960px" : "640px"}
->
+<Modal open={$newSessionOpen} onClose={close} align="top" width="960px">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="new-session" class:resuming={view.mode === "resume"} onkeydown={onKeydown}>
+  <div class="new-session" onkeydown={onKeydown}>
     <div class="bar">
       <span class="glyph">›_</span>
       <input
@@ -414,7 +411,7 @@
               Start in {selected?.name ?? "…"}
             </span>
             {#if counts.harnesses > 1}
-              <span class="mode-hint"><kbd>⌥←→</kbd> harness</span>
+              <span class="mode-hint"><kbd>←→</kbd> harness</span>
             {/if}
           </div>
           <SegmentedControl
@@ -477,7 +474,7 @@
              footer cannot drift from what `handleKey` actually claims. -->
         <div class="hints">
           {#each KEY_HINTS as hint (hint.label)}
-            {#if (!hint.resumeOnly || (view.mode === "resume" && resumable.length > 0)) && (!hint.multiHarnessOnly || counts.harnesses > 1)}
+            {#if !hint.multiHarnessOnly || counts.harnesses > 1}
               <span><kbd>{hint.keys}</kbd> {hint.label}</span>
             {/if}
           {/each}
@@ -496,11 +493,6 @@
   .new-session {
     display: flex;
     flex-direction: column;
-    height: 420px;
-    transition: height 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-
-  .new-session.resuming {
     height: min(620px, calc(100vh - 100px));
   }
 
@@ -840,7 +832,7 @@
     flex: 1;
     min-height: 0;
     overflow: auto;
-    /* Delayed so it lands after the 640→960px width transition has started. */
+    /* Delayed so it lands after the Resume panel mounts. */
     animation: atlasSlideIn 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) 0.08s both;
   }
 

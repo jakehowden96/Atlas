@@ -10,7 +10,6 @@ use std::time::{Duration, Instant, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
 
 use crate::error::AtlasError;
-use crate::session::omp;
 use crate::session::transcript::is_valid_session_uuid;
 use crate::transcript::{
     activity_slot, assistant_model, jsonl_lines, line_type, model_family, request_key,
@@ -136,10 +135,6 @@ pub struct SessionRecord {
     pub subagent_invocations: HashMap<String, u32>,
     #[serde(default)]
     pub user_chars: u64,
-    /// Which harness wrote this transcript — `None` for Claude Code, `Some("omp")`
-    /// for OMP. Absent from a file written before OMP was tracked here.
-    #[serde(default)]
-    pub harness: Option<String>,
 }
 
 /// Per-model aggregate — the Sonnet vs Opus comparison block.
@@ -465,20 +460,17 @@ fn file_mtime_size(path: &Path) -> (u64, u64) {
 
 /// Newest modified time (ms) and total size of a session's subagent
 /// transcripts, the part of the cache key that the main file does not cover.
-fn sidecar_fingerprint(transcript: &Path, is_omp: bool) -> (u64, u64) {
-    let files = if is_omp {
-        omp::sidecar_files(transcript)
-    } else {
-        let id = transcript
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or_default();
-        subagent_files(transcript, id)
-    };
-    files.iter().fold((0, 0), |(newest, total), file| {
-        let (mtime, size) = file_mtime_size(file);
-        (newest.max(mtime), total + size)
-    })
+fn sidecar_fingerprint(transcript: &Path) -> (u64, u64) {
+    let id = transcript
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
+    subagent_files(transcript, id)
+        .iter()
+        .fold((0, 0), |(newest, total), file| {
+            let (mtime, size) = file_mtime_size(file);
+            (newest.max(mtime), total + size)
+        })
 }
 
 /// The regular `*.jsonl` files in a session's `<dir>/<session id>/subagents/`
@@ -817,7 +809,6 @@ fn parse_session_skipping(
         by_model,
         by_model_subagents,
         subagent_invocations,
-        harness: None,
         activity,
         request_ids: owned.into_iter().collect(),
         ..Default::default()
@@ -842,40 +833,6 @@ fn collect_session_files(projects_dir: &Path) -> Vec<PathBuf> {
             continue;
         }
         let Ok(session_entries) = std::fs::read_dir(project_entry.path()) else {
-            continue;
-        };
-        for session_entry in session_entries.flatten() {
-            let path = session_entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("jsonl")
-                && session_entry
-                    .file_type()
-                    .map(|t| t.is_file())
-                    .unwrap_or(false)
-            {
-                files.push(path);
-            }
-        }
-    }
-    files
-}
-
-fn omp_sessions_dir() -> Option<PathBuf> {
-    omp::agent_dir().map(|d| d.join("sessions"))
-}
-
-/// Walk `~/.omp/agent/sessions/` and return paths of all session `*.jsonl`
-/// files (direct children of the slug subdirs, not a `task` call's own
-/// `<uuid>/<name>.jsonl` subagent files).
-fn collect_omp_session_files(sessions_dir: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    let Ok(slug_entries) = std::fs::read_dir(sessions_dir) else {
-        return files;
-    };
-    for slug_entry in slug_entries.flatten() {
-        if !slug_entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            continue;
-        }
-        let Ok(session_entries) = std::fs::read_dir(slug_entry.path()) else {
             continue;
         };
         for session_entry in session_entries.flatten() {
@@ -1243,20 +1200,12 @@ pub fn recompute() -> Result<StatsSummary, AtlasError> {
     let _guard = RECOMPUTE_LOCK
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
-    recompute_in(
-        &claude_projects_dir()?,
-        omp_sessions_dir().as_deref(),
-        &stats_path()?,
-    )
+    recompute_in(&claude_projects_dir()?, &stats_path()?)
 }
 
 /// `recompute` over explicit locations, so the cache logic can be exercised
 /// against a temp directory.
-fn recompute_in(
-    projects_dir: &Path,
-    omp_dir: Option<&Path>,
-    stats_path: &Path,
-) -> Result<StatsSummary, AtlasError> {
+fn recompute_in(projects_dir: &Path, stats_path: &Path) -> Result<StatsSummary, AtlasError> {
     if !projects_dir.exists() {
         return Ok(StatsSummary::default());
     }
@@ -1267,9 +1216,6 @@ fn recompute_in(
     } = load_cache(stats_path);
 
     let mut session_files = collect_session_files(projects_dir);
-    if let Some(omp_dir) = omp_dir.filter(|dir| dir.exists()) {
-        session_files.extend(collect_omp_session_files(omp_dir));
-    }
     // Oldest first, so when a resumed or forked file repeats an earlier file's
     // lines the earlier one is the one that counts them.
     session_files.sort_by_cached_key(|path| (file_mtime_size(path).0, path.clone()));
@@ -1288,8 +1234,7 @@ fn recompute_in(
     for path in &session_files {
         let path_str = path.to_string_lossy().to_string();
         let (mtime, size) = file_mtime_size(path);
-        let is_omp = !path.starts_with(projects_dir);
-        let (sidecar_mtime, sidecar_size) = sidecar_fingerprint(path, is_omp);
+        let (sidecar_mtime, sidecar_size) = sidecar_fingerprint(path);
 
         // Moved out of the cache rather than cloned: whatever is left in it
         // afterwards is a record whose file is gone.
@@ -1306,11 +1251,8 @@ fn recompute_in(
             stale => stale,
         };
 
-        let parsed = if is_omp {
-            omp::parse_omp_session(path)
-        } else {
-            parse_session_skipping(path, &|id| owners.get(&id).is_some_and(|p| *p != path_str))
-        };
+        let parsed =
+            parse_session_skipping(path, &|id| owners.get(&id).is_some_and(|p| *p != path_str));
         match parsed {
             Ok(mut rec) => {
                 owners.extend(rec.request_ids.iter().map(|id| (*id, path_str.clone())));
@@ -1336,16 +1278,16 @@ fn recompute_in(
     // from Atlas's cache the moment the underlying file is pruned. Not when the
     // same session is present under another path (a moved or renamed project
     // directory), which would count it twice.
-    let live: HashSet<(bool, &str)> = records
-        .iter()
-        .map(|r| (r.harness.is_some(), r.session_id.as_str()))
-        .collect();
+    let live: HashSet<&str> = records.iter().map(|r| r.session_id.as_str()).collect();
     let kept: Vec<SessionRecord> = cache
         .into_values()
         .filter(|cached| {
-            let duplicate = live.contains(&(cached.harness.is_some(), cached.session_id.as_str()));
-            changed |= duplicate;
-            !duplicate
+            let duplicate = live.contains(cached.session_id.as_str());
+            // Records of the removed omp integration sit outside `projects_dir`
+            // and would otherwise be carried forever, their files never listed.
+            let foreign = !Path::new(&cached.path).starts_with(projects_dir);
+            changed |= duplicate || foreign;
+            !(duplicate || foreign)
         })
         .collect();
     records.extend(kept);
@@ -1422,11 +1364,10 @@ fn resumable_for_cwd(records: &[SessionRecord], cwd: &str) -> Vec<ResumableSessi
     let mut matched: Vec<&SessionRecord> = records
         .iter()
         .filter(|r| {
-            r.harness.is_none()
-                // The id is typed into the user's shell as `--resume <id>`, so
-                // only the uuid shape Claude Code writes is offered: a transcript
-                // named `x;touch pwned` must not appear as a session.
-                && is_valid_session_uuid(&r.session_id)
+            // The id is typed into the user's shell as `--resume <id>`, so
+            // only the uuid shape Claude Code writes is offered: a transcript
+            // named `x;touch pwned` must not appear as a session.
+            is_valid_session_uuid(&r.session_id)
                 && r.cwd.as_deref().is_some_and(|c| normalize_path(c) == want)
         })
         .collect();
@@ -1483,7 +1424,7 @@ pub async fn list_resumable_sessions(cwd: String) -> Result<Vec<ResumableSession
 
 /// A transcript write worth a recompute. That includes a subagent's own file,
 /// which is part of its session's totals; the watched roots already limit this
-/// to Claude Code and OMP transcripts.
+/// to Claude Code transcripts.
 fn is_session_jsonl(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()) == Some("jsonl")
 }
@@ -1551,14 +1492,6 @@ pub fn start_stats_watcher(app_handle: AppHandle) -> Result<StatsWatcher, AtlasE
     )?;
 
     watcher.watch(&projects_dir, RecursiveMode::Recursive)?;
-
-    // OMP is optional: failing to watch its directory must not disable the
-    // Claude Code stats.
-    if let Some(omp_dir) = omp_sessions_dir().filter(|dir| dir.exists()) {
-        if let Err(e) = watcher.watch(&omp_dir, RecursiveMode::Recursive) {
-            log::warn!("Failed to watch {}: {}", omp_dir.display(), e);
-        }
-    }
 
     let handle = app_handle.clone();
     std::thread::spawn(move || {
@@ -1843,7 +1776,6 @@ mod tests {
             by_model: HashMap::from([("Sonnet".to_string(), ModelSessionData::default())]),
             by_model_subagents: HashMap::new(),
             subagent_invocations: HashMap::new(),
-            harness: None,
             ..Default::default()
         }
     }
@@ -2019,7 +1951,7 @@ mod tests {
         }
 
         fn recompute(&self) -> StatsSummary {
-            recompute_in(&self.projects(), None, &self.stats()).unwrap()
+            recompute_in(&self.projects(), &self.stats()).unwrap()
         }
 
         fn saved(&self) -> StatsFile {
@@ -2518,7 +2450,6 @@ mod tests {
             },
             by_model_subagents: HashMap::new(),
             subagent_invocations: HashMap::new(),
-            harness: None,
             ..Default::default()
         };
         let records = vec![
@@ -2572,7 +2503,6 @@ mod tests {
             },
             by_model_subagents: HashMap::new(),
             subagent_invocations: HashMap::new(),
-            harness: None,
             ..Default::default()
         };
         let records = vec![
@@ -2716,39 +2646,5 @@ mod tests {
             ..rec("a", "2026-01-01T00:00:00Z")
         }];
         assert!(resumable_for_cwd(&records, "/repo/atlas").is_empty());
-    }
-
-    // ── OMP ───────────────────────────────────────────────────────────────
-
-    #[test]
-    fn parse_omp_session_reads_usage_tools_and_subagents() {
-        let f = write_lines(&[
-            r#"{"type":"session","id":"omp-sess-1","cwd":"/repo/atlas","timestamp":"2026-01-01T00:00:00Z"}"#,
-            r#"{"type":"message","timestamp":"2026-01-01T00:00:01Z","message":{"role":"user","content":[{"type":"text","text":"hello there"}],"attribution":"user"}}"#,
-            r#"{"type":"message","timestamp":"2026-01-01T00:00:05Z","message":{"role":"assistant","model":"anthropic/claude-sonnet-5","stopReason":"toolUse","content":[{"type":"toolCall","id":"t1","name":"bash","arguments":{"command":"ls"}}],"usage":{"input":100,"output":50,"cacheRead":10,"cacheWrite":0,"totalTokens":160,"cost":{"total":0.02}}}}"#,
-            r#"{"type":"message","timestamp":"2026-01-01T00:00:06Z","message":{"role":"toolResult","toolCallId":"t1","toolName":"bash","isError":true,"content":[{"type":"text","text":"boom"}]}}"#,
-            r#"{"type":"message","timestamp":"2026-01-01T00:00:10Z","message":{"role":"assistant","model":"anthropic/claude-sonnet-5","stopReason":"toolUse","content":[{"type":"toolCall","id":"t2","name":"task","arguments":{"tasks":[{"name":"Scout1","agent":"scout","task":"look"}]}}],"usage":{"input":10,"output":5,"cacheRead":0,"cacheWrite":0,"totalTokens":15,"cost":{"total":0.01}}}}"#,
-        ]);
-
-        let rec = omp::parse_omp_session(f.path()).unwrap();
-        assert_eq!(rec.session_id, "omp-sess-1");
-        assert_eq!(rec.cwd.as_deref(), Some("/repo/atlas"));
-        assert_eq!(rec.user_messages, 1);
-        assert_eq!(rec.user_chars, 11, "\"hello there\" is 11 chars");
-        assert_eq!(rec.assistant_messages, 2);
-        assert_eq!(rec.output_tokens, 55);
-        assert!((rec.cost_estimate - 0.03).abs() < 1e-9);
-        assert_eq!(rec.tool_calls.get("bash").copied(), Some(1));
-        assert_eq!(rec.tool_calls.get("task").copied(), Some(1));
-        assert_eq!(rec.tool_errors, 1);
-        assert_eq!(rec.tool_errors_by_name.get("bash").copied(), Some(1));
-        assert_eq!(rec.subagents, 1);
-        assert_eq!(rec.peak_context, 110);
-        assert_eq!(rec.harness.as_deref(), Some("omp"));
-
-        assert!(
-            resumable_for_cwd(&[rec], "/repo/atlas").is_empty(),
-            "an omp session must not offer claude --resume"
-        );
     }
 }

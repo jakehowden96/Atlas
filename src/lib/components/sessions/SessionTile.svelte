@@ -61,13 +61,11 @@
   let elapsed = $derived(formatElapsed(live.startedAt, now));
 
   /** A permission prompt the hook flagged and the terminal screen really
-      shows, as opposed to needs-you off a question — a closing one, an
-      elicitation dialog, or an OMP `ask` the backend itself reports as
-      `needsYou`, none of which y/n answers. The flag alone goes stale once the
+      shows, as opposed to needs-you off a question — a closing one or an
+      elicitation dialog, neither of which y/n answers. The flag alone goes stale once the
       user answers in the terminal, so the screen has to agree. */
   let permission = $derived(
     needsYou &&
-      live.state !== "needsYou" &&
       live.pendingTool !== null &&
       canAnswerPermission(
         $tabs.find((t) => t.id === tile.terminalTabId),

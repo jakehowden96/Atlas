@@ -1,5 +1,5 @@
 import { derived, writable, get } from "svelte/store";
-import { setClaudeHook, startOmpTail, startSessionTail, stopSessionTail, stateLoad } from "../ipc";
+import { setClaudeHook, startSessionTail, stopSessionTail, stateLoad } from "../ipc";
 import {
   ACTIONS,
   DEFAULT_KEYMAP,
@@ -15,7 +15,6 @@ import { reportNewerState, reportStateRecovered, reportStorageFailure } from "..
 import { themeMode, type ThemeMode } from "../theme";
 import { openFiles, sources } from "./file-tabs";
 import { liveSessions } from "./liveSessions";
-import { tabs } from "./terminal";
 import { workspaces } from "./workspace";
 import { errorMessage } from "../ipc-error";
 
@@ -32,12 +31,6 @@ export interface HarnessConfig {
   readyMode: "altscreen" | "immediate";
 }
 
-/** Which live-tail command a harness's transcript needs, or none for a bare
- *  terminal harness. */
-export function transcriptKind(h: HarnessConfig): "claude" | "omp" | null {
-  return h.resumable ? "claude" : h.command === "omp" ? "omp" : null;
-}
-
 export const DEFAULT_HARNESSES: readonly [HarnessConfig, ...HarnessConfig[]] = [
   {
     id: "claude-code",
@@ -48,7 +41,6 @@ export const DEFAULT_HARNESSES: readonly [HarnessConfig, ...HarnessConfig[]] = [
     resumable: true,
     readyMode: "altscreen",
   },
-  { id: "omp", label: "omp", command: "omp", args: [], resumable: false, readyMode: "altscreen" },
   {
     id: "terminal",
     label: "Terminal",
@@ -431,13 +423,9 @@ export async function setTailTranscripts(value: boolean) {
   if (value) {
     // Turning it back on re-arms the sessions that are still running; their
     // `liveSessions` entries survived the pause, so tiles fill back in.
-    for (const { uuid, kind, ptyId } of runningTails()) {
+    for (const uuid of runningTails()) {
       try {
-        if (kind === "claude") {
-          await startSessionTail(uuid);
-        } else if (ptyId >= 0) {
-          await startOmpTail(uuid, ptyId);
-        }
+        await startSessionTail(uuid);
       } catch (e) {
         log.warn("settings", `start tail failed for ${uuid}: ${errorMessage(e)}`);
       }
@@ -449,7 +437,7 @@ export async function setTailTranscripts(value: boolean) {
   // not wait on them. A tail that has started but not emitted yet is not in
   // `liveSessions`, so the running sessions are stopped too.
   await persistSettings();
-  const uuids = new Set([...get(liveSessions).keys(), ...runningTails().map((t) => t.uuid)]);
+  const uuids = new Set([...get(liveSessions).keys(), ...runningTails()]);
   for (const uuid of uuids) {
     try {
       await stopSessionTail(uuid);
@@ -459,21 +447,18 @@ export async function setTailTranscripts(value: boolean) {
   }
 }
 
-/** Every currently-running session with a live-tailable transcript, and which
- *  command to tail it with. A harness id that no longer matches a configured
- *  harness (deleted since) falls back to Claude Code's tail. */
-function runningTails(): { uuid: string; kind: "claude" | "omp"; ptyId: number }[] {
+/** Every currently-running session with a live-tailable transcript. A harness
+ *  id that no longer matches a configured harness (deleted since) falls back to
+ *  Claude Code's tail. */
+function runningTails(): string[] {
   const harnessList = get(harnesses);
-  const tabList = get(tabs);
-  const results: { uuid: string; kind: "claude" | "omp"; ptyId: number }[] = [];
+  const results: string[] = [];
   for (const ws of get(workspaces)) {
     for (const session of ws.sessions) {
       if (session.status !== "running" || !session.claudeSessionId) continue;
       const harness = harnessList.find((h) => h.id === (session.harnessId ?? "claude-code"));
-      const kind = harness ? transcriptKind(harness) : "claude";
-      if (!kind) continue;
-      const ptyId = tabList.find((t) => t.id === session.terminalTabId)?.ptyId ?? -1;
-      results.push({ uuid: session.claudeSessionId, kind, ptyId });
+      if (harness && !harness.resumable) continue;
+      results.push(session.claudeSessionId);
     }
   }
   return results;

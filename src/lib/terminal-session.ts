@@ -130,7 +130,7 @@ export class TerminalSession {
   };
 
   /** Copy-on-select, the way Claude Code's own TUI copies what you highlight.
-      A TUI that leaves the mouse to the terminal — OMP, a plain shell — gets
+      A TUI that leaves the mouse to the terminal — a plain shell — gets
       xterm's native selection instead, which copies nothing by itself. Read on
       the next tick: xterm finishes the gesture in its own document-level
       mouseup, which fires after this one bubbles through the container. */

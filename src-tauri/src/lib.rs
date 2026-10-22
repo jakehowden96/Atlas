@@ -280,7 +280,6 @@ pub fn run() -> std::process::ExitCode {
             commands::stats::list_resumable_sessions,
             commands::session::start_session_tail,
             commands::session::stop_session_tail,
-            commands::session::start_omp_tail,
             commands::session::claude_info,
             commands::files::list_workspace_docs,
             commands::files::list_claude_plans,
