@@ -55,13 +55,7 @@ import { tabs } from "../stores/terminal";
 import { themeMode } from "../theme";
 import { workspaces } from "../stores/workspace";
 import { toasts } from "../stores/toast";
-import {
-  setClaudeHook,
-  startSessionTail,
-  stopSessionTail,
-  stateLoad,
-  stateSave,
-} from "../ipc";
+import { setClaudeHook, startSessionTail, stopSessionTail, stateLoad, stateSave } from "../ipc";
 
 /** The persisted object the last `stateSave` call wrote. */
 function lastWritten() {
