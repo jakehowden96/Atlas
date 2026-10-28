@@ -4,8 +4,8 @@ import { activeTabId } from "./terminal";
 /**
  * Anchor identifying the diff location a comment is attached to. The richer-
  * than-needed shape (snippet + hunk header) is captured up front so future
- * "outdated" / re-anchor logic can land additively. V1 just nukes a session's
- * comments on the next diff refresh.
+ * "outdated" / re-anchor logic can land additively. Comments live until
+ * sent, discarded, or the tab closes.
  */
 export interface ReviewAnchor {
   fileKey: string;

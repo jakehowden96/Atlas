@@ -571,10 +571,10 @@ fn browser_launcher(url: &str) -> Command {
     };
     #[cfg(target_os = "windows")]
     let mut cmd = {
-        let mut cmd = Command::new("cmd");
-        // The empty "" is `start`'s window-title argument — without it `start`
-        // consumes the URL as the title and opens nothing.
-        cmd.args(["/C", "start", "", url]);
+        // Not `cmd /C start`: cmd re-parses its command line, so a `&` or `|`
+        // in the URL would escape the argument quoting.
+        let mut cmd = Command::new("rundll32");
+        cmd.args(["url.dll,FileProtocolHandler", url]);
         cmd
     };
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -592,18 +592,6 @@ fn browser_launcher(url: &str) -> Command {
 fn check_open_url(url: &str) -> Result<(), AtlasError> {
     if !url.starts_with("https://") {
         return Err(AtlasError::invalid_input("Only https:// URLs are allowed"));
-    }
-    // `cmd /C start` re-parses its command line, so a shell metacharacter in
-    // the URL would escape argument quoting on Windows. The other launchers
-    // take the URL as a single argument, where `&` in a query string is just
-    // a character.
-    #[cfg(windows)]
-    {
-        if url.contains(['&', '|', '^', '<', '>', '"', '%']) {
-            return Err(AtlasError::invalid_input(
-                "URL contains characters that cannot be passed to the shell",
-            ));
-        }
     }
     Ok(())
 }
@@ -767,13 +755,6 @@ mod tests {
         assert!(check_open_url("file:///etc/passwd").is_err());
         assert!(check_open_url("http://example.com").is_err());
         assert!(check_open_url("calculator").is_err());
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn open_url_rejects_cmd_metacharacters_on_windows() {
-        assert!(check_open_url("https://example.com/&calc").is_err());
-        assert!(check_open_url("https://example.com/a|b").is_err());
     }
 
     #[test]

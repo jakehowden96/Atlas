@@ -51,17 +51,27 @@ describe("matchBinding", () => {
     expect(matchBinding(backslash, DEFAULT_KEYMAP.toggleRail[0]!)).toBe(false);
   });
 
+  it("strict Ctrl chords fire on Ctrl only, not ⌘", () => {
+    const tab1 = DEFAULT_KEYMAP.tab1[0]!;
+    expect(matchBinding(makeKeyEvent({ ctrlKey: true, key: "1", code: "Digit1" }), tab1)).toBe(
+      true,
+    );
+    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "1", code: "Digit1" }), tab1)).toBe(
+      false,
+    );
+  });
+
   it("matches digits on e.code, not e.key", () => {
     // A French layout types "é" on the 2 key with the modifier held.
-    const e = makeKeyEvent({ metaKey: true, key: "é", code: "Digit2" });
+    const e = makeKeyEvent({ ctrlKey: true, key: "é", code: "Digit2" });
     expect(matchBinding(e, DEFAULT_KEYMAP.tab2[0]!)).toBe(true);
-    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "2" }), DEFAULT_KEYMAP.tab2[0]!)).toBe(
+    expect(matchBinding(makeKeyEvent({ ctrlKey: true, key: "2" }), DEFAULT_KEYMAP.tab2[0]!)).toBe(
       false,
     );
   });
 
   it("honours Shift when the binding pins it, and ignores it when it does not", () => {
-    const shifted = makeKeyEvent({ metaKey: true, shiftKey: true, key: "1", code: "Digit1" });
+    const shifted = makeKeyEvent({ ctrlKey: true, shiftKey: true, key: "1", code: "Digit1" });
     expect(matchBinding(shifted, DEFAULT_KEYMAP.tab1[0]!)).toBe(false);
     // ⌘\ is bound without a Shift preference — Ctrl+Shift+\ still toggles it.
     const rail = makeKeyEvent({ ctrlKey: true, shiftKey: true, key: "\\" });
@@ -119,7 +129,7 @@ describe("formatBinding", () => {
   });
 
   it("names digits by their code and spells Escape out", () => {
-    expect(formatBinding(DEFAULT_KEYMAP.tab3[0]!, true)).toBe("⌘3");
+    expect(formatBinding(DEFAULT_KEYMAP.tab3[0]!, true)).toBe("⌃3");
     expect(formatBinding(DEFAULT_KEYMAP.backToSessions[0]!, true)).toBe("⌘Esc");
     expect(formatBinding(DEFAULT_KEYMAP.backToSessions[0]!, false)).toBe("Ctrl+Esc");
   });
@@ -131,6 +141,18 @@ describe("formatBinding", () => {
 });
 
 describe("parseBindingFromEvent", () => {
+  it("records Ctrl-only on macOS as a strict Ctrl chord, and Ctrl as mod elsewhere", () => {
+    const e = makeKeyEvent({ ctrlKey: true, key: "1", code: "Digit1" });
+    const mac = parseBindingFromEvent(e, true)!;
+    expect(mac).toEqual({ mod: false, ctrl: true, shift: false, key: "Digit1" });
+    expect(matchBinding(e, mac)).toBe(true);
+    expect(matchBinding(makeKeyEvent({ metaKey: true, key: "1", code: "Digit1" }), mac)).toBe(
+      false,
+    );
+    expect(parseBindingFromEvent(e, false)).toEqual({ mod: true, shift: false, key: "Digit1" });
+    expect(parseBindingFromEvent(makeKeyEvent({ metaKey: true, key: "p" }), true)?.mod).toBe(true);
+  });
+
   it("turns a keypress into a binding", () => {
     expect(parseBindingFromEvent(makeKeyEvent({ metaKey: true, key: "p" }))).toEqual({
       mod: true,
@@ -140,6 +162,7 @@ describe("parseBindingFromEvent", () => {
     expect(
       parseBindingFromEvent(
         makeKeyEvent({ ctrlKey: true, shiftKey: true, key: "@", code: "Digit2" }),
+        false,
       ),
     ).toEqual({ mod: true, shift: true, key: "Digit2" });
   });
@@ -264,6 +287,25 @@ describe("isReachable", () => {
     expect(isReachable(DEFAULT_KEYMAP.backToSessions[1]!, true)).toBe(true);
     expect(isReachable(DEFAULT_KEYMAP.newSession[0]!, true)).toBe(true);
     expect(isReachable(DEFAULT_KEYMAP.tab1[0]!, true)).toBe(true);
+  });
+});
+
+describe("strict Ctrl bindings", () => {
+  it("do not conflict with a mod chord on the same key", () => {
+    const km = { ...DEFAULT_KEYMAP, newSession: [{ mod: true, shift: false, key: "Digit1" }] };
+    expect(findConflicts(km)).toEqual([]);
+  });
+
+  it("render as ⌃1 on macOS and Ctrl+1 elsewhere", () => {
+    expect(formatChord(DEFAULT_KEYMAP.tab1, true)).toBe("⌃1");
+    expect(formatChord(DEFAULT_KEYMAP.tab1, false)).toBe("Ctrl+1");
+  });
+
+  it("survive mergeKeymap, and the old ⌘1 default upgrades", () => {
+    const custom = [{ mod: false, ctrl: true, shift: false, key: "Digit9" }];
+    expect(mergeKeymap({ tab1: custom }).tab1).toEqual(custom);
+    const old = { tab2: [{ mod: true, shift: false, key: "Digit2" }] };
+    expect(mergeKeymap(old).tab2).toEqual(DEFAULT_KEYMAP.tab2);
   });
 });
 
