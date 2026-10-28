@@ -91,7 +91,8 @@ fn drain_input(queue: Receiver<Vec<u8>>, mut writer: Box<dyn Write + Send>) {
     }
 }
 
-#[cfg(test)]
+// Its only callers are the unix-only tests; elsewhere it would be dead code.
+#[cfg(all(test, unix))]
 pub(crate) mod testing {
     use super::PtySession;
     use portable_pty::{native_pty_system, CommandBuilder, PtySize};
