@@ -360,6 +360,16 @@
     outline: none;
   }
 
+  /* Focused and needs-you: stack both cues instead of one overriding the other. */
+  .tile.needs:focus-visible,
+  .tile.needs.focus-ring {
+    box-shadow:
+      0 0 0 2px var(--accent),
+      0 0 0 4px var(--surface),
+      0 0 0 5px var(--warn),
+      0 8px 24px rgba(0, 0, 0, 0.08);
+  }
+
   /* ── Header ──────────────────────────────────────────────────────────── */
   .head {
     display: grid;

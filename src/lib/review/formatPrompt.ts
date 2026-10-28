@@ -23,14 +23,15 @@ function snippetOf(text: string): string {
   return line.length > MAX_SNIPPET_CHARS ? `${line.slice(0, MAX_SNIPPET_CHARS)}…` : line;
 }
 
+export const REVIEW_PROMPT_INTRO =
+  "Here's my review of your changes. Please address the pasted review comments in order.";
+
 /**
- * Format a batch of review comments into the prompt Atlas pastes into the
- * Claude Code PTY.
+ * Format a batch of review comments into the body Atlas pastes (bracketed)
+ * into the Claude Code PTY.
  */
 export function formatReviewPrompt(comments: ReviewComment[]): string {
   const lines: string[] = [];
-  lines.push("Here's my review of your changes. Please address these comments in order.");
-  lines.push("");
 
   for (const [i, c] of comments.entries()) {
     const a = c.anchor;
