@@ -6,6 +6,7 @@ vi.mock("../ipc", () => ({
 }));
 import { ptyWrite } from "../ipc";
 import { submitReview } from "../review/submitReview";
+import { REVIEW_PROMPT_INTRO } from "../review/formatPrompt";
 import {
   addComment,
   clearForSession,
@@ -36,9 +37,8 @@ function anchor(fileKey: string, newNum: number): ReviewAnchor {
 }
 
 /** `ptyWrite` is called with the raw bytes-as-string; decode nothing here. */
-function lastPrompt(): string {
-  const calls = vi.mocked(ptyWrite).mock.calls;
-  return calls[calls.length - 1]![1];
+function sentPrompt(): string {
+  return vi.mocked(ptyWrite).mock.calls[0]![1];
 }
 
 describe("submitReview", () => {
@@ -56,16 +56,45 @@ describe("submitReview", () => {
     addComment("tab-a", anchor("src/a.ts", 12), "rename this");
     addComment("tab-a", anchor("src/b.ts", 3), "drop the guard");
 
-    await submitReview("tab-a");
+    vi.useFakeTimers();
+    const done = submitReview("tab-a");
+    await vi.runAllTimersAsync();
+    await done;
+    vi.useRealTimers();
 
-    expect(ptyWrite).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(ptyWrite).mock.calls[0]![0]).toBe(7);
-    const prompt = lastPrompt();
+    const calls = vi.mocked(ptyWrite).mock.calls;
+    expect(calls).toHaveLength(2);
+    expect(calls[0]![0]).toBe(7);
+    expect(calls[1]![0]).toBe(7);
+    const prompt = calls[0]![1];
+    expect(prompt.startsWith(`${REVIEW_PROMPT_INTRO} \x1b[200~`)).toBe(true);
+    expect(prompt.endsWith("\x1b[201~")).toBe(true);
     expect(prompt).toContain("src/a.ts:12");
     expect(prompt).toContain("rename this");
     expect(prompt).toContain("src/b.ts:3");
-    expect(prompt.endsWith("\r")).toBe(true);
+    expect(calls[1]![1]).toBe("\r");
     expect(get(reviewComments).get("tab-a")).toBeUndefined();
+  });
+
+  it("wraps a long multi-comment review entirely between the paste markers", async () => {
+    tabs.set([tab("tab-a", 7)]);
+    for (let i = 1; i <= 10; i++) {
+      addComment("tab-a", anchor(`src/f${i}.ts`, i), `line one\nline two\n${"x".repeat(300)}`);
+    }
+
+    vi.useFakeTimers();
+    const done = submitReview("tab-a");
+    await vi.runAllTimersAsync();
+    await done;
+    vi.useRealTimers();
+
+    const prompt = vi.mocked(ptyWrite).mock.calls[0]![1];
+    expect(prompt.length).toBeGreaterThan(3000);
+    const start = prompt.indexOf("\x1b[200~");
+    const end = prompt.indexOf("\x1b[201~");
+    const body = prompt.slice(start + 6, end);
+    for (let i = 1; i <= 10; i++) expect(body).toContain(`[${i}] src/f${i}.ts:${i}`);
+    expect(prompt.replace("\x1b[200~", "").replace("\x1b[201~", "")).not.toContain("\x1b");
   });
 
   it("only sends the named session's comments and leaves the others alone", async () => {
@@ -76,11 +105,15 @@ describe("submitReview", () => {
     // id it is handed — a stale activeTabId must not leak the wrong session.
     activeTabId.set("tab-b");
 
-    await submitReview("tab-a");
+    vi.useFakeTimers();
+    const done = submitReview("tab-a");
+    await vi.runAllTimersAsync();
+    await done;
+    vi.useRealTimers();
 
     expect(vi.mocked(ptyWrite).mock.calls[0]![0]).toBe(1);
-    expect(lastPrompt()).toContain("for A");
-    expect(lastPrompt()).not.toContain("for B");
+    expect(sentPrompt()).toContain("for A");
+    expect(sentPrompt()).not.toContain("for B");
     expect(get(reviewComments).get("tab-a")).toBeUndefined();
     expect(get(reviewComments).get("tab-b")).toHaveLength(1);
   });
