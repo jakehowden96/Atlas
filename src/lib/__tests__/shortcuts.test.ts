@@ -142,27 +142,34 @@ describe("handleGlobalKeydown", () => {
     ["Digit2", "files"],
     ["Digit3", "prs"],
     ["Digit4", "stats"],
-  ])("⌘%s switches to the %s tab", (code, view) => {
+  ])("Ctrl+%s switches to the %s tab", (code, view) => {
     activeView.set("session");
-    const e = makeKeyEvent({ metaKey: true, key: code.slice(5), code });
+    const e = makeKeyEvent({ ctrlKey: true, key: code.slice(5), code });
     expect(handleGlobalKeydown(e)).toBe(true);
     expect(get(activeView)).toBe(view);
     expect(e.preventDefault).toHaveBeenCalled();
   });
 
-  it("⌘1 escapes Session view back to Sessions", () => {
+  it("Ctrl+1 escapes Session view back to Sessions", () => {
     activeView.set("session");
-    const e = makeKeyEvent({ metaKey: true, key: "1", code: "Digit1" });
+    const e = makeKeyEvent({ ctrlKey: true, key: "1", code: "Digit1" });
     expect(handleGlobalKeydown(e)).toBe(true);
     expect(get(activeView)).toBe("sessions");
   });
 
-  it("⌘5 is left unhandled — there is no fifth tab", () => {
+  it("Ctrl+5 is left unhandled — there is no fifth tab", () => {
     activeView.set("stats");
-    const e = makeKeyEvent({ metaKey: true, key: "5", code: "Digit5" });
+    const e = makeKeyEvent({ ctrlKey: true, key: "5", code: "Digit5" });
     expect(handleGlobalKeydown(e)).toBe(false);
     expect(get(activeView)).toBe("stats");
     expect(e.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("⌘1 no longer switches tabs — macOS Spaces owns it", () => {
+    activeView.set("stats");
+    const e = makeKeyEvent({ metaKey: true, key: "1", code: "Digit1" });
+    expect(handleGlobalKeydown(e)).toBe(false);
+    expect(get(activeView)).toBe("stats");
   });
 
   it("AltGr is left unhandled — it is Ctrl+Alt on a non-US layout", () => {
@@ -179,9 +186,9 @@ describe("handleGlobalKeydown", () => {
     expect(get(railOpen)).toBe(true);
   });
 
-  it("Shift+⌘1 is left unhandled", () => {
+  it("Shift+Ctrl+1 is left unhandled", () => {
     activeView.set("stats");
-    const e = makeKeyEvent({ metaKey: true, shiftKey: true, key: "1", code: "Digit1" });
+    const e = makeKeyEvent({ ctrlKey: true, shiftKey: true, key: "1", code: "Digit1" });
     expect(handleGlobalKeydown(e)).toBe(false);
     expect(get(activeView)).toBe("stats");
     expect(e.preventDefault).not.toHaveBeenCalled();
