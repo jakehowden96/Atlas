@@ -3,7 +3,7 @@ import { writable } from "svelte/store";
 /** Mission Control's top-level screens. */
 export type View = "sessions" | "files" | "session" | "prs" | "stats";
 
-/** The tabs in the top bar, in ⌘1–4 order. The singular "session" — the detail
+/** The tabs in the top bar, in Ctrl+1–4 order. The singular "session" — the detail
     view the "sessions" list opens in place — is not a tab of its own. */
 export const TAB_VIEWS = ["sessions", "files", "prs", "stats"] as const;
 
