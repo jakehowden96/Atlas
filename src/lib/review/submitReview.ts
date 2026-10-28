@@ -3,7 +3,7 @@ import { ptyWrite } from "../ipc";
 import { clearForSession, reviewComments } from "../stores/reviewComments";
 import { hasLivePty, tabs } from "../stores/terminal";
 import { showToast } from "../stores/toast";
-import { formatReviewPrompt } from "./formatPrompt";
+import { formatReviewPrompt, REVIEW_PROMPT_INTRO } from "./formatPrompt";
 import { errorMessage } from "../ipc-error";
 
 /**
@@ -32,10 +32,14 @@ export async function submitReview(sessionId: string): Promise<void> {
   }
 
   try {
-    const prompt = formatReviewPrompt(comments);
-    // Trailing CR submits Claude's input line. If Claude is mid-turn,
-    // Claude Code's own terminal queues the line until it's ready.
-    await ptyWrite(tab.ptyId, prompt + "\r");
+    // Bracketed paste: unmarked bulk input gets split and submitted early.
+    await ptyWrite(
+      tab.ptyId,
+      `${REVIEW_PROMPT_INTRO} \x1b[200~${formatReviewPrompt(comments)}\x1b[201~`,
+    );
+    // shortcut: fixed delay so Claude Code commits the paste before Enter; raise it if long reviews still submit early
+    await new Promise((r) => setTimeout(r, 100));
+    await ptyWrite(tab.ptyId, "\r");
     clearForSession(sessionId);
     showToast("Review sent", {
       body: `${comments.length} comment${comments.length === 1 ? "" : "s"} added to the session prompt.`,

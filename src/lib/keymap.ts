@@ -28,6 +28,9 @@ export interface Binding {
   /** The platform modifier. ⌘ and Ctrl are accepted interchangeably, so one
    *  binding covers macOS and Windows/Linux without branching. */
   mod: boolean;
+  /** Strict Ctrl: fires on Ctrl without ⌘ (`mod` is false). For chords where ⌘
+   *  would collide with the OS, e.g. ⌘1–4 switching macOS Spaces. */
+  ctrl?: boolean;
   /** Absent means the chord fires with or without Shift. `⌘\` is bound that way
    *  because `Ctrl+Shift+\` is how some layouts reach the backslash. */
   shift?: boolean;
@@ -89,10 +92,10 @@ export const DEFAULT_KEYMAP: Keymap = {
   saveFile: [{ mod: true, shift: false, key: "s" }],
   openFile: [{ mod: true, shift: false, key: "o" }],
   toggleRail: [{ mod: true, key: "\\" }],
-  tab1: [{ mod: true, shift: false, key: "Digit1" }],
-  tab2: [{ mod: true, shift: false, key: "Digit2" }],
-  tab3: [{ mod: true, shift: false, key: "Digit3" }],
-  tab4: [{ mod: true, shift: false, key: "Digit4" }],
+  tab1: [{ mod: false, ctrl: true, shift: false, key: "Digit1" }],
+  tab2: [{ mod: false, ctrl: true, shift: false, key: "Digit2" }],
+  tab3: [{ mod: false, ctrl: true, shift: false, key: "Digit3" }],
+  tab4: [{ mod: false, ctrl: true, shift: false, key: "Digit4" }],
   /* Bare Escape belongs to the Claude Code TUI, so returning to Sessions from a
      focused terminal is a chord of its own — and on macOS it takes two, because
      the OS never delivers ⌘Escape to the web view. See `Keymap`. */
@@ -123,7 +126,9 @@ export function matchBinding(e: KeyboardEvent, binding: Binding): boolean {
   // layout reports itself as Ctrl+Alt — so `AltGr+2` and `AltGr+ß` are how
   // those keyboards type `@` and `\`, not a request to switch tabs.
   if (e.altKey) return false;
-  if (binding.mod !== (e.metaKey || e.ctrlKey)) return false;
+  if (binding.ctrl) {
+    if (!e.ctrlKey || e.metaKey) return false;
+  } else if (binding.mod !== (e.metaKey || e.ctrlKey)) return false;
   if (binding.shift !== undefined && binding.shift !== e.shiftKey) return false;
   if (DIGIT_CODE.test(binding.key)) return e.code === binding.key;
   return typeof e.key === "string" && e.key.toLowerCase() === binding.key.toLowerCase();
@@ -140,7 +145,7 @@ export function matchesAnyBinding(e: KeyboardEvent, keymap: Keymap): boolean {
 }
 
 function signature(b: Binding): string {
-  return `${b.mod ? "mod+" : ""}${b.shift ? "shift+" : ""}${b.key.toLowerCase()}`;
+  return `${b.ctrl ? "ctrl+" : ""}${b.mod ? "mod+" : ""}${b.shift ? "shift+" : ""}${b.key.toLowerCase()}`;
 }
 
 /** Every keypress shape a binding answers. A binding with no `shift` fires with
@@ -186,7 +191,7 @@ function keyLabel(key: string): string {
 
 /** The display label, e.g. "⌘N" on macOS and "Ctrl+N" elsewhere. */
 export function formatBinding(binding: Binding, isMac: boolean = IS_MAC): string {
-  const mod = binding.mod ? modLabel(isMac) : "";
+  const mod = binding.ctrl ? (isMac ? "⌃" : "Ctrl+") : binding.mod ? modLabel(isMac) : "";
   const shift = binding.shift ? shiftLabel(isMac) : "";
   return `${mod}${shift}${keyLabel(binding.key)}`;
 }
@@ -231,15 +236,14 @@ function isReserved(e: KeyboardEvent): boolean {
  * without the platform modifier — an unmodified binding would swallow ordinary
  * typing everywhere in the app.
  */
-export function parseBindingFromEvent(e: KeyboardEvent): Binding | null {
+export function parseBindingFromEvent(e: KeyboardEvent, isMac: boolean = IS_MAC): Binding | null {
   if (MODIFIER_KEYS.has(e.key) || e.altKey) return null;
   if (!e.metaKey && !e.ctrlKey) return null;
   if (isReserved(e)) return null;
-  return {
-    mod: true,
-    shift: e.shiftKey,
-    key: DIGIT_CODE.test(e.code) ? e.code : e.key,
-  };
+  const key = DIGIT_CODE.test(e.code) ? e.code : e.key;
+  // On macOS a Ctrl-only press is its own chord; elsewhere Ctrl is the normal mod.
+  if (isMac && e.ctrlKey && !e.metaKey) return { mod: false, ctrl: true, shift: e.shiftKey, key };
+  return { mod: true, shift: e.shiftKey, key };
 }
 
 function isBinding(v: unknown): v is Binding {
@@ -247,6 +251,7 @@ function isBinding(v: unknown): v is Binding {
   const b = v as Record<string, unknown>;
   if (typeof b.key !== "string" || b.key.length === 0) return false;
   if (typeof b.mod !== "boolean") return false;
+  if (b.ctrl !== undefined && typeof b.ctrl !== "boolean") return false;
   return b.shift === undefined || typeof b.shift === "boolean";
 }
 
@@ -266,8 +271,16 @@ export function mergeKeymap(partial: unknown): Keymap {
     const list = Array.isArray(value) ? value : [value];
     const bindings = list
       .filter(isBinding)
-      .map((b) => ({ mod: b.mod, shift: b.shift, key: b.key }));
+      .map((b) => ({ mod: b.mod, ctrl: b.ctrl, shift: b.shift, key: b.key }));
     if (bindings.length === 0) continue;
+    // The old ⌘1–4 tab defaults were never a choice; let them upgrade to Ctrl+1–4.
+    const only = bindings[0]!;
+    if (
+      /^tab\d$/.test(action) &&
+      bindings.length === 1 &&
+      signature(only) === signature({ mod: true, shift: false, key: `Digit${action.slice(3)}` })
+    )
+      continue;
     /* A stored list that is only a subset of the default one is a file written
        before this action gained its alternates, not a rebinding — the user
        never chose to drop the others. Taking it literally is what left macOS
