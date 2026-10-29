@@ -22,7 +22,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/autocomplete": "^6.20.4",
     "@codemirror/language": "^6.12.4",
     "@codemirror/language-data": "6.5.2",
     "@codemirror/lsp-client": "6.2.5",
