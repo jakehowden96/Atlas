@@ -74,6 +74,10 @@ async function endSessionTail(claudeSessionId: string | null | undefined) {
  *  comments, touched-file counts and diff-stat badge kept under its id. */
 export async function closeSessionTab(tabId: string) {
   const tab = get(tabs).find((t) => t.id === tabId);
+  // Drop the tab first: removing it disposes the xterm, so nothing it emits
+  // while the (slow, on Windows) kill is in flight can write to a PTY the
+  // backend has already forgotten ("Terminal N not found").
+  removeTab(tabId);
   if (tab && tab.ptyId >= 0) {
     try {
       await ptyKill(tab.ptyId);
@@ -81,7 +85,6 @@ export async function closeSessionTab(tabId: string) {
       log.warn("session", `ptyKill failed for tab ${tabId}: ${errorMessage(e)}`);
     }
   }
-  removeTab(tabId);
   clearForSession(tabId);
   setSessionTouchedFiles(tabId, []);
   setSessionDiffStats(tabId, null);

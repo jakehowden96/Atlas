@@ -468,7 +468,8 @@
           </p>
         {/if}
 
-        <div class="grow"></div>
+        <!-- The Resume list is itself flex: 1; a second spacer would halve it. -->
+        {#if view.mode !== "resume"}<div class="grow"></div>{/if}
 
         <!-- Rendered from `KEY_HINTS` rather than written out here, so the
              footer cannot drift from what `handleKey` actually claims. -->

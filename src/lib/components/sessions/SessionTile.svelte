@@ -287,6 +287,7 @@
 
   {#if permission && live.pendingTool}
     <div class="ask permission">
+      <i class="dot" aria-hidden="true"></i>
       <span class="wants">
         Wants to run <span class="tool">{shortToolName(live.pendingTool.name)}</span
         >{#if live.pendingTool.inputSummary}
@@ -296,9 +297,15 @@
       <button type="button" class="allow" onclick={allow}>Allow <kbd>y</kbd></button>
     </div>
   {:else if question}
-    <div class="ask">{plainText(question)}</div>
+    <div class="ask">
+      <i class="dot" aria-hidden="true"></i><span class="wants">{plainText(question)}</span>
+      <span class="open-hint"><kbd>⏎</kbd> open</span>
+    </div>
   {:else if needsYou}
-    <div class="ask">Waiting for your input</div>
+    <div class="ask">
+      <i class="dot" aria-hidden="true"></i><span class="wants">Waiting for your input</span>
+      <span class="open-hint"><kbd>⏎</kbd> open</span>
+    </div>
   {/if}
 
   {#if act && !permission}
@@ -342,12 +349,8 @@
       0 8px 24px rgba(0, 0, 0, 0.08);
   }
 
-  .tile.needs,
-  .tile.needs:hover {
-    box-shadow:
-      0 0 0 1px var(--warn),
-      0 1px 2px rgba(0, 0, 0, 0.04);
-  }
+  /* Needs-you draws no ring: the amber action bar (`.ask`) carries it, so the
+     ring is free to mean "focused" alone. */
 
   /* Its own ring rather than the hover lift: with the arrow keys moving focus
      around the grid, where focus is has to read differently from what the
@@ -358,16 +361,6 @@
       0 0 0 2px var(--accent),
       0 8px 24px rgba(0, 0, 0, 0.08);
     outline: none;
-  }
-
-  /* Focused and needs-you: stack both cues instead of one overriding the other. */
-  .tile.needs:focus-visible,
-  .tile.needs.focus-ring {
-    box-shadow:
-      0 0 0 2px var(--accent),
-      0 0 0 4px var(--surface),
-      0 0 0 5px var(--warn),
-      0 8px 24px rgba(0, 0, 0, 0.08);
   }
 
   /* ── Header ──────────────────────────────────────────────────────────── */
@@ -669,20 +662,40 @@
   }
 
   /* ── Callout ─────────────────────────────────────────────────────────── */
+  /* Solid full-width action bar. `--surface` is the ink: dark on the dark
+     theme's amber, white on the light theme's. */
   .ask {
-    flex-shrink: 0;
-    margin: 0 14px 10px;
-    border-left: 2px solid var(--warn);
-    background: color-mix(in srgb, var(--warn) 12%, var(--surface));
-    border-radius: 0 var(--r-md) var(--r-md) 0;
-    padding: 6px 10px;
-    color: var(--text);
-  }
-
-  .ask.permission {
     display: flex;
     align-items: center;
+    flex-shrink: 0;
     gap: 10px;
+    padding: 8px 14px;
+    background: var(--warn);
+    color: var(--surface);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+
+  .dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: agentPulse 1.6s ease-in-out infinite;
+  }
+
+  .open-hint {
+    flex-shrink: 0;
+    font-size: var(--fs-xs);
+  }
+
+  .open-hint kbd {
+    padding: 0 5px;
+    border: 1px solid currentColor;
+    border-radius: var(--r-xs);
+    font-family: var(--font-mono);
+    font-size: var(--fs-2xs);
   }
 
   .wants {
@@ -695,7 +708,6 @@
   }
 
   .tool {
-    color: var(--t-warn);
     font-family: var(--font-mono);
   }
 
@@ -723,16 +735,16 @@
   }
 
   .deny {
-    border: 1px solid var(--border2);
+    border: 1px solid currentColor;
     background: transparent;
-    color: var(--text);
+    color: inherit;
     font-weight: 500;
   }
 
   .allow {
     border: none;
-    background: var(--accent);
-    color: var(--accent-ink);
+    background: var(--surface);
+    color: var(--text);
     font-weight: 600;
   }
 
