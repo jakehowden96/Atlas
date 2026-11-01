@@ -4,15 +4,9 @@
   import { formatTokens } from "../../format";
   import type { SessionTile } from "../../overview";
   import { formatElapsed } from "../../overview";
-  import {
-    groupFilesByRepo,
-    planCounts,
-    planRowState,
-    subagentMeta,
-    type TouchedFile,
-  } from "../../session-view";
+  import { planCounts, planRowState, subagentMeta } from "../../session-view";
   import { fileWs, loadPlans, openFile, plans } from "../../stores/files";
-  import { diffOpen, showView } from "../../stores/view";
+  import { showView } from "../../stores/view";
   import { visibleWorkspaces } from "../../stores/workspace";
   import { closeWith } from "../ui/Modal.svelte";
 
@@ -23,11 +17,9 @@
     tile: SessionTile | null;
     /** `Date.now()`, ticked once a second by the view, for the elapsed clocks. */
     now: number;
-    /** Rows for "Files touched", already reduced from the git diff. */
-    files: TouchedFile[];
   }
 
-  let { open, tile, now, files }: Props = $props();
+  let { open, tile, now }: Props = $props();
 
   const EXIT_MS = 200;
 
@@ -87,7 +79,6 @@
 
   let live = $derived(tile?.live ?? null);
   let plan = $derived(planCounts(live?.plan ?? []));
-  let fileGroups = $derived(groupFilesByRepo(files));
   let subagents = $derived(live?.subagents ?? []);
   /* One dispatch can open twenty agents, so the list folds away. It starts
      open: the usual case is one or two, and hiding live work by default would
@@ -184,33 +175,6 @@
           <div class="stat-label">Tools</div>
           <div class="stat-value">{live.toolCalls}</div>
         </div>
-      </div>
-    </section>
-
-    <section>
-      <div class="heading">
-        <span>Files touched</span>
-        <button type="button" class="review" onclick={() => diffOpen.set(true)}>Review →</button>
-      </div>
-      <div class="files">
-        {#each fileGroups as group (group.repo)}
-          {#if group.repo}
-            <div class="repo-title">{group.repo}</div>
-          {/if}
-          <!-- Keyed by path alone: the key only has to be unique within this
-               group's own each block, and two repos can share a path. -->
-          {#each group.files as file (file.path)}
-            <div class="file">
-              <span class="file-path">{file.path}</span>
-              <span class="file-delta">
-                <span class="added">+{file.added}</span>
-                <span class="removed">−{file.removed}</span>
-              </span>
-            </div>
-          {/each}
-        {:else}
-          <span class="none">Working tree clean</span>
-        {/each}
       </div>
     </section>
   </aside>
@@ -420,7 +384,7 @@
     background: var(--warn);
   }
 
-  /* ── Files touched ─────────────────────────────────────────────────────── */
+  /* ── Plan "Open →" ─────────────────────────────────────────────────────── */
   .review {
     padding: 0;
     border: none;
@@ -432,50 +396,5 @@
     letter-spacing: 0;
     text-transform: none;
     cursor: pointer;
-  }
-
-  .files {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    color: var(--term-text);
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-  }
-
-  .file {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  .file-path {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* One per repo, only when the workspace holds more than one — the anchor
-     the file rows under it read against, not a file row itself. */
-  .repo-title {
-    margin-top: 8px;
-    color: var(--muted);
-    font-weight: 600;
-  }
-
-  .repo-title:first-child {
-    margin-top: 0;
-  }
-
-  .file-delta {
-    white-space: nowrap;
-  }
-
-  .added {
-    color: var(--accent);
-  }
-
-  .removed {
-    color: var(--danger);
   }
 </style>

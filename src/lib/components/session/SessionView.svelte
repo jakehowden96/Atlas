@@ -7,7 +7,7 @@
   import { compareByAttention, formatElapsed, type SessionTile } from "../../overview";
   import { closeSession } from "../../session-actions";
   import { refreshPanel } from "../../ipc";
-  import { filesTouched, tabIdForSession } from "../../session-view";
+  import { tabIdForSession } from "../../session-view";
   import { liveTiles } from "../../stores/liveTiles";
   import { panelData } from "../../stores/panel";
   import { activeTabId, tabs } from "../../stores/terminal";
@@ -80,7 +80,6 @@
   /* The workspace has its own chip in the header now, so the subtitle keeps
      only what changes underneath it. */
   let subtitle = $derived(tile ? [tile.branch, elapsed].filter(Boolean).join(" · ") : "");
-  let files = $derived(filesTouched($panelData));
 
   function focus(target: SessionTile) {
     focusedSessionId.set(target.atlasSessionId);
@@ -167,11 +166,11 @@
     </footer>
   </div>
 
-  <ActivityRail open={$railOpen} {tile} {now} {files} />
+  <ActivityRail open={$railOpen} {tile} {now} />
 
   <!-- Slides over the whole view, so it is a sibling of `.main` and the rail.
-       The header button above and the rail's "Review →" link both toggle
-       `diffOpen`; Esc closes it first (see `shortcuts.ts`). -->
+       The header button above toggles `diffOpen`; Esc closes it first
+       (see `shortcuts.ts`). -->
   <ChangesDrawer open={$diffOpen} />
 </div>
 
