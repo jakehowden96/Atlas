@@ -1,0 +1,97 @@
+/* Atlas token additions — proposed in the 2026-11 polish pass.
+   Nothing here renames or changes an existing token. Each block fills a gap the
+   audit named: no spacing scale, ten control heights, one elevation, ad hoc
+   z-index, per-component motion, no focus ring. Load after styles.css. */
+
+:root,
+[data-theme="light"] {
+  /* Spacing — 4px base with a 2px and 6px step for dense rows */
+  --sp-0: 2px;
+  --sp-1: 4px;
+  --sp-2: 6px;
+  --sp-3: 8px;
+  --sp-4: 12px;
+  --sp-5: 16px;
+  --sp-6: 20px;
+  --sp-7: 24px;
+  --sp-8: 32px;
+  --sp-9: 48px;
+
+  /* Control heights — replaces 20/22/24/26/28/30/32/36/40/44 */
+  --h-2xs: 18px; /* switch, count badge */
+  --h-xs: 20px;  /* status pill, inline tag */
+  --h-sm: 24px;  /* small button, compact row action */
+  --h-md: 28px;  /* default button, field, menu row, tree row */
+  --h-lg: 32px;  /* large button, list row, tab */
+  --h-xl: 40px;  /* palette input, modal footer buttons on touch */
+  --h-bar: 44px; /* top bar, view header, modal header */
+
+  /* Radius — one addition for pills (chips were 13, toggle 9, ws chip 20) */
+  --r-pill: 999px;
+
+  /* Elevation — level 0 is the flat card ring; 1 = menu, popover, tooltip;
+     2 = modal, drawer, toast (= the existing --shadow) */
+  --ring: 0 0 0 1px var(--border);
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 16px rgba(0, 0, 0, 0.08);
+  --elev-2: var(--shadow);
+
+  /* Focus — one ring everywhere: 2px --focus outline, 2px offset.
+     Neutral ink, never a state colour, so a focused failing row still reads
+     as failing. Clears 3:1 against every ground in both themes. */
+  --focus: var(--text);
+  --focus-width: 2px;
+  --focus-offset: 2px;
+
+  /* Layers — replaces 1, 4, 20, 30, 1000 */
+  --z-base: 0;
+  --z-sticky: 10;   /* pinned rail header, sticky table heads */
+  --z-drawer: 20;   /* Changes drawer */
+  --z-overlay: 30;  /* modal scrim + panel */
+  --z-popover: 40;  /* menu, popover, context menu, select list */
+  --z-toast: 50;
+  --z-tooltip: 60;
+  --z-titlebar: 70; /* macOS overlay title bar drag strip */
+
+  /* Motion — durations and easings; keyframes stay in motion.css */
+  --dur-instant: 80ms;  /* hover, press */
+  --dur-fast: 120ms;    /* twisty, toggle, tooltip */
+  --dur-base: 180ms;    /* fade, modal/toast exit, view switch */
+  --dur-slow: 280ms;    /* modal width, rail 300↔48, drawer */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --pulse: atlasPulse 1.6s ease-in-out infinite;
+}
+
+:root[data-theme="dark"],
+[data-theme="dark"] {
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --elev-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 16px rgba(0, 0, 0, 0.4);
+  }
+}
+
+@keyframes atlasSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Reduced motion: no pulse, no spin, no slide. Opacity fades shorten to
+   --dur-instant; state is still carried by words and shape, never motion. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 80ms;
+    --dur-slow: 0ms;
+    --pulse: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-iteration-count: 1 !important;
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}

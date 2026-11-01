@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="tokens/additions.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<style>body{margin:0;background:var(--surface2)} a{color:var(--text);text-decoration-color:var(--border2);text-underline-offset:3px} a:hover{text-decoration-color:var(--text)} .material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 20;font-size:18px}</style>
+</helmet>
+<div style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1800px;padding:48px 48px 8px;display:grid;gap:8px;font-family:var(--font-ui);color:var(--text)">
+  <h1 style="font-size:var(--fs-2xl);font-weight:var(--fw-semi)">Session rail · states beyond the happy path</h1>
+  <p style="max-width:100ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">Builds on Session Rail v6 (pinned ticket header with meter strip, Plan / Agents / PR tiles). Dots now use the status-mark shapes from the component sheet: circle running, diamond failing, triangle needs attention, ring done, small dot not yet.</p>
+</div>
+
+<section id="ticket" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1800px;padding:24px 48px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">1 · Ticket header: linking and editing</h2><p style="max-width:120ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">The editor replaces the ticket block in place; the meter strip below never moves. Enter links, Esc cancels and restores. The branch-name suggestion is a chip (Tab focuses it, Enter accepts). Lookups run once; failures keep the editor open with the reason and one way forward. A linked ticket's ⋯ menu holds change, open, copy and unlink. Tickets are fetched once, so the only refresh affordance is Retry.</p></div>
+  <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+    <div data-theme="{{ th.id }}" style="display:flex;flex-wrap:wrap;gap:20px;padding:24px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg)">
+      <span style="flex-basis:100%;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }}</span>
+
+      <div style="display:grid;gap:8px;align-content:start;width:300px"><span style="font-size:var(--fs-xs);color:var(--muted)">a · Linked, menu open</span>
+        <div style="position:relative;width:300px;border:1px solid var(--border);background:var(--bg)">
+          <div style="display:grid;gap:8px;min-height:134px;padding:16px 16px 14px;background:var(--surface2)">
+            <div style="display:flex;align-items:center;gap:8px"><span style="flex:1;font-family:var(--font-mono);font-size:var(--fs-xs);font-weight:var(--fw-semi)">ENG-482</span><span style="display:inline-flex;align-items:center;height:22px;padding:0 9px;border:1px solid currentColor;border-radius:11px;color:var(--accent);font-size:var(--fs-2xs);font-weight:var(--fw-semi)">In Progress</span><span style="display:grid;place-items:center;width:24px;height:24px;border-radius:var(--r-md);background:var(--surface3);color:var(--text)" aria-label="Ticket actions" aria-expanded="true"><span class="material-symbols-outlined" style="font-size:16px">more_horiz</span></span></div>
+            <span style="font-size:var(--fs-lg);font-weight:var(--fw-semi);line-height:22px">Retry failed webhook deliveries with backoff</span>
+            <span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">atlas/billing-retry · main</span>
+          </div>
+          <div style="background:var(--surface3)"><div style="height:2px;background:var(--border2)"><span style="display:block;width:28%;height:100%;background:var(--accent)"></span></div><div style="display:grid;grid-template-columns:.85fr 1.25fr 1fr;gap:8px;padding:10px 16px 12px"><div style="display:grid"><span style="font-size:var(--fs-2xs);color:var(--muted)">Context</span><span style="font-family:var(--font-mono);font-size:var(--fs-md);font-weight:var(--fw-medium)">28%</span></div><div style="display:grid"><span style="display:flex;align-items:center;gap:5px;font-size:var(--fs-2xs);color:var(--muted)"><span style="width:6px;height:6px;border-radius:50%;background:var(--model-sonnet)"></span>Sonnet</span><span style="font-family:var(--font-mono);font-size:var(--fs-md);font-weight:var(--fw-medium)">$0.84</span></div><div style="display:grid"><span style="font-size:var(--fs-2xs);color:var(--muted)">Elapsed</span><span style="font-family:var(--font-mono);font-size:var(--fs-md);font-weight:var(--fw-medium)">14m 02s</span></div></div></div>
+          <div role="menu" style="position:absolute;top:44px;right:12px;width:200px;display:grid;padding:4px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-card);box-shadow:var(--elev-1);font-size:var(--fs-sm)">
+            <span style="display:grid;grid-template-columns:18px 1fr auto;gap:8px;align-items:center;height:28px;padding:0 8px;border-radius:var(--r-md);background:var(--surface2)"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">edit</span>Change ticket<span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">E</span></span>
+            <span style="display:grid;grid-template-columns:18px 1fr;gap:8px;align-items:center;height:28px;padding:0 8px"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">open_in_new</span>Open in Linear</span>
+            <span style="display:grid;grid-template-columns:18px 1fr;gap:8px;align-items:center;height:28px;padding:0 8px"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">content_copy</span>Copy ID</span>
+            <span style="height:1px;margin:4px 0;background:var(--border)"></span>
+            <span style="display:grid;grid-template-columns:18px 1fr;gap:8px;align-items:center;height:28px;padding:0 8px;color:var(--danger)"><span class="material-symbols-outlined" style="font-size:16px">link_off</span>Unlink</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;gap:8px;align-content:start;width:300px"><span style="font-size:var(--fs-xs);color:var(--muted)">b · No ticket, connector linked</span>
+        <div style="width:300px;border:1px solid var(--border);background:var(--bg)">
+          <div style="display:grid;align-content:start;gap:8px;min-height:134px;padding:16px 16px 14px;background:var(--surface2)">
+            <span style="font-size:var(--fs-sm);color:var(--muted);line-height:22px">No ticket linked</span>
+            <span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">atlas/billing-retry · main</span>
+            <span style="display:inline-flex;justify-self:start;align-items:center;gap:6px;height:24px;margin-top:4px;padding:0 8px;border-radius:var(--r-md);border:1px solid var(--border2);background:var(--surface);font-size:var(--fs-xs);font-weight:var(--fw-medium)"><span class="material-symbols-outlined" style="font-size:16px">link</span>Link ticket<kbd style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">L</kbd></span>
+          </div>
+          <div style="height:62px;background:var(--surface3)"></div>
+        </div>
+      </div>
+
+      <div style="display:grid;gap:8px;align-content:start;width:300px"><span style="font-size:var(--fs-xs);color:var(--muted)">c · Editing, branch suggestion</span>
+        <div style="width:300px;border:1px solid var(--border);background:var(--bg)">
+          <div style="display:grid;align-content:start;gap:8px;min-height:134px;padding:14px 16px;background:var(--surface2)">
+            <label style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">Link a Linear ticket</label>
+            <span style="display:flex;align-items:center;height:28px;padding:0 10px;border:1px solid var(--text);border-radius:var(--r-md);background:var(--surface);font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--muted);outline:2px solid var(--focus);outline-offset:1px"><span style="width:1px;height:14px;margin-right:2px;background:var(--text)"></span>ID or URL</span>
+            <span style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:var(--fs-2xs);color:var(--muted)">From branch<span style="display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:var(--r-pill);border:1px solid var(--border2);background:var(--surface);color:var(--text);font-family:var(--font-mono)"><span class="material-symbols-outlined" style="font-size:14px;color:var(--muted)">add</span>ENG-482</span></span>
+            <span style="font-size:var(--fs-2xs);color:var(--muted)">↵ link · Esc cancel</span>
+          </div>
+          <div style="height:62px;background:var(--surface3)"></div>
+        </div>
+      </div>
+
+      <div style="display:grid;gap:8px;align-content:start;width:300px"><span style="font-size:var(--fs-xs);color:var(--muted)">d · Validating</span>
+        <div style="width:300px;border:1px solid var(--border);background:var(--bg)">
+          <div style="display:grid;align-content:start;gap:8px;min-height:134px;padding:14px 16px;background:var(--surface2)">
+            <label style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">Link a Linear ticket</label>
+            <span style="display:flex;align-items:center;gap:6px;height:28px;padding:0 6px 0 10px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);font-family:var(--font-mono);font-size:var(--fs-xs)"><span style="flex:1">ENG-482</span><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted);animation:atlasSpin .9s linear infinite">progress_activity</span></span>
+            <span style="font-size:var(--fs-2xs);color:var(--muted)" role="status">Looking up ENG-482</span>
+          </div>
+          <div style="height:62px;background:var(--surface3)"></div>
+        </div>
+      </div>
+
+      <div style="display:grid;gap:8px;align-content:start;width:300px"><span style="font-size:var(--fs-xs);color:var(--muted)">e · Not found</span>
+        <div style="width:300px;border:1px solid var(--border);background:var(--bg)">
+          <div style="display:grid;align-content:start;gap:8px;min-height:134px;padding:14px 16px;background:var(--surface2)">
+            <label style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">Link a Linear ticket</label>
+            <span style="display:flex;align-items:center;height:28px;padding:0 10px;border:1px solid var(--danger);border-radius:var(--r-md);background:var(--surface);font-family:var(--font-mono);font-size:var(--fs-xs)">ENG-4821</span>
+            <span style="display:flex;align-items:flex-start;gap:4px;font-size:var(--fs-2xs);color:var(--danger)" role="alert"><span class="material-symbols-outlined" style="font-size:14px">error</span>No ticket ENG-4821 in your Linear workspace</span>
+          </div>
+          <div style="height:62px;background:var(--surface3)"></div>
+        </div>
+      </div>
+
+      <div style="display:grid;gap:8px;align-content:start;width:300px"><span style="font-size:var(--fs-xs);color:var(--muted)">f · Unauthorized</span>
+        <div style="width:300px;border:1px solid var(--border);background:var(--bg)">
+          <div style="display:grid;align-content:start;gap:8px;min-height:134px;padding:14px 16px;background:var(--surface2)">
+            <label style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">Link a Linear ticket</label>
+            <span style="display:flex;align-items:center;height:28px;padding:0 10px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);font-family:var(--font-mono);font-size:var(--fs-xs)">ENG-482</span>
+            <span style="display:flex;align-items:flex-start;gap:4px;font-size:var(--fs-2xs);color:var(--warn)" role="alert"><span style="width:9px;height:8px;margin-top:3px;flex-shrink:0;background:currentColor;clip-path:polygon(50% 0,100% 100%,0 100%)"></span>Linear access expired</span>
+            <span style="font-size:var(--fs-xs);font-weight:var(--fw-medium);text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:3px">Reconnect Linear →</span>
+          </div>
+          <div style="height:62px;background:var(--surface3)"></div>
+        </div>
+      </div>
+
+      <div style="display:grid;gap:8px;align-content:start;width:300px"><span style="font-size:var(--fs-xs);color:var(--muted)">g · Offline</span>
+        <div style="width:300px;border:1px solid var(--border);background:var(--bg)">
+          <div style="display:grid;align-content:start;gap:8px;min-height:134px;padding:14px 16px;background:var(--surface2)">
+            <label style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">Link a Linear ticket</label>
+            <span style="display:flex;align-items:center;height:28px;padding:0 10px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);font-family:var(--font-mono);font-size:var(--fs-xs)">ENG-482</span>
+            <span style="display:flex;align-items:center;gap:6px;font-size:var(--fs-2xs);color:var(--muted)" role="status"><span class="material-symbols-outlined" style="font-size:14px">cloud_off</span>You're offline. Linking resumes when you're back<span style="margin-left:auto;font-weight:var(--fw-medium);color:var(--text);text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:3px">Retry</span></span>
+          </div>
+          <div style="height:62px;background:var(--surface3)"></div>
+        </div>
+      </div>
+
+      <div style="display:grid;gap:8px;align-content:start;width:300px"><span style="font-size:var(--fs-xs);color:var(--muted)">h · No ticket connector</span>
+        <div style="width:300px;border:1px solid var(--border);background:var(--bg)">
+          <div style="display:grid;align-content:start;gap:8px;min-height:134px;padding:16px 16px 14px;background:var(--surface2)">
+            <span style="font-size:var(--fs-sm);color:var(--muted);line-height:22px">No ticket linked</span>
+            <span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">atlas/billing-retry · main</span>
+            <span style="margin-top:4px;font-size:var(--fs-xs);font-weight:var(--fw-medium);text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:3px">Link Linear →</span>
+            <span style="font-size:var(--fs-2xs);color:var(--muted)">Opens Settings → Connectors</span>
+          </div>
+          <div style="height:62px;background:var(--surface3)"></div>
+        </div>
+      </div>
+
+      <div style="display:grid;gap:8px;align-content:start;width:300px"><span style="font-size:var(--fs-xs);color:var(--muted)">i · Linked, couldn't load</span>
+        <div style="width:300px;border:1px solid var(--border);background:var(--bg)">
+          <div style="display:grid;align-content:start;gap:8px;min-height:134px;padding:16px 16px 14px;background:var(--surface2)">
+            <div style="display:flex;align-items:center;gap:8px"><span style="flex:1;font-family:var(--font-mono);font-size:var(--fs-xs);font-weight:var(--fw-semi)">ENG-482</span><span style="display:grid;place-items:center;width:24px;height:24px;color:var(--muted)"><span class="material-symbols-outlined" style="font-size:16px">more_horiz</span></span></div>
+            <span style="display:flex;align-items:flex-start;gap:6px;font-size:var(--fs-xs);color:var(--muted)"><span class="material-symbols-outlined" style="font-size:16px">cloud_off</span>Couldn't load the ticket title<span style="margin-left:auto;font-weight:var(--fw-medium);color:var(--text);text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:3px">Retry</span></span>
+            <span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">atlas/billing-retry · main</span>
+          </div>
+          <div style="height:62px;background:var(--surface3)"></div>
+        </div>
+      </div>
+    </div>
+  </sc-for>
+</section>
+
+<section id="tiles" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1800px;padding:24px 48px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">2 · Tiles: loading, stale and connector states</h2><p style="max-width:120ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">First load shows skeletons in the final layout, never "Loading". A failed refresh keeps the last good data in --muted ink (no opacity), adds a footer line with the age and Retry, and rings the tile --warn. Connector problems replace the PR tile's body with one sentence and one link. PRs refresh every 60s while the rail is visible and pause when it isn't; rate limits back off and say when the next try is.</p></div>
+  <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+    <div data-theme="{{ th.id }}" style="display:flex;flex-wrap:wrap;gap:24px;padding:24px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg)">
+      <span style="flex-basis:100%;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }}</span>
+
+      <div style="display:grid;gap:8px;align-content:start;width:300px"><span style="font-size:var(--fs-xs);color:var(--muted)">First load</span>
+        <div style="width:300px;height:560px;display:flex;flex-direction:column;border:1px solid var(--border);background:var(--bg)" aria-busy="true">
+          <div style="display:grid;gap:10px;min-height:134px;padding:16px;background:var(--surface2)"><span style="width:64px;height:12px;border-radius:var(--r-xs);background:var(--surface3);animation:var(--pulse)"></span><span style="width:90%;height:14px;border-radius:var(--r-xs);background:var(--surface3);animation:var(--pulse)"></span><span style="width:60%;height:14px;border-radius:var(--r-xs);background:var(--surface3);animation:var(--pulse)"></span><span style="width:70%;height:10px;border-radius:var(--r-xs);background:var(--surface3);animation:var(--pulse)"></span></div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px 16px;background:var(--surface3)"><span style="height:28px;border-radius:var(--r-xs);background:var(--border2)"></span><span style="height:28px;border-radius:var(--r-xs);background:var(--border2)"></span><span style="height:28px;border-radius:var(--r-xs);background:var(--border2)"></span></div>
+          <div style="display:grid;gap:8px;padding:8px">
+            <div style="display:grid;gap:8px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card-lg)"><span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;color:var(--muted)">PLAN</span><span style="width:85%;height:10px;border-radius:var(--r-xs);background:var(--surface3);animation:var(--pulse)"></span></div>
+            <div style="display:grid;gap:8px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card-lg)"><span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;color:var(--muted)">AGENTS</span><span style="width:60%;height:10px;border-radius:var(--r-xs);background:var(--surface3);animation:var(--pulse)"></span></div>
+            <div style="display:grid;gap:8px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card-lg)"><span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;color:var(--muted)">PR</span><span style="width:75%;height:10px;border-radius:var(--r-xs);background:var(--surface3);animation:var(--pulse)"></span></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;gap:8px;align-content:start;width:300px"><span style="font-size:var(--fs-xs);color:var(--muted)">Refresh failed, last good data kept</span>
+        <div style="width:300px;display:grid;gap:8px;padding:8px;border:1px solid var(--border);background:var(--bg)">
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card-lg)"><div style="display:grid;grid-template-columns:10px minmax(0,1fr) 16px;column-gap:10px;row-gap:6px;padding:10px 14px"><span style="display:grid;place-items:center;height:20px"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent);animation:var(--pulse)"></span></span><span style="font-size:var(--fs-sm);line-height:20px"><span style="margin-right:8px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;color:var(--muted)">PLAN</span><span style="font-weight:var(--fw-medium)">Step 4 of 6:</span> Test the failure path</span><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted);line-height:20px">chevron_right</span><span></span><span style="height:2px;background:var(--surface3)"><span style="display:block;width:50%;height:100%;background:var(--muted)"></span></span></div></div>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card-lg)"><div style="display:grid;grid-template-columns:10px minmax(0,1fr) 16px;column-gap:10px;padding:10px 14px"><span style="display:grid;place-items:center;height:20px"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent);animation:var(--pulse)"></span></span><span style="font-size:var(--fs-sm);line-height:20px"><span style="margin-right:8px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;color:var(--muted)">AGENTS</span><span style="color:var(--accent);font-weight:var(--fw-medium)">1 running</span></span><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted);line-height:20px">chevron_right</span><span></span><span style="font-size:var(--fs-xs);color:var(--muted)">Write webhook failure test</span></div></div>
+          <div style="background:var(--surface);border:1px solid var(--warn);border-radius:var(--r-card-lg)">
+            <div style="display:grid;grid-template-columns:10px minmax(0,1fr) 16px;column-gap:10px;row-gap:2px;padding:10px 14px">
+              <span style="display:grid;place-items:center;height:20px"><span style="width:10px;height:9px;background:var(--warn);clip-path:polygon(50% 0,100% 100%,0 100%)"></span></span>
+              <span style="font-size:var(--fs-sm);line-height:20px;color:var(--muted)"><span style="margin-right:8px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em">PR</span>#482 open, 7 checks passed, approved</span>
+              <span class="material-symbols-outlined" style="font-size:16px;color:var(--muted);line-height:20px">chevron_right</span>
+              <span></span><span style="font-size:var(--fs-xs);color:var(--muted)">Add retry with backoff to the billing webhook</span><span></span>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;align-items:baseline;column-gap:6px;row-gap:2px;padding:8px 14px;border-top:1px solid var(--border);font-size:var(--fs-xs)"><span style="white-space:nowrap;color:var(--warn);font-weight:var(--fw-medium)">couldn't refresh</span><span style="white-space:nowrap;font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">· 2m ago</span><span style="margin-left:auto;font-weight:var(--fw-medium);text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:3px">Retry</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;gap:8px;align-content:start;width:300px"><span style="font-size:var(--fs-xs);color:var(--muted)">PR tile · connector and data states</span>
+        <div style="width:300px;display:grid;gap:8px;padding:8px;border:1px solid var(--border);background:var(--bg)">
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card-lg)"><div style="display:grid;grid-template-columns:10px minmax(0,1fr);column-gap:10px;row-gap:4px;padding:10px 14px"><span style="display:grid;place-items:center;height:20px"><span style="width:4px;height:4px;border-radius:50%;background:var(--muted)"></span></span><span style="font-size:var(--fs-sm);line-height:20px;color:var(--muted)"><span style="margin-right:8px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em">PR</span>No pull request connector</span><span></span><span style="font-size:var(--fs-xs);font-weight:var(--fw-medium);text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:3px">Link GitHub →</span></div></div>
+          <div style="background:var(--surface);border:1px solid var(--warn);border-radius:var(--r-card-lg)"><div style="display:grid;grid-template-columns:10px minmax(0,1fr);column-gap:10px;row-gap:4px;padding:10px 14px"><span style="display:grid;place-items:center;height:20px"><span style="width:10px;height:9px;background:var(--warn);clip-path:polygon(50% 0,100% 100%,0 100%)"></span></span><span style="font-size:var(--fs-sm);line-height:20px"><span style="margin-right:8px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;color:var(--muted)">PR</span><span style="color:var(--warn);font-weight:var(--fw-medium)">GitHub access expired</span></span><span></span><span style="font-size:var(--fs-xs);font-weight:var(--fw-medium);text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:3px">Reconnect →</span></div></div>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card-lg)"><div style="display:grid;grid-template-columns:10px minmax(0,1fr);column-gap:10px;row-gap:4px;padding:10px 14px"><span style="display:grid;place-items:center;height:20px"><span style="width:4px;height:4px;border-radius:50%;background:var(--muted)"></span></span><span style="font-size:var(--fs-sm);line-height:20px;color:var(--muted)"><span style="margin-right:8px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em">PR</span>No pull request for <span style="font-family:var(--font-mono);font-size:var(--fs-xs)">atlas/billing-retry</span></span><span></span><span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">checked 12s ago</span></div></div>
+          <div style="background:var(--surface);border:1px solid var(--warn);border-radius:var(--r-card-lg)"><div style="display:grid;grid-template-columns:10px minmax(0,1fr);column-gap:10px;row-gap:4px;padding:10px 14px"><span style="display:grid;place-items:center;height:20px"><span style="width:10px;height:9px;background:var(--warn);clip-path:polygon(50% 0,100% 100%,0 100%)"></span></span><span style="font-size:var(--fs-sm);line-height:20px"><span style="margin-right:8px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;color:var(--muted)">PR</span><span style="color:var(--warn);font-weight:var(--fw-medium)">Rate limited</span><span style="color:var(--muted)">, #482 open, approved</span></span><span></span><span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">next refresh in 4m 10s · data from 6m ago</span></div></div>
+        </div>
+      </div>
+
+      <div style="display:grid;gap:8px;align-content:start;width:300px"><span style="font-size:var(--fs-xs);color:var(--muted)">Plan and Agents · local read failures</span>
+        <div style="width:300px;display:grid;gap:8px;padding:8px;border:1px solid var(--border);background:var(--bg)">
+          <div style="background:var(--surface);border:1px solid var(--warn);border-radius:var(--r-card-lg)"><div style="display:grid;grid-template-columns:10px minmax(0,1fr);column-gap:10px;row-gap:4px;padding:10px 14px"><span style="display:grid;place-items:center;height:20px"><span style="width:10px;height:9px;background:var(--warn);clip-path:polygon(50% 0,100% 100%,0 100%)"></span></span><span style="font-size:var(--fs-sm);line-height:20px"><span style="margin-right:8px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;color:var(--muted)">PLAN</span><span style="color:var(--warn);font-weight:var(--fw-medium)">Couldn't read the plan file</span></span><span></span><span style="display:flex;gap:8px;font-size:var(--fs-xs)"><span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">~/.claude/plans/retry…md</span><span style="margin-left:auto;font-weight:var(--fw-medium);text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:3px">Retry</span></span></div></div>
+          <div style="background:var(--surface);border:1px solid var(--warn);border-radius:var(--r-card-lg)"><div style="display:grid;grid-template-columns:10px minmax(0,1fr);column-gap:10px;row-gap:4px;padding:10px 14px"><span style="display:grid;place-items:center;height:20px"><span style="width:10px;height:9px;background:var(--warn);clip-path:polygon(50% 0,100% 100%,0 100%)"></span></span><span style="font-size:var(--fs-sm);line-height:20px"><span style="margin-right:8px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;color:var(--muted)">AGENTS</span><span style="color:var(--warn);font-weight:var(--fw-medium)">Transcript stopped updating</span></span><span></span><span style="display:flex;gap:8px;font-size:var(--fs-xs)"><span style="color:var(--muted)">Last line 3m ago; agents may be stale</span><span style="margin-left:auto;font-weight:var(--fw-medium);text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:3px">Retry</span></span></div></div>
+        </div>
+      </div>
+    </div>
+  </sc-for>
+</section>
+
+<section id="thin" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1800px;padding:24px 48px 64px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">3 · Thin rail (48px) and the toggle</h2><p style="max-width:120ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">The ▥ glyph becomes an icon button (right_panel_close / right_panel_open) with a tooltip and ⌘\. It switches 300 ↔ 48 over --dur-slow with --ease-out; content fades out in the first 80ms so nothing reflows mid-slide (instant under reduced motion). Windows under 1000px start thin. In the thin rail each tile is a button: shape + letter, an accessible name with the full sentence, a tooltip on hover and focus, and Enter opens the rail at that tile. Tile open/closed choices persist globally; "+n more" and done folds reset per session.</p></div>
+  <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+    <div data-theme="{{ th.id }}" style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:28px;padding:24px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg)">
+      <span style="flex-basis:100%;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }}</span>
+
+      <div style="display:grid;gap:8px"><span style="font-size:var(--fs-xs);color:var(--muted)">Open · 300</span>
+        <div style="display:grid;width:300px;border:1px solid var(--border)">
+          <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;height:44px;padding:0 8px;background:var(--surface);border-bottom:1px solid var(--border)"><span style="display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:var(--r-lg);border:1px solid var(--border2);font-size:var(--fs-sm);font-weight:var(--fw-medium)">Changes<span style="font-family:var(--font-mono);color:var(--accent)">+86</span><span style="font-family:var(--font-mono);color:var(--danger)">−12</span></span><span style="display:grid;place-items:center;width:28px;height:28px;border-radius:var(--r-lg);background:var(--surface3)" aria-label="Collapse activity rail" aria-expanded="true"><span class="material-symbols-outlined">right_panel_close</span></span><span style="display:grid;place-items:center;width:28px;height:28px;color:var(--muted)"><span class="material-symbols-outlined">close</span></span></div>
+          <div style="display:grid;gap:8px;padding:16px;background:var(--surface2)"><span style="font-family:var(--font-mono);font-size:var(--fs-xs);font-weight:var(--fw-semi)">ENG-482</span><span style="font-size:var(--fs-lg);font-weight:var(--fw-semi);line-height:22px">Retry failed webhook deliveries with backoff</span></div>
+          <div style="height:58px;background:var(--surface3)"></div>
+          <div style="display:grid;gap:8px;padding:8px;background:var(--bg)">
+            <div style="display:flex;gap:10px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card-lg);font-size:var(--fs-sm)"><span style="width:8px;height:8px;margin-top:6px;border-radius:50%;background:var(--accent)"></span><span><span style="margin-right:8px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;color:var(--muted)">PLAN</span>Step 11 of 14</span></div>
+            <div style="display:flex;gap:10px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card-lg);font-size:var(--fs-sm)"><span style="width:8px;height:8px;margin-top:6px;border-radius:50%;background:var(--accent)"></span><span><span style="margin-right:8px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;color:var(--muted)">AGENTS</span><span style="color:var(--accent);font-weight:var(--fw-medium)">4 running</span>, 5 done</span></div>
+            <div style="display:flex;gap:10px;padding:10px 14px;background:var(--surface);border:1px solid var(--danger);border-radius:var(--r-card-lg);font-size:var(--fs-sm)"><span style="width:7px;height:7px;margin-top:7px;flex-shrink:0;background:var(--danger);transform:rotate(45deg)"></span><span><span style="margin-right:8px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;color:var(--muted)">PR</span>#482 open, <span style="color:var(--danger);font-weight:var(--fw-medium)">1 of 7 failing</span></span></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;gap:8px"><span style="font-size:var(--fs-xs);color:var(--muted)">Mid-transition · content already faded</span>
+        <div style="display:grid;grid-template-rows:44px 1fr;width:172px;height:420px;border:1px solid var(--border);background:var(--bg)"><div style="background:var(--surface);border-bottom:1px solid var(--border)"></div><div style="display:grid;grid-template-rows:auto 1fr"><div style="height:120px;background:var(--surface2)"></div><div></div></div></div>
+      </div>
+
+      <div style="display:grid;gap:8px"><span style="font-size:var(--fs-xs);color:var(--muted)">Thin · 48</span>
+        <div style="position:relative;display:grid;grid-template-rows:44px auto 1fr;width:48px;height:420px;border:1px solid var(--border);background:var(--bg)">
+          <div style="display:grid;place-items:center;background:var(--surface);border-bottom:1px solid var(--border)"><span style="display:grid;place-items:center;width:28px;height:28px;border-radius:var(--r-lg);color:var(--muted)" aria-label="Expand activity rail" aria-expanded="false"><span class="material-symbols-outlined">right_panel_open</span></span></div>
+          <div style="display:grid;justify-items:center;gap:10px;padding:12px 0;background:var(--surface2);border-bottom:1px solid var(--border)"><span style="width:10px;height:9px;background:var(--warn);clip-path:polygon(50% 0,100% 100%,0 100%)" aria-label="Session waiting for you"></span><span style="writing-mode:vertical-rl;transform:rotate(180deg);font-family:var(--font-mono);font-size:var(--fs-2xs);font-weight:var(--fw-semi)">ENG-482</span></div>
+          <div style="display:grid;align-content:start;justify-items:center;gap:6px;padding-top:10px">
+            <span role="button" aria-label="Plan: step 11 of 14, Parse Retry-After as an HTTP date" style="display:grid;justify-items:center;gap:3px;width:36px;padding:6px 0;border-radius:var(--r-md)"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent);animation:var(--pulse)"></span><span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);color:var(--muted)">P</span></span>
+            <span role="button" aria-label="Agents: 4 running, 5 done" style="display:grid;justify-items:center;gap:3px;width:36px;padding:6px 0;border-radius:var(--r-md);background:var(--surface2);outline:2px solid var(--focus);outline-offset:-2px"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent);animation:var(--pulse)"></span><span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);color:var(--muted)">A</span></span>
+            <span role="button" aria-label="Pull request 482: 1 of 7 checks failing, 3 review comments" style="display:grid;justify-items:center;gap:3px;width:36px;padding:6px 0;border-radius:var(--r-md)"><span style="width:7px;height:7px;background:var(--danger);transform:rotate(45deg)"></span><span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);color:var(--muted)">PR</span></span>
+          </div>
+          <span style="position:absolute;top:236px;right:54px;display:inline-flex;align-items:center;gap:8px;padding:4px 8px;border-radius:var(--r-sm);background:var(--ink);color:var(--ink-text);font-size:var(--fs-2xs);white-space:nowrap;box-shadow:var(--elev-1)">Agents: 4 running, 5 done</span>
+        </div>
+      </div>
+
+      <div style="display:grid;gap:10px;align-content:start;width:360px;padding-top:24px;font-size:var(--fs-xs)">
+        <span style="font-size:var(--fs-sm);font-weight:var(--fw-semi)">Thin rail marks</span>
+        <div style="display:grid;grid-template-columns:14px auto 1fr;column-gap:10px;row-gap:8px;align-items:center">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--accent)"></span><span style="color:var(--accent);font-weight:var(--fw-medium)">running</span><span style="color:var(--muted)">circle; pulses unless reduced motion</span>
+          <span style="width:7px;height:7px;background:var(--danger);transform:rotate(45deg)"></span><span style="color:var(--danger);font-weight:var(--fw-medium)">failing</span><span style="color:var(--muted)">diamond</span>
+          <span style="width:10px;height:9px;background:var(--warn);clip-path:polygon(50% 0,100% 100%,0 100%)"></span><span style="color:var(--warn);font-weight:var(--fw-medium)">waiting</span><span style="color:var(--muted)">triangle; also above the ticket ID when the session needs you</span>
+          <span style="width:8px;height:8px;border-radius:50%;border:1.5px solid var(--muted)"></span><span style="color:var(--muted);font-weight:var(--fw-medium)">done</span><span style="color:var(--muted)">ring</span>
+        </div>
+        <span style="color:var(--muted);text-wrap:pretty">Letters P, A, PR sit under each mark so position is never the only label. ↑↓ move between marks, Enter expands to that tile, ⌘\ toggles from anywhere in the session.</span>
+      </div>
+    </div>
+  </sc-for>
+</section></x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    return { themes: [{ id: 'dark', label: 'Dark' }, { id: 'light', label: 'Light' }] };
+  }
+}
+</script>
+</body>
+</html>

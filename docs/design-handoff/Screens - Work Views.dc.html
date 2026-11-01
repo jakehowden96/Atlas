@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="tokens/additions.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<style>body{margin:0;background:var(--surface2)} a{color:var(--text);text-decoration-color:var(--border2);text-underline-offset:3px} a:hover{text-decoration-color:var(--text)} .material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 20;font-size:18px}</style>
+</helmet>
+<div style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1600px;padding:48px 48px 8px;display:grid;gap:8px">
+  <h1 style="font-size:var(--fs-2xl);font-weight:var(--fw-semi)">Work views</h1>
+  <p style="max-width:100ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">Jump and New Session palettes, Changes drawer, Files, Stats, Settings copy and the shortcut sheet. Each frame shows the polished default plus the states that were unfinished.</p>
+</div>
+
+<section id="palettes" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1600px;padding:24px 48px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">1 · Jump (⌘K) and New Session</h2><p style="max-width:120ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">Both are one combobox pattern: input role="combobox" with aria-activedescendant, results role="listbox", rows are list rows. ›_ is replaced by the search or add glyph. New Session's mode is a segmented control (New / Resume / From PR), harness is a real radiogroup, and pasting a PR link switches mode by itself. "Reading transcripts" becomes skeleton rows.</p></div>
+  <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+    <div data-theme="{{ th.id }}" style="display:flex;gap:24px;align-items:flex-start;padding:24px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg)">
+      <div style="display:grid;gap:8px"><span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }} · Jump</span>
+        <div role="dialog" aria-label="Jump to session" style="width:560px;display:grid;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-modal);box-shadow:var(--elev-2);overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;height:48px;padding:0 14px;border-bottom:1px solid var(--border)"><span class="material-symbols-outlined" style="color:var(--muted)">search</span><span role="combobox" aria-expanded="true" style="flex:1;font-size:var(--fs-md)">ret<span style="display:inline-block;width:1px;height:16px;margin-left:1px;vertical-align:middle;background:var(--text)"></span></span><kbd style="padding:0 5px;border:1px solid var(--border2);border-radius:var(--r-xs);font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">Esc</kbd></div>
+          <div role="listbox" style="display:grid;gap:1px;padding:6px">
+            <span style="padding:6px 8px 2px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">Sessions</span>
+            <span role="option" aria-selected="true" style="display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:10px;align-items:center;height:36px;padding:0 10px;border-radius:var(--r-md);background:var(--surface3)"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent)"></span><span style="font-size:var(--fs-sm);font-weight:var(--fw-semi)">billing-<span style="text-decoration:underline">ret</span>ry <span style="font-family:var(--font-mono);font-size:var(--fs-xs);font-weight:var(--fw-body);color:var(--muted)">· billing · 14m</span></span><span style="font-size:var(--fs-xs);color:var(--accent);font-weight:var(--fw-medium)">running</span></span>
+            <span role="option" style="display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:10px;align-items:center;height:36px;padding:0 10px;border-radius:var(--r-md)"><span style="width:7px;height:7px;background:var(--danger);transform:rotate(45deg)"></span><span style="font-size:var(--fs-sm)"><span style="text-decoration:underline">ret</span>ry-after-header <span style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--muted)">· billing · 48m</span></span><span style="font-size:var(--fs-xs);color:var(--danger);font-weight:var(--fw-medium)">error</span></span>
+            <span style="padding:8px 8px 2px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">Actions</span>
+            <span role="option" style="display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:8px;align-items:center;height:32px;padding:0 10px;border-radius:var(--r-md);font-size:var(--fs-sm)"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">add</span>New session in billing named “ret”<kbd style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">⌘↵</kbd></span>
+          </div>
+          <div style="display:flex;gap:14px;padding:8px 14px;border-top:1px solid var(--border);font-size:var(--fs-2xs);color:var(--muted)"><span>↑↓ move</span><span>↵ open</span><span>⌘↵ new</span><span style="margin-left:auto">2 of 7 sessions</span></div>
+        </div>
+        <div role="dialog" aria-label="Jump to session" style="width:560px;display:grid;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-modal);box-shadow:var(--elev-2);overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;height:48px;padding:0 14px;border-bottom:1px solid var(--border)"><span class="material-symbols-outlined" style="color:var(--muted)">search</span><span style="flex:1;font-size:var(--fs-md)">zzz</span></div>
+          <div style="display:grid;justify-items:center;gap:4px;padding:20px;text-align:center"><span style="font-size:var(--fs-sm);font-weight:var(--fw-medium)">No session matches “zzz”</span><span style="font-size:var(--fs-xs);color:var(--muted)">⌘↵ starts a new one with that name</span></div>
+        </div>
+      </div>
+      <div style="display:grid;gap:8px"><span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }} · New Session, Resume, loading</span>
+        <div role="dialog" aria-labelledby="ns-t" style="width:760px;display:grid;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-modal);box-shadow:var(--elev-2);overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;height:48px;padding:0 14px;border-bottom:1px solid var(--border)"><span class="material-symbols-outlined" style="color:var(--muted)">add</span><span id="ns-t" style="flex:1;font-size:var(--fs-md);color:var(--muted)">Workspace, path or pull request link</span><span style="display:inline-flex;gap:1px;padding:2px;border-radius:var(--r-lg);background:var(--surface2);font-size:var(--fs-xs);font-weight:var(--fw-medium)" role="tablist"><span style="display:flex;align-items:center;height:22px;padding:0 10px;color:var(--muted)">New</span><span style="display:flex;align-items:center;height:22px;padding:0 10px;border-radius:var(--r-md);background:var(--surface);box-shadow:inset 0 0 0 1px var(--border2)">Resume</span><span style="display:flex;align-items:center;height:22px;padding:0 10px;color:var(--muted)">From PR</span></span></div>
+          <div style="display:grid;grid-template-columns:240px minmax(0,1fr);min-height:260px">
+            <div role="listbox" aria-label="Workspaces" style="display:grid;align-content:start;gap:1px;padding:6px;border-right:1px solid var(--border)">
+              <span style="display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:var(--r-md);background:var(--surface3);font-size:var(--fs-sm);font-weight:var(--fw-semi)"><span style="width:8px;height:8px;border-radius:2px;background:var(--model-haiku)"></span>billing<span style="margin-left:auto;font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted);font-weight:var(--fw-body)">12</span></span>
+              <span style="display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;font-size:var(--fs-sm)"><span style="width:8px;height:8px;border-radius:2px;background:var(--model-sonnet)"></span>atlas<span style="margin-left:auto;font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">31</span></span>
+              <span style="display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;font-size:var(--fs-sm);color:var(--muted)"><span class="material-symbols-outlined" style="font-size:16px">add</span>Add workspace</span>
+            </div>
+            <div style="display:grid;align-content:start;gap:1px;padding:6px" role="listbox" aria-busy="true" aria-label="Previous sessions in billing">
+              <span style="display:grid;gap:6px;padding:8px 10px;border-radius:var(--r-md)"><span style="width:60%;height:12px;border-radius:var(--r-xs);background:var(--surface3);animation:var(--pulse)"></span><span style="width:35%;height:10px;border-radius:var(--r-xs);background:var(--surface3);animation:var(--pulse)"></span></span>
+              <span style="display:grid;gap:6px;padding:8px 10px;border-radius:var(--r-md)"><span style="width:72%;height:12px;border-radius:var(--r-xs);background:var(--surface3);animation:var(--pulse)"></span><span style="width:30%;height:10px;border-radius:var(--r-xs);background:var(--surface3);animation:var(--pulse)"></span></span>
+              <span style="display:grid;gap:6px;padding:8px 10px;border-radius:var(--r-md)"><span style="width:50%;height:12px;border-radius:var(--r-xs);background:var(--surface3);animation:var(--pulse)"></span><span style="width:40%;height:10px;border-radius:var(--r-xs);background:var(--surface3);animation:var(--pulse)"></span></span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-top:1px solid var(--border)">
+            <span role="radiogroup" aria-label="Harness" style="display:flex;align-items:center;gap:14px;font-size:var(--fs-sm)"><span style="font-size:var(--fs-xs);color:var(--muted)">Harness</span><span role="radio" aria-checked="true" style="display:flex;align-items:center;gap:6px"><span style="display:grid;place-items:center;width:16px;height:16px;border-radius:50%;border:1.5px solid var(--ink)"><span style="width:7px;height:7px;border-radius:50%;background:var(--ink)"></span></span>Claude Code</span><span role="radio" aria-checked="false" style="display:flex;align-items:center;gap:6px"><span style="width:16px;height:16px;border-radius:50%;border:1.5px solid var(--border2)"></span>claude --model opus</span></span>
+            <span style="flex:1"></span>
+            <span style="font-size:var(--fs-2xs);color:var(--muted)">Tab mode · ⇧←→ columns</span>
+            <span style="display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--r-lg);background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-size:var(--fs-sm);font-weight:var(--fw-medium)">Resume</span>
+          </div>
+        </div>
+        <div style="width:760px;display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 12px;background:var(--surface);border:1px solid var(--danger);border-radius:var(--r-card)" role="alert"><span class="material-symbols-outlined" style="color:var(--danger)">error</span><div style="display:grid;gap:2px"><span style="font-size:var(--fs-sm);font-weight:var(--fw-medium)">From PR · couldn't check out #482</span><span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">git fetch origin pull/482/head · could not resolve host</span></div><span style="display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:var(--r-md);border:1px solid var(--border2);font-size:var(--fs-xs);font-weight:var(--fw-medium)">Retry</span></div>
+      </div>
+    </div>
+  </sc-for>
+</section>
+
+<section id="changes" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1600px;padding:24px 48px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">2 · Changes drawer and Files</h2><p style="max-width:120ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">Diff file header is a real disclosure button; "Viewed" is a sibling checkbox, not nested. Comment threads use the field and the sm buttons. Discard opens the destructive confirm. Files becomes a real tree with file-type icons, one compact empty line per section with an action, tabs with overflow, and the conflict bar as the shared banner.</p></div>
+  <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+    <div data-theme="{{ th.id }}" style="display:flex;gap:24px;align-items:flex-start;padding:24px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg)">
+      <div style="display:grid;gap:8px"><span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }} · Changes drawer</span>
+        <aside aria-labelledby="ch-t" style="width:640px;height:560px;display:grid;grid-template-rows:44px minmax(0,1fr) 52px;background:var(--surface);border:1px solid var(--border2);box-shadow:var(--elev-2)">
+          <div style="display:flex;align-items:center;gap:8px;padding:0 8px 0 16px;border-bottom:1px solid var(--border)"><span id="ch-t" style="font-size:var(--fs-sm);font-weight:var(--fw-semi)">Changes</span><span style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--muted)">4 files</span><span style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--accent)">+86</span><span style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--danger)">−12</span><span style="flex:1"></span><span style="display:inline-flex;gap:1px;padding:2px;border-radius:var(--r-lg);background:var(--surface2);font-size:var(--fs-xs);font-weight:var(--fw-medium)"><span style="display:flex;align-items:center;height:22px;padding:0 8px;border-radius:var(--r-md);background:var(--surface);box-shadow:inset 0 0 0 1px var(--border2)">Unified</span><span style="display:flex;align-items:center;height:22px;padding:0 8px;color:var(--muted)">Split</span></span><span style="display:grid;place-items:center;width:28px;height:28px;color:var(--muted)" aria-label="Close changes"><span class="material-symbols-outlined">close</span></span></div>
+          <div style="display:grid;align-content:start;gap:10px;padding:12px;overflow:hidden">
+            <div style="border:1px solid var(--border);border-radius:var(--r-card);overflow:hidden">
+              <div style="display:flex;align-items:center;gap:8px;height:36px;padding:0 10px;background:var(--surface2)"><span role="button" aria-expanded="true" style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;font-family:var(--font-mono);font-size:var(--fs-xs)"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted);transform:rotate(90deg)">chevron_right</span><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">code</span>src/webhook/send.rs</span><span style="font-family:var(--font-mono);font-size:var(--fs-xs)"><span style="color:var(--accent)">+38</span> <span style="color:var(--danger)">−4</span></span><label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-xs)"><span style="width:16px;height:16px;border-radius:var(--r-xs);border:1.5px solid var(--border2);background:var(--surface)"></span>Viewed</label></div>
+              <div style="display:grid;font-family:var(--font-mono);font-size:var(--fs-xs);line-height:20px">
+                <span style="display:grid;grid-template-columns:40px 1fr;color:var(--muted)"><span style="padding-right:8px;text-align:right">41</span><span>    let client = Client::new();</span></span>
+                <span style="display:grid;grid-template-columns:40px 1fr;background:color-mix(in srgb,var(--accent) 12%,transparent)"><span style="padding-right:8px;text-align:right;color:var(--muted)">42</span><span>+   let resp = retry(3, backoff(250), || send(&amp;client, &amp;evt))?;</span></span>
+                <span style="display:grid;grid-template-columns:40px 1fr;background:color-mix(in srgb,var(--danger) 10%,transparent)"><span style="padding-right:8px;text-align:right;color:var(--muted)">43</span><span>-   let resp = send(&amp;client, &amp;evt)?;</span></span>
+              </div>
+              <div style="display:grid;gap:8px;margin:8px 10px 10px 40px;padding:10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)">
+                <span style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">Your comment on line 42</span>
+                <span style="display:block;min-height:52px;padding:7px 10px;border:1px solid var(--text);border-radius:var(--r-md);font-size:var(--fs-sm);outline:2px solid var(--focus);outline-offset:1px">Retry-After can be an HTTP date as well as seconds</span>
+                <span style="display:flex;align-items:center;gap:6px"><span style="font-size:var(--fs-2xs);color:var(--muted)">⌘↵ save · ⇧↵ new line · Esc cancel</span><span style="flex:1"></span><span style="display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:var(--r-md);color:var(--muted);font-size:var(--fs-xs);font-weight:var(--fw-medium)">Cancel</span><span style="display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:var(--r-md);background:var(--ink);color:var(--ink-text);font-size:var(--fs-xs);font-weight:var(--fw-medium)">Add comment</span></span>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;height:36px;padding:0 10px;border:1px solid var(--border);border-radius:var(--r-card);color:var(--muted)"><span class="material-symbols-outlined" style="font-size:16px">chevron_right</span><span class="material-symbols-outlined" style="font-size:16px">article</span><span style="flex:1;font-family:var(--font-mono);font-size:var(--fs-xs)">CHANGELOG.md</span><span style="font-family:var(--font-mono);font-size:var(--fs-xs)">+6</span><span style="display:flex;align-items:center;gap:6px;font-size:var(--fs-xs);color:var(--text)"><span style="display:grid;place-items:center;width:16px;height:16px;border-radius:var(--r-xs);background:var(--ink);color:var(--ink-text)"><span class="material-symbols-outlined" style="font-size:14px">check</span></span>Viewed</span></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;padding:0 14px;border-top:1px solid var(--border)"><span style="font-size:var(--fs-xs);color:var(--muted)">4 comments, not sent</span><span style="flex:1"></span><span style="display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--r-lg);color:var(--danger);font-size:var(--fs-sm);font-weight:var(--fw-medium)">Discard…</span><span style="display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:var(--r-lg);background:var(--ink);color:var(--ink-text);font-size:var(--fs-sm);font-weight:var(--fw-medium)"><span class="material-symbols-outlined" style="font-size:16px">terminal</span>Send 4 to Claude</span></div>
+        </aside>
+      </div>
+      <div style="display:grid;gap:8px"><span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }} · Files at 1100</span>
+        <div style="width:760px;height:560px;display:grid;grid-template-columns:240px minmax(0,1fr);border:1px solid var(--border);background:var(--surface)">
+          <div style="display:flex;flex-direction:column;gap:6px;padding:10px 8px;background:var(--surface2);border-right:1px solid var(--border)">
+            <div style="display:flex;gap:6px"><span style="flex:1;display:flex;align-items:center;justify-content:space-between;height:28px;padding:0 6px 0 10px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);font-size:var(--fs-sm)">billing<span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">expand_more</span></span><span style="display:grid;place-items:center;width:28px;height:28px;color:var(--muted)" aria-label="New note"><span class="material-symbols-outlined">add</span></span></div>
+            <span style="display:flex;align-items:center;gap:6px;height:28px;padding:0 8px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);font-size:var(--fs-sm);color:var(--muted)"><span class="material-symbols-outlined" style="font-size:16px">search</span>Search files</span>
+            <div role="tree" style="display:grid;gap:1px;font-size:var(--fs-sm)">
+              <span role="treeitem" aria-expanded="true" style="display:flex;align-items:center;gap:4px;height:28px;padding:0 6px;font-weight:var(--fw-medium)"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted);transform:rotate(90deg)">chevron_right</span>Claude plans<span style="margin-left:auto;font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">2</span></span>
+              <span role="treeitem" aria-selected="true" style="display:flex;align-items:center;gap:6px;height:28px;padding:0 6px 0 26px;border-radius:var(--r-md);background:var(--surface3);font-weight:var(--fw-semi)"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">article</span>retry-plan.md</span>
+              <span role="treeitem" style="display:flex;align-items:center;gap:6px;height:28px;padding:0 6px 0 26px"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">article</span>pinned-tiles.md</span>
+              <span role="treeitem" aria-expanded="true" style="display:flex;align-items:center;gap:4px;height:28px;padding:0 6px;font-weight:var(--fw-medium)"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted);transform:rotate(90deg)">chevron_right</span>billing docs</span>
+              <span style="display:flex;align-items:center;gap:6px;padding:4px 6px 4px 26px;font-size:var(--fs-xs);color:var(--muted)">No docs folder yet<span style="margin-left:auto;font-weight:var(--fw-medium);color:var(--text);text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:3px">Create</span></span>
+              <span role="treeitem" aria-expanded="false" style="display:flex;align-items:center;gap:4px;height:28px;padding:0 6px;font-weight:var(--fw-medium)"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">chevron_right</span>From disk<span style="margin-left:auto;font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">1</span></span>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;min-width:0">
+            <div role="tablist" style="display:flex;align-items:stretch;height:36px;border-bottom:1px solid var(--border);font-size:var(--fs-sm)"><span role="tab" aria-selected="true" style="display:flex;align-items:center;gap:6px;padding:0 6px 0 12px;box-shadow:inset 0 -2px 0 var(--ink);font-weight:var(--fw-medium)"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">article</span>retry-plan.md<span style="display:grid;place-items:center;width:20px;height:20px"><span style="width:7px;height:7px;border-radius:50%;background:var(--text)" aria-label="unsaved"></span></span></span><span role="tab" style="display:flex;align-items:center;gap:6px;padding:0 6px 0 12px;color:var(--muted)"><span class="material-symbols-outlined" style="font-size:16px">code</span>retry.rs<span style="display:grid;place-items:center;width:20px;height:20px"><span class="material-symbols-outlined" style="font-size:14px">close</span></span></span><span style="flex:1"></span><span style="display:inline-flex;align-items:center;gap:6px;margin:4px 8px;padding:0 8px;border-radius:var(--r-md);border:1px solid var(--border2);font-size:var(--fs-xs);font-weight:var(--fw-medium)"><span class="material-symbols-outlined" style="font-size:16px">terminal</span>Ask Claude</span></div>
+            <div role="alert" style="display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:10px;align-items:center;margin:10px 12px 0;padding:8px 10px;border:1px solid var(--warn);border-radius:var(--r-card)"><span class="material-symbols-outlined" style="color:var(--warn)">warning</span><span style="font-size:var(--fs-xs)"><span style="font-weight:var(--fw-medium)">Changed on disk</span> <span style="color:var(--muted)">while you had unsaved edits</span></span><span style="display:flex;gap:6px"><span style="display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:var(--r-md);border:1px solid var(--border2);font-size:var(--fs-xs);font-weight:var(--fw-medium)">Compare</span><span style="display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:var(--r-md);border:1px solid var(--border2);font-size:var(--fs-xs);font-weight:var(--fw-medium)">Keep mine</span><span style="display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:var(--r-md);color:var(--muted);font-size:var(--fs-xs);font-weight:var(--fw-medium)">Load disk</span></span></div>
+            <div style="flex:1;display:grid;align-content:start;gap:8px;padding:16px 20px;font-size:var(--fs-sm);line-height:22px"><span style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">Retry with backoff</span><span>1. Find the webhook sender</span><span>2. Add a retry helper with backoff</span><span style="color:var(--muted)">3. Wrap sendWebhook, then test the failure path</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-for>
+</section>
+<section id="stats" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1600px;padding:24px 48px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">3 · Stats</h2><p style="max-width:120ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">Charts follow docs/chart-guidance.md: titled figures with a sentence caption, y-axis gridlines with units, direct value labels, a Chart / Table toggle per card, keyboard-reachable marks with the ink tooltip, and a heatmap whose steps are numbered. Model series are fills with their name beside them and a texture, never coloured text. At 800 the grid goes to one column.</p></div>
+  <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+    <div data-theme="{{ th.id }}" style="display:grid;gap:12px;padding:24px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg)">
+      <span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }} · 1400</span>
+      <div style="width:1400px;display:grid;gap:12px;padding:16px;border:1px solid var(--border);background:var(--bg)">
+        <div style="display:flex;align-items:center;gap:10px"><span style="display:inline-flex;gap:1px;padding:2px;border-radius:var(--r-lg);background:var(--surface2);font-size:var(--fs-sm);font-weight:var(--fw-medium)" role="radiogroup" aria-label="Range"><span style="display:flex;align-items:center;height:24px;padding:0 10px;color:var(--muted)">7 days</span><span style="display:flex;align-items:center;height:24px;padding:0 10px;border-radius:var(--r-md);background:var(--surface);box-shadow:inset 0 0 0 1px var(--border2)">30 days</span><span style="display:flex;align-items:center;height:24px;padding:0 10px;color:var(--muted)">90 days</span></span><span style="flex:1"></span><span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">664 transcripts · updated just now</span></div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">
+          <div style="display:grid;gap:2px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card-lg)"><span style="font-size:var(--fs-2xs);color:var(--muted)">Spend</span><span style="font-family:var(--font-mono);font-size:var(--fs-xl);font-weight:var(--fw-medium)">$84.20</span><span style="font-size:var(--fs-2xs);color:var(--muted)">+12% vs previous 30 days</span></div>
+          <div style="display:grid;gap:2px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card-lg)"><span style="font-size:var(--fs-2xs);color:var(--muted)">Sessions</span><span style="font-family:var(--font-mono);font-size:var(--fs-xl);font-weight:var(--fw-medium)">142</span><span style="font-size:var(--fs-2xs);color:var(--muted)">−4% vs previous 30 days</span></div>
+          <div style="display:grid;gap:2px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card-lg)"><span style="font-size:var(--fs-2xs);color:var(--muted)">Tool calls</span><span style="font-family:var(--font-mono);font-size:var(--fs-xl);font-weight:var(--fw-medium)">18,406</span><span style="font-size:var(--fs-2xs);color:var(--muted)">2.1% errored</span></div>
+          <div style="display:grid;gap:2px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card-lg)"><span style="font-size:var(--fs-2xs);color:var(--muted)">Median session</span><span style="font-family:var(--font-mono);font-size:var(--fs-xl);font-weight:var(--fw-medium)">22m</span><span style="font-size:var(--fs-2xs);color:var(--muted)">same as previous 30 days</span></div>
+        </div>
+        <div style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:12px">
+          <figure style="display:grid;gap:10px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card-lg)">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-size:var(--fs-sm);font-weight:var(--fw-semi)">Sessions by week</span><span style="flex:1"></span><span style="display:inline-flex;gap:1px;padding:2px;border-radius:var(--r-lg);background:var(--surface2);font-size:var(--fs-xs);font-weight:var(--fw-medium)"><span style="display:flex;align-items:center;height:22px;padding:0 8px;border-radius:var(--r-md);background:var(--surface);box-shadow:inset 0 0 0 1px var(--border2)">Chart</span><span style="display:flex;align-items:center;height:22px;padding:0 8px;color:var(--muted)">Table</span></span></div>
+            <figcaption style="font-size:var(--fs-xs);color:var(--muted)">Busiest week was 6 Oct with 41 sessions, mostly Sonnet</figcaption>
+            <div role="group" aria-label="Sessions by week, stacked by model" style="display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px;height:200px">
+              <div style="display:grid;align-content:space-between;justify-items:end;font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)"><span>40</span><span>20</span><span>0</span></div>
+              <div style="position:relative;display:grid;grid-template-columns:repeat(8,1fr);align-items:end;gap:14px;border-bottom:1px solid var(--border2)"><span style="position:absolute;left:0;right:0;top:0;height:1px;background:var(--border)"></span><span style="position:absolute;left:0;right:0;top:50%;height:1px;background:var(--border)"></span>
+                <sc-for list="{{ weeks }}" as="w" hint-placeholder-count="8">
+                  <div style="position:relative;display:flex;flex-direction:column;justify-content:flex-end;height:100%;outline:{{ w.outline }};outline-offset:2px">
+                    <sc-if value="{{ w.label }}"><span style="position:absolute;top:{{ w.labelTop }};left:0;right:0;text-align:center;font-family:var(--font-mono);font-size:var(--fs-2xs)">{{ w.total }}</span></sc-if>
+                    <span style="height:{{ w.h }};display:flex;flex-direction:column"><span style="flex:{{ w.o }};background:var(--model-opus);background-image:repeating-linear-gradient(45deg,transparent 0 3px,rgba(0,0,0,.18) 3px 4px)"></span><span style="flex:{{ w.s }};background:var(--model-sonnet)"></span><span style="flex:{{ w.k }};background:var(--model-haiku);background-image:radial-gradient(rgba(0,0,0,.22) 1px,transparent 1.2px);background-size:4px 4px"></span></span>
+                  </div>
+                </sc-for>
+                <span style="position:absolute;left:66%;top:-6px;display:grid;gap:2px;padding:6px 8px;border-radius:var(--r-sm);background:var(--ink);color:var(--ink-text);font-size:var(--fs-2xs);white-space:nowrap;box-shadow:var(--elev-1)"><span style="font-weight:var(--fw-semi)">Week of 6 Oct · 41 sessions</span><span style="font-family:var(--font-mono)">Sonnet 26 · Opus 9 · Haiku 6</span></span>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px"><span></span><div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)"><span>8 Sep</span><span>6 Oct</span><span>27 Oct</span></div></div>
+            <div style="display:flex;gap:16px;font-size:var(--fs-2xs)"><span style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:var(--model-sonnet)"></span>Sonnet</span><span style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:var(--model-opus);background-image:repeating-linear-gradient(45deg,transparent 0 3px,rgba(0,0,0,.18) 3px 4px)"></span>Opus</span><span style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:var(--model-haiku);background-image:radial-gradient(rgba(0,0,0,.22) 1px,transparent 1.2px);background-size:4px 4px"></span>Haiku</span></div>
+          </figure>
+          <figure style="display:grid;align-content:start;gap:10px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card-lg)">
+            <span style="font-size:var(--fs-sm);font-weight:var(--fw-semi)">Activity</span>
+            <figcaption style="font-size:var(--fs-xs);color:var(--muted)">Most active on Tuesdays · busiest day 14 Oct, 11 sessions</figcaption>
+            <div role="grid" aria-label="Sessions per day, last 12 weeks" style="display:grid;grid-template-columns:repeat(12,1fr);grid-template-rows:repeat(7,14px);grid-auto-flow:column;gap:3px">
+              <sc-for list="{{ heat }}" as="c" hint-placeholder-count="84"><span role="gridcell" aria-label="{{ c.label }}" style="border-radius:2px;background:{{ c.bg }};box-shadow:{{ c.ring }}"></span></sc-for>
+            </div>
+            <div style="display:flex;align-items:center;gap:4px;font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)"><span style="margin-right:4px">0</span><span style="width:14px;height:10px;border-radius:2px;background:var(--surface3)"></span><span style="width:14px;height:10px;border-radius:2px;background:color-mix(in srgb,var(--accent) 25%,var(--surface3))"></span><span style="width:14px;height:10px;border-radius:2px;background:color-mix(in srgb,var(--accent) 50%,var(--surface3))"></span><span style="width:14px;height:10px;border-radius:2px;background:color-mix(in srgb,var(--accent) 75%,var(--surface3))"></span><span style="width:14px;height:10px;border-radius:2px;background:var(--accent)"></span><span style="margin-left:4px">11 sessions</span><span style="flex:1"></span><span>steps 0 · 1–2 · 3–5 · 6–8 · 9+</span></div>
+            <div style="display:grid;gap:6px;padding:10px;border-radius:var(--r-card);background:var(--surface2);font-size:var(--fs-xs)"><span style="font-weight:var(--fw-semi)">Empty range</span><span style="color:var(--muted)">Axes stay drawn; the plot says “No sessions between 1 and 7 Sep”.</span></div>
+          </figure>
+        </div>
+      </div>
+    </div>
+  </sc-for>
+</section>
+
+<section id="settings-copy" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1600px;padding:24px 48px 64px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">4 · Settings copy, shortcut sheet</h2><p style="max-width:120ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">Copy says what the setting does for the person, not how Atlas is built. Shortcut sheet becomes a searchable dialog with grouped kbd rows; it uses the same kbd chip everywhere.</p></div>
+  <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+    <div data-theme="{{ th.id }}" style="display:flex;gap:24px;align-items:flex-start;padding:24px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg)">
+      <div style="width:760px;display:grid;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-card);overflow:hidden;font-size:var(--fs-xs)">
+        <div style="display:grid;grid-template-columns:1fr 1fr;background:var(--surface2);font-weight:var(--fw-semi)"><span style="padding:8px 12px">Today ({{ th.label }})</span><span style="padding:8px 12px">Proposed</span></div>
+        <sc-for list="{{ copy }}" as="c" hint-placeholder-count="6"><div style="display:grid;grid-template-columns:1fr 1fr;background:var(--surface)"><span style="padding:8px 12px;color:var(--muted);text-wrap:pretty">{{ c.a }}</span><span style="padding:8px 12px;text-wrap:pretty">{{ c.b }}</span></div></sc-for>
+      </div>
+      <div role="dialog" aria-labelledby="ks-t" style="width:520px;display:grid;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-modal);box-shadow:var(--elev-2)">
+        <div style="display:flex;align-items:center;gap:8px;height:44px;padding:0 8px 0 16px;border-bottom:1px solid var(--border)"><span id="ks-t" style="flex:1;font-size:var(--fs-md);font-weight:var(--fw-semi)">Keyboard shortcuts</span><span class="material-symbols-outlined" style="width:28px;text-align:center;color:var(--muted)">close</span></div>
+        <div style="padding:12px 16px 0"><span style="display:flex;align-items:center;gap:6px;height:28px;padding:0 8px;border:1px solid var(--border2);border-radius:var(--r-md);font-size:var(--fs-sm);color:var(--muted)"><span class="material-symbols-outlined" style="font-size:16px">search</span>Filter shortcuts</span></div>
+        <div style="display:grid;gap:12px;padding:12px 16px 16px">
+          <sc-for list="{{ keys }}" as="g" hint-placeholder-count="2"><div style="display:grid;gap:4px"><span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ g.title }}</span><sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="3"><div style="display:flex;align-items:center;justify-content:space-between;height:28px;font-size:var(--fs-sm)"><span>{{ r.label }}</span><kbd style="display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border:1px solid var(--border2);border-bottom-width:2px;border-radius:var(--r-xs);background:var(--surface);font-family:var(--font-mono);font-size:var(--fs-2xs)">{{ r.k }}</kbd></div></sc-for></div></sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-for>
+</section></x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const wk = [[3, 14, 5], [5, 18, 4], [6, 20, 7], [7, 21, 5], [9, 26, 6], [6, 19, 4], [4, 15, 6], [5, 17, 3]];
+    const weeks = wk.map(([o, s, k], i) => { const t = o + s + k; return { o, s, k, total: t, h: Math.round(t / 44 * 100) + '%', label: i === 4, labelTop: (100 - Math.round(t / 44 * 100) - 9) + '%', outline: i === 4 ? '2px solid var(--focus)' : 'none' }; });
+    const heat = Array.from({ length: 84 }, (_, i) => {
+      const day = i % 7, v = (day === 0 || day === 6) ? (i * 7) % 3 : ((i * 13) % 11);
+      const step = v === 0 ? 0 : v <= 2 ? 25 : v <= 5 ? 50 : v <= 8 ? 75 : 100;
+      return { bg: step === 0 ? 'var(--surface3)' : step === 100 ? 'var(--accent)' : `color-mix(in srgb, var(--accent) ${step}%, var(--surface3))`, ring: i === 37 ? '0 0 0 1px var(--text)' : 'none', label: v + ' sessions' };
+    });
+    const copy = [
+      { a: 'Atlas reads Claude Code\'s own signals — no proxying. Two hooks are installed into ~/.claude/settings.json', b: 'Atlas adds two small hooks to Claude Code so it can tell you when a session needs you. Your prompts never leave your machine' },
+      { a: 'Plan, subagents, tool calls and cost are not hooks…', b: 'Plans, agents and costs come from session transcripts, so they work without hooks' },
+      { a: 'gh auth status: ok · @jakehowden96', b: 'Moved to Connectors: Linked as jakehowden96' },
+      { a: 'via gh · refreshed 2m ago · every 5m', b: 'Updated 2m ago · refreshes every minute while visible' },
+      { a: 'or drop a folder anywhere in Atlas', b: 'Kept, now true: drop a folder anywhere in Atlas to add it' },
+      { a: 'No prior sessions in this workspace yet — start a New one.', b: 'No earlier sessions here. Start a new one' }
+    ];
+    const keys = [
+      { title: 'Anywhere', rows: [{ label: 'Jump to a session', k: '⌘K' }, { label: 'New session', k: '⌘N' }, { label: 'Toggle activity rail', k: '⌘\\' }] },
+      { title: 'Sessions grid', rows: [{ label: 'Move between tiles', k: '← ↑ → ↓' }, { label: 'Allow / deny on a tile that needs you', k: 'Y / N' }, { label: 'Open the focused session', k: '↵' }] }
+    ];
+    return { themes: [{ id: 'dark', label: 'Dark' }, { id: 'light', label: 'Light' }], weeks, heat, copy, keys };
+  }
+}
+</script>
+</body>
+</html>

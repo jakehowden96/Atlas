@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="tokens/additions.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<style>body{margin:0;background:var(--surface2)} a{color:var(--text);text-decoration-color:var(--border2);text-underline-offset:3px} a:hover{text-decoration-color:var(--text)} .material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 20;font-size:18px}</style>
+</helmet>
+<div style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1640px;padding:48px 48px 24px;display:grid;gap:8px;font-family:var(--font-ui);color:var(--text)">
+  <div style="display:flex;align-items:center;gap:12px">
+    <svg viewBox="0 0 24 24" width="28" height="28" aria-label="Atlas"><rect x="1" y="1" width="22" height="22" rx="6" fill="var(--ink)"></rect><rect x="6" y="6" width="5" height="5" rx="1.2" fill="var(--ink-text)"></rect><rect x="13" y="6" width="5" height="5" rx="1.2" fill="var(--ink-text)"></rect><rect x="6" y="13" width="5" height="5" rx="1.2" fill="var(--ink-text)"></rect><rect x="13.75" y="13.75" width="3.5" height="3.5" rx="1" fill="none" stroke="var(--ink-text)" stroke-width="1.5"></rect></svg>
+    <h1 style="font-size:var(--fs-2xl);font-weight:var(--fw-semi)">Atlas components</h1>
+  </div>
+  <p style="max-width:90ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">One sheet, light beside dark. Every value is an existing token or one from <span style="font-family:var(--font-mono)">tokens/additions.css</span>. Fewer patterns, used everywhere: one button family, one field, one row, one focus ring, one status mark.</p>
+</div>
+
+<section id="foundations" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1640px;padding:24px 48px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">1 · Foundations added</h2><p style="font-size:var(--fs-sm);color:var(--muted)">Spacing, heights, layers, motion and focus had no tokens. Radii and colours are unchanged except one --r-pill.</p></div>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+    <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+      <div data-theme="{{ th.id }}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg);padding:24px;display:grid;gap:22px;align-content:start;min-width:0">
+        <span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }}</span>
+        <div style="display:grid;gap:8px">
+          <span style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">Spacing <span style="font-family:var(--font-mono);color:var(--muted)">--sp-0 … --sp-9</span></span>
+          <div style="display:flex;align-items:flex-end;gap:14px;font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">
+            <div style="display:grid;gap:4px;justify-items:center"><span style="width:2px;height:24px;background:var(--text)"></span>2</div>
+            <div style="display:grid;gap:4px;justify-items:center"><span style="width:4px;height:24px;background:var(--text)"></span>4</div>
+            <div style="display:grid;gap:4px;justify-items:center"><span style="width:6px;height:24px;background:var(--text)"></span>6</div>
+            <div style="display:grid;gap:4px;justify-items:center"><span style="width:8px;height:24px;background:var(--text)"></span>8</div>
+            <div style="display:grid;gap:4px;justify-items:center"><span style="width:12px;height:24px;background:var(--text)"></span>12</div>
+            <div style="display:grid;gap:4px;justify-items:center"><span style="width:16px;height:24px;background:var(--text)"></span>16</div>
+            <div style="display:grid;gap:4px;justify-items:center"><span style="width:20px;height:24px;background:var(--text)"></span>20</div>
+            <div style="display:grid;gap:4px;justify-items:center"><span style="width:24px;height:24px;background:var(--text)"></span>24</div>
+            <div style="display:grid;gap:4px;justify-items:center"><span style="width:32px;height:24px;background:var(--text)"></span>32</div>
+            <div style="display:grid;gap:4px;justify-items:center"><span style="width:48px;height:24px;background:var(--text)"></span>48</div>
+          </div>
+        </div>
+        <div style="display:grid;gap:8px">
+          <span style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">Control heights <span style="font-family:var(--font-mono);color:var(--muted)">--h-2xs … --h-bar</span></span>
+          <div style="display:flex;align-items:flex-end;gap:10px;font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">
+            <div style="display:grid;gap:4px;justify-items:center"><span style="width:44px;height:18px;border:1px solid var(--border2);border-radius:var(--r-sm)"></span>18 switch</div>
+            <div style="display:grid;gap:4px;justify-items:center"><span style="width:44px;height:20px;border:1px solid var(--border2);border-radius:var(--r-sm)"></span>20 pill</div>
+            <div style="display:grid;gap:4px;justify-items:center"><span style="width:44px;height:24px;border:1px solid var(--border2);border-radius:var(--r-sm)"></span>24 sm</div>
+            <div style="display:grid;gap:4px;justify-items:center"><span style="width:44px;height:28px;border:1px solid var(--text);border-radius:var(--r-sm)"></span>28 md</div>
+            <div style="display:grid;gap:4px;justify-items:center"><span style="width:44px;height:32px;border:1px solid var(--border2);border-radius:var(--r-sm)"></span>32 lg</div>
+            <div style="display:grid;gap:4px;justify-items:center"><span style="width:44px;height:40px;border:1px solid var(--border2);border-radius:var(--r-sm)"></span>40 xl</div>
+            <div style="display:grid;gap:4px;justify-items:center"><span style="width:44px;height:44px;border:1px solid var(--border2);border-radius:var(--r-sm)"></span>44 bar</div>
+          </div>
+          <span style="font-size:var(--fs-2xs);color:var(--muted)">28 is the default control. 26 (today's most common) moves to 28; 22/30/36 are retired.</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">
+          <div style="display:grid;gap:6px;padding:14px;background:var(--surface);border-radius:var(--r-card);box-shadow:var(--ring)"><span style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">0 · ring</span><span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">cards, tiles</span></div>
+          <div style="display:grid;gap:6px;padding:14px;background:var(--surface);border-radius:var(--r-card);border:1px solid var(--border2);box-shadow:var(--elev-1)"><span style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">1 · --elev-1</span><span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">menu, popover, tooltip</span></div>
+          <div style="display:grid;gap:6px;padding:14px;background:var(--surface);border-radius:var(--r-card);border:1px solid var(--border2);box-shadow:var(--elev-2)"><span style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">2 · --elev-2</span><span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">modal, drawer, toast</span></div>
+        </div>
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;font-size:var(--fs-xs)">
+          <div style="display:grid;gap:4px;align-content:start">
+            <span style="font-weight:var(--fw-medium)">Layers</span>
+            <div style="display:grid;grid-template-columns:auto 1fr;column-gap:12px;row-gap:2px;font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">
+              <span style="color:var(--text)">70</span><span>--z-titlebar</span><span style="color:var(--text)">60</span><span>--z-tooltip</span><span style="color:var(--text)">50</span><span>--z-toast</span><span style="color:var(--text)">40</span><span>--z-popover</span><span style="color:var(--text)">30</span><span>--z-overlay</span><span style="color:var(--text)">20</span><span>--z-drawer</span><span style="color:var(--text)">10</span><span>--z-sticky</span>
+            </div>
+          </div>
+          <div style="display:grid;gap:4px;align-content:start">
+            <span style="font-weight:var(--fw-medium)">Motion</span>
+            <div style="display:grid;grid-template-columns:auto 1fr;column-gap:12px;row-gap:2px;font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">
+              <span style="color:var(--text)">80ms</span><span>instant · hover, press</span><span style="color:var(--text)">120ms</span><span>fast · twisty, tooltip</span><span style="color:var(--text)">180ms</span><span>base · fade, exit</span><span style="color:var(--text)">280ms</span><span>slow · rail, drawer</span><span style="color:var(--text)">out</span><span>enter · (.2,.8,.2,1)</span><span style="color:var(--text)">exit</span><span>leave · (.4,0,1,1)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</section>
+
+<section id="focus" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1640px;padding:24px 48px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">2 · Focus, interaction recipes, status mark</h2><p style="max-width:110ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">One focus ring for every focusable thing: <span style="font-family:var(--font-mono)">outline: 2px solid var(--focus); outline-offset: 2px</span> (−2px inside clipped lists). --focus is ink, never a state colour. Shown only on :focus-visible.</p></div>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+    <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+      <div data-theme="{{ th.id }}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg);padding:24px;display:grid;gap:22px;align-content:start;min-width:0">
+        <span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }}</span>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:18px">
+          <span style="display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--r-lg);background:var(--ink);color:var(--ink-text);font-size:var(--fs-sm);font-weight:var(--fw-medium);outline:2px solid var(--focus);outline-offset:2px">Primary</span>
+          <span style="display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--r-lg);background:var(--surface);border:1px solid var(--border2);font-size:var(--fs-sm);font-weight:var(--fw-medium);outline:2px solid var(--focus);outline-offset:2px">Secondary</span>
+          <span style="display:inline-flex;align-items:center;width:28px;height:28px;justify-content:center;border-radius:var(--r-lg);color:var(--muted);outline:2px solid var(--focus);outline-offset:2px"><span class="material-symbols-outlined">close</span></span>
+          <span style="position:relative;display:inline-block;width:32px;height:18px;border-radius:var(--r-pill);background:var(--accent);outline:2px solid var(--focus);outline-offset:2px"><span style="position:absolute;top:2px;left:16px;width:14px;height:14px;border-radius:50%;background:var(--accent-ink)"></span></span>
+          <span style="display:inline-flex;align-items:center;height:28px;width:180px;padding:0 10px;border-radius:var(--r-md);background:var(--surface);border:1px solid var(--text);font-size:var(--fs-sm);outline:2px solid var(--focus);outline-offset:1px">billing-retry</span>
+          <span style="display:inline-flex;align-items:center;height:32px;width:200px;padding:0 10px;border-radius:var(--r-md);background:var(--surface3);font-size:var(--fs-sm);font-weight:var(--fw-semi);outline:2px solid var(--focus);outline-offset:-2px">Selected + focused row</span>
+        </div>
+        <div style="display:grid;grid-template-columns:auto repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-card);overflow:hidden;font-size:var(--fs-xs)">
+          <span style="background:var(--surface);padding:8px 10px"></span><span style="background:var(--surface);padding:8px 10px;font-weight:var(--fw-medium)">rest</span><span style="background:var(--surface);padding:8px 10px;font-weight:var(--fw-medium)">hover</span><span style="background:var(--surface);padding:8px 10px;font-weight:var(--fw-medium)">active</span><span style="background:var(--surface);padding:8px 10px;font-weight:var(--fw-medium)">disabled</span>
+          <span style="background:var(--surface);padding:8px 10px;font-weight:var(--fw-medium)">on --surface</span><span style="background:var(--surface);padding:8px 10px;color:var(--muted)">transparent</span><span style="background:var(--surface);padding:8px 10px"><span style="background:var(--surface2);padding:2px 6px;border-radius:var(--r-sm)">--surface2</span></span><span style="background:var(--surface);padding:8px 10px"><span style="background:var(--surface3);padding:2px 6px;border-radius:var(--r-sm)">--surface3</span></span><span style="background:var(--surface);padding:8px 10px;color:var(--muted)">--muted ink, no fill, cursor default</span>
+          <span style="background:var(--surface);padding:8px 10px;font-weight:var(--fw-medium)">outlined</span><span style="background:var(--surface);padding:8px 10px;color:var(--muted)">--border2</span><span style="background:var(--surface);padding:8px 10px;color:var(--muted)">+ --surface2 fill</span><span style="background:var(--surface);padding:8px 10px;color:var(--muted)">--surface3 fill</span><span style="background:var(--surface);padding:8px 10px;color:var(--muted)">--border, --surface2, --muted</span>
+          <span style="background:var(--surface);padding:8px 10px;font-weight:var(--fw-medium)">ink fill</span><span style="background:var(--surface);padding:8px 10px;color:var(--muted)">--ink</span><span style="background:var(--surface);padding:8px 10px;color:var(--muted)">ink 88% over --bg</span><span style="background:var(--surface);padding:8px 10px;color:var(--muted)">ink 78% over --bg</span><span style="background:var(--surface);padding:8px 10px;color:var(--muted)">becomes outlined disabled</span>
+        </div>
+        <div style="display:grid;gap:8px">
+          <span style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">Status mark · shape carries the state, colour reinforces, a word always follows</span>
+          <div style="display:flex;flex-wrap:wrap;gap:20px;font-size:var(--fs-xs)">
+            <span style="display:flex;align-items:center;gap:8px"><span style="display:grid;place-items:center;width:10px;height:10px"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent);animation:var(--pulse)"></span></span><span style="color:var(--accent);font-weight:var(--fw-medium)">running</span><span style="color:var(--muted)">circle, pulses</span></span>
+            <span style="display:flex;align-items:center;gap:8px"><span style="display:grid;place-items:center;width:10px;height:10px"><span style="width:7px;height:7px;background:var(--danger);transform:rotate(45deg)"></span></span><span style="color:var(--danger);font-weight:var(--fw-medium)">failing</span><span style="color:var(--muted)">diamond</span></span>
+            <span style="display:flex;align-items:center;gap:8px"><span style="display:grid;place-items:center;width:10px;height:10px"><span style="width:10px;height:9px;background:var(--warn);clip-path:polygon(50% 0,100% 100%,0 100%)"></span></span><span style="color:var(--warn);font-weight:var(--fw-medium)">needs you</span><span style="color:var(--muted)">triangle</span></span>
+            <span style="display:flex;align-items:center;gap:8px"><span style="display:grid;place-items:center;width:10px;height:10px"><span style="width:8px;height:8px;border-radius:50%;border:1.5px solid var(--muted)"></span></span><span style="color:var(--muted);font-weight:var(--fw-medium)">done</span><span style="color:var(--muted)">ring</span></span>
+            <span style="display:flex;align-items:center;gap:8px"><span style="display:grid;place-items:center;width:10px;height:10px"><span style="width:4px;height:4px;border-radius:50%;background:var(--muted)"></span></span><span style="color:var(--muted);font-weight:var(--fw-medium)">idle, not yet</span><span style="color:var(--muted)">small dot</span></span>
+          </div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</section>
+
+<section id="icons" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1640px;padding:24px 48px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">3 · Icons and mark</h2><p style="max-width:110ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">One set: Material Symbols Outlined, weight 400, opsz 20, at 16 or 18px, --muted at rest. The subset grows to exactly these glyphs. The SVG rail toggle and the Unicode stand-ins (✕ ▥ ↑ ↗ ← ▸ › − +) go. ›_ stops being a logo; the mark below replaces it, and Ask Claude / Work on it use the terminal glyph.</p></div>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+    <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+      <div data-theme="{{ th.id }}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg);padding:24px;display:grid;gap:22px;align-content:start;min-width:0">
+        <span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }}</span>
+        <div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px">
+          <sc-for list="{{ icons }}" as="ic" hint-placeholder-count="36">
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--r-md);background:var(--surface);min-width:0">
+              <span class="material-symbols-outlined" style="color:var(--text)">{{ ic.g }}</span>
+              <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--fs-2xs);color:var(--muted)">{{ ic.use }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;align-items:center;gap:28px;padding-top:4px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <svg viewBox="0 0 24 24" width="40" height="40" aria-label="Atlas"><rect x="1" y="1" width="22" height="22" rx="6" fill="var(--ink)"></rect><rect x="6" y="6" width="5" height="5" rx="1.2" fill="var(--ink-text)"></rect><rect x="13" y="6" width="5" height="5" rx="1.2" fill="var(--ink-text)"></rect><rect x="6" y="13" width="5" height="5" rx="1.2" fill="var(--ink-text)"></rect><rect x="13.75" y="13.75" width="3.5" height="3.5" rx="1" fill="none" stroke="var(--ink-text)" stroke-width="1.5"></rect></svg>
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="1" y="1" width="22" height="22" rx="6" fill="var(--ink)"></rect><rect x="6" y="6" width="5" height="5" rx="1.2" fill="var(--ink-text)"></rect><rect x="13" y="6" width="5" height="5" rx="1.2" fill="var(--ink-text)"></rect><rect x="6" y="13" width="5" height="5" rx="1.2" fill="var(--ink-text)"></rect><rect x="13.75" y="13.75" width="3.5" height="3.5" rx="1" fill="none" stroke="var(--ink-text)" stroke-width="1.5"></rect></svg>
+            <span style="font-size:var(--fs-sm);font-weight:var(--fw-semi)">Atlas</span>
+          </div>
+          <p style="flex:1;font-size:var(--fs-xs);color:var(--muted);text-wrap:pretty">The mark: a grid of sessions, one still open. Ink only, never accent. 20px in the top bar beside the wordmark, 40px in empty states and About; the mascot photo stays for About and first run.</p>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</section>
+
+<section id="buttons" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1640px;padding:24px 48px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">4 · Button</h2><p style="max-width:110ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">Replaces .btn, .key-btn, .remove, .link, .link-ws, .primary/.secondary, .start, .send, .discard, .save, .ask, .add-row, .expand-btn and bare "Open →". Five variants, three sizes, radius --r-md (sm) / --r-lg (md, lg). One primary per surface.</p></div>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+    <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+      <div data-theme="{{ th.id }}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg);padding:24px;display:grid;gap:18px;align-content:start;min-width:0">
+        <span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }}</span>
+        <div style="display:grid;grid-template-columns:64px repeat(5,max-content);gap:12px 18px;align-items:center;font-size:var(--fs-sm)">
+          <span></span><span style="font-size:var(--fs-2xs);color:var(--muted)">primary</span><span style="font-size:var(--fs-2xs);color:var(--muted)">secondary</span><span style="font-size:var(--fs-2xs);color:var(--muted)">ghost</span><span style="font-size:var(--fs-2xs);color:var(--muted)">danger</span><span style="font-size:var(--fs-2xs);color:var(--muted)">link</span>
+          <span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">lg · 32</span>
+          <span><span style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:var(--r-lg);background:var(--ink);color:var(--ink-text);font-weight:var(--fw-medium)">Start session</span></span>
+          <span><span style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:var(--r-lg);background:var(--surface);border:1px solid var(--border2);font-weight:var(--fw-medium)">Resume</span></span>
+          <span><span style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:var(--r-lg);color:var(--muted);font-weight:var(--fw-medium)">Cancel</span></span>
+          <span><span style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:var(--r-lg);background:var(--surface);border:1px solid var(--border2);color:var(--danger);font-weight:var(--fw-medium)">Disconnect</span></span>
+          <span><span style="font-weight:var(--fw-medium);text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:3px">Open plan file</span></span>
+          <span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">md · 28</span>
+          <span><span style="display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:var(--r-lg);background:var(--ink);color:var(--ink-text);font-weight:var(--fw-medium)"><span class="material-symbols-outlined" style="font-size:16px">add</span>Session<span style="font-family:var(--font-mono);font-size:var(--fs-2xs);opacity:.7">⌘N</span></span></span>
+          <span><span style="display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:var(--r-lg);background:var(--surface);border:1px solid var(--border2);font-weight:var(--fw-medium)">Changes<span style="font-family:var(--font-mono);color:var(--accent)">+86</span><span style="font-family:var(--font-mono);color:var(--danger)">−12</span></span></span>
+          <span><span style="display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:var(--r-lg);background:var(--surface2);color:var(--text);font-weight:var(--fw-medium)">Hover</span></span>
+          <span><span style="display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:var(--r-lg);background:var(--surface2);border:1px solid var(--danger);color:var(--danger);font-weight:var(--fw-medium)">Hover</span></span>
+          <span><span style="font-weight:var(--fw-medium);text-decoration:underline;text-decoration-color:var(--text);text-underline-offset:3px">Hover</span></span>
+          <span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">sm · 24</span>
+          <span><span style="display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 8px;border-radius:var(--r-md);background:var(--ink);color:var(--ink-text);font-size:var(--fs-xs);font-weight:var(--fw-medium)">Send</span></span>
+          <span><span style="display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 8px;border-radius:var(--r-md);background:var(--surface);border:1px solid var(--border2);font-size:var(--fs-xs);font-weight:var(--fw-medium)">Retry</span></span>
+          <span><span style="display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 8px;border-radius:var(--r-md);color:var(--muted);font-size:var(--fs-xs);font-weight:var(--fw-medium)"><span class="material-symbols-outlined" style="font-size:16px">add</span>Add row</span></span>
+          <span><span style="display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 8px;border-radius:var(--r-md);background:var(--surface);border:1px solid var(--border2);color:var(--danger);font-size:var(--fs-xs);font-weight:var(--fw-medium)">Discard</span></span>
+          <span><span style="font-size:var(--fs-xs);font-weight:var(--fw-medium);text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:3px">Open</span></span>
+          <span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">states</span>
+          <span><span style="display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:var(--r-lg);background:var(--ink);color:var(--ink-text);font-weight:var(--fw-medium)" aria-busy="true"><span class="material-symbols-outlined" style="font-size:16px;animation:atlasSpin 0.9s linear infinite">progress_activity</span>Starting</span></span>
+          <span><span style="display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:var(--r-lg);background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-weight:var(--fw-medium)">Disabled</span></span>
+          <span style="display:flex;gap:6px">
+            <span style="display:inline-grid;place-items:center;width:24px;height:24px;border-radius:var(--r-md);color:var(--muted)"><span class="material-symbols-outlined" style="font-size:16px">close</span></span>
+            <span style="display:inline-grid;place-items:center;width:28px;height:28px;border-radius:var(--r-lg);color:var(--muted)"><span class="material-symbols-outlined">settings</span></span>
+            <span style="display:inline-grid;place-items:center;width:28px;height:28px;border-radius:var(--r-lg);background:var(--surface);border:1px solid var(--border2);color:var(--text)"><span class="material-symbols-outlined">right_panel_close</span></span>
+          </span>
+          <span style="grid-column:5 / 7;max-width:300px;font-size:var(--fs-2xs);color:var(--muted);text-wrap:pretty">Icon-only buttons are square at the size's height, always carry aria-label and a tooltip. Loading keeps the label and width; disabled never uses opacity.</span>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</section>
+
+<section id="fields" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1640px;padding:24px 48px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">5 · Field, choice controls</h2><p style="max-width:110ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">One field anatomy: label (13 medium) above, control at --h-md, help (12 muted) or error (12 --danger with icon) below, linked by aria-describedby. Settings fields save on blur and confirm with an inline "saved" tick; errors stay until fixed.</p></div>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+    <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+      <div data-theme="{{ th.id }}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg);padding:24px;display:grid;gap:22px;align-content:start;min-width:0">
+        <span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }}</span>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px 16px;align-items:start">
+          <label style="display:grid;gap:6px"><span style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">Session label</span><span style="display:flex;align-items:center;height:28px;padding:0 10px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);font-size:var(--fs-sm)">billing-retry</span><span style="font-size:var(--fs-2xs);color:var(--muted)">Shown on the tile and in Jump</span></label>
+          <label style="display:grid;gap:6px"><span style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">Harness command</span><span style="display:flex;align-items:center;height:28px;padding:0 10px;border:1px solid var(--text);border-radius:var(--r-md);background:var(--surface);font-family:var(--font-mono);font-size:var(--fs-xs);outline:2px solid var(--focus);outline-offset:1px">claude --model opus<span style="width:1px;height:14px;background:var(--text);margin-left:1px"></span></span><span style="display:flex;align-items:center;gap:4px;font-size:var(--fs-2xs);color:var(--accent)"><span class="material-symbols-outlined" style="font-size:14px">check</span>saved</span></label>
+          <label style="display:grid;gap:6px"><span style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">Repository</span><span style="display:flex;align-items:center;height:28px;padding:0 10px;border:1px solid var(--danger);border-radius:var(--r-md);background:var(--surface);font-family:var(--font-mono);font-size:var(--fs-xs)">jakehowden96</span><span style="display:flex;align-items:center;gap:4px;font-size:var(--fs-2xs);color:var(--danger)"><span class="material-symbols-outlined" style="font-size:14px">error</span>Use owner/name, e.g. jakehowden96/Atlas</span></label>
+          <label style="display:grid;gap:6px"><span style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">Review comment</span><span style="display:block;min-height:72px;padding:7px 10px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);font-size:var(--fs-sm);line-height:20px">Retry-After can be an HTTP date as well as seconds</span><span style="display:flex;justify-content:space-between;font-size:var(--fs-2xs);color:var(--muted)"><span>⌘↵ to add</span><span style="font-family:var(--font-mono)">49/2000</span></span></label>
+          <label style="display:grid;gap:6px"><span style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">Theme</span><span style="display:flex;align-items:center;justify-content:space-between;height:28px;padding:0 6px 0 10px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);font-size:var(--fs-sm)">Match system<span class="material-symbols-outlined" style="color:var(--muted)">expand_more</span></span></label>
+          <label style="display:grid;gap:6px"><span style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">Terminal font size</span><span style="display:grid;grid-template-columns:28px 1fr 28px;align-items:center;width:120px;height:28px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface)"><span class="material-symbols-outlined" style="justify-self:center;font-size:16px;color:var(--muted)">remove</span><span style="text-align:center;font-family:var(--font-mono);font-size:var(--fs-sm)">13</span><span class="material-symbols-outlined" style="justify-self:center;font-size:16px;color:var(--muted)">add</span></span></label>
+          <label style="display:grid;gap:6px"><span style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">Search</span><span style="display:flex;align-items:center;gap:6px;height:28px;padding:0 4px 0 8px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);font-size:var(--fs-sm)"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">search</span><span style="flex:1">retry</span><span style="display:grid;place-items:center;width:20px;height:20px;border-radius:var(--r-sm);color:var(--muted)"><span class="material-symbols-outlined" style="font-size:16px">close</span></span></span></label>
+          <label style="display:grid;gap:6px;grid-column:span 2"><span style="font-size:var(--fs-xs);font-weight:var(--fw-medium)">Ignored folders</span><span style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-height:28px;padding:3px 4px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface)"><span style="display:inline-flex;align-items:center;gap:2px;height:20px;padding:0 2px 0 7px;border-radius:var(--r-sm);background:var(--surface3);font-family:var(--font-mono);font-size:var(--fs-2xs)">node_modules<span class="material-symbols-outlined" style="font-size:14px;color:var(--muted)">close</span></span><span style="display:inline-flex;align-items:center;gap:2px;height:20px;padding:0 2px 0 7px;border-radius:var(--r-sm);background:var(--surface3);font-family:var(--font-mono);font-size:var(--fs-2xs)">target<span class="material-symbols-outlined" style="font-size:14px;color:var(--muted)">close</span></span><span style="padding:0 4px;font-size:var(--fs-sm);color:var(--muted)">Add a folder and press ↵</span></span></label>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:22px;font-size:var(--fs-sm)">
+          <span style="display:flex;align-items:center;gap:8px"><span style="display:grid;place-items:center;width:16px;height:16px;border-radius:var(--r-xs);background:var(--ink);color:var(--ink-text)"><span class="material-symbols-outlined" style="font-size:14px">check</span></span>Viewed</span>
+          <span style="display:flex;align-items:center;gap:8px"><span style="width:16px;height:16px;border-radius:var(--r-xs);border:1.5px solid var(--border2);background:var(--surface)"></span>Unchecked</span>
+          <span style="display:flex;align-items:center;gap:8px;color:var(--muted)"><span style="width:16px;height:16px;border-radius:var(--r-xs);border:1.5px solid var(--border);background:var(--surface2)"></span>Disabled</span>
+          <span style="display:flex;align-items:center;gap:8px"><span style="display:grid;place-items:center;width:16px;height:16px;border-radius:50%;border:1.5px solid var(--ink)"><span style="width:7px;height:7px;border-radius:50%;background:var(--ink)"></span></span>New</span>
+          <span style="display:flex;align-items:center;gap:8px"><span style="width:16px;height:16px;border-radius:50%;border:1.5px solid var(--border2);background:var(--surface)"></span>Resume</span>
+          <span style="display:flex;align-items:center;gap:8px"><span style="position:relative;display:inline-block;width:32px;height:18px;border-radius:var(--r-pill);background:var(--accent)"><span style="position:absolute;top:2px;left:16px;width:14px;height:14px;border-radius:50%;background:var(--accent-ink)"></span></span>On</span>
+          <span style="display:flex;align-items:center;gap:8px"><span style="position:relative;display:inline-block;width:32px;height:18px;border-radius:var(--r-pill);background:var(--surface3);box-shadow:inset 0 0 0 1px var(--border2)"><span style="position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--muted)"></span></span>Off</span>
+        </div>
+        <span style="font-size:var(--fs-2xs);color:var(--muted)">Radios are real role="radio" in a role="radiogroup", arrow keys move. The switch knob uses --accent-ink / --muted, never #fff.</span>
+      </div>
+    </sc-for>
+  </div>
+</section>
+
+<section id="badges" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1640px;padding:24px 48px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">6 · Kbd, badge, status pill, chip</h2><p style="max-width:110ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">The view-switch alert badge stops being white on --warn (2.1:1 in dark): it becomes a ringed --warn count. Pills gain the status mark so state is shape + word. Chips move to --r-pill.</p></div>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+    <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+      <div data-theme="{{ th.id }}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg);padding:24px;display:grid;gap:18px;align-content:start;min-width:0">
+        <span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }}</span>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px">
+          <kbd style="display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border:1px solid var(--border2);border-bottom-width:2px;border-radius:var(--r-xs);background:var(--surface);font-family:var(--font-mono);font-size:var(--fs-2xs)">⌘K</kbd>
+          <kbd style="display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border:1px solid var(--border2);border-bottom-width:2px;border-radius:var(--r-xs);background:var(--surface);font-family:var(--font-mono);font-size:var(--fs-2xs)">Esc</kbd>
+          <span style="display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:var(--r-pill);background:var(--surface3);font-family:var(--font-mono);font-size:var(--fs-2xs);font-weight:var(--fw-medium)">12</span>
+          <span style="display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:var(--r-pill);border:1px solid var(--warn);color:var(--warn);font-family:var(--font-mono);font-size:var(--fs-2xs);font-weight:var(--fw-semi)">3</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 8px;border-radius:var(--r-pill);background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font-size:var(--fs-xs);font-weight:var(--fw-semi)"><span style="width:6px;height:6px;border-radius:50%;background:currentColor;animation:var(--pulse)"></span>Running</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 8px;border-radius:var(--r-pill);background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn);font-size:var(--fs-xs);font-weight:var(--fw-semi)"><span style="width:8px;height:7px;background:currentColor;clip-path:polygon(50% 0,100% 100%,0 100%)"></span>Needs you</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 8px;border-radius:var(--r-pill);background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger);font-size:var(--fs-xs);font-weight:var(--fw-semi)"><span style="width:6px;height:6px;background:currentColor;transform:rotate(45deg)"></span>Error</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 8px;border-radius:var(--r-pill);background:var(--surface3);color:var(--muted);font-size:var(--fs-xs);font-weight:var(--fw-semi)"><span style="width:4px;height:4px;border-radius:50%;background:currentColor"></span>Idle</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+          <span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:var(--r-pill);border:1px solid var(--text);background:var(--ink);color:var(--ink-text);font-size:var(--fs-sm);font-weight:var(--fw-medium)">All<span style="font-family:var(--font-mono);font-size:var(--fs-2xs)">7</span></span>
+          <span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:var(--r-pill);border:1px solid var(--border);background:var(--surface);font-size:var(--fs-sm);font-weight:var(--fw-medium)"><span style="width:8px;height:8px;border-radius:2px;background:var(--model-sonnet)"></span>atlas<span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">4</span></span>
+          <span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:var(--r-pill);border:1px solid var(--border);background:var(--surface);font-size:var(--fs-sm);font-weight:var(--fw-medium)"><span style="width:8px;height:8px;border-radius:2px;background:var(--model-haiku)"></span>billing<span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">3</span></span>
+          <span style="display:inline-flex;align-items:center;height:20px;padding:0 6px;border:1px solid var(--border2);border-radius:var(--r-xs);font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">retry-metrics</span>
+          <span style="font-size:var(--fs-2xs);color:var(--muted);max-width:44ch">Workspace colour is a swatch only; the name stays --text. Today's workspace chip sets the name in the tag colour, which is unchecked for contrast.</span>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</section>
+
+<section id="feedback" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1640px;padding:24px 48px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">7 · Banner, inline alert, toast</h2><p style="max-width:110ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">Banner: inside a view or panel, persists until resolved; warn and error take the matching ring (the tile rule). Inline alert: one line under a field or row. Toast: transient, bottom-right, elev-2. Errors are role="alert" and stay until dismissed; info and success leave after 5s (paused on hover or focus); max 3 shown, older collapse to "+n more", all kept in Notifications.</p></div>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+    <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+      <div data-theme="{{ th.id }}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg);padding:24px;display:grid;gap:14px;align-content:start;min-width:0">
+        <span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }}</span>
+        <div style="display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card)"><span class="material-symbols-outlined" style="color:var(--muted)">info</span><div style="display:grid;gap:2px"><span style="font-size:var(--fs-sm);font-weight:var(--fw-medium)">Watched repositories moved</span><span style="font-size:var(--fs-xs);color:var(--muted)">They now live under each pull request connector in Settings</span></div><span style="display:flex;gap:4px"><span style="display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:var(--r-md);border:1px solid var(--border2);background:var(--surface);font-size:var(--fs-xs);font-weight:var(--fw-medium)">Open Settings</span><span style="display:grid;place-items:center;width:24px;height:24px;color:var(--muted)"><span class="material-symbols-outlined" style="font-size:16px">close</span></span></span></div>
+        <div style="display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 12px;background:var(--surface);border:1px solid var(--warn);border-radius:var(--r-card)"><span class="material-symbols-outlined" style="color:var(--warn)">warning</span><div style="display:grid;gap:2px"><span style="font-size:var(--fs-sm);font-weight:var(--fw-medium)">Hooks are out of date</span><span style="font-size:var(--fs-xs);color:var(--muted)">Needs-you alerts may be late until they are updated</span></div><span style="display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:var(--r-md);border:1px solid var(--border2);background:var(--surface);font-size:var(--fs-xs);font-weight:var(--fw-medium)">Update hooks</span></div>
+        <div style="display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 12px;background:var(--surface);border:1px solid var(--danger);border-radius:var(--r-card)" role="alert"><span class="material-symbols-outlined" style="color:var(--danger)">error</span><div style="display:grid;gap:2px"><span style="font-size:var(--fs-sm);font-weight:var(--fw-medium)">Couldn't load pull requests for jakehowden96/Atlas</span><span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">HTTP 502 from the provider · 12:04</span></div><span style="display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px;border-radius:var(--r-md);border:1px solid var(--border2);background:var(--surface);font-size:var(--fs-xs);font-weight:var(--fw-medium)"><span class="material-symbols-outlined" style="font-size:16px">refresh</span>Retry</span></div>
+        <div style="display:grid;grid-template-columns:18px minmax(0,1fr);gap:10px;align-items:start;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card)"><span class="material-symbols-outlined" style="color:var(--accent)">check_circle</span><div style="display:grid;gap:2px"><span style="font-size:var(--fs-sm);font-weight:var(--fw-medium)">Linked as jake</span><span style="font-size:var(--fs-xs);color:var(--muted)">Tickets will show in each session's rail</span></div></div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:var(--fs-xs);color:var(--danger)"><span class="material-symbols-outlined" style="font-size:16px">error</span>Couldn't remove the worktree: it has uncommitted changes</div>
+        <div style="display:grid;justify-items:end;gap:8px;padding-top:8px">
+          <div style="width:340px;display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:10px;align-items:start;padding:12px 12px 12px 14px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-card-lg);box-shadow:var(--elev-2)" role="alert"><span class="material-symbols-outlined" style="color:var(--danger)">error</span><div style="display:grid;gap:4px"><span style="font-size:var(--fs-sm);font-weight:var(--fw-medium)">Linear needs reconnecting</span><span style="font-size:var(--fs-xs);color:var(--muted)">Tickets stopped refreshing at 11:42</span><span style="font-size:var(--fs-xs);font-weight:var(--fw-medium);text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:3px">Reconnect</span></div><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">close</span></div>
+          <div style="width:340px;display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:10px;align-items:start;padding:12px 12px 12px 14px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-card-lg);box-shadow:var(--elev-2)"><span class="material-symbols-outlined" style="color:var(--muted)">info</span><div style="display:grid;gap:4px"><span style="font-size:var(--fs-sm);font-weight:var(--fw-medium)">Removed workspace billing</span><span style="font-size:var(--fs-xs);font-weight:var(--fw-medium);text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:3px">Undo</span></div><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">close</span></div>
+          <span style="font-size:var(--fs-2xs);color:var(--muted)">+2 more in Notifications</span>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</section>
+<section id="overlays" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1640px;padding:24px 48px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">8 · Tooltip, menu, popover, context menu</h2><p style="max-width:110ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">Replaces native title= in 14 files. Tooltip: ink fill, 12px, opens after 400ms hover or at once on keyboard focus, Esc closes, linked by aria-describedby, never holds the only copy of information. Menu and context menu share one shell (role="menu", arrow keys, type-ahead, Esc returns focus). Popover is the same shell with free content.</p></div>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+    <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+      <div data-theme="{{ th.id }}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg);padding:24px;display:grid;gap:18px;align-content:start;min-width:0">
+        <span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }}</span>
+        <div style="display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:24px;align-items:start">
+          <div style="display:grid;justify-items:center;gap:6px">
+            <span style="display:inline-flex;align-items:center;gap:8px;padding:4px 8px;border-radius:var(--r-sm);background:var(--ink);color:var(--ink-text);font-size:var(--fs-2xs);white-space:nowrap;box-shadow:var(--elev-1)">Hide activity rail<span style="padding:0 4px;border-radius:var(--r-xs);border:1px solid color-mix(in srgb,var(--ink-text) 35%,transparent);font-family:var(--font-mono)">⌘\</span></span>
+            <span style="display:inline-grid;place-items:center;width:28px;height:28px;border-radius:var(--r-lg);background:var(--surface);border:1px solid var(--border2);outline:2px solid var(--focus);outline-offset:2px"><span class="material-symbols-outlined">right_panel_close</span></span>
+          </div>
+          <div role="menu" style="width:220px;display:grid;padding:4px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-card);box-shadow:var(--elev-1);font-size:var(--fs-sm)">
+            <span style="display:grid;grid-template-columns:18px 1fr auto;gap:8px;align-items:center;height:28px;padding:0 8px;border-radius:var(--r-md)"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">edit</span>Rename<span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">F2</span></span>
+            <span style="display:grid;grid-template-columns:18px 1fr auto;gap:8px;align-items:center;height:28px;padding:0 8px;border-radius:var(--r-md);background:var(--surface2);outline:2px solid var(--focus);outline-offset:-2px"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">content_copy</span>Copy path<span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">⌥⌘C</span></span>
+            <span style="display:grid;grid-template-columns:18px 1fr auto;gap:8px;align-items:center;height:28px;padding:0 8px;border-radius:var(--r-md);color:var(--muted)"><span class="material-symbols-outlined" style="font-size:16px">terminal</span>Ask Claude<span style="font-size:var(--fs-2xs)">no session</span></span>
+            <span style="height:1px;margin:4px 0;background:var(--border)"></span>
+            <span style="display:grid;grid-template-columns:18px 1fr auto;gap:8px;align-items:center;height:28px;padding:0 8px;border-radius:var(--r-md);color:var(--danger)"><span class="material-symbols-outlined" style="font-size:16px">delete</span>Delete…<span></span></span>
+          </div>
+          <div style="display:grid;gap:10px;padding:12px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-card);box-shadow:var(--elev-1);max-width:280px">
+            <span style="font-size:var(--fs-sm);font-weight:var(--fw-semi)">e2e (webkit)</span>
+            <span style="display:flex;align-items:center;gap:6px;font-size:var(--fs-xs)"><span style="width:7px;height:7px;background:var(--danger);transform:rotate(45deg)"></span><span style="color:var(--danger);font-weight:var(--fw-medium)">failing</span><span style="color:var(--muted)">after 6m 12s</span></span>
+            <span style="font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">retry.spec.ts:48 · expected 3 retries, got 1</span>
+            <span style="font-size:var(--fs-xs);font-weight:var(--fw-medium);text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:3px">Open run log</span>
+          </div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</section>
+
+<section id="nav" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1640px;padding:24px 48px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">9 · Tabs, segmented control, list row, tree row</h2><p style="max-width:110ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">Segmented = a small mode choice on one surface (role="tablist" when it swaps a panel, "radiogroup" when it sets a value); it keeps the view switch. Tabs = documents (file tabs) and Settings sections, underline style, overflow into a "more" menu. List row and tree row share height, hover, selection and focus; trailing actions show on hover or focus-within and are always in the context menu, so nothing is hover-only.</p></div>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+    <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+      <div data-theme="{{ th.id }}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg);padding:24px;display:grid;gap:18px;align-content:start;min-width:0">
+        <span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }}</span>
+        <div role="tablist" style="display:inline-flex;justify-self:start;gap:1px;padding:2px;border-radius:var(--r-lg);background:var(--surface2);font-size:var(--fs-sm);font-weight:var(--fw-medium)">
+          <span role="tab" aria-selected="true" style="display:flex;align-items:center;gap:6px;height:24px;padding:0 12px;border-radius:var(--r-md);background:var(--surface);box-shadow:inset 0 0 0 1px var(--border2)">Sessions<span style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--muted)">7</span></span>
+          <span role="tab" style="display:flex;align-items:center;gap:6px;height:24px;padding:0 12px;border-radius:var(--r-md);color:var(--muted)">Files<span style="width:6px;height:6px;border-radius:50%;background:var(--warn)" aria-label="unsaved changes"></span></span>
+          <span role="tab" style="display:flex;align-items:center;gap:6px;height:24px;padding:0 12px;border-radius:var(--r-md);color:var(--muted)">Pull requests<span style="display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:var(--r-pill);border:1px solid var(--warn);color:var(--warn);font-family:var(--font-mono);font-size:var(--fs-2xs);font-weight:var(--fw-semi)">3</span></span>
+          <span role="tab" style="display:flex;align-items:center;height:24px;padding:0 12px;border-radius:var(--r-md);color:var(--muted)">Stats</span>
+        </div>
+        <div role="tablist" style="display:flex;align-items:stretch;height:32px;border-bottom:1px solid var(--border);font-size:var(--fs-sm)">
+          <span role="tab" aria-selected="true" style="display:flex;align-items:center;gap:6px;padding:0 6px 0 12px;box-shadow:inset 0 -2px 0 var(--ink);font-weight:var(--fw-medium)"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">article</span>retry-plan.md<span style="display:grid;place-items:center;width:20px;height:20px;color:var(--muted)"><span class="material-symbols-outlined" style="font-size:14px">close</span></span></span>
+          <span role="tab" style="display:flex;align-items:center;gap:6px;padding:0 6px 0 12px;color:var(--muted)"><span class="material-symbols-outlined" style="font-size:16px">code</span>retry.rs<span style="display:grid;place-items:center;width:20px;height:20px"><span style="width:7px;height:7px;border-radius:50%;background:var(--text)" aria-label="unsaved"></span></span></span>
+          <span role="tab" style="display:flex;align-items:center;gap:6px;padding:0 6px 0 12px;color:var(--muted)"><span class="material-symbols-outlined" style="font-size:16px">data_object</span>Cargo.toml<span style="width:20px"></span></span>
+          <span style="flex:1"></span>
+          <span style="display:flex;align-items:center;gap:4px;padding:0 8px;color:var(--muted);font-size:var(--fs-xs)">+4<span class="material-symbols-outlined" style="font-size:16px">expand_more</span></span>
+        </div>
+        <div role="listbox" style="display:grid;gap:1px;padding:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);font-size:var(--fs-sm)">
+          <span role="option" style="display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:10px;align-items:center;height:32px;padding:0 8px;border-radius:var(--r-md)"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent)"></span><span>billing-retry <span style="color:var(--muted);font-family:var(--font-mono);font-size:var(--fs-xs)">· atlas/billing-retry</span></span><span style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--muted)">14m</span></span>
+          <span role="option" style="display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:10px;align-items:center;height:32px;padding:0 8px;border-radius:var(--r-md);background:var(--surface2)"><span style="width:10px;height:9px;background:var(--warn);clip-path:polygon(50% 0,100% 100%,0 100%)"></span><span>pinned-tiles <span style="color:var(--muted);font-family:var(--font-mono);font-size:var(--fs-xs)">· hover</span></span><span style="display:flex;gap:2px;color:var(--muted)"><span class="material-symbols-outlined" style="font-size:16px">keep</span><span class="material-symbols-outlined" style="font-size:16px">close</span></span></span>
+          <span role="option" aria-selected="true" style="display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:10px;align-items:center;height:32px;padding:0 8px;border-radius:var(--r-md);background:var(--surface3);font-weight:var(--fw-semi);outline:2px solid var(--focus);outline-offset:-2px"><span style="width:7px;height:7px;background:var(--danger);transform:rotate(45deg)"></span><span>overview-sort <span style="color:var(--muted);font-weight:var(--fw-body);font-family:var(--font-mono);font-size:var(--fs-xs)">· selected, focused</span></span><span style="font-size:var(--fs-xs);color:var(--danger);font-weight:var(--fw-medium)">error</span></span>
+          <span role="option" aria-disabled="true" style="display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:10px;align-items:center;height:32px;padding:0 8px;border-radius:var(--r-md);color:var(--muted)"><span style="width:4px;height:4px;border-radius:50%;background:var(--muted);justify-self:center"></span><span>docs-refresh <span style="font-family:var(--font-mono);font-size:var(--fs-xs)">· disabled</span></span><span style="font-size:var(--fs-xs)">ended</span></span>
+        </div>
+        <div role="tree" style="display:grid;gap:1px;padding:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);font-size:var(--fs-sm)">
+          <span role="treeitem" aria-expanded="true" aria-level="1" style="display:flex;align-items:center;gap:4px;height:28px;padding:0 8px;border-radius:var(--r-md)"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted);transform:rotate(90deg)">chevron_right</span><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">folder_open</span>Claude plans<span style="margin-left:auto;font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted)">3</span></span>
+          <span role="treeitem" aria-level="2" aria-selected="true" style="display:flex;align-items:center;gap:4px;height:28px;padding:0 8px 0 28px;border-radius:var(--r-md);background:var(--surface3);font-weight:var(--fw-semi)"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">article</span>retry-plan.md<span style="margin-left:auto;font-size:var(--fs-2xs);color:var(--muted);font-weight:var(--fw-body)">2m ago</span></span>
+          <span role="treeitem" aria-level="2" style="display:flex;align-items:center;gap:4px;height:28px;padding:0 8px 0 28px;border-radius:var(--r-md)"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">article</span>pinned-tiles.md</span>
+          <span role="treeitem" aria-expanded="false" aria-level="1" style="display:flex;align-items:center;gap:4px;height:28px;padding:0 8px;border-radius:var(--r-md)"><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">chevron_right</span><span class="material-symbols-outlined" style="font-size:16px;color:var(--muted)">folder</span>atlas docs</span>
+          <span style="font-size:var(--fs-2xs);color:var(--muted);padding:6px 8px 2px">↑↓ move · → open / first child · ← close / parent · ↵ open file · F2 rename · ⇧F10 menu</span>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</section>
+
+<section id="states" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1640px;padding:24px 48px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">10 · Empty, skeleton, spinner, progress</h2><p style="max-width:110ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">Empty state: icon, title, one sentence, optional action. A compact one-line variant for rails and tree sections. Skeletons replace "Loading…" where layout is known; a spinner only where it isn't (under 1s shows nothing). Skeletons pulse slowly and go static under reduced motion.</p></div>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+    <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+      <div data-theme="{{ th.id }}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg);padding:24px;display:grid;gap:18px;align-content:start;min-width:0">
+        <span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }}</span>
+        <div style="display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px">
+          <div style="display:grid;justify-items:center;align-content:center;gap:8px;min-height:200px;padding:24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);text-align:center">
+            <span style="display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:var(--surface2);color:var(--muted)"><span class="material-symbols-outlined" style="font-size:20px">difference</span></span>
+            <span style="font-size:var(--fs-sm);font-weight:var(--fw-semi)">No changes yet</span>
+            <span style="max-width:34ch;font-size:var(--fs-xs);color:var(--muted)">Edits Claude makes in this worktree will show here as a diff</span>
+            <span style="display:inline-flex;align-items:center;height:24px;padding:0 8px;margin-top:4px;border-radius:var(--r-md);border:1px solid var(--border2);background:var(--surface);font-size:var(--fs-xs);font-weight:var(--fw-medium)">Close drawer</span>
+          </div>
+          <div style="display:grid;gap:12px;align-content:start">
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);font-size:var(--fs-xs);color:var(--muted)"><span class="material-symbols-outlined" style="font-size:16px">folder</span>No plans in this workspace yet</div>
+            <div style="display:grid;gap:8px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card)">
+              <span style="width:40%;height:12px;border-radius:var(--r-xs);background:var(--surface3);animation:var(--pulse)"></span>
+              <span style="width:90%;height:10px;border-radius:var(--r-xs);background:var(--surface3);animation:var(--pulse)"></span>
+              <span style="width:70%;height:10px;border-radius:var(--r-xs);background:var(--surface3);animation:var(--pulse)"></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px;font-size:var(--fs-xs);color:var(--muted)">
+              <span style="display:flex;align-items:center;gap:6px"><span class="material-symbols-outlined" style="font-size:16px;animation:atlasSpin 0.9s linear infinite">progress_activity</span>Reading transcripts</span>
+              <span style="flex:1;display:grid;gap:4px"><span style="height:2px;background:var(--surface3);overflow:hidden"><span style="display:block;width:62%;height:100%;background:var(--accent)"></span></span><span style="font-family:var(--font-mono);font-size:var(--fs-2xs)">412 of 664 transcripts</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</section>
+
+<section id="dialogs" style="background:var(--surface2);color:var(--text);font-family:var(--font-ui);width:1640px;padding:24px 48px 64px;display:grid;gap:14px">
+  <div style="display:grid;gap:4px"><h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">11 · Modal, drawer, destructive confirm</h2><p style="max-width:110ch;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">Every dialog has a visible title wired to aria-labelledby, a close button, Esc to close, focus trapped and restored. Widths 420 / 560 / 720. Footer buttons sit right: secondary, then primary. Prefer undo to confirm; confirm only what undo can't reverse, and focus Cancel first.</p></div>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+    <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+      <div data-theme="{{ th.id }}" style="position:relative;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-card-lg);padding:24px;display:grid;gap:18px;align-content:start;min-width:0;overflow:hidden">
+        <span style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">{{ th.label }}</span>
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:16px;align-items:start">
+          <div style="display:grid;grid-template-columns:minmax(0,1fr);justify-items:center;padding:28px 16px;border-radius:var(--r-card);background:var(--overlay)">
+            <div role="dialog" aria-modal="true" aria-labelledby="dlg-t" style="width:420px;max-width:100%;display:grid;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-modal);box-shadow:var(--elev-2)">
+              <div style="display:flex;align-items:center;gap:8px;height:44px;padding:0 8px 0 16px;border-bottom:1px solid var(--border)"><span id="dlg-t" style="flex:1;font-size:var(--fs-md);font-weight:var(--fw-semi)">Discard 4 review comments?</span><span style="display:grid;place-items:center;width:28px;height:28px;color:var(--muted)"><span class="material-symbols-outlined">close</span></span></div>
+              <div style="padding:14px 16px;font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">They haven't been sent to Claude. This can't be undone.</div>
+              <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid var(--border)"><span style="display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--r-lg);background:var(--surface);border:1px solid var(--border2);font-size:var(--fs-sm);font-weight:var(--fw-medium);outline:2px solid var(--focus);outline-offset:2px">Cancel</span><span style="display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--r-lg);background:var(--surface);border:1px solid var(--danger);color:var(--danger);font-size:var(--fs-sm);font-weight:var(--fw-medium)">Discard comments</span></div>
+            </div>
+          </div>
+          <div role="dialog" aria-labelledby="drw-t" style="display:grid;grid-template-rows:44px 1fr 52px;height:240px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-card) 0 0 var(--r-card);box-shadow:var(--elev-2)">
+            <div style="display:flex;align-items:center;gap:8px;padding:0 8px 0 14px;border-bottom:1px solid var(--border)"><span id="drw-t" style="flex:1;font-size:var(--fs-sm);font-weight:var(--fw-semi)">Changes</span><span style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--accent)">+86</span><span style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--danger)">−12</span><span style="display:grid;place-items:center;width:28px;height:28px;color:var(--muted)"><span class="material-symbols-outlined">close</span></span></div>
+            <div style="padding:12px 14px;font-size:var(--fs-xs);color:var(--muted)">Drawer: slides from the right at --dur-slow, --z-drawer, Esc closes, focus returns to Changes.</div>
+            <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:0 14px;border-top:1px solid var(--border)"><span style="display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--r-lg);color:var(--muted);font-size:var(--fs-sm);font-weight:var(--fw-medium)">Discard…</span><span style="display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--r-lg);background:var(--ink);color:var(--ink-text);font-size:var(--fs-sm);font-weight:var(--fw-medium)">Send 4 to Claude</span></div>
+          </div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</section></x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const icons = [
+      ['close', 'close'], ['settings', 'settings'], ['keep', 'pin'], ['terminal', 'ask Claude'], ['chevron_right', 'twisty'], ['expand_more', 'select, menu'],
+      ['arrow_back', 'back'], ['open_in_new', 'open externally'], ['search', 'search'], ['add', 'new'], ['remove', 'decrease'], ['content_copy', 'copy'],
+      ['check', 'checked, done'], ['error', 'error'], ['warning', 'warning'], ['info', 'info'], ['check_circle', 'success'], ['refresh', 'retry'],
+      ['link', 'link'], ['link_off', 'unlink'], ['more_horiz', 'more'], ['right_panel_close', 'hide rail'], ['right_panel_open', 'show rail'], ['difference', 'changes'],
+      ['folder', 'folder'], ['description', 'file'], ['article', 'markdown'], ['data_object', 'json, config'], ['code', 'source'], ['fork_right', 'branch'],
+      ['notifications', 'notifications'], ['keyboard', 'shortcuts'], ['delete', 'delete'], ['edit', 'rename'], ['progress_activity', 'spinner'], ['key', 'connector auth']
+    ].map(([g, use]) => ({ g, use }));
+    return { themes: [{ id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }], icons };
+  }
+}
+</script>
+</body>
+</html>

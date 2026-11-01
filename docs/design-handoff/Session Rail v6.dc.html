@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="styles.css">
+<style>body{margin:0;background:var(--bg)} a{color:var(--muted);text-decoration:none} a:hover{color:var(--text)}</style>
+</helmet>
+<div data-theme="dark" style="background:var(--bg);color:var(--text);font-family:var(--font-ui);padding:40px;display:flex;flex-direction:column;gap:32px;width:max-content;min-height:100vh">
+  <header style="display:grid;gap:4px;max-width:76ch">
+    <h1 style="font-size:var(--fs-xl);font-weight:var(--fw-semi)">Session rail · final</h1>
+    <p style="font-size:var(--fs-sm);color:var(--muted);text-wrap:pretty">A pinned ticket header, then Plan, Agents and PR as tiles. Collapsed tiles read as plain sentences; expanded tiles list every item with what it is doing. Click a tile header or a “done” row to toggle it.</p>
+  </header>
+
+  <sc-for list="{{ groups }}" as="group" hint-placeholder-count="2">
+    <section data-theme="{{ group.theme }}" data-screen-label="{{ group.label }}" style="background:var(--surface);color:var(--text);border-radius:var(--r-card-lg);border:1px solid var(--border);padding:24px 28px 28px;display:grid;gap:18px">
+      <div style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:0.06em;text-transform:uppercase;color:var(--muted)">{{ group.label }}</div>
+      <div style="display:flex;gap:40px;align-items:flex-start">
+        <div style="display:grid;gap:32px">
+          <sc-for list="{{ group.modes }}" as="mode" hint-placeholder-count="2">
+            <div id="{{ mode.badge }}" style="display:grid;gap:12px">
+              <div style="display:flex;align-items:baseline;gap:10px"><sc-if value="{{ mode.badge }}"><span style="font-family:var(--font-mono);font-size:var(--fs-2xs);font-weight:var(--fw-semi);padding:0 6px;border:1px solid var(--border2);border-radius:var(--r-xs)">{{ mode.badge }}</span></sc-if><span style="font-size:var(--fs-sm);font-weight:var(--fw-semi)">{{ mode.label }}</span><sc-if value="{{ mode.desc }}"><span style="font-size:var(--fs-xs);color:var(--muted)">{{ mode.desc }}</span></sc-if></div>
+              <div style="display:flex;gap:24px;align-items:flex-start">
+                <sc-for list="{{ mode.rails }}" as="rail" hint-placeholder-count="4">
+                  <div style="display:grid;gap:10px;width:{{ rail.w }}">
+                    <div style="display:flex;flex-wrap:wrap;align-items:baseline;column-gap:8px;row-gap:0;min-width:0">
+                      <span style="font-size:var(--fs-sm);font-weight:var(--fw-semi)">{{ rail.name }}</span>
+                      <span style="font-size:var(--fs-xs);color:var(--muted)">{{ rail.desc }}</span>
+                    </div>
+                    <sc-if value="{{ rail.isThin }}">
+                      <aside style="width:48px;height:960px;display:flex;flex-direction:column;align-items:center;background:var(--bg);border:1px solid var(--border);overflow:hidden">
+                        <div style="width:100%;display:flex;flex-direction:column;align-items:center;gap:10px;padding:14px 0;background:var(--surface2);border-bottom:1px solid var(--border)">
+                          <sc-if value="{{ rail.waiting }}"><span title="waiting for you" style="display:block;width:6px;height:6px;border-radius:50%;background:var(--warn);border:1.5px solid var(--warn)"></span></sc-if>
+                          <span style="writing-mode:vertical-rl;transform:rotate(180deg);font-family:var(--font-mono);font-size:var(--fs-2xs);font-weight:var(--fw-semi);white-space:nowrap">{{ rail.tid }}</span>
+                        </div>
+                        <div style="display:flex;flex-direction:column;align-items:center;gap:22px;padding-top:18px">
+                          <sc-for list="{{ rail.dots }}" as="d" hint-placeholder-count="3"><span title="{{ d.label }}" style="display:flex;align-items:center;height:12px"><sc-if value="{{ d.isRun }}">{{ pulseDot }}</sc-if><sc-if value="{{ d.isStatic }}"><span style="display:block;width:6px;height:6px;border-radius:50%;background:{{ d.dotFill }};border:1.5px solid {{ d.dotRing }}"></span></sc-if></span></sc-for>
+                        </div>
+                      </aside>
+                    </sc-if>
+                    <sc-if value="{{ rail.isFull }}">
+                    <aside style="width:300px;height:{{ rail.h }};display:flex;flex-direction:column;background:var(--bg);border:1px solid var(--border);color:var(--text);overflow:hidden">
+                      <sc-if value="{{ rail.hvBase }}"><header style="flex-shrink:0;display:grid;background:var(--surface2);border-bottom:1px solid var(--border)">
+                        <sc-if value="{{ rail.info.waiting }}"><div style="padding:9px 16px;border-bottom:1px solid var(--border);color:var(--warn);font-size:var(--fs-xs);font-weight:var(--fw-medium);line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ rail.info.waiting }}</div></sc-if>
+                        <div style="min-height:134px;padding:16px 16px 14px;display:grid;align-content:start;gap:10px">
+                          <sc-if value="{{ rail.info.hasTicket }}">
+                            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                              <span style="font-family:var(--font-mono);font-size:var(--fs-xs);font-weight:var(--fw-semi);color:var(--text)">{{ rail.info.id }}</span>
+                              <span style="display:inline-flex;align-items:center;height:22px;padding:0 9px;border:1px solid {{ rail.info.chipRing }};border-radius:11px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);white-space:nowrap;color:{{ rail.info.chipColor }}">{{ rail.info.status }}</span>
+                            </div>
+                            <h2 style="font-size:var(--fs-lg);font-weight:var(--fw-semi);line-height:22px;text-wrap:pretty">{{ rail.info.title }}</h2>
+                            
+                          </sc-if>
+                          <sc-if value="{{ rail.info.noTicket }}"><span style="font-size:var(--fs-sm);color:var(--muted);line-height:22px">No ticket linked</span></sc-if>
+                          <span style="font-family:var(--font-mono);font-size:var(--fs-2xs);line-height:18px;color:var(--muted);white-space:nowrap">{{ rail.info.where }}</span>
+                        </div>
+                        <div style="border-top:1px solid var(--border);padding:18px 16px 20px;display:grid;grid-template-columns:minmax(0,0.85fr) minmax(0,1.3fr) minmax(0,1fr);gap:8px">
+                          <div style="display:grid;gap:4px;align-content:start">
+                            <span style="font-size:var(--fs-xs);color:var(--muted)">Context</span>
+                            <span style="font-family:var(--font-mono);font-size:var(--fs-lg);font-weight:var(--fw-medium);line-height:22px;white-space:nowrap;font-variant-numeric:tabular-nums">{{ rail.info.ctx }}</span>
+                            <div style="height:3px;margin-top:6px;background:var(--surface3);border-radius:2px;overflow:hidden"><span style="display:block;height:100%;width:{{ rail.info.ctx }};background:{{ rail.info.ctxColor }}"></span></div>
+                          </div>
+                          <div style="display:grid;gap:4px;align-content:start">
+                            <span style="display:flex;align-items:center;gap:5px;font-size:var(--fs-xs);color:var(--muted);white-space:nowrap">Cost · {{ rail.info.model }}<span style="flex-shrink:0;width:6px;height:6px;border-radius:50%;background:{{ rail.info.modelColor }}"></span></span>
+                            <span style="font-family:var(--font-mono);font-size:var(--fs-lg);font-weight:var(--fw-medium);line-height:22px;white-space:nowrap;font-variant-numeric:tabular-nums">{{ rail.info.cost }}</span>
+                          </div>
+                          <div style="display:grid;gap:4px;align-content:start">
+                            <span style="font-size:var(--fs-xs);color:var(--muted)">Elapsed</span>
+                            <span style="font-family:var(--font-mono);font-size:var(--fs-lg);font-weight:var(--fw-medium);line-height:22px;white-space:nowrap;font-variant-numeric:tabular-nums">{{ rail.info.time }}</span>
+                          </div>
+                        </div>
+                      </header></sc-if>
+<sc-if value="{{ rail.hvA }}">
+                      <header style="flex-shrink:0;display:grid;background:var(--surface2)">
+                        <sc-if value="{{ rail.info.waiting }}"><div style="padding:9px 16px;border-bottom:1px solid var(--border);color:var(--warn);font-size:var(--fs-xs);font-weight:var(--fw-medium);line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ rail.info.waiting }}</div></sc-if>
+                        <div style="min-height:116px;padding:14px 16px 10px;display:grid;align-content:start;gap:6px">
+                          <sc-if value="{{ rail.info.hasTicket }}">
+                            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="font-family:var(--font-mono);font-size:var(--fs-xs);font-weight:var(--fw-semi)">{{ rail.info.id }}</span><span style="display:inline-flex;align-items:center;height:22px;padding:0 9px;border:1px solid {{ rail.info.chipRing }};border-radius:11px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);white-space:nowrap;color:{{ rail.info.chipColor }}">{{ rail.info.status }}</span></div>
+                            <h2 style="font-size:var(--fs-md);font-weight:var(--fw-semi);line-height:20px;text-wrap:pretty">{{ rail.info.title }}</h2>
+                          </sc-if>
+                          <sc-if value="{{ rail.info.noTicket }}"><span style="font-size:var(--fs-sm);color:var(--muted);line-height:22px">No ticket linked</span></sc-if>
+                          <span style="font-family:var(--font-mono);font-size:var(--fs-2xs);line-height:18px;color:var(--muted);white-space:nowrap">{{ rail.info.where }}</span>
+                        </div>
+                        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:0 16px 12px;font-size:var(--fs-sm);font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;">
+                          <span><span style="font-weight:var(--fw-medium)">{{ rail.info.ctx }}</span> <span style="font-size:var(--fs-2xs);color:var(--muted)">ctx</span></span>
+                          <span style="display:flex;align-items:center;gap:5px"><span style="flex-shrink:0;width:6px;height:6px;border-radius:50%;background:{{ rail.info.modelColor }}"></span><span style="font-family:var(--font-ui);font-size:var(--fs-2xs);color:var(--muted)">{{ rail.info.model }}</span><span style="font-weight:var(--fw-medium)">{{ rail.info.cost }}</span></span>
+                          <span style="font-weight:var(--fw-medium)">{{ rail.info.time }}</span>
+                        </div>
+                        <div style="height:2px;background:var(--surface3);overflow:hidden"><span style="display:block;height:100%;width:{{ rail.info.ctx }};background:{{ rail.info.ctxColor }}"></span></div>
+                      </header>
+                    </sc-if>
+<sc-if value="{{ rail.hvB }}">
+                      <header style="flex-shrink:0;display:grid;background:var(--surface2);border-bottom:1px solid var(--border)">
+                        <sc-if value="{{ rail.info.waiting }}"><div style="padding:9px 16px;border-bottom:1px solid var(--border);color:var(--warn);font-size:var(--fs-xs);font-weight:var(--fw-medium);line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ rail.info.waiting }}</div></sc-if>
+                        <div style="min-height:132px;padding:16px 16px 14px;display:grid;align-content:start;gap:8px">
+                          <sc-if value="{{ rail.info.hasTicket }}">
+                            <div style="display:flex;align-items:baseline;gap:6px;font-size:var(--fs-xs);font-weight:var(--fw-semi);white-space:nowrap"><span style="color:{{ rail.info.chipColor }}">{{ rail.info.status }}</span><span style="color:var(--muted)">·</span><span style="font-family:var(--font-mono);color:var(--muted)">{{ rail.info.id }}</span></div>
+                            <h2 style="font-size:var(--fs-xl);font-weight:var(--fw-semi);line-height:24px;text-wrap:balance">{{ rail.info.title }}</h2>
+                          </sc-if>
+                          <sc-if value="{{ rail.info.noTicket }}"><span style="font-size:var(--fs-md);color:var(--muted);line-height:24px">No ticket linked</span></sc-if>
+                          <span style="font-family:var(--font-mono);font-size:var(--fs-2xs);line-height:18px;color:var(--muted);white-space:nowrap">{{ rail.info.where }}</span>
+                        </div>
+                        <div style="border-top:1px solid var(--border);padding:12px 16px 14px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:12px;row-gap:9px;align-items:center;font-size:var(--fs-xs)">
+                          <span style="color:var(--muted)">Context</span><div style="height:3px;border-radius:2px;background:var(--surface3);overflow:hidden"><span style="display:block;height:100%;width:{{ rail.info.ctx }};background:{{ rail.info.ctxColor }}"></span></div><span style="font-size:var(--fs-sm);font-weight:var(--fw-medium);text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;">{{ rail.info.ctx }}</span>
+                          <span style="color:var(--muted)">Cost</span><span style="display:flex;align-items:center;gap:5px;color:var(--muted)"><span style="flex-shrink:0;width:6px;height:6px;border-radius:50%;background:{{ rail.info.modelColor }}"></span>{{ rail.info.model }}</span><span style="font-size:var(--fs-sm);font-weight:var(--fw-medium);text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;">{{ rail.info.cost }}</span>
+                          <span style="color:var(--muted)">Elapsed</span><span></span><span style="font-size:var(--fs-sm);font-weight:var(--fw-medium);text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;">{{ rail.info.time }}</span>
+                        </div>
+                      </header>
+                    </sc-if>
+<sc-if value="{{ rail.hvC }}">
+                      <header style="flex-shrink:0;display:grid;background:var(--surface2);border-bottom:1px solid var(--border)">
+                        <sc-if value="{{ rail.info.waiting }}"><div style="padding:9px 16px;border-bottom:1px solid var(--border);color:var(--warn);font-size:var(--fs-xs);font-weight:var(--fw-medium);line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ rail.info.waiting }}</div></sc-if>
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:42px;padding:0 16px;border-bottom:1px solid var(--border)">
+                          <sc-if value="{{ rail.info.hasTicket }}"><span style="font-family:var(--font-mono);font-size:var(--fs-xs);font-weight:var(--fw-semi)">{{ rail.info.id }}</span><span style="display:inline-flex;align-items:center;height:22px;padding:0 9px;border:1px solid {{ rail.info.chipRing }};border-radius:11px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);white-space:nowrap;color:{{ rail.info.chipColor }}">{{ rail.info.status }}</span></sc-if>
+                          <sc-if value="{{ rail.info.noTicket }}"><span style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--muted)">no ticket</span></sc-if>
+                        </div>
+                        <div style="min-height:96px;padding:14px 16px;display:grid;align-content:start;gap:6px">
+                          <sc-if value="{{ rail.info.hasTicket }}"><h2 style="font-size:var(--fs-lg);font-weight:var(--fw-semi);line-height:22px;text-wrap:pretty">{{ rail.info.title }}</h2></sc-if>
+                          <sc-if value="{{ rail.info.noTicket }}"><span style="font-size:var(--fs-sm);color:var(--muted);line-height:22px">No ticket linked</span></sc-if>
+                          <span style="font-family:var(--font-mono);font-size:var(--fs-2xs);line-height:18px;color:var(--muted);white-space:nowrap">{{ rail.info.where }}</span>
+                        </div>
+                        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid var(--border)">
+                          <div style="display:grid;gap:3px;align-content:start;padding:12px 10px 14px 16px"><span style="font-size:var(--fs-lg);font-weight:var(--fw-medium);line-height:22px;font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;">{{ rail.info.ctx }}</span><span style="font-size:var(--fs-2xs);color:var(--muted)">context</span><div style="height:3px;margin-top:3px;border-radius:2px;background:var(--surface3);overflow:hidden"><span style="display:block;height:100%;width:{{ rail.info.ctx }};background:{{ rail.info.ctxColor }}"></span></div></div>
+                          <div style="display:grid;gap:3px;align-content:start;padding:12px 10px 14px 12px;border-left:1px solid var(--border)"><span style="font-size:var(--fs-lg);font-weight:var(--fw-medium);line-height:22px;font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;">{{ rail.info.cost }}</span><span style="display:flex;align-items:center;gap:5px;font-size:var(--fs-2xs);color:var(--muted);white-space:nowrap"><span style="flex-shrink:0;width:6px;height:6px;border-radius:50%;background:{{ rail.info.modelColor }}"></span>{{ rail.info.model }}</span></div>
+                          <div style="display:grid;gap:3px;align-content:start;padding:12px 14px 14px 12px;border-left:1px solid var(--border)"><span style="font-size:var(--fs-lg);font-weight:var(--fw-medium);line-height:22px;font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;">{{ rail.info.time }}</span><span style="font-size:var(--fs-2xs);color:var(--muted)">elapsed</span></div>
+                        </div>
+                      </header>
+                    </sc-if>
+<sc-if value="{{ rail.hvD }}">
+                      <header style="flex-shrink:0;display:grid;background:var(--surface2);border-bottom:1px solid var(--border)">
+                        <sc-if value="{{ rail.info.waiting }}"><div style="padding:9px 16px;border-bottom:1px solid var(--border);color:var(--warn);font-size:var(--fs-xs);font-weight:var(--fw-medium);line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ rail.info.waiting }}</div></sc-if>
+                        <div style="display:grid;gap:9px;padding:12px 16px 12px">
+                          <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+                            <div style="display:grid;gap:1px"><span style="font-size:var(--fs-md);font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:var(--fw-medium);">{{ rail.info.ctx }}</span><span style="font-size:var(--fs-2xs);color:var(--muted);white-space:nowrap">context</span></div>
+                            <div style="display:grid;gap:1px"><span style="font-size:var(--fs-md);font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:var(--fw-medium);">{{ rail.info.cost }}</span><span style="display:flex;align-items:center;gap:5px;font-size:var(--fs-2xs);color:var(--muted);white-space:nowrap"><span style="flex-shrink:0;width:6px;height:6px;border-radius:50%;background:{{ rail.info.modelColor }}"></span>{{ rail.info.model }}</span></div>
+                            <div style="display:grid;gap:1px"><span style="font-size:var(--fs-md);font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:var(--fw-medium);">{{ rail.info.time }}</span><span style="font-size:var(--fs-2xs);color:var(--muted);white-space:nowrap">elapsed</span></div>
+                          </div>
+                          <div style="height:3px;border-radius:2px;background:var(--surface3);overflow:hidden"><span style="display:block;height:100%;width:{{ rail.info.ctx }};background:{{ rail.info.ctxColor }}"></span></div>
+                        </div>
+                        <div style="min-height:132px;border-top:1px solid var(--border);padding:14px 16px 16px;display:grid;align-content:start;gap:8px">
+                          <sc-if value="{{ rail.info.hasTicket }}"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="font-family:var(--font-mono);font-size:var(--fs-xs);font-weight:var(--fw-semi)">{{ rail.info.id }}</span><span style="display:inline-flex;align-items:center;height:22px;padding:0 9px;border:1px solid {{ rail.info.chipRing }};border-radius:11px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);white-space:nowrap;color:{{ rail.info.chipColor }}">{{ rail.info.status }}</span></div><h2 style="font-size:var(--fs-lg);font-weight:var(--fw-semi);line-height:22px;text-wrap:pretty">{{ rail.info.title }}</h2></sc-if>
+                          <sc-if value="{{ rail.info.noTicket }}"><span style="font-size:var(--fs-sm);color:var(--muted);line-height:22px">No ticket linked</span></sc-if>
+                          <span style="font-family:var(--font-mono);font-size:var(--fs-2xs);line-height:18px;color:var(--muted);white-space:nowrap">{{ rail.info.where }}</span>
+                        </div>
+                      </header>
+                    </sc-if>
+<sc-if value="{{ rail.hvE }}">
+                      <header style="flex-shrink:0;display:grid;background:var(--surface2);border-bottom:1px solid var(--border)">
+                        <sc-if value="{{ rail.info.waiting }}"><div style="padding:9px 16px;border-bottom:1px solid var(--border);color:var(--warn);font-size:var(--fs-xs);font-weight:var(--fw-medium);line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ rail.info.waiting }}</div></sc-if>
+                        <div style="display:grid;grid-template-columns:minmax(0,1fr) 92px">
+                          <div style="padding:16px 12px 16px 16px;display:grid;align-content:start;gap:8px;min-width:0">
+                            <sc-if value="{{ rail.info.hasTicket }}"><div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px"><span style="font-family:var(--font-mono);font-size:var(--fs-xs);font-weight:var(--fw-semi)">{{ rail.info.id }}</span><span style="display:inline-flex;align-items:center;height:22px;padding:0 9px;border:1px solid {{ rail.info.chipRing }};border-radius:11px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);white-space:nowrap;color:{{ rail.info.chipColor }}">{{ rail.info.status }}</span></div><h2 style="font-size:var(--fs-lg);font-weight:var(--fw-semi);line-height:22px;text-wrap:pretty">{{ rail.info.title }}</h2></sc-if>
+                            <sc-if value="{{ rail.info.noTicket }}"><span style="font-size:var(--fs-sm);color:var(--muted);line-height:22px">No ticket linked</span></sc-if>
+                            <span style="font-family:var(--font-mono);font-size:var(--fs-2xs);line-height:18px;color:var(--muted);white-space:nowrap">{{ rail.info.whereShort }}</span>
+                          </div>
+                          <div style="display:grid;grid-template-rows:repeat(3,auto);border-left:1px solid var(--border)">
+                            <div style="display:grid;gap:2px;padding:12px 12px 12px 12px;border-bottom:1px solid var(--border)"><span style="font-size:var(--fs-md);font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:var(--fw-medium);">{{ rail.info.ctx }}</span><span style="font-size:var(--fs-2xs);color:var(--muted);white-space:nowrap">context</span><div style="height:3px;margin-top:4px;border-radius:2px;background:var(--surface3);overflow:hidden"><span style="display:block;height:100%;width:{{ rail.info.ctx }};background:{{ rail.info.ctxColor }}"></span></div></div>
+                            <div style="display:grid;gap:2px;padding:12px;border-bottom:1px solid var(--border)"><span style="font-size:var(--fs-md);font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:var(--fw-medium);">{{ rail.info.cost }}</span><span style="display:flex;align-items:center;gap:5px;font-size:var(--fs-2xs);color:var(--muted);white-space:nowrap"><span style="flex-shrink:0;width:6px;height:6px;border-radius:50%;background:{{ rail.info.modelColor }}"></span>{{ rail.info.model }}</span></div>
+                            <div style="display:grid;gap:2px;padding:12px"><span style="font-size:var(--fs-md);font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:var(--fw-medium);">{{ rail.info.time }}</span><span style="font-size:var(--fs-2xs);color:var(--muted);white-space:nowrap">elapsed</span></div>
+                          </div>
+                        </div>
+                      </header>
+                    </sc-if>
+<sc-if value="{{ rail.hvF }}">
+                      <header style="flex-shrink:0;display:grid;background:var(--surface2)">
+                        <sc-if value="{{ rail.info.waiting }}"><div style="padding:9px 16px;border-bottom:1px solid var(--border);color:var(--warn);font-size:var(--fs-xs);font-weight:var(--fw-medium);line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ rail.info.waiting }}</div></sc-if>
+                        <div style="min-height:134px;padding:16px 16px 14px;display:grid;align-content:start;gap:8px">
+                          <sc-if value="{{ rail.info.hasTicket }}"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="font-family:var(--font-mono);font-size:var(--fs-xs);font-weight:var(--fw-semi)">{{ rail.info.id }}</span><span style="display:inline-flex;align-items:center;height:22px;padding:0 9px;border:1px solid {{ rail.info.chipRing }};border-radius:11px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);white-space:nowrap;color:{{ rail.info.chipColor }}">{{ rail.info.status }}</span></div><h2 style="font-size:var(--fs-lg);font-weight:var(--fw-semi);line-height:22px;text-wrap:pretty">{{ rail.info.title }}</h2></sc-if>
+                          <sc-if value="{{ rail.info.noTicket }}"><span style="font-size:var(--fs-sm);color:var(--muted);line-height:22px">No ticket linked</span></sc-if>
+                          <span style="font-family:var(--font-mono);font-size:var(--fs-2xs);line-height:18px;color:var(--muted);white-space:nowrap">{{ rail.info.where }}</span>
+                        </div>
+                        <div style="display:grid;background:var(--surface3)">
+                          <div style="height:2px;background:var(--border2);background:var(--surface3);overflow:hidden"><span style="display:block;height:100%;width:{{ rail.info.ctx }};background:{{ rail.info.ctxColor }}"></span></div>
+                          <div style="display:grid;grid-template-columns:minmax(0,0.85fr) minmax(0,1.25fr) minmax(0,1fr);gap:8px;padding:10px 16px 12px">
+                            <div style="display:grid;gap:1px"><span style="font-size:var(--fs-2xs);color:var(--muted);white-space:nowrap">Context</span><span style="font-size:var(--fs-md);font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:var(--fw-medium);">{{ rail.info.ctx }}</span></div>
+                            <div style="display:grid;gap:1px"><span style="display:flex;align-items:center;gap:5px;font-size:var(--fs-2xs);color:var(--muted);white-space:nowrap"><span style="flex-shrink:0;width:6px;height:6px;border-radius:50%;background:{{ rail.info.modelColor }}"></span>{{ rail.info.model }}</span><span style="font-size:var(--fs-md);font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:var(--fw-medium);">{{ rail.info.cost }}</span></div>
+                            <div style="display:grid;gap:1px"><span style="font-size:var(--fs-2xs);color:var(--muted);white-space:nowrap">Elapsed</span><span style="font-size:var(--fs-md);font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:var(--fw-medium);">{{ rail.info.time }}</span></div>
+                          </div>
+                        </div>
+                      </header>
+                    </sc-if>
+                      <div data-scroll="{{ rail.scroll }}" style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:8px;display:flex;flex-direction:column;gap:8px">
+                      <sc-for list="{{ rail.tiles }}" as="tile" hint-placeholder-count="3">
+                        <section style="background:var(--surface);border:1px solid {{ tile.ring }};border-radius:var(--r-card-lg)">
+
+                          <sc-if value="{{ tile.isSection }}">
+                            <button type="button" aria-expanded="{{ tile.open }}" onClick="{{ tile.toggle }}" style="display:grid;grid-template-columns:6px minmax(0,1fr) auto 10px;column-gap:10px;row-gap:6px;align-items:start;width:100%;padding:10px 14px;text-align:left;cursor:pointer">
+                              <span style="display:flex;align-items:center;justify-content:center;height:20px">
+                                <sc-if value="{{ tile.isRun }}">{{ pulseDot }}</sc-if>
+                                <sc-if value="{{ tile.isStatic }}"><span style="display:block;width:6px;height:6px;border-radius:50%;background:{{ tile.dotFill }};border:1.5px solid {{ tile.dotRing }}"></span></sc-if>
+                              </span>
+                              <span style="min-width:0;font-size:var(--fs-sm);line-height:20px;font-variant-numeric:tabular-nums;text-wrap:pretty"><span style="margin-right:8px;font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:0.06em;text-transform:uppercase;color:var(--muted)">{{ tile.label }}</span><sc-for list="{{ tile.parts }}" as="p" hint-placeholder-count="1"><span style="color:{{ p.c }};font-weight:{{ p.w }};white-space:{{ p.ws }}">{{ p.t }}</span></sc-for></span>
+                              <span style="white-space:nowrap;font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--muted);line-height:20px">{{ tile.meta }}</span>
+                              <span style="display:flex;align-items:center;justify-content:center;height:20px;color:var(--muted);font-size:var(--fs-2xs);transform:rotate({{ tile.rot }});transition:transform 120ms ease">▸</span>
+                              <sc-if value="{{ tile.showCBar }}">
+                                <div style="grid-column:2 / 4;height:2px;margin:3px 0 2px;background:var(--surface3);border-radius:1px;overflow:hidden"><span style="display:block;height:100%;width:{{ tile.bar }};background:var(--muted)"></span></div>
+                              </sc-if>
+                              <sc-if value="{{ tile.showCDetail }}">
+                                <div style="grid-column:2 / 4;font-size:var(--fs-xs);line-height:18px;color:var(--muted);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;text-wrap:pretty">{{ tile.cDetail }}</div></sc-if><sc-if value="{{ tile.showCWarn }}"><div style="grid-column:2 / 4;font-family:var(--font-mono);font-size:var(--fs-2xs);line-height:18px;color:var(--warn)">{{ tile.poll }}</div>
+                              </sc-if>
+                            </button>
+                            <sc-if value="{{ tile.showBody }}">
+                              <div style="display:grid;gap:14px;padding:0 14px 14px">
+                                <sc-if value="{{ tile.eBar }}">
+                                  <div style="display:grid;grid-template-columns:6px minmax(0,1fr) 10px;column-gap:10px"><span></span><div style="height:2px;background:var(--surface3);border-radius:1px;overflow:hidden"><span style="display:block;height:100%;width:{{ tile.bar }};background:var(--muted)"></span></div><span></span></div>
+                                </sc-if>
+                                <sc-if value="{{ tile.subject }}">
+                                  <div style="display:grid;grid-template-columns:6px minmax(0,1fr) 10px;column-gap:10px"><span></span><div style="font-size:var(--fs-sm);font-weight:var(--fw-medium);line-height:20px;text-wrap:pretty;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden">{{ tile.subject }}</div><span></span><span></span><span style="margin-top:2px;font-family:var(--font-mono);font-size:var(--fs-2xs);line-height:18px;color:{{ tile.pollColor }}">{{ tile.poll }}</span><span></span></div>
+                                </sc-if>
+                                <sc-for list="{{ tile.groups }}" as="g" hint-placeholder-count="2">
+                                  <div style="display:grid;gap:10px">
+                                    <sc-if value="{{ g.isDone }}">
+                                      <button type="button" aria-expanded="{{ g.showRows }}" onClick="{{ g.toggle }}" style="display:grid;grid-template-columns:6px minmax(0,1fr) 10px;column-gap:10px;align-items:center;width:100%;padding:0;text-align:left;cursor:pointer;line-height:20px">
+                                        <span style="display:block;width:6px;height:6px;border-radius:50%;border:1.5px solid var(--muted)"></span>
+                                        <span style="font-size:var(--fs-xs);color:var(--muted)">{{ g.label }}</span>
+                                        <span style="display:flex;justify-content:center;color:var(--muted);font-size:var(--fs-2xs);transform:rotate({{ g.rot }});transition:transform 120ms ease">▸</span>
+                                      </button>
+                                    </sc-if>
+                                    <sc-if value="{{ g.showRows }}">
+                                      <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="2">
+                                        <div style="display:grid;grid-template-columns:6px minmax(0,1fr) 10px;column-gap:10px;align-items:start">
+                                          <span style="display:flex;align-items:center;justify-content:center;height:20px">
+                                            <sc-if value="{{ r.isRun }}">{{ pulseDot }}</sc-if>
+                                            <sc-if value="{{ r.isStatic }}"><span style="display:block;width:6px;height:6px;border-radius:50%;background:{{ r.dotFill }};border:1.5px solid {{ r.dotRing }}"></span></sc-if>
+                                          </span>
+                                          <div style="display:grid;gap:2px;min-width:0">
+                                            <span style="font-size:var(--fs-sm);line-height:20px;color:{{ r.titleColor }};text-wrap:pretty;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden">{{ r.title }}</span>
+                                            <span style="font-size:var(--fs-xs);line-height:18px;color:var(--muted);font-variant-numeric:tabular-nums"><span style="font-weight:var(--fw-medium);color:{{ r.wordColor }}">{{ r.word }}</span>{{ r.rest }}</span>
+                                            <sc-if value="{{ r.hasMeta }}">
+                                              <span style="display:flex;align-items:center;gap:6px;min-width:0;font-family:var(--font-mono);font-size:var(--fs-2xs);line-height:18px;color:var(--muted)">
+                                                <span style="flex-shrink:0;white-space:nowrap">{{ r.type }}</span>
+                                                <sc-if value="{{ r.chip }}"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 5px;border:1px solid var(--border2);border-radius:var(--r-xs);line-height:16px">{{ r.chip }}</span></sc-if>
+                                              </span>
+                                            </sc-if>
+                                            <sc-if value="{{ r.action }}">
+                                              <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-mono);font-size:var(--fs-2xs);line-height:18px;color:var(--muted)">{{ r.action }}</span>
+                                            </sc-if>
+                                          </div>
+                                          <span></span>
+                                        </div>
+                                      </sc-for>
+                                    </sc-if>
+                                  <sc-if value="{{ g.hasMore }}"><button type="button" onClick="{{ g.moreToggle }}" style="display:grid;grid-template-columns:6px minmax(0,1fr) 10px;column-gap:10px;align-items:center;width:100%;padding:0;text-align:left;cursor:pointer;line-height:20px"><span></span><span style="font-size:var(--fs-xs);color:var(--muted)" style-hover="color:var(--text)">{{ g.moreLabel }}</span><span></span></button></sc-if>
+                                  </div>
+                                </sc-for>
+                                <sc-if value="{{ tile.link }}">
+                                  <div style="padding-left:16px;font-size:var(--fs-xs)"><a href="#plan">Open plan file →</a></div>
+                                </sc-if>
+                              </div>
+                            </sc-if>
+                          </sc-if>
+
+                        </section>
+                      </sc-for>
+                      </div>
+                    </aside>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <sc-if value="{{ group.showNote }}">
+          <div style="width:380px;display:grid;gap:18px;padding-top:34px;font-size:var(--fs-sm);line-height:1.5;text-wrap:pretty">
+            <div style="font-size:var(--fs-2xs);font-weight:var(--fw-semi);letter-spacing:0.06em;text-transform:uppercase;color:var(--muted)">Rules</div>
+            <div style="display:grid;gap:4px"><b style="font-weight:var(--fw-semi)">Order</b><span style="color:var(--muted)">Info is a pinned header, not a tile: the ticket on --surface2, then context, cost and elapsed on a --surface3 meter strip with a full-bleed context line. It never collapses or scrolls, and keeps its height with no ticket linked. Below it, Plan, Agents and PR never reorder or disappear; an empty tile keeps its one line.</span></div>
+            <div style="display:grid;gap:4px"><b style="font-weight:var(--fw-semi)">Auto-open</b><span style="color:var(--muted)">A tile opens by itself when something in it is running, failed or needs attention, and collapses when it settles. Clicking a header overrides that for the rest of the session.</span></div>
+            <div style="display:grid;gap:4px"><b style="font-weight:var(--fw-semi)">Collapsed</b><span style="color:var(--muted)">Each tile is a sentence: what state, then what it is about, two lines at most. Read top to bottom, the collapsed rail tells the whole situation without opening anything.</span></div>
+            <div style="display:grid;gap:4px"><b style="font-weight:var(--fw-semi)">Expanded</b><span style="color:var(--muted)">Every item is a row: dot, a title that wraps to two lines, then a status word and what it is doing. Rows group running first, then needs attention, then done, which folds into one “n done” row you can open.</span></div>
+            <div style="display:grid;gap:4px"><b style="font-weight:var(--fw-semi)">Waiting</b><span style="color:var(--muted)">When the session needs you, a one-line --warn strip sits on the header's top edge. It is session-level only; subagent prompts go to the orchestrator, so agent rows never say “needs you”.</span></div>
+            <div style="display:grid;gap:4px"><b style="font-weight:var(--fw-semi)">Scale</b><span style="color:var(--muted)">Every list in an open tile shows 3 rows, then “+n more” that expands inline. Passed checks and done agents fold into one row. At 48px the rail keeps the ticket ID and one dot per tile.</span></div>
+            <div style="display:grid;gap:4px"><b style="font-weight:var(--fw-semi)">Truncation</b><span style="color:var(--muted)">Titles wrap and clamp only after two lines. Single-line ellipsis is reserved for file paths and branch chips. Status words and numbers never truncate. Branch chips appear only when the session spans more than one worktree.</span></div>
+            <div style="display:grid;gap:8px">
+              <b style="font-weight:var(--fw-semi)">Dots, rings, colour</b>
+              <div style="display:grid;grid-template-columns:6px auto minmax(0,1fr);column-gap:10px;row-gap:6px;align-items:center;font-size:var(--fs-xs)">
+                <span style="display:flex">{{ pulseDot }}</span><span style="color:var(--accent);font-weight:var(--fw-medium)">running</span><span style="color:var(--muted)">pulsing, with a ticking time</span>
+                <span style="display:block;width:6px;height:6px;border-radius:50%;background:var(--danger);border:1.5px solid var(--danger)"></span><span style="color:var(--danger);font-weight:var(--fw-medium)">failed</span><span style="color:var(--muted)">tile ring turns --danger</span>
+                <span style="display:block;width:6px;height:6px;border-radius:50%;background:var(--warn);border:1.5px solid var(--warn)"></span><span style="color:var(--warn);font-weight:var(--fw-medium)">attention</span><span style="color:var(--muted)">tile ring turns --warn</span>
+                <span style="display:block;width:6px;height:6px;border-radius:50%;border:1.5px solid var(--muted)"></span><span style="color:var(--muted);font-weight:var(--fw-medium)">done</span><span style="color:var(--muted)">done, passed, merged</span>
+                <span style="display:block;width:6px;height:6px;border-radius:50%;border:1.5px solid var(--border2)"></span><span style="color:var(--muted);font-weight:var(--fw-medium)">not yet</span><span style="color:var(--muted)">next, awaiting, empty</span>
+              </div>
+              <span style="color:var(--muted)">Colour marks state only and always sits beside a word. No fills, gradients or shadows.</span>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </section>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;live&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Behaviour&quot;}, &quot;doneOpen&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Behaviour&quot;}}">
+const C = { text: 'var(--text)', muted: 'var(--muted)', accent: 'var(--accent)', danger: 'var(--danger)', warn: 'var(--warn)' };
+const DOTS = { run: ['var(--accent)', 'var(--accent)'], fail: ['var(--danger)', 'var(--danger)'], warn: ['var(--warn)', 'var(--warn)'], done: ['transparent', 'var(--muted)'], none: ['transparent', 'var(--border2)'] };
+const MED = 'var(--fw-medium)', BODY = 'var(--fw-body)';
+
+function fmt(s) {
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ' + String(s % 60).padStart(2, '0') + 's';
+  return Math.floor(m / 60) + 'h ' + String(m % 60).padStart(2, '0') + 'm';
+}
+function dot(k) { const d = DOTS[k] || DOTS.none; return { isRun: k === 'run', isStatic: k !== 'run', dotFill: d[0], dotRing: d[1] }; }
+const P = (t, c, w) => ({ t, c: c || C.text, w: w || BODY, ws: 'nowrap' });
+const W = (t, c, w) => Object.assign(P(t, c, w), { ws: 'normal' });
+function row(k, o) { return Object.assign(dot(k), { title: '', titleColor: C.text, word: '', wordColor: C.muted, rest: '', hasMeta: false, type: '', chip: '', action: '' }, o); }
+const plural = (n, one, many) => n === 1 ? one : many;
+
+const STATUS = { 'In Progress': ['var(--accent)', 'currentColor'], 'In Review': ['var(--warn)', 'currentColor'], 'Done': ['var(--muted)', 'var(--border2)'], 'Backlog': ['var(--text)', 'var(--border2)'], 'Todo': ['var(--text)', 'var(--border2)'] };
+const MODEL = { Opus: 'var(--model-opus)', Sonnet: 'var(--model-sonnet)', Haiku: 'var(--model-haiku)' };
+function midEllipsis(str, max) { if (str.length <= max) return str; const keep = max - 1, a = Math.ceil(keep / 2); return str.slice(0, a) + '…' + str.slice(str.length - (keep - a)); }
+function fmtClock(s) { return s < 3600 ? Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's' : Math.floor(s / 3600) + 'h ' + String(Math.floor(s / 60) % 60).padStart(2, '0') + 'm'; }
+function infoData(f, tick) {
+  const s = f.stats, t = f.ticket, st = t ? STATUS[t.status] : STATUS.Todo, cost = s.cost + (f.live ? tick * 0.002 : 0);
+  return { hasTicket: !!t, noTicket: !t, id: t ? t.id : '', title: t ? t.title : '', status: t ? t.status : '', chipColor: st[0], chipRing: st[1],
+    where: midEllipsis(f.branch + ' · ' + f.wt, 36), whereShort: midEllipsis(f.branch + ' · ' + f.wt, 24), model: f.model, modelColor: MODEL[f.model], waiting: f.waiting || '',
+    ctx: s.ctx + '%', ctxColor: s.ctx > 75 ? 'var(--warn)' : 'var(--accent)', time: fmtClock(s.sec + tick), cost: '$' + cost.toFixed(2) };
+}
+function emptySec(key, label, text) {
+  return { key, label, agg: 'none', cParts: [W(text, C.muted)], eParts: [W(text, C.muted)], groups: [] };
+}
+
+function planSec(p) {
+  if (!p) return emptySec('plan', 'Plan', 'No plan yet');
+  const N = p.steps.length, d = p.done, live = d < N, bar = Math.round(d / N * 100) + '%';
+  const rows = p.steps.map((t, i) => ({ t, i }));
+  const done = rows.slice(0, d).map(x => row('done', { title: x.t, titleColor: C.muted, word: 'done', rest: ` · step ${x.i + 1}` }));
+  const groups = [];
+  if (live) {
+    const cur = rows[d];
+    groups.push({ key: 'cur', kind: 'list', rows: [row('run', { title: cur.t, word: 'in progress', wordColor: C.accent, rest: ` · step ${d + 1} of ${N}` })] });
+    const next = rows.slice(d + 1).map(x => row('none', { title: x.t, titleColor: C.muted, word: 'next', rest: ` · step ${x.i + 1}` }));
+    if (next.length) groups.push({ key: 'next', kind: 'list', rows: next });
+  }
+  if (done.length) groups.push({ key: 'done', kind: 'done', label: `${d} done`, rows: done });
+  return { key: 'plan', label: 'Plan', agg: live ? 'run' : 'done', bar, cBar: true, eBar: true, link: true, groups,
+    cParts: live ? [P(`Step ${d + 1} of ${N}: `, C.text, MED), W(rows[d].t)] : [P(`All ${N} steps done`)],
+    eParts: live ? [P(`Step ${d + 1} of ${N}`, C.text, MED), P(`, ${d} done`, C.muted)] : [P(`All ${N} steps done`)] };
+}
+
+function agentSec(a, tick, multi) {
+  const run = a.running, dn = a.done, r = run.length;
+  if (!r && !dn.length) return emptySec('agents', 'Agents', 'No agents yet');
+  const parts = r ? [P(`${r} running`, C.accent, MED)].concat(dn.length ? [P(`, ${dn.length} done`, C.muted)] : []) : [P(`${dn.length} done`)];
+  const src = r ? run : dn;
+  const names = src.slice(0, 2).map(x => x.task).join(', ') + (src.length > 2 ? `, +${src.length - 2}` : '');
+  const groups = [];
+  if (r) groups.push({ key: 'run', kind: 'list', rows: run.map(x => row('run', { title: x.task, word: 'running', wordColor: C.accent, rest: ` ${fmt(x.sec + tick)}, ${x.tools} tool ${plural(x.tools, 'call', 'calls')}`, hasMeta: true, type: x.type, chip: multi ? x.wt : '', action: x.action })) });
+  if (dn.length) groups.push({ key: 'done', kind: 'done', label: `${dn.length} done`, rows: dn.map(x => row('done', { title: x.task, titleColor: C.muted, word: 'done', rest: ` in ${fmt(x.sec)}, ${x.tools} tool calls`, hasMeta: true, type: x.type, chip: multi ? x.wt : '' })) });
+  return { key: 'agents', label: 'Agents', agg: r ? 'run' : 'done', cParts: parts, eParts: parts, cDetail: names, groups };
+}
+
+function prSec(p, tick) {
+  if (!p) return emptySec('pr', 'PR', 'No PR for this branch yet');
+  const ck = p.checks, fail = ck.filter(c => c.s === 'fail'), pend = ck.filter(c => c.s === 'run'), pass = ck.filter(c => c.s === 'pass'), t = ck.length;
+  const head = P('#' + p.num + ' ' + p.state, p.state === 'draft' ? C.muted : C.text, MED), sep = W(', ', C.muted);
+  let ci;
+  if (!t) ci = P('no checks', C.muted);
+  else if (fail.length) ci = P(fail.length + ' of ' + t + ' checks failing', C.danger, MED);
+  else if (pend.length) ci = P(pend.length + ' of ' + t + ' checks running', C.accent, MED);
+  else ci = P(t + ' checks passed', C.muted);
+  const RV = { awaiting: ['none', 'awaiting review', 'awaiting review', C.muted], comments: ['warn', p.comments + ' comments', p.comments + ' review comments', C.warn], changes: ['warn', 'changes requested', 'changes requested', C.warn], approved: ['done', 'approved', 'approved', C.accent] }[p.review];
+  const attention = fail.map(c => row('fail', { title: c.n, word: 'failing', wordColor: C.danger }));
+  const rv = row(RV[0], { title: 'Review', titleColor: RV[0] === 'warn' ? C.text : C.muted, word: RV[1], wordColor: RV[3] });
+  if (RV[0] === 'warn') attention.push(rv);
+  const groups = [];
+  if (pend.length) groups.push({ key: 'run', kind: 'list', rows: pend.map(c => row('run', { title: c.n, word: 'running', wordColor: C.accent })) });
+  if (attention.length) groups.push({ key: 'att', kind: 'list', rows: attention });
+  if (RV[0] !== 'warn') groups.push({ key: 'oth', kind: 'list', rows: [rv] });
+  if (pass.length) groups.push({ key: 'done', kind: 'done', label: pass.length + ' passed', rows: pass.map(c => row('done', { title: c.n, titleColor: C.muted, word: 'passed' })) });
+  const ago = p.poll.ok ? (p.poll.ago + tick) % 30 : p.poll.ago;
+  const poll = p.poll.ok ? (ago < 2 ? 'updated just now' : 'updated ' + ago + 's ago') : 'last updated ' + Math.round(ago / 60) + 'm ago, gh failed';
+  const agg = fail.length ? 'fail' : (RV[0] === 'warn' || !p.poll.ok) ? 'warn' : pend.length ? 'run' : p.state === 'merged' ? 'done' : 'none';
+  return { key: 'pr', label: 'PR', agg, groups, subject: p.title, cDetail: p.title, poll, pollColor: p.poll.ok ? C.muted : C.warn, cWarn: !p.poll.ok,
+    cParts: [head, sep, ci, sep, P(RV[2], RV[3], RV[0] === 'none' ? BODY : MED)], eParts: [head] };
+}
+
+const TICKET = { id: 'ENG-482', title: 'Retry failed webhook deliveries with backoff', status: 'In Progress' };
+const PLAN6 = ['Find the webhook sender', 'Add retry helper with backoff', 'Wrap sendWebhook', 'Test the failure path', 'Update the changelog', 'Open the pull request'];
+const ck = (pass, run, fail) => pass.map(n => ({ n, s: 'pass' })).concat(run.map(n => ({ n, s: 'run' })), fail.map(n => ({ n, s: 'fail' })));
+const FIX = {
+  fresh: { name: 'Fresh', desc: 'no ticket, nothing yet', wts: 1, ticket: null, branch: 'main', wt: 'main', model: 'Sonnet', live: false,
+    plan: null, agents: { running: [], done: [] }, pr: null, stats: { ctx: 0, sec: 0, cost: 0 } },
+  typical: { name: 'Typical', desc: 'one agent working', wts: 1, ticket: TICKET, branch: 'atlas/billing-retry', wt: 'main', model: 'Sonnet', live: true,
+    plan: { title: 'Add retry with backoff to the billing webhook', done: 3, steps: PLAN6 },
+    agents: { running: [{ task: 'Write webhook failure test', type: 'general-purpose', sec: 40, tools: 2, wt: 'main', action: 'Writing tests/webhook_failure.rs' }], done: [] },
+    pr: null, stats: { ctx: 28, sec: 840, cost: 0.84 } },
+  waiting: { name: 'Waiting', desc: 'needs you, draft PR, 82%', wts: 1, ticket: TICKET, branch: 'atlas/billing-retry', wt: 'main', model: 'Haiku', live: false,
+    waiting: 'Waiting for you: wants to run Bash',
+    plan: { title: 'Add retry with backoff to the billing webhook', done: 5, steps: PLAN6 },
+    agents: { running: [], done: [
+      { task: 'Write webhook failure test', type: 'general-purpose', sec: 134, tools: 9, wt: 'main' },
+      { task: 'Explore retry helpers', type: 'Explore', sec: 130, tools: 4, wt: 'main' }] },
+    pr: { num: 497, title: 'Retry failed webhook deliveries with backoff', state: 'draft', checks: ck(['lint', 'unit'], ['build', 'e2e (chromium)', 'e2e (webkit)', 'e2e (firefox)'], []), review: 'awaiting', poll: { ok: true, ago: 12 } },
+    stats: { ctx: 82, sec: 1880, cost: 2.06 } },
+  failure: { name: 'Failure', desc: 'CI failing', wts: 1, ticket: TICKET, branch: 'atlas/pinned-tiles', wt: 'main', model: 'Sonnet', live: true,
+    plan: { title: 'Sort pinned tiles first on the overview', done: 5, steps: ['Find the overview sort', 'Add a pinned flag to tiles', 'Sort pinned tiles first', 'Update the overview tests', 'Open the pull request', 'Get CI green on the pull request'] },
+    agents: { running: [{ task: 'Fix the pinned tile sort order', type: 'general-purpose', sec: 85, tools: 7, wt: 'main', action: 'Editing src/lib/overview.ts' }], done: [] },
+    pr: { num: 503, title: 'Sort pinned tiles first on the overview', state: 'open', checks: ck(['lint', 'typecheck', 'build'], [], ['unit']), review: 'awaiting', poll: { ok: true, ago: 12 } },
+    stats: { ctx: 41, sec: 1560, cost: 1.37 } },
+  heavy: { name: 'Heavy', desc: '9 agents, 3 worktrees', wts: 3, ticket: TICKET, branch: 'atlas/billing-retry', wt: 'retry-metrics', model: 'Opus', live: true,
+    plan: { title: 'Fix the failing retry_after_header tests', done: 10, steps: ['Reproduce the failing tests', 'Find where Retry-After is read', 'Explore retry helpers', 'Read the header parsing module', 'Add seconds-form parsing', 'Cap the backoff delay', 'Add jitter to the backoff', 'Write failing cases for HTTP dates', 'Wire the parser into sendWebhook', 'Split work across worktrees', 'Parse Retry-After as an HTTP date', 'Rerun the retry_after_header tests', 'Count retries in the metrics crate', 'Update the changelog'] },
+    agents: { running: [
+      { task: 'Fix retry_after_header parsing', type: 'general-purpose', sec: 448, tools: 14, wt: 'main', action: 'Reading src/retry.rs' },
+      { task: 'Find where retries are counted', type: 'Explore', sec: 108, tools: 9, wt: 'retry-metrics', action: 'Searching crates/metrics for retry_count' },
+      { task: 'Explore Retry-After call sites', type: 'Explore', sec: 52, tools: 6, wt: 'retry-date', action: 'Reading src/webhook/headers.rs' },
+      { task: 'Check the header fixtures', type: 'Explore', sec: 21, tools: 3, wt: 'main', action: 'Reading tests/fixtures/retry_after.json' }],
+      done: [
+      { task: 'Find the webhook sender', type: 'Explore', sec: 65, tools: 6, wt: 'main' },
+      { task: 'Explore retry helpers', type: 'Explore', sec: 130, tools: 4, wt: 'main' },
+      { task: 'Map the metrics crate', type: 'Explore', sec: 48, tools: 5, wt: 'retry-metrics' },
+      { task: 'Draft the HTTP date parser', type: 'general-purpose', sec: 242, tools: 19, wt: 'retry-date' },
+      { task: 'List Retry-After test cases', type: 'Explore', sec: 36, tools: 3, wt: 'retry-date' }] },
+    pr: { num: 482, title: 'Add retry with backoff to the billing webhook', state: 'open', checks: ck(['lint', 'typecheck', 'unit', 'build', 'e2e (chromium)', 'e2e (firefox)'], [], ['e2e (webkit)']), review: 'comments', comments: 3, poll: { ok: true, ago: 12 } },
+    stats: { ctx: 64, sec: 2880, cost: 4.18 } },
+  merged: { name: 'Merged', desc: 'PR merged, refresh failing', wts: 1, ticket: Object.assign({}, TICKET, { status: 'Done' }), branch: 'atlas/billing-retry', wt: 'main', model: 'Sonnet', live: false,
+    plan: { title: 'Add retry with backoff to the billing webhook', done: 6, steps: PLAN6 },
+    agents: { running: [], done: [{ task: 'Write webhook failure test', type: 'general-purpose', sec: 134, tools: 9, wt: 'main' }] },
+    pr: { num: 482, title: 'Add retry with backoff to the billing webhook', state: 'merged', checks: ck(['lint', 'typecheck', 'unit', 'build', 'e2e (chromium)', 'e2e (firefox)', 'e2e (webkit)'], [], []), review: 'approved', poll: { ok: false, ago: 180 } },
+    stats: { ctx: 37, sec: 3420, cost: 4.91 } }
+};
+const NOUN = { run: 'running', next: 'next', att: '' };
+
+class Component extends DCLogic {
+  state = { tick: 0, ov: {} };
+  componentDidMount() {
+    this.applyScroll();
+    this.scrollT = setTimeout(() => this.applyScroll(), 800);
+    this.timer = setInterval(() => { if (this.props.live ?? true) this.setState(s => ({ tick: s.tick + 1 })); }, 1000);
+  }
+  componentDidUpdate() { this.applyScroll(); }
+  applyScroll() {
+    document.querySelectorAll('[data-scroll]').forEach(el => {
+      const v = +el.getAttribute('data-scroll');
+      if (!v || el.dataset.done || el.scrollHeight <= el.clientHeight) return;
+      el.scrollTop = v;
+      if (el.scrollTop > 0) el.dataset.done = '1';
+    });
+  }
+  componentWillUnmount() { clearInterval(this.timer); clearTimeout(this.scrollT); }
+  flip(k, cur) { this.setState(st => ({ ov: Object.assign({}, st.ov, { [k]: !cur }) })); }
+  finalize(id, mode, t) {
+    t = Object.assign({}, t, { isInfo: false, isSection: true });
+    const k = id + ':' + t.key, ov = this.state.ov[k], open = ov === undefined ? mode !== 'c' : ov;
+    const out = Object.assign({}, t, dot(t.agg), { open, closed: !open, rot: open ? '90deg' : '0deg',
+      ring: t.agg === 'fail' ? 'var(--danger)' : t.agg === 'warn' ? 'var(--warn)' : 'var(--border)', toggle: () => this.flip(k, open) });
+    const groups = (t.groups || []).map(g => {
+      if (g.kind !== 'done') {
+        const mk = k + ':' + g.key + ':more', more = this.state.ov[mk] === true, extra = g.rows.length - 3;
+        return Object.assign({}, g, { isDone: false, showRows: true, rot: '0deg', toggle: null, rows: extra > 0 && !more ? g.rows.slice(0, 3) : g.rows,
+          hasMore: extra > 0, moreLabel: more ? 'show fewer' : ('+' + extra + ' more ' + (NOUN[g.key] || '')).trim(), moreToggle: () => this.flip(mk, more) });
+      }
+      const gk = k + ':' + g.key, gov = this.state.ov[gk], go = gov === undefined ? (this.props.doneOpen ?? false) : gov;
+      return Object.assign({}, g, { isDone: true, showRows: go, hasMore: false, rot: go ? '90deg' : '0deg', toggle: () => this.flip(gk, go) });
+    });
+    Object.assign(out, { parts: open ? t.eParts : t.cParts, meta: '', bar: t.bar || '0%', poll: t.poll || '', pollColor: t.pollColor || C.muted,
+      showCBar: !open && !!t.cBar, showCDetail: !open && !!t.cDetail, showCWarn: !open && !!t.cWarn, cDetail: t.cDetail || '', eBar: !!t.eBar, subject: t.subject || '', link: !!t.link,
+      groups, showBody: open && (groups.length > 0 || !!t.subject || !!t.eBar) });
+    return out;
+  }
+  rail(theme, mode, key, tag, hv) {
+    hv = hv || 'f';
+    const H = { hvBase: hv === 'base', hvA: hv === 'a', hvB: hv === 'b', hvC: hv === 'c', hvD: hv === 'd', hvE: hv === 'e', hvF: hv === 'f', h: '960px' };
+    const f = FIX[key], id = theme + '-' + mode + '-' + key + (tag || '') + hv, tick = this.state.tick, multi = f.wts > 1;
+    const tiles = [planSec(f.plan), agentSec(f.agents, tick, multi), prSec(f.pr, tick)];
+    const info = infoData(f, tick);
+    if (mode === 't') return { isThin: true, isFull: false, w: '48px', name: f.name, desc: 'thin', tid: f.ticket ? f.ticket.id : 'no ticket', waiting: !!f.waiting,
+      dots: tiles.map(t => Object.assign({ label: t.label }, dot(t.agg))), info, tiles: [], scroll: 0, ...H };
+    return { isThin: false, isFull: true, w: '300px', name: f.name, desc: mode === 's' ? 'scrolled to the bottom' : f.desc, scroll: mode === 's' ? 9999 : 0,
+      info, tiles: tiles.map(t => this.finalize(id, mode, t)), ...H };
+  }
+  renderVals() {
+    const live = this.props.live ?? true;
+    const mk = (theme, keys) => [
+      { desc: '', label: 'Collapsed', rails: keys.map(k => this.rail(theme, 'c', k)) },
+      { desc: '', label: 'Expanded', rails: keys.map(k => this.rail(theme, 'e', k)) }
+    ];
+    return {
+      pulseDot: React.createElement('span', { style: { display: 'block', width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', animation: live ? 'atlasPulse 1.6s ease-in-out infinite' : 'none' } }),
+      groups: [
+        { theme: 'dark', label: 'Dark', showNote: false, modes: mk('dark', ['fresh', 'typical', 'waiting', 'failure', 'heavy', 'merged']).concat([
+          { desc: '', label: 'Pinned header · Heavy expanded, scrolled', rails: [this.rail('dark', 's', 'heavy')] },
+          { desc: '', label: 'Thin rail beside the full rail', rails: [this.rail('dark', 't', 'heavy'), this.rail('dark', 'c', 'heavy', '-cmp'), this.rail('dark', 't', 'waiting'), this.rail('dark', 'c', 'waiting', '-cmp')] }]) },
+        { theme: 'light', label: 'Light', showNote: true, modes: mk('light', ['typical', 'heavy']) }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
