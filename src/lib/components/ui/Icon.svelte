@@ -37,6 +37,7 @@
     "edit",
     "progress_activity",
     "key",
+    "arrow_upward",
   ] as const;
   export type IconName = (typeof ICONS)[number];
 </script>

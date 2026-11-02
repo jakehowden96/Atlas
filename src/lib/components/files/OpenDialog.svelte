@@ -16,13 +16,21 @@
   import { showToast } from "../../stores/toast";
   import { addSource, fileWs, openFile } from "../../stores/files";
   import { openDialogOpen } from "../../stores/view";
+  import Button from "../ui/Button.svelte";
+  import Icon from "../ui/Icon.svelte";
+  import IconButton from "../ui/IconButton.svelte";
+  import InlineAlert from "../ui/InlineAlert.svelte";
+  import ListRow from "../ui/ListRow.svelte";
   import Modal from "../ui/Modal.svelte";
+  import Skeleton from "../ui/Skeleton.svelte";
+  import Tooltip from "../ui/Tooltip.svelte";
   import { errorMessage } from "../../ipc-error";
 
   let dir = $state("");
   let entries = $state<DirEntry[]>([]);
   let truncated = $state(false);
   let error = $state("");
+  let loading = $state(false);
 
   let crumbs = $derived(dir ? breadcrumbs(dir) : []);
   let up = $derived(dir ? parentDir(dir) : null);
@@ -48,6 +56,7 @@
    */
   async function navigate(target: string | null) {
     const path = target ?? dir ?? "";
+    loading = true;
     try {
       dir = path || $fileWs || (await homeDir());
       const listing = await listDir(dir);
@@ -59,6 +68,8 @@
       entries = [];
       truncated = false;
       error = errorMessage(e);
+    } finally {
+      loading = false;
     }
   }
 
@@ -70,6 +81,20 @@
     if (!entry.is_text) return;
     openFile("disk", entry.path);
     openDialogOpen.set(false);
+  }
+
+  /** Arrow keys walk the enabled options; Enter and Space are ListRow's. */
+  function onListKeydown(e: KeyboardEvent) {
+    const step = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const rows = [
+      ...(e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>(
+        '[role="option"]:not([aria-disabled])',
+      ),
+    ];
+    const at = rows.indexOf(document.activeElement as HTMLElement);
+    rows[Math.min(rows.length - 1, Math.max(0, at + step))]?.focus();
   }
 
   /** The native folder picker: registering a folder needs no greyed rows. */
@@ -89,56 +114,73 @@
   }
 </script>
 
-<Modal open={$openDialogOpen} onClose={() => openDialogOpen.set(false)} width="620px">
+<Modal
+  open={$openDialogOpen}
+  onClose={() => openDialogOpen.set(false)}
+  title="Open file"
+  width="620px"
+>
   <div class="dialog">
     <div class="bar">
-      <button type="button" class="up" disabled={!up} onclick={() => up && navigate(up)}>↑</button>
-      <div class="crumbs">
+      <IconButton
+        icon="arrow_upward"
+        label="Up one folder"
+        size="sm"
+        disabled={!up}
+        onclick={() => up && navigate(up)}
+      />
+      <nav class="crumbs" aria-label="Folder path">
         {#each crumbs as crumb, i (crumb.path)}
-          {#if i > 0}<span class="sep">/</span>{/if}
+          {#if i > 0}<span class="sep" aria-hidden="true">/</span>{/if}
           <button
             type="button"
             class="crumb"
             class:leaf={i === crumbs.length - 1}
+            aria-current={i === crumbs.length - 1 ? "location" : undefined}
             onclick={() => navigate(crumb.path)}
           >
             {crumb.label}
           </button>
         {/each}
-      </div>
-      <span class="kbd">esc</span>
+      </nav>
     </div>
 
     <div class="list">
       {#if error}
-        <p class="message">{error}</p>
-      {:else if entries.length === 0}
-        <p class="message">This folder is empty.</p>
-      {:else}
-        {#each entries as entry (entry.path)}
-          <button
-            type="button"
-            class="row"
-            class:dim={!entry.is_dir && !entry.is_text}
-            disabled={!entry.is_dir && !entry.is_text}
-            title={entry.path}
-            onclick={() => pick(entry)}
-          >
-            <span class="glyph">{entry.is_dir ? "▸" : "·"}</span>
-            <span class="name">{entry.name}</span>
-          </button>
+        <InlineAlert>{error}</InlineAlert>
+      {:else if loading}
+        {#each [0, 1, 2, 3, 4] as n (n)}
+          <div class="skel"><Skeleton width="{80 - n * 10}%" /></div>
         {/each}
+      {:else if entries.length === 0}
+        <p class="message">This folder is empty</p>
+      {:else}
+        <!-- svelte-ignore a11y_interactive_supports_focus -->
+        <div class="options" role="listbox" aria-label="Folder contents" onkeydown={onListKeydown}>
+          {#each entries as entry (entry.path)}
+            {@const blocked = !entry.is_dir && !entry.is_text}
+            <ListRow option disabled={blocked} onclick={() => pick(entry)}>
+              <Icon name={entry.is_dir ? "folder" : "article"} />
+              {#if blocked}
+                <Tooltip text="Only Markdown and text files can be opened">
+                  <span class="name">{entry.name}</span>
+                </Tooltip>
+              {:else}
+                <span class="name">{entry.name}</span>
+              {/if}
+            </ListRow>
+          {/each}
+        </div>
       {/if}
       {#if truncated}
-        <p class="message">This folder has more entries than are shown.</p>
+        <p class="message">This folder has more entries than are shown</p>
       {/if}
     </div>
-
-    <div class="foot">
-      <span class="note">Markdown &amp; text only</span>
-      <button type="button" class="add" onclick={addFolder}>Add folder to Files</button>
-    </div>
   </div>
+  {#snippet footer()}
+    <span class="note">Markdown &amp; text only</span>
+    <Button onclick={addFolder}>Add folder to Files</Button>
+  {/snippet}
 </Modal>
 
 <style>
@@ -148,50 +190,27 @@
     height: 400px;
   }
 
-  /* ── Breadcrumb ────────────────────────────────────────────────────────── */
   .bar {
     display: flex;
     align-items: center;
     flex-shrink: 0;
-    gap: 8px;
-    padding: 10px 14px;
+    gap: var(--sp-2);
+    padding: var(--sp-3) var(--sp-4);
     border-bottom: 1px solid var(--border);
-  }
-
-  .up {
-    display: grid;
-    flex-shrink: 0;
-    place-items: center;
-    width: 22px;
-    height: 22px;
-    border-radius: var(--r-sm);
-    color: var(--muted);
-    font-size: var(--fs-sm);
-    cursor: pointer;
-  }
-
-  .up:hover:not(:disabled) {
-    background: var(--surface2);
-    color: var(--text);
-  }
-
-  .up:disabled {
-    opacity: 0.4;
-    cursor: default;
   }
 
   .crumbs {
     display: flex;
     align-items: center;
     flex: 1;
-    gap: 4px;
+    gap: var(--sp-1);
     min-width: 0;
     overflow-x: auto;
   }
 
   .crumb {
     flex-shrink: 0;
-    padding: 1px 4px;
+    padding: 1px var(--sp-1);
     border-radius: var(--r-xs);
     color: var(--muted);
     font-family: var(--font-mono);
@@ -216,63 +235,31 @@
     font-size: var(--fs-xs);
   }
 
-  .kbd {
-    flex-shrink: 0;
-    padding: 1px 5px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-xs);
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-  }
-
-  /* ── Listing ───────────────────────────────────────────────────────────── */
   .list {
     display: flex;
     flex: 1;
     flex-direction: column;
     min-height: 0;
-    padding: 6px;
+    padding: var(--sp-2);
     overflow-y: auto;
   }
 
-  .message {
-    margin: 6px 8px;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+  .options {
+    display: flex;
+    flex-direction: column;
   }
 
-  .row {
+  .skel {
     display: flex;
     align-items: center;
-    flex-shrink: 0;
-    gap: 8px;
-    height: 28px;
-    padding: 0 8px;
-    border-radius: var(--r-sm);
-    color: var(--text);
-    font-size: var(--fs-sm);
-    text-align: left;
-    cursor: pointer;
+    height: var(--h-lg);
+    padding: 0 var(--sp-2);
   }
 
-  .row:hover:not(:disabled) {
-    background: var(--surface2);
-  }
-
-  /* Listed so the folder looks like itself, but nothing here can open it. */
-  .row.dim {
+  .message {
+    margin: var(--sp-2);
     color: var(--muted);
-    opacity: 0.55;
-    cursor: default;
-  }
-
-  .glyph {
-    flex-shrink: 0;
-    width: 8px;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-    text-align: center;
+    font-size: var(--fs-xs);
   }
 
   .name {
@@ -282,32 +269,10 @@
     white-space: nowrap;
   }
 
-  /* ── Footer ────────────────────────────────────────────────────────────── */
-  .foot {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-shrink: 0;
-    gap: 10px;
-    padding: 10px 14px;
-    border-top: 1px solid var(--border);
-  }
-
   .note {
+    margin-right: auto;
+    align-self: center;
     color: var(--muted);
     font-size: var(--fs-xs);
-  }
-
-  .add {
-    height: 26px;
-    padding: 0 12px;
-    border: none;
-    border-radius: var(--r-md);
-    background: var(--ink);
-    color: var(--ink-text);
-    font-family: var(--font-ui);
-    font-size: var(--fs-xs);
-    font-weight: 500;
-    cursor: pointer;
   }
 </style>
