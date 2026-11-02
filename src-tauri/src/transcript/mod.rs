@@ -430,6 +430,26 @@ pub(crate) fn request_key(obj: &Value) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+/// A 64-bit FNV-1a hash of a line's identity, `tag` telling assistant requests
+/// (`a`) from user lines (`u`) apart. Hand-rolled because the value is stored in
+/// stats.json and `DefaultHasher` makes no promise of staying the same.
+///
+/// **Who owns a request.** A resumed or forked session's file starts with copies
+/// of earlier lines. The transcript that counted a `line_key` first owns it: the
+/// one with the oldest modified time (ties by path), the order `recompute_in`
+/// parses in. Every other file skips that line in its cost, tokens and context
+/// peak, so one request is billed once, on the day and in the session it
+/// happened. Stats applies this while parsing; the live tail applies the result
+/// through `commands::stats::foreign_keys`.
+pub(crate) fn line_key(tag: u8, key: &str) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in std::iter::once(tag).chain(key.bytes()) {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    hash
+}
+
 /// `message.model` of an assistant line, skipping the empty and `<synthetic>`
 /// placeholders that carry no real usage.
 pub(crate) fn assistant_model(obj: &Value) -> Option<&str> {
