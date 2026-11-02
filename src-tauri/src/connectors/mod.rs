@@ -9,8 +9,10 @@ pub mod clients;
 pub mod commands;
 pub mod config;
 pub mod keychain;
+pub mod linear;
 pub mod provider;
 pub mod registry;
+pub mod ticket_hint;
 
 use crate::error::AtlasError;
 use config::ConfigStore;
