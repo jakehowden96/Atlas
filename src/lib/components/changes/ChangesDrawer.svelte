@@ -10,7 +10,7 @@
     TOTAL_LINE_BUDGET,
     type FlatFile,
   } from "../../diff-view";
-  import { emptyDiffMessage, truncationNotice, type BaseView } from "../../diff-truncation";
+  import { truncationNotice, type BaseView } from "../../diff-truncation";
   import { refreshPanel } from "../../ipc";
   import { log } from "../../logger";
   import { enterLabel, isMacPlatform } from "../../platform";
@@ -26,8 +26,16 @@
     type ReviewComment,
   } from "../../stores/reviewComments";
   import { activeTabId, tabs } from "../../stores/terminal";
+  import { showToast } from "../../stores/toast";
   import { diffOpen } from "../../stores/view";
-  import { closeWith } from "../ui/Modal.svelte";
+  import { tooltip } from "../../ui/tooltip";
+  import Banner from "../ui/Banner.svelte";
+  import Button from "../ui/Button.svelte";
+  import { confirmAction } from "../ui/ConfirmDialog.svelte";
+  import CopyButton from "../ui/CopyButton.svelte";
+  import Drawer from "../ui/Drawer.svelte";
+  import EmptyState from "../ui/EmptyState.svelte";
+  import IconButton from "../ui/IconButton.svelte";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
   import DiffFileCard from "./DiffFileCard.svelte";
   import DiffFileTree from "./DiffFileTree.svelte";
@@ -39,30 +47,6 @@
   }
 
   let { open }: Props = $props();
-
-  const EXIT_MS = 220;
-
-  // Same delayed-unmount shape as Modal and the activity rail: `visible` lags
-  // `open` so the slide-out keyframes finish before the node leaves the DOM.
-  let visible = $state(false);
-  let closing = $state(false);
-  /** The pending unmount. A reopen inside the exit window must cancel it, or it
-   *  would fire later and hide a panel that is meant to be open. */
-  let exitTimer: ReturnType<typeof setTimeout> | undefined;
-
-  $effect(() => {
-    if (open) {
-      clearTimeout(exitTimer);
-      visible = true;
-      closing = false;
-    } else if (visible && !closing) {
-      closing = true;
-      exitTimer = closeWith(() => {
-        visible = false;
-        closing = false;
-      }, EXIT_MS);
-    }
-  });
 
   // ── Session identity ──────────────────────────────────────────────────────
   // Panel data, review comments and `panel-update` are all keyed by the
@@ -252,6 +236,47 @@
     removeComment(sessionId, id);
   }
 
+  /** Esc while the confirm is up must only dismiss the confirm. The window
+   *  handler in shortcuts.ts would otherwise close this drawer behind it. */
+  function swallowEscape(e: KeyboardEvent) {
+    if (e.key === "Escape") e.stopPropagation();
+  }
+
+  async function discard() {
+    const id = sessionId;
+    const saved = $activeSessionComments;
+    if (!id || saved.length === 0) return;
+    const n = saved.length;
+    const noun = `review comment${n === 1 ? "" : "s"}`;
+    document.addEventListener("keydown", swallowEscape);
+    let ok = false;
+    try {
+      ok = await confirmAction({
+        title: `Discard ${n} ${noun}?`,
+        body: "They will be removed from this session and cannot be recovered.",
+        confirmLabel: "Discard",
+        tone: "danger",
+      });
+    } finally {
+      // After a turn, so the Esc that dismissed the confirm has finished bubbling.
+      setTimeout(() => document.removeEventListener("keydown", swallowEscape));
+    }
+    if (!ok) return;
+    clearForSession(id);
+    showToast(`Discarded ${n} ${noun}`, {
+      type: "info",
+      action: {
+        label: "Undo",
+        run: () => {
+          for (const c of saved) addComment(id, c.anchor, c.body);
+        },
+      },
+    });
+  }
+
+  let installCommand = $derived(isMacPlatform() ? "xcode-select --install" : "winget install --id Git.Git");
+  let gitMissing = $derived($panelData?.issue === "git_not_found");
+
   let submitting = $state(false);
   let commentCount = $derived($activeSessionComments.length);
 
@@ -266,18 +291,28 @@
   }
 </script>
 
-{#if visible}
-  <aside class="drawer" class:closing aria-label="Changes">
+<!-- Esc is left to shortcuts.ts (composer first, then this drawer), so Modal's own
+     Esc handling is switched off by marking the event handled before it sees it. -->
+<Drawer
+  {open}
+  onClose={() => diffOpen.set(false)}
+  labelledBy="changes-title"
+  width="min(1080px, 92vw)"
+>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="content" onkeydown={(e) => e.key === "Escape" && e.preventDefault()}>
     <header class="head">
-      <span class="title">Changes</span>
+      <h2 id="changes-title" class="title">Changes</h2>
       <span class="counts">
         {flatFiles.length} file{flatFiles.length === 1 ? "" : "s"} ·
         <span class="added">+{addedTotal}</span>
         <span class="removed">−{removedTotal}</span>
       </span>
-      <span class="seg" title={baseHint}>
+      <span class="seg" use:tooltip={{ text: baseHint }}>
         <SegmentedControl
           size="sm"
+          role="radiogroup"
+          label="Diff base"
           options={BASE_OPTIONS}
           value={base}
           onChange={(id) => (base = id)}
@@ -288,26 +323,43 @@
 
       <SegmentedControl
         size="sm"
+        role="radiogroup"
+        label="Diff layout"
         options={MODE_OPTIONS}
         value={diffMode}
-        onChange={(id) => (diffMode = id as "split" | "unified")}
+        onChange={(id) => (diffMode = id)}
       />
-      <span class="viewed">{viewedCount}/{flatFiles.length} viewed</span>
-      <button
-        type="button"
-        class="close"
-        aria-label="Close changes"
-        onclick={() => diffOpen.set(false)}>✕</button
-      >
+      <span class="viewed">viewed {viewedCount}/{flatFiles.length}</span>
+      <IconButton
+        icon="close"
+        size="sm"
+        label="Close changes"
+        onclick={() => diffOpen.set(false)}
+      />
     </header>
 
     {#if truncation}
-      <div class="notice" role="status">{truncation}</div>
+      <div class="notice"><Banner tone="info" title={truncation} /></div>
     {/if}
 
     <div class="body">
       {#if flatFiles.length === 0}
-        <div class="clean">{emptyDiffMessage($panelData, isMacPlatform())}</div>
+        <div class="clean">
+          {#if gitMissing}
+            <EmptyState
+              icon="terminal"
+              title="Git was not found"
+              description="Install git, then reopen this panel"
+            >
+              {#snippet action()}
+                <code class="cmd">{installCommand}</code>
+                <CopyButton value={installCommand} variant="text" label="Copy install command" />
+              {/snippet}
+            </EmptyState>
+          {:else}
+            <EmptyState icon="check_circle" title="Working tree clean" />
+          {/if}
+        </div>
       {:else}
         <DiffFileTree
           {flatFiles}
@@ -342,18 +394,13 @@
         {/if}
       </span>
       <div class="spacer"></div>
-      <button
-        type="button"
-        class="discard"
-        disabled={commentCount === 0}
-        onclick={() => sessionId && clearForSession(sessionId)}>Discard</button
-      >
-      <button type="button" class="send" disabled={commentCount === 0 || submitting} onclick={send}
-        >{submitting ? "Sending…" : "Send to Claude"}</button
+      <Button size="sm" disabled={commentCount === 0} onclick={discard}>Discard</Button>
+      <Button size="sm" variant="primary" disabled={commentCount === 0 || submitting} onclick={send}
+        >{submitting ? "Sending…" : "Send to Claude"}</Button
       >
     </footer>
-  </aside>
-{/if}
+  </div>
+</Drawer>
 
 {#snippet fileCard(item: FlatFile)}
   <DiffFileCard
@@ -376,30 +423,11 @@
 {/snippet}
 
 <style>
-  .drawer {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 4;
+  .content {
     display: flex;
+    flex: 1;
     flex-direction: column;
-    /* Reviewing a diff and watching the session are separate activities, so the
-       drawer takes most of the viewport rather than sharing it with the pane. */
-    width: max-content;
-    min-width: min(1080px, 92%);
-    max-width: 92%;
-    /* The drawer grows to fit the longest diff line, up to the cap. It never
-       scrolls sideways itself — only `.lines` inside a file card does. */
-    overflow: hidden;
-    border-left: 1px solid var(--border2);
-    background: var(--surface);
-    box-shadow: var(--shadow);
-    animation: atlasSlideLeft 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-
-  .drawer.closing {
-    animation: atlasSlideRight 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    min-height: 0;
   }
 
   /* ── Header ────────────────────────────────────────────────────────────── */
@@ -408,13 +436,14 @@
     align-items: center;
     flex-shrink: 0;
     gap: 10px;
-    height: 44px;
+    height: var(--h-bar);
     padding: 0 14px;
     border-bottom: 1px solid var(--border);
   }
 
   .title {
     flex-shrink: 0;
+    margin: 0;
     font-size: var(--fs-sm);
     font-weight: 600;
   }
@@ -452,27 +481,6 @@
     white-space: nowrap;
   }
 
-  .close {
-    display: grid;
-    place-items: center;
-    flex-shrink: 0;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border: none;
-    border-radius: var(--r-md);
-    background: transparent;
-    color: var(--muted);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
-    cursor: pointer;
-  }
-
-  .close:hover {
-    background: var(--surface2);
-    color: var(--text);
-  }
-
   /* ── Body ──────────────────────────────────────────────────────────────── */
   .body {
     display: flex;
@@ -503,20 +511,22 @@
 
   .notice {
     flex-shrink: 0;
-    padding: 6px 14px;
+    padding: 8px 14px;
     border-bottom: 1px solid var(--border);
-    background: var(--surface2);
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
   }
 
   .clean {
     display: grid;
     flex: 1;
     place-items: center;
-    color: var(--muted);
-    font-size: var(--fs-sm);
+  }
+
+  .cmd {
+    padding: 4px 8px;
+    border-radius: var(--r-sm);
+    background: var(--surface2);
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
   }
 
   /* ── Footer ────────────────────────────────────────────────────────────── */
@@ -536,42 +546,5 @@
     font-size: var(--fs-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .discard,
-  .send {
-    flex-shrink: 0;
-    height: 26px;
-    border-radius: var(--r-md);
-    font-family: var(--font-ui);
-    cursor: pointer;
-  }
-
-  .discard {
-    padding: 0 10px;
-    border: 1px solid var(--border2);
-    background: transparent;
-    color: var(--text);
-    font-size: var(--fs-sm);
-    font-weight: 500;
-  }
-
-  .discard:hover:not(:disabled) {
-    background: var(--surface2);
-  }
-
-  .send {
-    padding: 0 12px;
-    border: none;
-    background: var(--accent);
-    color: var(--accent-ink);
-    font-size: var(--fs-sm);
-    font-weight: 600;
-  }
-
-  .discard:disabled,
-  .send:disabled {
-    cursor: default;
-    opacity: 0.5;
   }
 </style>

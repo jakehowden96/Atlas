@@ -1,5 +1,8 @@
 <script lang="ts">
   import { enterLabel } from "../../platform";
+  import Button from "../ui/Button.svelte";
+  import IconButton from "../ui/IconButton.svelte";
+  import Textarea from "../ui/Textarea.svelte";
   import { anchorDomKey, type ReviewAnchor, type ReviewComment } from "../../stores/reviewComments";
 
   interface Props {
@@ -46,13 +49,12 @@
     <div class="card">
       <div class="card-top">
         <span class="card-body">{c.body}</span>
-        <button
-          type="button"
-          class="dismiss"
-          title="Dismiss this comment"
-          aria-label="Dismiss comment"
-          onclick={() => onDismiss(c.id)}>✕</button
-        >
+        <IconButton
+          icon="delete"
+          size="sm"
+          label="Delete comment"
+          onclick={() => onDismiss(c.id)}
+        />
       </div>
       <div class="caption">Review comment · line {lineNum} · pending</div>
     </div>
@@ -61,17 +63,17 @@
   {#if composerOpen}
     <div class="card composer">
       <!-- svelte-ignore a11y_autofocus -->
-      <textarea
-        class="input"
+      <Textarea
+        aria-label="Review comment"
         placeholder={`Leave a review comment… (${enterLabel()} to save, Shift+${enterLabel()} for a new line, Esc to cancel)`}
         bind:value={body}
         onkeydown={composerKeydown}
         autofocus
-        rows="2"
-      ></textarea>
+        rows={2}
+      />
       <div class="actions">
-        <button type="button" class="btn cancel" onclick={onClose}>Cancel</button>
-        <button type="button" class="btn save" onclick={save}>Save</button>
+        <Button size="sm" onclick={onClose}>Cancel</Button>
+        <Button size="sm" variant="primary" onclick={save}>Save</Button>
       </div>
     </div>
   {/if}
@@ -114,27 +116,6 @@
     font: var(--fs-xs) var(--font-ui);
   }
 
-  .dismiss {
-    display: grid;
-    place-items: center;
-    flex-shrink: 0;
-    width: 18px;
-    height: 18px;
-    padding: 0;
-    border: none;
-    border-radius: var(--r-sm);
-    background: transparent;
-    color: var(--muted);
-    font-family: var(--font-ui);
-    font-size: var(--fs-xs);
-    cursor: pointer;
-  }
-
-  .dismiss:hover {
-    background: var(--surface2);
-    color: var(--danger);
-  }
-
   .composer {
     display: flex;
     flex-direction: column;
@@ -142,59 +123,9 @@
     max-width: 480px;
   }
 
-  .input {
-    width: 100%;
-    min-height: 46px;
-    padding: 6px 8px;
-    border: 1px solid var(--border2);
-    border-radius: var(--r-sm);
-    background: var(--surface);
-    color: var(--text);
-    font: var(--fs-sm)/1.4 var(--font-ui);
-    resize: vertical;
-    outline: none;
-  }
-
-  /* Replaces the outline above. A text box is always "focus-visible", pointer
-     or keyboard, so this reads identically to the `:focus` it was written as. */
-  .input:focus-visible {
-    border-color: var(--accent);
-  }
-
-  .input::placeholder {
-    color: var(--muted);
-  }
-
   .actions {
     display: flex;
     justify-content: flex-end;
     gap: 6px;
-  }
-
-  .btn {
-    height: 24px;
-    padding: 0 10px;
-    border-radius: var(--r-md);
-    font-family: var(--font-ui);
-    font-size: var(--fs-xs);
-    font-weight: 500;
-    cursor: pointer;
-  }
-
-  .cancel {
-    border: 1px solid var(--border2);
-    background: transparent;
-    color: var(--text);
-  }
-
-  .cancel:hover {
-    background: var(--surface2);
-  }
-
-  .save {
-    border: none;
-    background: var(--accent);
-    color: var(--accent-ink);
-    font-weight: 600;
   }
 </style>

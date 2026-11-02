@@ -11,7 +11,17 @@
     type FlatFile,
   } from "../../diff-view";
   import { anchorDomKey, type ReviewAnchor, type ReviewComment } from "../../stores/reviewComments";
+  import { tooltip } from "../../ui/tooltip";
+  import Button from "../ui/Button.svelte";
+  import Checkbox from "../ui/Checkbox.svelte";
   import DiffCommentThread from "./DiffCommentThread.svelte";
+
+  const STATUS_NAME = {
+    modified: "Modified",
+    added: "Added",
+    deleted: "Deleted",
+    renamed: "Renamed",
+  } as const;
 
   interface Props {
     item: FlatFile;
@@ -150,38 +160,35 @@
 {/snippet}
 
 <section class="file-card" class:viewed id={"diff-file-" + cssEscape(item.key)}>
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <header
-    class="head"
-    role="button"
-    tabindex="0"
-    onclick={() => onToggleCollapsed(item.key)}
-    onkeydown={(e: KeyboardEvent) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        onToggleCollapsed(item.key);
-      }
-    }}
-  >
-    <span class="chev" class:open={!userCollapsed}>›</span>
-    <span class="status status-{item.file.changeType}" title={item.file.changeType}>
-      {statusLetter(item.file.changeType)}
+  <header class="head">
+    <button
+      type="button"
+      class="toggle"
+      aria-expanded={!userCollapsed}
+      onclick={() => onToggleCollapsed(item.key)}
+    >
+      <span class="chev" class:open={!userCollapsed} aria-hidden="true">›</span>
+      <span
+        class="status status-{item.file.changeType}"
+        role="img"
+        aria-label={STATUS_NAME[item.file.changeType]}
+      >
+        {statusLetter(item.file.changeType)}
+      </span>
+      <span class="path" use:tooltip={{ text: item.key }}>{item.key}</span>
+      <span class="added">+{item.addedCount}</span>
+      <span class="removed">−{item.removedCount}</span>
+    </button>
+    <span class="viewed-toggle">
+      <Checkbox bind:checked={() => viewed, () => onToggleViewed(item.key)}>Viewed</Checkbox>
     </span>
-    <span class="path" title={item.key}>{item.key}</span>
-    <span class="added">+{item.addedCount}</span>
-    <span class="removed">−{item.removedCount}</span>
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <label class="viewed-toggle" onclick={(e: MouseEvent) => e.stopPropagation()}>
-      <input type="checkbox" checked={viewed} onchange={() => onToggleViewed(item.key)} />
-      <span>Viewed</span>
-    </label>
   </header>
 
   {#if collapsed}
     <div class="collapsed-notice">
-      <button type="button" class="expand-btn" onclick={() => onToggleExpand(item.key)}>
+      <Button size="sm" onclick={() => onToggleExpand(item.key)}>
         Show {totalLines(item.file)} lines
-      </button>
+      </Button>
     </div>
   {:else if !viewed}
     <div class="lines">
@@ -329,9 +336,9 @@
         {/if}
       </div>
       {#if hiddenRows > 0}
-        <button type="button" class="expand-btn more" onclick={() => (rowLimit += ROW_PAGE)}>
+        <Button size="sm" onclick={() => (rowLimit += ROW_PAGE)}>
           Show {Math.min(ROW_PAGE, hiddenRows)} more lines ({hiddenRows} hidden)
-        </button>
+        </Button>
       {/if}
     </div>
   {/if}
@@ -353,20 +360,29 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 14px;
+    padding-right: 14px;
     background: var(--surface);
-    cursor: pointer;
-    user-select: none;
-    -webkit-user-select: none;
   }
 
   .head:hover {
     background: var(--surface2);
   }
 
-  .head:focus-visible {
-    outline: 1px solid var(--accent);
-    outline-offset: -1px;
+  .toggle {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    min-width: 0;
+    gap: 8px;
+    padding: 6px 0 6px 14px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   .chev {
@@ -439,23 +455,9 @@
   }
 
   .viewed-toggle {
-    display: inline-flex;
-    align-items: center;
     flex-shrink: 0;
-    gap: 5px;
     color: var(--muted);
-    font-family: var(--font-ui);
     font-size: var(--fs-xs);
-    cursor: pointer;
-    user-select: none;
-  }
-
-  .viewed-toggle input {
-    width: 11px;
-    height: 11px;
-    margin: 0;
-    accent-color: var(--accent);
-    cursor: pointer;
   }
 
   .file-card.viewed .viewed-toggle {
@@ -558,22 +560,5 @@
     place-items: center;
     padding: 12px;
     background: var(--surface);
-  }
-
-  .expand-btn {
-    height: 24px;
-    padding: 0 12px;
-    border: 1px solid var(--border2);
-    border-radius: var(--r-md);
-    background: transparent;
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-    cursor: pointer;
-  }
-
-  .expand-btn:hover {
-    background: var(--surface2);
-    color: var(--text);
   }
 </style>
