@@ -9,6 +9,7 @@ import {
   activeXtermTheme,
   applyTheme,
   effectiveTheme,
+  revealWindow,
   windowBackground,
   themeMode,
 } from "../theme";
@@ -195,6 +196,38 @@ describe("effectiveTheme / windowBackground", () => {
   it("mirrors --bg", () => {
     expect(windowBackground.light).toBe(LIGHT["--bg"]);
     expect(windowBackground.dark).toBe(DARK_EXPLICIT["--bg"]);
+  });
+});
+
+describe("revealWindow", () => {
+  const win = (over: Partial<Record<"setBackgroundColor" | "show", () => Promise<void>>> = {}) => ({
+    setBackgroundColor: vi.fn(async () => {}),
+    show: vi.fn(async () => {}),
+    ...over,
+  });
+
+  it("colours then shows", async () => {
+    const w = win();
+    expect(await revealWindow(() => w, "#fff")).toBe(true);
+    expect(w.setBackgroundColor).toHaveBeenCalledWith("#fff");
+    expect(w.show).toHaveBeenCalled();
+  });
+
+  it("still shows when colouring fails", async () => {
+    const w = win({ setBackgroundColor: async () => Promise.reject(new Error("no")) });
+    expect(await revealWindow(() => w, "#fff")).toBe(true);
+    expect(w.show).toHaveBeenCalled();
+  });
+
+  it("reports false, without throwing, when the window is unavailable or show fails", async () => {
+    expect(
+      await revealWindow(() => {
+        throw new Error("no window");
+      }, "#fff"),
+    ).toBe(false);
+    expect(
+      await revealWindow(() => win({ show: async () => Promise.reject(new Error("no")) }), "#fff"),
+    ).toBe(false);
   });
 });
 

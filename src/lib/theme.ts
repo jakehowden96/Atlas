@@ -128,6 +128,30 @@ export function effectiveTheme(stored: unknown, prefersDark: boolean): "light" |
   return prefersDark ? "dark" : "light";
 }
 
+interface Revealable {
+  setBackgroundColor(color: string): Promise<void>;
+  show(): Promise<void>;
+}
+
+/** Colour the native window, then show it. A colour failure never blocks `show()`. */
+export async function revealWindow(getWin: () => Revealable, bg: string): Promise<boolean> {
+  let win: Revealable;
+  try {
+    win = getWin();
+  } catch {
+    return false;
+  }
+  try {
+    await win.setBackgroundColor(bg);
+  } catch {}
+  try {
+    await win.show();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** The xterm ITheme matching `mode` right now. */
 export function activeXtermTheme(mode: ThemeMode) {
   return resolvedTheme(mode) === "dark" ? darkXtermTheme : lightXtermTheme;
