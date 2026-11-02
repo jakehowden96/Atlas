@@ -1,14 +1,20 @@
 <script lang="ts">
-  import type { PlanEntry } from "../../../types/generated/PlanEntry";
-  import { planWorkspace } from "../../files";
-  import { formatTokens } from "../../format";
+  import { tick } from "svelte";
   import type { SessionTile } from "../../overview";
-  import { formatElapsed } from "../../overview";
-  import { planCounts, planRowState, subagentMeta } from "../../session-view";
-  import { fileWs, loadPlans, openFile, plans } from "../../stores/files";
-  import { showView } from "../../stores/view";
-  import { visibleWorkspaces } from "../../stores/workspace";
+  import {
+    agentsHeadline,
+    agentsState,
+    headlineText,
+    planHeadline,
+    planState,
+  } from "../../session-view";
+  import { railWidth } from "../../stores/view";
   import { closeWith } from "../ui/Modal.svelte";
+  import AgentsTile from "./rail/AgentsTile.svelte";
+  import PlanTile from "./rail/PlanTile.svelte";
+  import RailHeader from "./rail/RailHeader.svelte";
+  import ThinRail, { type ThinMark } from "./rail/ThinRail.svelte";
+  import Tile from "./rail/Tile.svelte";
 
   interface Props {
     /** Bound to `railOpen`. The rail unmounts itself once the exit run ends. */
@@ -45,356 +51,132 @@
     }
   });
 
-  // Plan files are read by the Files screen and the ⌘K palette; whichever gets
-  // there first fills the store, and on a session-first visit that is the rail.
-  $effect(() => {
-    if (open && $plans.length === 0) void loadPlans();
-  });
-
-  /**
-   * The plan file this session's workspace owns, newest first, or null when
-   * Claude has never written one for it. With none there is nothing to open,
-   * so "Open →" is not drawn: a muted disabled link read as a broken one.
-   *
-   * A plan is named after a slugified cwd, not a session, so a workspace's
-   * sessions all share its plans; the most recent one is the live plan.
-   */
-  let planFile = $derived.by<PlanEntry | null>(() => {
-    const ws = tile?.workspacePath;
-    if (!ws) return null;
-    let best: PlanEntry | null = null;
-    for (const entry of $plans) {
-      if (planWorkspace(entry, $visibleWorkspaces) !== ws) continue;
-      if (!best || (entry.modified ?? "") > (best.modified ?? "")) best = entry;
-    }
-    return best;
-  });
-
-  function openPlan() {
-    if (!planFile || !tile) return;
-    fileWs.set(tile.workspacePath);
-    openFile("plans", planFile.path);
-    showView("files");
-  }
-
   let live = $derived(tile?.live ?? null);
-  let plan = $derived(planCounts(live?.plan ?? []));
-  let subagents = $derived(live?.subagents ?? []);
-  /* One dispatch can open twenty agents, so the list folds away. It starts
-     open: the usual case is one or two, and hiding live work by default would
-     cost more than the scrolling it saves. The count stays in the heading, so a
-     folded section still says whether anything is running. */
-  let agentsOpen = $state(true);
-  let agentsRunning = $derived(subagents.filter((a) => !a.done).length);
-  let agentSummary = $derived(
-    agentsRunning > 0 ? `${agentsRunning}/${subagents.length} running` : `${subagents.length} done`,
-  );
-  /* Same pairing as the Sessions tile: the bar reads as a proportion, the
-     label as a size — `68k` is the unit the model actually meters. The bar is
-     a fraction of the model's context window (200k for Haiku, 1M for the
-     rest), matching where Claude Code's own autocompact fires. */
-  let contextPct = $derived(Math.min(100, Math.round((live?.contextPct ?? 0) * 100)));
-  let contextTokens = $derived(formatTokens(live?.contextTokens ?? 0));
+  let plan = $derived(live?.plan ?? []);
+  let agents = $derived(live?.subagents ?? []);
+  let thin = $derived($railWidth === "thin");
+
+  let marks = $derived<ThinMark[]>([
+    {
+      key: "plan",
+      letter: "P",
+      state: planState(plan),
+      sentence: `Plan: ${headlineText(planHeadline(plan))}`,
+    },
+    {
+      key: "agents",
+      letter: "A",
+      state: agentsState(agents),
+      sentence: `Agents: ${headlineText(agentsHeadline(agents))}`,
+    },
+    {
+      key: "pr",
+      letter: "PR",
+      state: "idle",
+      sentence: "Pull request: no pull request for this branch",
+    },
+  ]);
+
+  /** Expand the rail and put focus on the tile the mark stood for. */
+  async function expandTo(key: ThinMark["key"]) {
+    railWidth.set("expanded");
+    await tick();
+    document.querySelector<HTMLElement>(`.rail [data-tile="${key}"] .head`)?.focus();
+  }
 </script>
 
-{#if visible && live}
-  <aside class="rail" class:closing>
-    <section>
-      <div class="heading">
-        <span>Plan</span>
-        <span class="heading-end">
-          <span class="count">{plan.done}/{plan.total}</span>
-          {#if planFile}
-            <button type="button" class="review" onclick={openPlan}>Open →</button>
-          {/if}
-        </span>
+{#if visible}
+  <aside class="rail" class:closing class:thin aria-label="Activity rail">
+    {#if thin}
+      <div class="fade thin-wrap">
+        <ThinRail
+          {marks}
+          waiting={tile?.state === "needsYou"}
+          ticketId=""
+          onexpand={expandTo}
+        />
       </div>
-      <div class="rows">
-        {#each live.plan as item, i (i)}
-          {@const rowState = planRowState(item)}
-          <div class="plan-row">
-            <span class="box {rowState}"></span>
-            <span class="plan-text {rowState}">{item.text}</span>
-          </div>
-        {:else}
-          <span class="none">No plan yet</span>
-        {/each}
+    {:else}
+      <div class="fade full">
+        <RailHeader {tile} {now} />
+        <div class="tiles">
+          <PlanTile {plan} workspacePath={tile?.workspacePath} />
+          <AgentsTile {agents} worktree={live?.worktree ?? null} {now} />
+          <Tile key="pr" label="PR" state="idle">
+            {#snippet headline()}
+              <span class="muted">No pull request for this branch</span>
+            {/snippet}
+            {#snippet children()}{/snippet}
+          </Tile>
+        </div>
       </div>
-    </section>
-
-    {#if subagents.length > 0}
-      <section>
-        <button
-          type="button"
-          class="heading toggle"
-          aria-expanded={agentsOpen}
-          onclick={() => (agentsOpen = !agentsOpen)}
-        >
-          <span>Subagents</span>
-          <span class="heading-end">
-            <span class="count">{agentSummary}</span>
-            <span class="twisty" class:open={agentsOpen} aria-hidden="true">▸</span>
-          </span>
-        </button>
-        {#if agentsOpen}
-          <div class="rows">
-            {#each subagents as agent, i (i)}
-              <div class="agent" class:done={agent.done}>
-                <div class="agent-task">
-                  <span class="agent-dot" class:pulsing={!agent.done}></span>
-                  {agent.task}
-                </div>
-                <div class="agent-meta">{subagentMeta(agent, now)}</div>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </section>
     {/if}
-
-    <section>
-      <div class="heading"><span>Turn</span></div>
-      <div class="stats">
-        <div class="stat">
-          <div class="stat-label">Context</div>
-          <div class="stat-value">{contextTokens}</div>
-          <div class="ctx-track">
-            <span class="ctx-fill" class:hot={contextPct > 75} style="width: {contextPct}%"></span>
-          </div>
-          <div class="stat-sub">{contextPct}% until compact</div>
-        </div>
-        <div class="stat">
-          <div class="stat-label">Cost</div>
-          <div class="stat-value">${live.costEstimate.toFixed(2)}</div>
-        </div>
-        <div class="stat">
-          <div class="stat-label">Elapsed</div>
-          <div class="stat-value">{formatElapsed(live.startedAt, now) || "—"}</div>
-        </div>
-        <div class="stat">
-          <div class="stat-label">Tools</div>
-          <div class="stat-value">{live.toolCalls}</div>
-        </div>
-      </div>
-    </section>
   </aside>
 {/if}
 
 <style>
   .rail {
     display: flex;
-    flex-direction: column;
     flex-shrink: 0;
-    gap: 18px;
     width: 300px;
-    padding: 16px;
-    overflow: auto;
+    overflow: hidden;
     border-left: 1px solid var(--border);
     background: var(--bg);
     animation: atlasSlideIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: width var(--dur-slow) var(--ease-out);
+  }
+
+  .rail.thin {
+    width: 48px;
   }
 
   .rail.closing {
     animation: atlasSlideOut 0.2s ease both;
   }
 
-  .heading {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 8px;
-    color: var(--muted);
-    font-size: var(--fs-xs);
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+  /* The content keeps its own width so it fades in rather than reflowing while
+     the rail animates between 300 and 48. */
+  .fade {
+    animation: railFade var(--dur-instant) var(--ease-out);
   }
 
-  .heading-end {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .count {
-    font-family: var(--font-mono);
-  }
-
-  .rows {
+  .full {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-  }
-
-  .none {
-    color: var(--muted);
-    font-size: var(--fs-sm);
-  }
-
-  /* ── Plan ──────────────────────────────────────────────────────────────── */
-  .plan-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    font-size: var(--fs-sm);
-    line-height: 1.4;
-  }
-
-  .box {
     flex-shrink: 0;
-    width: 12px;
-    height: 12px;
-    margin-top: 2px;
-    border: 1.5px solid var(--border2);
-    border-radius: 3px;
-  }
-
-  .box.done {
-    border-color: var(--accent);
-    background: var(--accent);
-  }
-
-  .box.current {
-    border-color: var(--warn);
-  }
-
-  .plan-text.done {
-    color: var(--muted);
-    text-decoration: line-through;
-  }
-
-  .plan-text.current {
-    font-weight: 500;
-  }
-
-  /* ── Subagents ─────────────────────────────────────────────────────────── */
-  /* The Subagents heading is a disclosure button. It keeps `.heading` for the
-     type and colour and only sheds the button chrome — `font-family` included,
-     which `.heading` does not set and the UA would otherwise win. */
-  .heading.toggle {
-    width: 100%;
-    padding: 0;
-    border: 0;
-    background: none;
-    font-family: inherit;
-    cursor: pointer;
-  }
-
-  .twisty {
-    display: inline-block;
-    transition: transform 120ms ease;
-  }
-
-  .twisty.open {
-    transform: rotate(90deg);
-  }
-
-  .agent {
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    background: var(--surface);
-  }
-
-  .agent-task {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: var(--fs-sm);
-  }
-
-  .agent-dot {
-    flex-shrink: 0;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--accent);
-  }
-
-  .agent-dot.pulsing {
-    animation: atlasPulse 1.6s ease-in-out infinite;
-  }
-
-  /* A finished agent stays listed — it is what the session did — but recedes,
-     so a live one is the row the eye lands on. */
-  .agent.done {
-    opacity: 0.62;
-  }
-
-  .agent.done .agent-dot {
-    background: var(--muted);
-  }
-
-  .agent-meta {
-    margin-top: 3px;
-    padding-left: 12px;
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-  }
-
-  /* ── Turn ──────────────────────────────────────────────────────────────── */
-  .stats {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-
-  .stat {
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    background: var(--surface);
-  }
-
-  .stat-label {
-    color: var(--muted);
-    font-size: var(--fs-xs);
-  }
-
-  .stat-value {
-    margin-top: 2px;
-    font-family: var(--font-mono);
-    font-size: var(--fs-md);
-    font-weight: 500;
-  }
-
-  .stat-sub {
-    margin-top: 6px;
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-  }
-
-  .ctx-track {
-    height: 3px;
-    margin-top: 6px;
-    overflow: hidden;
-    border-radius: 2px;
-    background: var(--surface3);
-  }
-
-  .ctx-fill {
-    display: block;
+    width: 300px;
     height: 100%;
-    background: var(--accent);
   }
 
-  .ctx-fill.hot {
-    background: var(--warn);
+  .thin-wrap {
+    flex-shrink: 0;
+    width: 48px;
   }
 
-  /* ── Plan "Open →" ─────────────────────────────────────────────────────── */
-  .review {
-    padding: 0;
-    border: none;
-    background: none;
-    color: var(--accent);
-    font-family: var(--font-ui);
-    font-size: var(--fs-xs);
-    font-weight: 500;
-    letter-spacing: 0;
-    text-transform: none;
-    cursor: pointer;
+  .tiles {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+    padding: 8px;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .muted {
+    color: var(--muted);
+  }
+
+  @keyframes railFade {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fade {
+      animation: none;
+    }
   }
 </style>
