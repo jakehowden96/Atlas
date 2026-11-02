@@ -1,22 +1,78 @@
 <script lang="ts">
   import "./shared.css";
   import type { ClaudeInfo } from "../../../../types/generated/ClaudeInfo";
-  import { claudeInfo } from "../../../ipc";
+  import { claudeCheck, claudeInfo } from "../../../ipc";
   import { log } from "../../../logger";
   import { showToast } from "../../../stores/toast";
   import {
+    claudeBinaryPath,
     claudeHook,
+    setClaudeBinaryPath,
     setClaudeHookEnabled,
     setTailTranscripts,
     settingsOpen,
     tailTranscripts,
   } from "../../../stores/settings";
+  import { open } from "@tauri-apps/plugin-dialog";
+  import type { HookStatus } from "../../../../types/generated/HookStatus";
+  import Button from "../../ui/Button.svelte";
+  import InlineAlert from "../../ui/InlineAlert.svelte";
+  import StatusMark, { type MarkState } from "../../ui/StatusMark.svelte";
   import Toggle from "../../ui/Toggle.svelte";
   import { errorMessage } from "../../../ipc-error";
 
   let claude = $state<ClaudeInfo | null>(null);
   /** Set when `claude_info` itself failed, which is not the same as "not installed". */
   let claudeError = $state(false);
+
+  /** Why the last picked binary was refused; the old choice stays saved. */
+  let pickError = $state("");
+
+  type Status = "ok" | "stale" | "missing";
+  const MARK: Record<Status, MarkState> = { ok: "done", stale: "attention", missing: "failing" };
+  const LABEL: Record<Status, string> = {
+    ok: "Installed",
+    stale: "Out of date",
+    missing: "Not installed",
+  };
+  const hookStatus = (h: HookStatus | undefined): Status =>
+    h?.kind === "installed" ? (h.upToDate ? "ok" : "stale") : "missing";
+
+  const hooks = $derived([
+    {
+      name: "Notification",
+      desc: "Flags a session waiting on a permission prompt",
+      status: claude?.notificationHook,
+    },
+    {
+      name: "SessionStart",
+      desc: "Follows a session to its new id after /clear or /compact",
+      status: claude?.sessionStartHook,
+    },
+  ]);
+
+  async function choose() {
+    const picked = await open({ multiple: false, directory: false, title: "Choose the claude binary" });
+    if (typeof picked !== "string") return;
+    try {
+      claude = await claudeCheck(picked);
+      pickError = "";
+      await setClaudeBinaryPath(picked);
+    } catch (e) {
+      log.warn("settings", `claude_check failed: ${errorMessage(e)}`);
+      pickError = `Not a working claude binary: ${errorMessage(e)}`;
+    }
+  }
+
+  async function useDefault() {
+    pickError = "";
+    await setClaudeBinaryPath("");
+    try {
+      claude = await claudeInfo();
+    } catch (e) {
+      log.warn("settings", `claude_info failed: ${errorMessage(e)}`);
+    }
+  }
 
   /** Install or remove the hooks, then refresh the installed badges from the
    *  file itself rather than assuming the change landed. */
@@ -59,61 +115,33 @@
 </script>
 
 <div class="stack sec">
-  <p class="copy">
-    Atlas reads Claude Code's own signals — no proxying. Two hooks are installed into <code
-      >~/.claude/settings.json</code
-    >; everything else comes from tailing the session transcript.
-  </p>
-
   <div class="row">
     <div class="row-text">
-      <div class="row-title">Install Atlas's hooks</div>
-      <div class="row-desc">
-        On by default. Off removes only Atlas's two entries from <code>~/.claude/settings.json</code
-        >
-        and keeps them out; your own hooks and settings are never touched. Without them a session that
-        needs you is not flagged from its prompt, and <code>/clear</code> and
-        <code>/compact</code> are not followed.
-      </div>
+      <div class="row-title">Install hooks</div>
+      <div class="row-desc">Flags sessions that need you and follows /clear and /compact</div>
     </div>
-    <Toggle checked={$claudeHook} label="Install Atlas's hooks" onChange={(v) => void setHook(v)} />
+    <Toggle checked={$claudeHook} label="Install hooks" onChange={(v) => void setHook(v)} />
   </div>
 
   <div class="list">
-    <div class="list-row hook-row">
-      <span class="hook-dot" class:on={claude?.notificationHookInstalled}></span>
-      <span class="hook-name">Notification</span>
-      <span class="hook-desc"> Tells Atlas a session is waiting on a permission prompt. </span>
-      <span class="badge" class:on={claude?.notificationHookInstalled}>
-        {claude?.notificationHookInstalled ? "installed" : "not installed"}
-      </span>
-    </div>
-    <div class="list-row hook-row">
-      <span class="hook-dot" class:on={claude?.sessionStartHookInstalled}></span>
-      <span class="hook-name">SessionStart</span>
-      <span class="hook-desc">
-        Tells Atlas when <code>/clear</code> or <code>/compact</code> moves a session to a new id, so
-        the tail follows it.
-      </span>
-      <span class="badge" class:on={claude?.sessionStartHookInstalled}>
-        {claude?.sessionStartHookInstalled ? "installed" : "not installed"}
-      </span>
-    </div>
+    {#each hooks as hook (hook.name)}
+      {@const status = hookStatus(hook.status)}
+      <div class="list-row hook-row">
+        <StatusMark state={MARK[status]} />
+        <span class="hook-name">{hook.name}</span>
+        <span class="hook-desc">{hook.desc}</span>
+        <span class="hook-status">{LABEL[status]}</span>
+        {#if status === "stale"}
+          <Button size="sm" onclick={() => void setHook(true)}>Update</Button>
+        {/if}
+      </div>
+    {/each}
   </div>
-
-  <p class="copy">
-    Plan, subagents, tool calls and cost are <strong>not</strong> hooks. Atlas derives them by
-    tailing <code>~/.claude/projects/**.jsonl</code>, which is why no Stop, PreToolUse, PostToolUse
-    or Subagent hooks are installed.
-  </p>
 
   <div class="row">
     <div class="row-text">
       <div class="row-title">Tail transcripts</div>
-      <div class="row-desc">
-        Read <code>~/.claude/projects/**.jsonl</code> live for context %, tokens, cost and subagents.
-        Off stops every running tail; tiles fall back to state and diff counts.
-      </div>
+      <div class="row-desc">Shows context, tokens, cost and subagents on each session</div>
     </div>
     <Toggle
       checked={$tailTranscripts}
@@ -123,14 +151,25 @@
   </div>
 
   <div class="row">
-    <div class="row-text"><div class="row-title">Claude binary</div></div>
-    <span class="mono-pill">
-      {claude?.binary ??
-        (claudeError ? "could not read claude" : "not found on PATH")}{claude?.version
-        ? ` · ${claude.version}`
-        : ""}
-    </span>
+    <StatusMark state={claude?.binary ? "done" : "failing"} />
+    <div class="row-text">
+      <div class="row-title">Claude binary</div>
+      <div class="row-desc binary">
+        {#if claude?.binary}
+          {claude.binary}{claude.version ? ` · ${claude.version}` : ""}
+        {:else}
+          {claudeError ? "Could not read claude" : "Not found"}
+        {/if}
+      </div>
+    </div>
+    {#if $claudeBinaryPath}
+      <Button size="sm" variant="ghost" onclick={() => void useDefault()}>Use default</Button>
+    {/if}
+    <Button size="sm" onclick={() => void choose()}>Choose…</Button>
   </div>
+  {#if pickError}
+    <InlineAlert>{pickError}</InlineAlert>
+  {/if}
 </div>
 
 <style>
@@ -154,6 +193,17 @@
     font-family: var(--font-mono);
     font-size: var(--fs-sm);
     font-weight: 500;
+  }
+
+  .hook-status {
+    font-family: var(--font-ui);
+    font-size: var(--fs-xs);
+    white-space: nowrap;
+  }
+
+  .binary {
+    overflow-wrap: anywhere;
+    font-family: var(--font-mono);
   }
 
   .hook-desc {

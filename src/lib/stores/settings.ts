@@ -89,6 +89,8 @@ export const pinnedSessions = writable<string[]>([]);
     `~/.claude/settings.json`. On by default; the backend reads this at launch
     (from `settings.json`) to decide whether to install them. */
 export const claudeHook = writable(true);
+/** Absolute path to a `claude` binary the user chose; "" means look it up on PATH. */
+export const claudeBinaryPath = writable("");
 /** Workspace paths the user turned language servers on for. Off by default: a
     server runs the workspace's own code, so the backend starts none for a path
     that is not listed here (it reads this list from `settings.json` itself). */
@@ -137,6 +139,7 @@ interface PersistedSettings {
   fileSources?: string[];
   lspTrustedWorkspaces?: string[];
   claudeHook?: boolean;
+  claudeBinaryPath?: string;
   railMode?: RailMode;
   railTiles?: RailTiles;
   /** One binding per action in files written before alternates existed;
@@ -242,6 +245,7 @@ export async function loadSettings() {
     }
     if (typeof data.tailTranscripts === "boolean") tailTranscripts.set(data.tailTranscripts);
     if (typeof data.claudeHook === "boolean") claudeHook.set(data.claudeHook);
+    if (typeof data.claudeBinaryPath === "string") claudeBinaryPath.set(data.claudeBinaryPath);
     if (data.railMode === "expanded" || data.railMode === "thin") {
       railOpen.set(true);
       railWidth.set(data.railMode);
@@ -309,6 +313,7 @@ const persister = createStatePersister(
     fileSources: get(sources),
     lspTrustedWorkspaces: get(lspTrustedWorkspaces),
     claudeHook: get(claudeHook),
+    claudeBinaryPath: get(claudeBinaryPath),
     keymap: get(keymap),
     railMode: get(railOpen) ? get(railWidth) : "hidden",
     railTiles: get(railTiles),
@@ -411,6 +416,12 @@ export async function setOpenFiles(keys: string[]) {
 
 export async function setFileSources(paths: string[]) {
   sources.set(paths);
+  await persistSettings();
+}
+
+/** Remember the chosen `claude` binary; "" goes back to the PATH lookup. */
+export async function setClaudeBinaryPath(path: string) {
+  claudeBinaryPath.set(path);
   await persistSettings();
 }
 
