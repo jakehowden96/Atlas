@@ -16,6 +16,7 @@
   } from "../../../stores/settings";
   import { themeMode, type ThemeMode } from "../../../theme";
   import SegmentedControl, { type Segment } from "../../ui/SegmentedControl.svelte";
+  import NumberStepper from "../../ui/NumberStepper.svelte";
   import Toggle from "../../ui/Toggle.svelte";
 
   const APPEARANCE: Segment<ThemeMode>[] = [
@@ -31,9 +32,6 @@
     { id: "opened", label: "Opened" },
   ];
 
-  function stepFont(delta: number) {
-    void setTerminalFontSize($terminalFontSize + delta);
-  }
 </script>
 
 <div class="rows sec">
@@ -46,6 +44,8 @@
       options={APPEARANCE}
       value={$themeMode}
       size="sm"
+      role="radiogroup"
+      label="Appearance"
       onChange={(id) => void setTheme(id)}
     />
   </div>
@@ -77,23 +77,15 @@
   <div class="row">
     <div class="row-text">
       <div class="row-title">Terminal font size</div>
-      <div class="row-desc">Geist Mono · applies to all sessions.</div>
+      <div class="row-desc">Geist Mono, applies to all sessions.</div>
     </div>
-    <div class="stepper">
-      <button
-        type="button"
-        onclick={() => stepFont(-1)}
-        disabled={$terminalFontSize <= MIN_TERMINAL_FONT_SIZE}
-        aria-label="Smaller terminal font">−</button
-      >
-      <span class="stepper-value">{$terminalFontSize}</span>
-      <button
-        type="button"
-        onclick={() => stepFont(1)}
-        disabled={$terminalFontSize >= MAX_TERMINAL_FONT_SIZE}
-        aria-label="Larger terminal font">+</button
-      >
-    </div>
+    <NumberStepper
+      value={$terminalFontSize}
+      min={MIN_TERMINAL_FONT_SIZE}
+      max={MAX_TERMINAL_FONT_SIZE}
+      label="Terminal font size"
+      onChange={(v) => void setTerminalFontSize(v)}
+    />
   </div>
 
   <div class="row">
@@ -105,44 +97,10 @@
       options={ORDERING}
       value={$overviewOrdering}
       size="sm"
+      role="radiogroup"
+      label="Sessions ordering"
       onChange={(id) => void setOverviewOrdering(id)}
     />
   </div>
 </div>
 
-<style>
-  /* ── Font-size stepper ─────────────────────────────────────────────────── */
-  .stepper {
-    display: flex;
-    align-items: center;
-    height: 26px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    font-family: var(--font-mono);
-    font-size: var(--fs-sm);
-  }
-
-  .stepper button {
-    height: 100%;
-    padding: 0 10px;
-    border: none;
-    background: transparent;
-    color: var(--muted);
-    font: inherit;
-    cursor: pointer;
-  }
-
-  .stepper button:hover:not(:disabled) {
-    color: var(--text);
-  }
-
-  .stepper button:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-
-  .stepper-value {
-    padding: 0 6px;
-    font-variant-numeric: tabular-nums;
-  }
-</style>
