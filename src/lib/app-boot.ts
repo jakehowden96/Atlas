@@ -3,6 +3,7 @@
  */
 import { registerAppEvents } from "./app-events";
 import { log } from "./logger";
+import { startConnectorEvents } from "./stores/connectors";
 import { startPrPolling } from "./stores/prs";
 import { loadSettings } from "./stores/settings";
 import { startStatsFeed } from "./stores/stats";
@@ -30,6 +31,7 @@ export async function bootApp(): Promise<() => void> {
   const stopEvents = await registerAppEvents();
   // Poll from the shell, not from PrsView: the top-bar badge has to stay
   // current while the Pull requests screen is unmounted.
+  const stopConnectors = await startConnectorEvents();
   const stopPrPolling = startPrPolling();
   // Owned here rather than by the Stats screen: the top bar's spend figure has
   // to stay current while that screen is unmounted. The first scan of a large
@@ -44,6 +46,7 @@ export async function bootApp(): Promise<() => void> {
   return () => {
     stopped = true;
     stopEvents();
+    stopConnectors();
     stopPrPolling();
     stopStats?.();
   };
