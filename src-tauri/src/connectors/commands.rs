@@ -1,9 +1,12 @@
 //! Tauri commands. The sign-in flows are stubs until their phases land.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
+use tokio::sync::oneshot;
 
+use super::oauth::flow::run_browser_flow;
 use super::provider::{
     ConnectorProvider, ConnectorState, ConnectorStatus, PullRequest, RepoRef, Ticket,
 };
@@ -53,15 +56,52 @@ pub fn connector_list(c: State<'_, Connectors>) -> Result<Vec<ConnectorState>, A
     c.list()
 }
 
-#[tauri::command(async)]
-pub fn connector_connect(id: String, c: State<'_, Connectors>) -> Result<(), AtlasError> {
-    configured(&c, &id)?;
-    Err(not_ready())
+/// Cancel handles of the sign-ins in progress, by connector id.
+static PENDING: Mutex<Option<HashMap<String, oneshot::Sender<()>>>> = Mutex::new(None);
+
+#[tauri::command]
+pub async fn connector_connect(
+    id: String,
+    app: AppHandle,
+    c: State<'_, Connectors>,
+) -> Result<(), AtlasError> {
+    let p = configured(&c, &id)?.clone();
+    let (tx, rx) = oneshot::channel();
+    // A second connect for the same id drops the older sender, cancelling it.
+    PENDING
+        .lock()?
+        .get_or_insert_default()
+        .insert(id.clone(), tx);
+    let progress = |phase: &str| {
+        let _ = app.emit(
+            "connector://progress",
+            serde_json::json!({ "connector": id, "phase": phase }),
+        );
+    };
+    let open = |url: &str| {
+        super::super::commands::prs::browser_launcher(url)
+            .spawn()
+            .map(drop)
+            .map_err(|e| AtlasError::tool_failed("browser", format!("Failed to open URL: {e}")))
+    };
+    let result = run_browser_flow(&p.auth_config(), rx, progress, open).await;
+    PENDING.lock()?.get_or_insert_default().remove(&id);
+    let tokens = result?;
+    let refresh = tokens.refresh.ok_or_else(|| AtlasError::ConnectorRemote {
+        message: "The service sent no refresh token".to_string(),
+        status: 200,
+    })?;
+    let account = p.viewer(&tokens.access).await?.login;
+    c.link(&id, &account, &refresh)
 }
 
 #[tauri::command(async)]
 pub fn connector_cancel(id: String, c: State<'_, Connectors>) -> Result<(), AtlasError> {
-    provider(&c, &id).map(|_| ())
+    provider(&c, &id)?;
+    if let Some(tx) = PENDING.lock()?.get_or_insert_default().remove(&id) {
+        let _ = tx.send(());
+    }
+    Ok(())
 }
 
 #[tauri::command(async)]
