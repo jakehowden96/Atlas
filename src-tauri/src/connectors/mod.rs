@@ -9,11 +9,8 @@ pub mod clients;
 pub mod commands;
 pub mod config;
 pub mod keychain;
-<<<<<<< HEAD
 pub mod linear;
-=======
 pub mod oauth;
->>>>>>> worktree-agent-af96649f9c0399a93
 pub mod provider;
 pub mod registry;
 pub mod ticket_hint;
