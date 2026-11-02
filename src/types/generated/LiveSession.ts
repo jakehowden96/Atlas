@@ -11,6 +11,10 @@ export type LiveSession = { sessionUuid: string, state: SessionState,
  */
 startedAt: string | null, lastActivity: string | null, title: string | null, model: string | null, gitBranch: string | null, 
 /**
+ * Name of the linked git worktree the session's cwd is in, else None.
+ */
+worktree: string | null, 
+/**
  * Newest `MAX_LINES` lines, oldest first.
  */
 lines: Array<TranscriptLine>, 
