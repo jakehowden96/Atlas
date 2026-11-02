@@ -81,9 +81,9 @@ export function ageLabel(iso: string | null, now: Date): string {
 
 // ── Keyboard model ────────────────────────────────────────────────────────────
 
-export type NewSessionMode = "fresh" | "resume";
-/** Which column ↑/↓ moves in. Only Resume mode has a second column. */
-export type NewSessionColumn = "workspaces" | "resume";
+export type NewSessionMode = "fresh" | "resume" | "pr";
+/** Which column ↑/↓ moves in. Resume and From PR have a second column. */
+export type NewSessionColumn = "workspaces" | "resume" | "pr";
 
 export interface NewSessionState {
   mode: NewSessionMode;
@@ -91,6 +91,8 @@ export interface NewSessionState {
   /** Index into the filtered workspaces; `counts.workspaces` is the add row. */
   wsIndex: number;
   resumeIndex: number;
+  /** Index into the open PRs of the selected workspace, in From PR mode. */
+  prIndex: number;
   /** Index into `$harnesses` — which harness the session will launch. */
   harnessIndex: number;
 }
@@ -99,6 +101,8 @@ export interface NewSessionCounts {
   /** Filtered workspace rows, not counting the always-present add row. */
   workspaces: number;
   resumable: number;
+  /** Open PRs listed in From PR mode. */
+  prs?: number;
   harnesses: number;
 }
 
@@ -117,6 +121,7 @@ export const INITIAL_STATE: NewSessionState = {
   column: "workspaces",
   wsIndex: 0,
   resumeIndex: 0,
+  prIndex: 0,
   harnessIndex: 0,
 };
 
@@ -134,19 +139,24 @@ export function clampState(state: NewSessionState, counts: NewSessionCounts): Ne
   const wsIndex = Math.min(Math.max(0, state.wsIndex), counts.workspaces);
   const resumeIndex =
     counts.resumable === 0 ? 0 : Math.min(Math.max(0, state.resumeIndex), counts.resumable - 1);
+  const prs = counts.prs ?? 0;
+  const prIndex = prs === 0 ? 0 : Math.min(Math.max(0, state.prIndex), prs - 1);
   const column: NewSessionColumn =
-    state.mode === "resume" && counts.resumable > 0 ? state.column : "workspaces";
+    (state.mode === "resume" && counts.resumable > 0) || (state.mode === "pr" && prs > 0)
+      ? state.column
+      : "workspaces";
   const harnessIndex =
     counts.harnesses === 0 ? 0 : Math.min(Math.max(0, state.harnessIndex), counts.harnesses - 1);
   if (
     wsIndex === state.wsIndex &&
     resumeIndex === state.resumeIndex &&
+    prIndex === state.prIndex &&
     column === state.column &&
     harnessIndex === state.harnessIndex
   ) {
     return state;
   }
-  return { ...state, wsIndex, resumeIndex, column, harnessIndex };
+  return { ...state, wsIndex, resumeIndex, prIndex, column, harnessIndex };
 }
 
 /** ↑/↓ inside the focused column, wrapping at both ends. */
@@ -157,6 +167,9 @@ export function moveWithin(
 ): NewSessionState {
   if (state.column === "resume") {
     return { ...state, resumeIndex: wrap(state.resumeIndex, counts.resumable, delta) };
+  }
+  if (state.column === "pr") {
+    return { ...state, prIndex: wrap(state.prIndex, counts.prs ?? 0, delta) };
   }
   // +1 for the "Add workspace…" row that always sits under the list.
   return { ...state, wsIndex: wrap(state.wsIndex, counts.workspaces + 1, delta) };
@@ -182,7 +195,11 @@ export function setMode(
   counts: NewSessionCounts,
 ): NewSessionState {
   const column: NewSessionColumn =
-    mode === "resume" && counts.resumable > 0 ? "resume" : "workspaces";
+    mode === "resume" && counts.resumable > 0
+      ? "resume"
+      : mode === "pr" && (counts.prs ?? 0) > 0
+        ? "pr"
+        : "workspaces";
   return { ...state, mode, column };
 }
 

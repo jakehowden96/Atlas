@@ -7,8 +7,11 @@
  */
 import { open } from "@tauri-apps/plugin-dialog";
 import { get } from "svelte/store";
-import { ptyKill, ptyWrite, startSessionTail, stopSessionTail } from "./ipc";
+import { getGitStatus, ptyKill, ptyWrite, startSessionTail, stopSessionTail } from "./ipc";
 import { log } from "./logger";
+import { checkoutPullRequest } from "./pr-checkout";
+import { matchRepo, reposByWorkspace } from "./stores/prs";
+import type { Pr } from "../types/generated/Pr";
 import { removeLiveSession, reviveLiveSession } from "./stores/liveSessions";
 import { setSessionTouchedFiles } from "./stores/panel";
 import { clearForSession } from "./stores/reviewComments";
@@ -17,6 +20,7 @@ import {
   DEFAULT_HARNESSES,
   harnesses,
   lastHarnessId,
+  settingsOpen,
   tailTranscripts,
   type HarnessConfig,
 } from "./stores/settings";
@@ -474,4 +478,48 @@ export async function addWorkspaceFolder(): Promise<string | null> {
   if (typeof selected !== "string") return null;
   await addWorkspace(selected);
   return selected;
+}
+
+/**
+ * Start a session on a PR's branch in the workspace that holds its repo. The
+ * checkout is guarded: a dirty tree warns rather than losing work. Shared by the
+ * Pull requests screen and the New Session modal's From PR mode.
+ */
+export async function workOnPr(repo: string, pr: Pr): Promise<boolean> {
+  // The repo's own working tree, which is a directory inside the workspace
+  // whenever the workspace is a folder of checkouts. Checking a PR branch out
+  // at the workspace root would fail there — it is not a git repo at all.
+  const path = matchRepo(get(reposByWorkspace), repo)?.repoPath ?? null;
+  if (!path) {
+    showToast("No workspace linked", {
+      body: `Add ${repo}'s folder — or the folder holding it — in Settings › Workspaces to work on its PRs.`,
+      type: "warning",
+    });
+    settingsOpen.set(true);
+    return false;
+  }
+  try {
+    const status = await getGitStatus(path);
+    if (status.has_unstaged || status.has_staged) {
+      showToast(`${basename(path)} has uncommitted changes`, {
+        body: `Commit or stash them before switching to #${pr.number}.`,
+        type: "warning",
+      });
+      return false;
+    }
+    await checkoutPullRequest(path, repo, pr);
+  } catch (e) {
+    log.error("prs", `checkout of #${pr.number} in ${path} failed`, e);
+    showToast(`Could not check out #${pr.number}`, { body: errorMessage(e) });
+    return false;
+  }
+  try {
+    await spawnHarnessSession(path);
+  } catch (e) {
+    log.error("prs", `starting a session in ${path} failed`, e);
+    showToast("Could not start a session", { body: errorMessage(e) });
+    return false;
+  }
+  showView("session");
+  return true;
 }

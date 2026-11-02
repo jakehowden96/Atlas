@@ -1,11 +1,9 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { getGitStatus, openUrl } from "../../ipc";
+  import { openUrl } from "../../ipc";
   import { setupHint } from "../../gh-setup";
-  import { log } from "../../logger";
   import { isMacPlatform } from "../../platform";
-  import { checkoutPullRequest } from "../../pr-checkout";
-  import { spawnHarnessSession } from "../../session-actions";
+  import { workOnPr } from "../../session-actions";
   import {
     effectiveWatchedRepos,
     matchesFilter,
@@ -23,9 +21,8 @@
   } from "../../stores/prs";
   import { prRefreshMinutes, settingsOpen } from "../../stores/settings";
   import { showToast } from "../../stores/toast";
-  import { showView } from "../../stores/view";
   import { visibleWorkspaces } from "../../stores/workspace";
-  import { basename, formatAgo } from "../../format";
+  import { formatAgo } from "../../format";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
   import type { Pr } from "../../../types/generated/Pr";
   import { errorMessage } from "../../ipc-error";
@@ -140,48 +137,6 @@
   function openPr(pr: Pr) {
     openUrl(pr.url).catch((e) => showToast("Failed to open PR", { body: errorMessage(e) }));
   }
-
-  /**
-   * Start a Claude session on the PR's branch in the linked workspace.
-   * The checkout is guarded: a dirty tree warns rather than losing work.
-   */
-  async function workOnIt(repo: string, pr: Pr) {
-    // The repo's own working tree, which is a directory inside the workspace
-    // whenever the workspace is a folder of checkouts. Checking a PR branch out
-    // at the workspace root would fail there — it is not a git repo at all.
-    const path = matchRepo($reposByWorkspace, repo)?.repoPath ?? null;
-    if (!path) {
-      showToast("No workspace linked", {
-        body: `Add ${repo}'s folder — or the folder holding it — in Settings › Workspaces to work on its PRs.`,
-        type: "warning",
-      });
-      settingsOpen.set(true);
-      return;
-    }
-    try {
-      const status = await getGitStatus(path);
-      if (status.has_unstaged || status.has_staged) {
-        showToast(`${basename(path)} has uncommitted changes`, {
-          body: `Commit or stash them before switching to #${pr.number}.`,
-          type: "warning",
-        });
-        return;
-      }
-      await checkoutPullRequest(path, repo, pr);
-    } catch (e) {
-      log.error("prs", `checkout of #${pr.number} in ${path} failed`, e);
-      showToast(`Could not check out #${pr.number}`, { body: errorMessage(e) });
-      return;
-    }
-    try {
-      await spawnHarnessSession(path);
-    } catch (e) {
-      log.error("prs", `starting a session in ${path} failed`, e);
-      showToast("Could not start a session", { body: errorMessage(e) });
-      return;
-    }
-    showView("session");
-  }
 </script>
 
 <div class="prs-view">
@@ -268,7 +223,7 @@
                 type="button"
                 class="btn work"
                 title="Start a Claude session on this PR's branch"
-                onclick={() => workOnIt(card.repo, pr)}
+                onclick={() => void workOnPr(card.repo, pr)}
               >
                 Work on it ›_
               </button>

@@ -2,13 +2,15 @@
   import { chord, enterLabel } from "../../platform";
   /**
    * The command-style New Session modal: pick a workspace on the left, then
-   * start a New conversation or Resume a prior one on the right.
+   * start a New conversation, Resume a prior one, or work on an open PR from
+   * the right.
    *
    * The keyboard model and the workspace filter live in `../../new-session.ts`
    * so they can be unit-tested without a Svelte compiler; this file is the
    * rendering and the side effects.
    */
   import { get } from "svelte/store";
+  import type { Pr } from "../../../types/generated/Pr";
   import type { ResumableSession } from "../../../types/generated/ResumableSession";
   import { homeDir } from "@tauri-apps/api/path";
   import { listResumableSessions, validateDirectory } from "../../ipc";
@@ -36,54 +38,59 @@
     addWorkspaceFolder,
     removeWorkspaceWithUndo,
     spawnHarnessSession,
+    workOnPr,
   } from "../../session-actions";
+  import { prRepos, prSetupProblem, reposByWorkspace } from "../../stores/prs";
   import {
     harnesses,
     lastHarnessId,
     setLastHarnessId,
+    settingsOpen,
     type HarnessConfig,
   } from "../../stores/settings";
   import { showToast } from "../../stores/toast";
   import { focusedSessionId, newSessionOpen, newSessionSeed, showView } from "../../stores/view";
   import { addWorkspace, visibleWorkspaces, type Workspace } from "../../stores/workspace";
+  import Button from "../ui/Button.svelte";
+  import Icon from "../ui/Icon.svelte";
+  import IconButton from "../ui/IconButton.svelte";
+  import InlineAlert from "../ui/InlineAlert.svelte";
+  import Kbd from "../ui/Kbd.svelte";
+  import ListRow from "../ui/ListRow.svelte";
   import Modal, { closeWith } from "../ui/Modal.svelte";
+  import RadioGroup from "../ui/RadioGroup.svelte";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
+  import Skeleton from "../ui/Skeleton.svelte";
   import { errorMessage } from "../../ipc-error";
 
   let query = $state("");
   let nav = $state<NewSessionState>({ ...INITIAL_STATE });
   let resumable = $state<ResumableSession[]>([]);
   let loadingResume = $state(false);
-  /** The last Resume lookup failed — distinct from a workspace with no history. */
+  /** The last Resume lookup failed, distinct from a workspace with no history. */
   let resumeError = $state("");
+  /** Bumped by Retry so the lookup effect runs again for the same workspace. */
+  let retryTick = $state(0);
   let inputEl = $state<HTMLInputElement | null>(null);
   let wsColEl = $state<HTMLDivElement | null>(null);
   let resumePaneEl = $state<HTMLDivElement | null>(null);
+  let prPaneEl = $state<HTMLDivElement | null>(null);
   /** A file the caller wants the session to start on, shown under the input. */
   let attached = $state("");
-  /** Frozen at open — the ages in the list would otherwise re-render constantly. */
+  /** Frozen at open, the ages in the list would otherwise re-render constantly. */
   let now = $state(new Date());
 
   let filtered = $derived(filterWorkspaces($visibleWorkspaces, query));
-  /** A typed or pasted path that is not a workspace yet — the add row offers it. */
+  /** A typed or pasted path that is not a workspace yet, the add row offers it. */
   let addPath = $derived(
     looksLikeAbsolutePath(query) && !findWorkspace($visibleWorkspaces, query.trim())
       ? query.trim()
       : "",
   );
-  let counts = $derived<NewSessionCounts>({
-    workspaces: filtered.length,
-    resumable: resumable.length,
-    harnesses: $harnesses.length,
-  });
-  /** `nav` with indices pulled back in range after the lists changed under it. */
-  let view = $derived(clampState(nav, counts));
-  /** The harness the session will launch — driven by ←/→. */
-  let selectedHarness = $derived<HarnessConfig | null>($harnesses[view.harnessIndex] ?? null);
   /**
    * "Add workspace…" is an action, not a selection, so the highlight landing on it
    * leaves the workspace picked. Deliberately derived from `nav` and `filtered`
-   * alone and never from `resumable` — the effect below writes `resumable`, and
+   * alone and never from `resumable`, the effect below writes `resumable`, and
    * reading it back here would make that effect feed itself.
    */
   let selected = $derived<Workspace | null>(
@@ -91,12 +98,46 @@
       ? null
       : (filtered[Math.min(Math.max(0, nav.wsIndex), filtered.length - 1)] ?? null),
   );
+
+  /** Open PRs of the repos the selected workspace holds, with the repo each is in. */
+  let prItems = $derived.by(() => {
+    const slugs = new Set(
+      (selected ? ($reposByWorkspace[selected.path] ?? []) : []).flatMap((r) =>
+        r.slug ? [r.slug.toLowerCase()] : [],
+      ),
+    );
+    return ($prRepos ?? []).flatMap((entry) =>
+      slugs.has(entry.repo.toLowerCase()) ? entry.prs.map((pr) => ({ repo: entry.repo, pr })) : [],
+    );
+  });
+  let prsLoading = $derived($prRepos === null && !$prSetupProblem);
+
+  let counts = $derived<NewSessionCounts>({
+    workspaces: filtered.length,
+    resumable: resumable.length,
+    prs: prItems.length,
+    harnesses: $harnesses.length,
+  });
+  /** `nav` with indices pulled back in range after the lists changed under it. */
+  let view = $derived(clampState(nav, counts));
+  /** The harness the session will launch, driven by the arrow keys. */
+  let selectedHarness = $derived<HarnessConfig | null>($harnesses[view.harnessIndex] ?? null);
   let pickedResume = $derived<ResumableSession | null>(
     view.mode === "resume" ? (resumable[view.resumeIndex] ?? null) : null,
   );
-  let canStart = $derived(selected !== null && (view.mode === "fresh" || pickedResume !== null));
+  let pickedPr = $derived(view.mode === "pr" ? (prItems[view.prIndex] ?? null) : null);
+  let canStart = $derived(
+    selected !== null && (view.mode === "fresh" || pickedResume !== null || pickedPr !== null),
+  );
+  let startLabel = $derived(
+    view.mode === "resume"
+      ? "Resume session"
+      : view.mode === "pr"
+        ? `Work on #${pickedPr?.pr.number ?? "…"}`
+        : "Start session",
+  );
 
-  // The id stays "fresh" — `NewSessionSeed` and the Stats view read it. Only the
+  // The id stays "fresh", `NewSessionSeed` and the Stats view read it. Only the
   // label the user sees changed.
   let modeOptions = $derived<Segment<NewSessionMode>[]>([
     { id: "fresh", label: "New" },
@@ -106,12 +147,10 @@
       count: resumable.length,
       disabled: !(selectedHarness?.resumable ?? false),
     },
+    { id: "pr", label: "From PR", count: prItems.length },
   ]);
 
-  // Which harness the session will launch.
-  let harnessOptions = $derived<Segment[]>($harnesses.map((h) => ({ id: h.id, label: h.label })));
-
-  // Plain `let`s, not `$state` — they gate effects and must not re-trigger them.
+  // Plain `let`s, not `$state`, they gate effects and must not re-trigger them.
   let wasOpen = false;
   let loadedFor = "";
   let pendingResumeId = "";
@@ -136,15 +175,18 @@
   $effect(() => {
     const row =
       view.column === "resume"
-        ? resumePaneEl?.querySelectorAll(".resume-row")[view.resumeIndex]
-        : wsColEl?.querySelectorAll(".ws-row, .add-row")[view.wsIndex];
+        ? resumePaneEl?.querySelectorAll('[role="radio"]')[view.resumeIndex]
+        : view.column === "pr"
+          ? prPaneEl?.querySelectorAll('[role="option"]')[view.prIndex]
+          : wsColEl?.querySelectorAll('[role="option"]')[view.wsIndex];
     row?.scrollIntoView({ block: "nearest" });
   });
 
   // The Resume list follows the selected workspace, but only exists for a
-  // harness that can be resumed — Terminal has nothing to list, so
+  // harness that can be resumed, Terminal has nothing to list, so
   // this never calls the IPC for them.
   $effect(() => {
+    void retryTick;
     const resumableHarness = selectedHarness?.resumable ?? false;
     const path = $newSessionOpen && resumableHarness ? (selected?.path ?? "") : "";
     if (path === loadedFor) return;
@@ -170,6 +212,11 @@
         if (loadedFor === path) loadingResume = false;
       });
   });
+
+  function retryResume() {
+    loadedFor = "";
+    retryTick++;
+  }
 
   function applySeed() {
     const seed = get(newSessionSeed);
@@ -200,7 +247,7 @@
         nav = { ...nav, wsIndex: index, mode: wantsResume ? "resume" : "fresh" };
         pendingResumeId = wantsResume ? (seed.resumeSessionId ?? "") : "";
       } else {
-        // Nothing owns that path — show it in the box so the add row offers it.
+        // Nothing owns that path, show it in the box so the add row offers it.
         query = seed.workspacePath;
       }
     }
@@ -227,11 +274,16 @@
   }
 
   function pickWorkspace(index: number) {
-    nav = { ...view, wsIndex: index, column: "workspaces" };
+    nav = { ...view, wsIndex: index, prIndex: 0, column: "workspaces" };
   }
 
-  function pickResume(index: number) {
-    nav = { ...view, mode: "resume", column: "resume", resumeIndex: index };
+  function pickResume(sessionId: string) {
+    const resumeIndex = resumable.findIndex((r) => r.sessionId === sessionId);
+    if (resumeIndex >= 0) nav = { ...view, mode: "resume", column: "resume", resumeIndex };
+  }
+
+  function pickPr(index: number) {
+    nav = { ...view, mode: "pr", column: "pr", prIndex: index };
   }
 
   /** Move the highlight onto `path`, whichever position it sorted into. */
@@ -268,8 +320,14 @@
     const ws = selected;
     const harness = selectedHarness;
     if (!ws || !harness || !canStart) return;
+    const pr = pickedPr;
     const resumeSessionId = pickedResume?.sessionId;
     close();
+    if (pr) {
+      // Reports its own failures; the modal is already closed either way.
+      await workOnPr(pr.repo, pr.pr);
+      return;
+    }
     void setLastHarnessId(harness.id);
     try {
       // Reattach the workspace row that already owns this conversation rather
@@ -292,6 +350,14 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
+    // A focused radio group or tab list steps itself with the arrow keys; the
+    // modal's own arrow handling would move the highlight a second time.
+    if (
+      e.key.startsWith("Arrow") &&
+      (e.target as HTMLElement).closest('[role="radiogroup"], [role="tablist"]')
+    ) {
+      return;
+    }
     // With text in the filter box, bare ←/→ move its caret instead.
     if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !e.shiftKey && query !== "") return;
     const result = handleKey(e, nav, counts);
@@ -299,8 +365,8 @@
     e.preventDefault();
     // Escape and ⌘O are also global chords; the modal answers them first.
     e.stopPropagation();
-    // The Resume UI depends on a resumable harness — Terminal has nothing to
-    // resume — so neither Tab nor ←/→ may land in it for one.
+    // The Resume UI depends on a resumable harness, Terminal has nothing to
+    // resume, so neither Tab nor ←/→ may land in it for one.
     nav = leaveResumeIfUnsupported(
       result.state,
       $harnesses[result.state.harnessIndex]?.resumable ?? false,
@@ -312,7 +378,7 @@
 
   function onInput(e: Event) {
     query = (e.currentTarget as HTMLInputElement).value;
-    nav = { ...nav, wsIndex: 0, column: "workspaces" };
+    nav = { ...nav, wsIndex: 0, prIndex: 0, column: "workspaces" };
   }
 
   function lastUsed(ws: Workspace): string {
@@ -324,24 +390,37 @@
   function resumeTitle(row: ResumableSession): string {
     return row.title ?? `Session ${row.sessionId.slice(0, 8)}`;
   }
+
+  function prMeta(pr: Pr): string {
+    return `${pr.author.login} · ${pr.headRefName}`;
+  }
+
+  let resumeOptions = $derived(
+    resumable.map((row) => ({
+      value: row.sessionId,
+      label: resumeTitle(row),
+      description: `${ageLabel(row.lastTimestamp, now)} · ${row.userMessages} msgs · ${row.gitBranch ?? "no branch"}`,
+    })),
+  );
 </script>
 
-<Modal open={$newSessionOpen} onClose={close} align="top" width="960px">
+<Modal open={$newSessionOpen} onClose={close} align="top" width="960px" title="New session">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="new-session" onkeydown={onKeydown}>
     <div class="bar">
-      <span class="glyph">›_</span>
+      <span class="glyph"><Icon name="terminal" /></span>
       <input
         bind:this={inputEl}
         class="input"
         type="text"
         value={query}
         oninput={onInput}
-        placeholder="New session — type a workspace, a path, or paste a PR link…"
+        aria-label="Workspace or path"
+        placeholder="Type a workspace name or a path"
         autocomplete="off"
         spellcheck="false"
       />
-      <span class="kbd">esc</span>
+      <Kbd>esc</Kbd>
     </div>
 
     {#if attached}
@@ -352,56 +431,54 @@
 
     <div class="cols">
       <div class="ws-col" bind:this={wsColEl}>
-        <div class="col-head">Workspaces · recent first</div>
+        <div class="col-head" id="ns-ws-head">Workspaces · recent first</div>
 
-        {#each filtered as ws, i (ws.path)}
-          <div
-            class="ws-row-wrap"
-            class:selected={view.column === "workspaces" && i === view.wsIndex}
-          >
-            <button
-              type="button"
-              class="ws-row"
-              class:selected={view.column === "workspaces" && i === view.wsIndex}
+        <div class="ws-list" role="listbox" aria-labelledby="ns-ws-head">
+          {#each filtered as ws, i (ws.path)}
+            <ListRow
+              option
+              selected={view.column === "workspaces" && i === view.wsIndex}
               onclick={() => pickWorkspace(i)}
             >
               <span class="swatch" style="background: {ws.color ?? 'var(--accent)'}"></span>
-              <span class="ws-text">
-                <span class="ws-name">{ws.name}</span>
-                <span class="ws-path" title={ws.path}>{ws.path}</span>
-              </span>
+              <span class="ws-name">{ws.name}</span>
+              <span class="ws-path" title={ws.path}>{ws.path}</span>
               <span class="ws-last">{lastUsed(ws)}</span>
-            </button>
-            <button
-              type="button"
-              class="ws-remove"
-              aria-label="Remove {ws.name}"
-              title="Remove workspace"
-              onclick={() => void removeWorkspaceWithUndo(ws.path)}>✕</button
-            >
-          </div>
-        {/each}
+              {#snippet actions()}
+                <IconButton
+                  icon="close"
+                  size="sm"
+                  label="Remove {ws.name}"
+                  tabindex={-1}
+                  onclick={(e: MouseEvent) => {
+                    e.stopPropagation();
+                    void removeWorkspaceWithUndo(ws.path);
+                  }}
+                />
+              {/snippet}
+            </ListRow>
+          {/each}
+
+          <ListRow
+            option
+            selected={view.column === "workspaces" && view.wsIndex === filtered.length}
+            onclick={addRow}
+          >
+            <Icon name="add" />
+            {#if addPath}
+              <span class="add-label">Add <span class="add-path">{addPath}</span></span>
+            {:else}
+              <span class="add-label">Add workspace…</span>
+            {/if}
+            <span class="add-kbd">{chord("O")}</span>
+          </ListRow>
+        </div>
 
         {#if filtered.length === 0 && !addPath}
           <p class="col-empty">
-            {query.trim() ? `No workspace matches “${query.trim()}”.` : "No workspaces yet."}
+            {query.trim() ? `No workspace matches “${query.trim()}”` : "No workspaces yet"}
           </p>
         {/if}
-
-        <button
-          type="button"
-          class="add-row"
-          class:selected={view.column === "workspaces" && view.wsIndex === filtered.length}
-          onclick={addRow}
-        >
-          <span class="add-box"></span>
-          {#if addPath}
-            <span class="add-label">Add <span class="add-path">{addPath}</span></span>
-          {:else}
-            <span class="add-label">Add workspace…</span>
-          {/if}
-          <span class="add-kbd">{chord("O")}</span>
-        </button>
       </div>
 
       <div class="right-col">
@@ -411,80 +488,111 @@
               Start in {selected?.name ?? "…"}
             </span>
             {#if counts.harnesses > 1}
-              <span class="mode-hint"><kbd>←→</kbd> harness</span>
+              <span class="mode-hint"><Kbd>←→</Kbd> harness</span>
             {/if}
           </div>
-          <SegmentedControl
-            options={harnessOptions}
-            value={selectedHarness?.id ?? ""}
-            onChange={chooseHarness}
-            fill
-          />
+          <div class="harness-pick">
+            <RadioGroup
+              label="Harness"
+              options={$harnesses.map((h) => ({ value: h.id, label: h.label }))}
+              bind:value={() => selectedHarness?.id ?? "", chooseHarness}
+            />
+          </div>
         </div>
 
         <div>
           <div class="col-head mode-head">
-            <span class="mode-title">New / Resume</span>
-            <span class="mode-hint"><kbd>tab</kbd> switches</span>
+            <span class="mode-title">Mode</span>
+            <span class="mode-hint"><Kbd>tab</Kbd> switches</span>
           </div>
-          <SegmentedControl options={modeOptions} value={view.mode} onChange={chooseMode} fill />
+          <SegmentedControl
+            label="Mode"
+            options={modeOptions}
+            value={view.mode}
+            onChange={chooseMode}
+            fill
+          />
         </div>
 
-        {#if view.mode === "resume"}
-          <div class="resume-pane" bind:this={resumePaneEl}>
-            <div class="resume-caption">
-              From <span class="mono">claude --resume</span> · newest first
+        <div class="panel" role="tabpanel" aria-label={modeOptions.find((o) => o.id === view.mode)?.label}>
+          {#if view.mode === "resume"}
+            <div class="resume-pane" bind:this={resumePaneEl}>
+              <div class="resume-caption">
+                From <span class="mono">claude --resume</span> · newest first
+              </div>
+              {#if loadingResume}
+                <div class="skeletons" role="status" aria-label="Reading transcripts">
+                  <Skeleton height="var(--h-xl)" radius="lg" />
+                  <Skeleton height="var(--h-xl)" radius="lg" />
+                  <Skeleton height="var(--h-xl)" radius="lg" />
+                </div>
+              {:else if resumeError}
+                <InlineAlert>Could not read prior sessions: {resumeError}</InlineAlert>
+                <div><Button size="sm" onclick={retryResume}>Retry</Button></div>
+              {:else if resumable.length === 0}
+                <p class="empty">No prior sessions in this workspace yet, start a New one</p>
+              {:else}
+                <RadioGroup
+                  label="Prior sessions"
+                  options={resumeOptions}
+                  bind:value={() => pickedResume?.sessionId ?? "", pickResume}
+                />
+              {/if}
             </div>
-            {#if loadingResume}
-              <p class="resume-empty">Reading transcripts…</p>
-            {:else if resumeError}
-              <p class="resume-empty">Could not read prior sessions: {resumeError}</p>
-            {:else if resumable.length === 0}
-              <p class="resume-empty">No prior sessions in this workspace yet — start a New one.</p>
-            {:else}
-              {#each resumable as row, i (row.sessionId)}
-                <button
-                  type="button"
-                  class="resume-row"
-                  class:selected={i === view.resumeIndex}
-                  onclick={() => pickResume(i)}
-                >
-                  <span class="radio" class:on={i === view.resumeIndex}></span>
-                  <span class="resume-text">
-                    <span class="resume-title">{resumeTitle(row)}</span>
-                    <span class="resume-meta">
-                      {ageLabel(row.lastTimestamp, now)} · {row.userMessages} msgs · {row.gitBranch ??
-                        "no branch"}
-                    </span>
-                  </span>
-                </button>
-              {/each}
-            {/if}
-          </div>
-        {:else}
-          <p class="fresh-copy">
-            Opens a new {selectedHarness?.label ?? "session"} in
-            <span class="mono strong">{selected?.path ?? "—"}</span> with Atlas hooks attached.
-          </p>
-        {/if}
-
-        <!-- The Resume list is itself flex: 1; a second spacer would halve it. -->
-        {#if view.mode !== "resume"}<div class="grow"></div>{/if}
+          {:else if view.mode === "pr"}
+            <div class="resume-pane" bind:this={prPaneEl}>
+              <div class="resume-caption" id="ns-pr-head">
+                Open pull requests in {selected?.name ?? "this workspace"}
+              </div>
+              {#if $prSetupProblem}
+                <p class="empty">Link GitHub to list pull requests here</p>
+                <div>
+                  <Button size="sm" onclick={() => settingsOpen.set(true)}>
+                    Open settings
+                  </Button>
+                </div>
+              {:else if prsLoading}
+                <div class="skeletons" role="status" aria-label="Loading pull requests">
+                  <Skeleton height="var(--h-lg)" radius="md" />
+                  <Skeleton height="var(--h-lg)" radius="md" />
+                  <Skeleton height="var(--h-lg)" radius="md" />
+                </div>
+              {:else if prItems.length === 0}
+                <p class="empty">No open pull requests for this workspace</p>
+              {:else}
+                <div role="listbox" aria-labelledby="ns-pr-head">
+                  {#each prItems as item, i (item.repo + "#" + item.pr.number)}
+                    <ListRow option selected={i === view.prIndex} onclick={() => pickPr(i)}>
+                      <span class="pr-num">#{item.pr.number}</span>
+                      <span class="ws-name">{item.pr.title}</span>
+                      <span class="ws-last">{prMeta(item.pr)}</span>
+                    </ListRow>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {:else}
+            <p class="fresh-copy">
+              Opens a new {selectedHarness?.label ?? "session"} in
+              <span class="mono strong">{selected?.path ?? "—"}</span> with Atlas hooks attached.
+            </p>
+          {/if}
+        </div>
 
         <!-- Rendered from `KEY_HINTS` rather than written out here, so the
              footer cannot drift from what `handleKey` actually claims. -->
         <div class="hints">
           {#each KEY_HINTS as hint (hint.label)}
             {#if !hint.multiHarnessOnly || counts.harnesses > 1}
-              <span><kbd>{hint.keys}</kbd> {hint.label}</span>
+              <span><Kbd>{hint.keys}</Kbd> {hint.label}</span>
             {/if}
           {/each}
         </div>
 
-        <button type="button" class="start" disabled={!canStart} onclick={start}>
-          {view.mode === "resume" ? "Resume session" : "Start session"}
-          <span class="start-kbd">{enterLabel()}</span>
-        </button>
+        <Button variant="primary" disabled={!canStart} onclick={start}>
+          {startLabel}
+          {#snippet trailing()}<Kbd onInk>{enterLabel()}</Kbd>{/snippet}
+        </Button>
       </div>
     </div>
   </div>
@@ -502,8 +610,8 @@
     display: flex;
     align-items: center;
     flex-shrink: 0;
-    gap: 10px;
-    padding: 12px 14px;
+    gap: var(--sp-3);
+    padding: var(--sp-4) 14px;
     border-bottom: 1px solid var(--border);
   }
 
@@ -520,10 +628,8 @@
   }
 
   .glyph {
+    display: inline-flex;
     color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-sm);
-    font-weight: 600;
   }
 
   .input {
@@ -547,15 +653,6 @@
     color: var(--muted);
   }
 
-  .kbd {
-    padding: 1px 5px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-xs);
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-  }
-
   .cols {
     display: flex;
     flex: 1;
@@ -567,16 +664,22 @@
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
-    gap: 2px;
+    gap: var(--sp-0);
     width: 372px;
     min-width: 0;
-    padding: 8px;
+    padding: var(--sp-3);
     overflow: auto;
     border-right: 1px solid var(--border);
   }
 
+  .ws-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-0);
+  }
+
   .col-head {
-    padding: 6px 8px 4px;
+    padding: var(--sp-2) var(--sp-3) var(--sp-1);
     color: var(--muted);
     font-family: var(--font-ui);
     font-size: var(--fs-2xs);
@@ -586,83 +689,9 @@
   }
 
   .col-empty {
-    margin: 4px 8px;
+    margin: var(--sp-1) var(--sp-3);
     color: var(--muted);
     font-size: var(--fs-xs);
-  }
-
-  .ws-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex: 1;
-    min-width: 0;
-    padding: 8px 10px;
-    border: none;
-    border-radius: var(--r-md);
-    background: transparent;
-    color: var(--text);
-    font-family: var(--font-ui);
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .ws-row-wrap {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-  }
-
-  .ws-row:hover {
-    background: var(--surface2);
-  }
-
-  .ws-row:focus-visible,
-  .add-row:focus-visible,
-  .resume-row:focus-visible,
-  .ws-remove:focus-visible,
-  .start:focus-visible {
-    outline: 1px solid var(--accent);
-    outline-offset: -1px;
-  }
-
-  /* Stays out of the way until the row is hovered, but remains reachable by
-     keyboard — focus-visible brings it back regardless of pointer. */
-  .ws-remove {
-    display: grid;
-    place-items: center;
-    flex-shrink: 0;
-    width: 20px;
-    height: 20px;
-    margin-left: 2px;
-    padding: 0;
-    border: none;
-    border-radius: var(--r-sm);
-    background: transparent;
-    color: var(--muted);
-    font-size: var(--fs-xs);
-    line-height: 1;
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.12s ease;
-  }
-
-  .ws-row-wrap:hover .ws-remove,
-  .ws-row-wrap.selected .ws-remove,
-  .ws-remove:focus-visible {
-    opacity: 1;
-  }
-
-  .ws-remove:hover {
-    color: var(--text);
-  }
-
-  /* The caret stays in the filter box, so DOM focus never lands on a row — this
-     highlight is the only thing telling you what ⏎ will act on. It has to read
-     as a selection on its own, hence the accent rather than a border tint. */
-  .ws-row.selected {
-    background: var(--surface2);
-    box-shadow: inset 0 0 0 1px var(--accent);
   }
 
   .swatch {
@@ -672,19 +701,19 @@
     border-radius: var(--r-xs);
   }
 
-  .ws-text {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-width: 0;
-  }
-
   .ws-name {
+    flex-shrink: 0;
+    max-width: 55%;
+    overflow: hidden;
     font-size: var(--fs-sm);
     font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .ws-path {
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     color: var(--muted);
     font-family: var(--font-mono);
@@ -695,50 +724,16 @@
 
   .ws-last {
     flex-shrink: 0;
+    margin-left: auto;
     color: var(--muted);
     font-family: var(--font-mono);
     font-size: var(--fs-2xs);
   }
 
-  .add-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
-    margin-top: 4px;
-    padding: 9px 10px;
-    border: none;
-    border-top: 1px solid var(--border);
-    border-radius: 0;
-    background: transparent;
-    color: var(--muted);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .add-row:hover,
-  .add-row.selected {
-    color: var(--text);
-  }
-
-  .add-row.selected {
-    background: var(--surface2);
-    box-shadow: inset 0 0 0 1px var(--accent);
-  }
-
-  .add-box {
-    display: block;
-    flex-shrink: 0;
-    width: 10px;
-    height: 10px;
-    border: 1.5px dashed var(--border2);
-    border-radius: var(--r-xs);
-  }
-
   .add-label {
     overflow: hidden;
+    color: var(--muted);
+    font-size: var(--fs-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -751,6 +746,7 @@
   .add-kbd {
     margin-left: auto;
     flex-shrink: 0;
+    color: var(--muted);
     font-family: var(--font-mono);
     font-size: var(--fs-2xs);
   }
@@ -760,7 +756,7 @@
     display: flex;
     flex-direction: column;
     flex: 1;
-    gap: 12px;
+    gap: var(--sp-4);
     min-width: 0;
     padding: 14px;
     background: var(--bg);
@@ -768,17 +764,17 @@
 
   .right-col .col-head {
     padding: 0;
-    margin-bottom: 8px;
+    margin-bottom: var(--sp-3);
   }
 
   .mode-head {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 10px;
+    gap: var(--sp-3);
   }
 
-  /* The right column is the narrow one — 268px in New mode — so a workspace
+  /* The right column is the narrow one, 268px in New mode, so a workspace
      with a long name would otherwise push the tab hint out of the modal. */
   .mode-title {
     min-width: 0;
@@ -792,7 +788,7 @@
   .mode-hint {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--sp-2);
     flex-shrink: 0;
     font-family: var(--font-mono);
     font-size: var(--fs-2xs);
@@ -801,8 +797,18 @@
     text-transform: none;
   }
 
-  .grow {
+  /* A handful of harnesses read better side by side than stacked. */
+  .harness-pick :global(.group) {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--sp-3) var(--sp-5);
+  }
+
+  .panel {
+    display: flex;
+    flex-direction: column;
     flex: 1;
+    min-height: 0;
   }
 
   .fresh-copy {
@@ -829,11 +835,11 @@
   .resume-pane {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--sp-2);
     flex: 1;
     min-height: 0;
     overflow: auto;
-    /* Delayed so it lands after the Resume panel mounts. */
+    /* Delayed so it lands after the panel mounts. */
     animation: atlasSlideIn 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) 0.08s both;
   }
 
@@ -842,88 +848,30 @@
     font-size: var(--fs-xs);
   }
 
-  .resume-empty {
+  .empty {
     margin: 0;
     color: var(--muted);
     font-size: var(--fs-xs);
   }
 
-  .resume-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    background: var(--surface);
-    color: var(--text);
-    font-family: var(--font-ui);
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .resume-row:hover {
-    border-color: var(--border2);
-  }
-
-  .resume-row.selected {
-    border-color: var(--accent);
-    box-shadow: inset 0 0 0 1px var(--accent);
-  }
-
-  .radio {
-    display: grid;
-    place-items: center;
-    flex-shrink: 0;
-    width: 12px;
-    height: 12px;
-    border: 1px solid var(--border2);
-    border-radius: 50%;
-  }
-
-  .radio.on {
-    border-color: var(--text);
-  }
-
-  .radio.on::after {
-    content: "";
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--text);
-  }
-
-  .resume-text {
+  .skeletons {
     display: flex;
     flex-direction: column;
-    flex: 1;
-    min-width: 0;
+    gap: var(--sp-2);
   }
 
-  .resume-title {
-    overflow: hidden;
-    font-size: var(--fs-sm);
-    font-weight: 500;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .resume-meta {
-    margin-top: 2px;
-    overflow: hidden;
+  .pr-num {
+    flex-shrink: 0;
     color: var(--muted);
     font-family: var(--font-mono);
     font-size: var(--fs-2xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   /* ── Footer ────────────────────────────────────────────────────────────── */
   .hints {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: var(--sp-4);
     flex-shrink: 0;
     color: var(--muted);
     font-family: var(--font-mono);
@@ -933,42 +881,6 @@
   .hints span {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-  }
-
-  .mode-hint kbd,
-  .hints kbd {
-    padding: 1px 5px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-xs);
-    background: var(--surface);
-    color: var(--text);
-    font: inherit;
-    font-size: var(--fs-2xs);
-  }
-
-  .start {
-    flex-shrink: 0;
-    height: 32px;
-    border: none;
-    border-radius: var(--r-lg);
-    background: var(--ink);
-    color: var(--ink-text);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
-    font-weight: 500;
-    cursor: pointer;
-  }
-
-  .start:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-
-  .start-kbd {
-    margin-left: 4px;
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    opacity: 0.6;
+    gap: var(--sp-2);
   }
 </style>
