@@ -57,6 +57,15 @@ have values in the repository.
 | `APPLE_ID` | Apple ID used for notarization |
 | `APPLE_PASSWORD` | App-specific password for that Apple ID |
 | `APPLE_TEAM_ID` | Apple developer team ID |
+| `TAURI_SIGNING_PRIVATE_KEY` | Updater signing private key (contents of the generated `.key` file) |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password for that key, if one was set |
 
 Windows installers are currently not code-signed; SmartScreen will warn on first run. Add a signing
 certificate and its secrets to the workflow to change that.
+
+### Generating the updater key
+
+Run `pnpm tauri signer generate -w ~/.tauri/atlas.key`. Put the public key in `plugins.updater.pubkey` in
+`src-tauri/tauri.conf.json` (replacing `REPLACE_WITH_UPDATER_PUBLIC_KEY`) and the private key and its
+password in the two secrets above. Never commit the private key. Until the pubkey is replaced, the app
+skips update checks.
