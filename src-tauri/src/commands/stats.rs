@@ -12,7 +12,7 @@ use tauri::{AppHandle, Emitter};
 use crate::error::AtlasError;
 use crate::session::transcript::is_valid_session_uuid;
 use crate::transcript::{
-    activity_slot, assistant_model, jsonl_lines, line_type, model_family, request_key,
+    activity_slot, assistant_model, jsonl_lines, line_key, line_type, model_family, request_key,
     requests_to_by_model, slot_start, tool_results, tool_uses, user_text, ActivityBucket,
     ActivityLog, ModelSessionData, ReqData,
 };
@@ -495,18 +495,6 @@ fn subagent_files(transcript: &Path, session_id: &str) -> Vec<PathBuf> {
     files
 }
 
-/// A 64-bit FNV-1a hash of a line's identity, `tag` telling assistant requests
-/// (`a`) from user lines (`u`) apart. Hand-rolled because the value is stored in
-/// stats.json and `DefaultHasher` makes no promise of staying the same.
-fn line_key(tag: u8, key: &str) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in std::iter::once(tag).chain(key.bytes()) {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x0100_0000_01b3);
-    }
-    hash
-}
-
 /// `parse_session_skipping` with nothing skipped: one file on its own, as the
 /// tests and the live-vs-stats parity check read it.
 #[cfg(test)]
@@ -899,7 +887,7 @@ fn aggregate(records: &[SessionRecord]) -> StatsSummary {
 }
 
 /// The calendar day `at` falls on in `tz`, as `YYYY-MM-DD`.
-fn day_key<Tz: chrono::TimeZone>(at: chrono::DateTime<chrono::Utc>, tz: &Tz) -> String
+pub(crate) fn day_key<Tz: chrono::TimeZone>(at: chrono::DateTime<chrono::Utc>, tz: &Tz) -> String
 where
     Tz::Offset: std::fmt::Display,
 {
@@ -1205,7 +1193,10 @@ pub fn recompute() -> Result<StatsSummary, AtlasError> {
 
 /// `recompute` over explicit locations, so the cache logic can be exercised
 /// against a temp directory.
-fn recompute_in(projects_dir: &Path, stats_path: &Path) -> Result<StatsSummary, AtlasError> {
+pub(crate) fn recompute_in(
+    projects_dir: &Path,
+    stats_path: &Path,
+) -> Result<StatsSummary, AtlasError> {
     if !projects_dir.exists() {
         return Ok(StatsSummary::default());
     }
@@ -1312,6 +1303,25 @@ fn recompute_in(projects_dir: &Path, stats_path: &Path) -> Result<StatsSummary, 
     }
 
     Ok(summary)
+}
+
+/// The `line_key`s that stats.json attributes to a session other than
+/// `session_uuid` (see `transcript::line_key` for who owns a line), for the live
+/// tail to leave out of its cost. Empty when stats.json is missing, in which
+/// case the tail counts everything it reads, as before.
+pub(crate) fn foreign_keys(session_uuid: &str) -> HashSet<u64> {
+    stats_path()
+        .map(|p| foreign_keys_in(&p, session_uuid))
+        .unwrap_or_default()
+}
+
+pub(crate) fn foreign_keys_in(stats_path: &Path, session_uuid: &str) -> HashSet<u64> {
+    load_cache(stats_path)
+        .records
+        .values()
+        .filter(|r| r.session_id != session_uuid)
+        .flat_map(|r| r.request_ids.iter().copied())
+        .collect()
 }
 
 // ── Tauri command ─────────────────────────────────────────────────────────────
