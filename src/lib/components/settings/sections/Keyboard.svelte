@@ -1,5 +1,12 @@
 <script lang="ts">
   import "./shared.css";
+  import Banner from "../../ui/Banner.svelte";
+  import Button from "../../ui/Button.svelte";
+  import { confirmAction } from "../../ui/ConfirmDialog.svelte";
+  import InlineAlert from "../../ui/InlineAlert.svelte";
+  import Kbd from "../../ui/Kbd.svelte";
+  import StatusMark from "../../ui/StatusMark.svelte";
+  import Tooltip from "../../ui/Tooltip.svelte";
   import { get } from "svelte/store";
   import {
     ACTION_LABELS,
@@ -85,6 +92,15 @@
     return !!primary && mergeKeymap({ [action]: [primary] })[action].length === 1;
   }
 
+  async function confirmReset() {
+    const ok = await confirmAction({
+      title: "Reset all shortcuts",
+      body: "Every chord goes back to its default",
+      confirmLabel: "Reset all",
+    });
+    if (ok) resetAll();
+  }
+
   function resetAll() {
     draft = { ...DEFAULT_KEYMAP };
     recording = null;
@@ -93,86 +109,85 @@
 </script>
 
 <div class="stack sec">
+  {#if conflicts.length > 0}
+    <Banner tone="warn" title="Two actions share a chord. Nothing is saved until one changes" />
+  {/if}
+
   <p class="copy">
-    Every global chord. ⌘ and Ctrl are interchangeable, so one binding covers both platforms.
-    Recording needs the modifier held; Esc cancels. An action can carry a second chord — some chords
-    never reach the app, because the OS claims them first.
+    Command and Ctrl both work, so one chord covers Mac and Windows. Hold a modifier while
+    recording. Esc cancels.
   </p>
 
   <div class="list">
     {#each ACTIONS as action (action)}
-      <div class="list-row key-row" class:clash={conflicts.includes(action)}>
+      {@const clash = conflicts.includes(action)}
+      <div class="list-row key-row" class:clash>
         <span class="key-name">{ACTION_LABELS[action]}</span>
         <span class="key-chords">
           {#each draft[action] as binding, i (i)}
-            <span
-              class="mono-pill key-chord"
-              class:unreachable={!isReachable(binding)}
-              title={isReachable(binding)
-                ? undefined
-                : "This OS claims this chord — it never reaches Atlas."}
-              >{formatBinding(binding)}</span
-            >
+            {#if isReachable(binding)}
+              <Kbd>{formatBinding(binding)}</Kbd>
+            {:else}
+              <Tooltip text="Your system uses this chord, so Atlas never sees it">
+                <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                <span
+                  class="key-chord"
+                  tabindex="0"
+                  role="group"
+                  aria-label="{formatBinding(binding)}, not available"
+                >
+                  <StatusMark state="attention" label="Not available" />
+                  <Kbd>{formatBinding(binding)}</Kbd>
+                </span>
+              </Tooltip>
+            {/if}
           {/each}
         </span>
-        <button
-          type="button"
-          class="key-btn"
-          class:recording={isRecording(action, 0)}
+        <Button
+          size="sm"
           onclick={() => (recording = isRecording(action, 0) ? null : { action, index: 0 })}
         >
           {isRecording(action, 0) ? "Press a chord…" : "Record"}
-        </button>
+        </Button>
         {#if draft[action].length > 1}
           {#if altDroppable(action)}
-            <button type="button" class="key-btn" onclick={() => clearAlt(action)}>
-              Drop alt
-            </button>
+            <Button size="sm" onclick={() => clearAlt(action)}>Drop alt</Button>
           {/if}
         {:else}
-          <button
-            type="button"
-            class="key-btn"
-            class:recording={isRecording(action, 1)}
+          <Button
+            size="sm"
             onclick={() => (recording = isRecording(action, 1) ? null : { action, index: 1 })}
           >
             {isRecording(action, 1) ? "Press a chord…" : "Add alt"}
-          </button>
+          </Button>
         {/if}
-        <button
-          type="button"
-          class="key-btn"
-          onclick={() => applyChords(action, [...DEFAULT_KEYMAP[action]])}
-        >
+        <Button size="sm" onclick={() => applyChords(action, [...DEFAULT_KEYMAP[action]])}>
           Reset
-        </button>
+        </Button>
+        {#if clash}
+          <InlineAlert tone="error">Another action uses this chord</InlineAlert>
+        {/if}
       </div>
     {/each}
   </div>
 
-  {#if conflicts.length > 0}
-    <p class="copy bad">
-      Two actions share a chord. Nothing is saved until one of the marked rows changes.
-    </p>
-  {/if}
-
   <div class="row">
     <div class="row-text">
       <div class="row-title">Reset all shortcuts</div>
-      <div class="row-desc">Puts every chord back to its Atlas default.</div>
+      <div class="row-desc">Put every chord back to its default</div>
     </div>
-    <button type="button" class="key-btn" onclick={resetAll}>Reset all</button>
+    <Button size="sm" onclick={confirmReset}>Reset all</Button>
   </div>
 
   <p class="copy">
-    Esc on its own is not rebindable: inside a session it belongs to the Claude Code TUI, and
-    everywhere else it closes whatever is open.
-    <strong>{formatChord(draft.backToSessions)}</strong> is the way back to Sessions from a focused terminal.
+    Esc can't be changed. It closes whatever is open, and inside a session it goes to Claude Code.
+    Use <Kbd>{formatChord(draft.backToSessions)}</Kbd> to leave a focused terminal.
   </p>
 </div>
 
 <style>
   .key-row {
+    flex-wrap: wrap;
     padding: 8px 12px;
   }
 
@@ -190,24 +205,8 @@
   }
 
   .key-chord {
-    min-width: 74px;
-    text-align: center;
-  }
-
-  /* Shown, because it is what is bound, but never promised: the OS takes this
-     one before Atlas sees it. */
-  .key-chord.unreachable {
-    opacity: 0.5;
-    text-decoration: line-through;
-  }
-
-  .key-row.clash .key-chord {
-    border-color: var(--danger);
-    color: var(--danger);
-  }
-
-  .key-btn.recording {
-    border-color: var(--accent);
-    color: var(--accent);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
   }
 </style>
