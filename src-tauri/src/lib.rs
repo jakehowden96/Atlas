@@ -223,6 +223,7 @@ pub fn run() -> std::process::ExitCode {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // macOS can swallow ⌘Escape inside the webview before it ever becomes a
         // JS keydown event (a known wry/WKWebView gap), so `backToSessions`
         // cannot rely on JS alone. A native menu accelerator is delivered by
