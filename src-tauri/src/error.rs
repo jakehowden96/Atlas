@@ -55,6 +55,12 @@ pub enum AtlasError {
     ConnectorOffline { message: String },
     /// The service answered with an error status.
     ConnectorRemote { message: String, status: u16 },
+    /// Every loopback port the sign-in may use is taken.
+    ConnectorPortBusy { message: String },
+    /// The user refused access in the browser.
+    ConnectorDenied { message: String },
+    /// The user cancelled the sign-in.
+    ConnectorCancelled { message: String },
 }
 
 impl AtlasError {
@@ -145,7 +151,10 @@ impl AtlasError {
             | Self::ConnectorReconnectNeeded { message }
             | Self::ConnectorRateLimited { message, .. }
             | Self::ConnectorOffline { message }
-            | Self::ConnectorRemote { message, .. } => message,
+            | Self::ConnectorRemote { message, .. }
+            | Self::ConnectorPortBusy { message }
+            | Self::ConnectorDenied { message }
+            | Self::ConnectorCancelled { message } => message,
         }
     }
 }
@@ -289,6 +298,24 @@ mod tests {
                     status: 502,
                 },
                 json!({ "kind": "connectorRemote", "message": "m", "status": 502 }),
+            ),
+            (
+                AtlasError::ConnectorPortBusy {
+                    message: "m".into(),
+                },
+                json!({ "kind": "connectorPortBusy", "message": "m" }),
+            ),
+            (
+                AtlasError::ConnectorDenied {
+                    message: "m".into(),
+                },
+                json!({ "kind": "connectorDenied", "message": "m" }),
+            ),
+            (
+                AtlasError::ConnectorCancelled {
+                    message: "m".into(),
+                },
+                json!({ "kind": "connectorCancelled", "message": "m" }),
             ),
         ];
         for (error, expected) in cases {
