@@ -1,6 +1,11 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { chords } from "../../stores/settings";
+  import { openSession } from "../../session-actions";
+  import { workspaces } from "../../stores/workspace";
+  import { focusedSessionId } from "../../stores/view";
+  import EmptyState from "../ui/EmptyState.svelte";
+  import Button from "../ui/Button.svelte";
   import { setTabSpawnError, tabs } from "../../stores/terminal";
   import { activeView } from "../../stores/view";
   import {
@@ -33,6 +38,15 @@
    * refits and focuses when you switch between two sessions.
    */
   let showing = $derived($activeView === "session");
+
+  /** The focused session's row when it exists but has no live tab: an ended, resumable session. */
+  let ended = $derived.by(() => {
+    for (const w of $workspaces) {
+      const session = w.sessions.find((s) => s.id === $focusedSessionId);
+      if (session) return { path: w.path, id: session.id };
+    }
+    return null;
+  });
 
   function handlePtyReady(tabId: string, ptyId: number) {
     tabs.update((t) => t.map((tab) => (tab.id === tabId ? { ...tab, ptyId } : tab)));
@@ -95,8 +109,19 @@
   <div class="pane-slot" bind:this={paneEl}></div>
   {#if !$tabs.some((t) => t.id === visibleTabId)}
     <div class="empty-state">
-      <span class="material-symbols-outlined empty-icon">terminal</span>
-      <p class="empty-text">No session open — start one with {$chords.newSession}</p>
+      {#if ended}
+        <EmptyState icon="terminal" title="Session ended" description="Resume to pick the conversation back up">
+          {#snippet action()}
+            <Button variant="primary" onclick={() => openSession(ended.path, ended.id)}>Resume</Button>
+          {/snippet}
+        </EmptyState>
+      {:else}
+        <EmptyState
+          icon="terminal"
+          title="No session open"
+          description={`Start one with ${$chords.newSession}`}
+        />
+      {/if}
     </div>
   {/if}
 </div>
@@ -121,19 +146,5 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
-    opacity: 0.5;
-  }
-
-  .empty-icon {
-    font-size: 2.5rem !important;
-    color: var(--muted);
-  }
-
-  .empty-text {
-    margin: 0;
-    color: var(--muted);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
   }
 </style>
