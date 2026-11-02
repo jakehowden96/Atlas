@@ -120,6 +120,33 @@ pub enum WriteOutcome {
     Conflict { disk_mtime: Option<u64> },
 }
 
+/// What a dropped path turned out to be.
+#[derive(serde::Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct DroppedPath {
+    pub path: String,
+    pub is_dir: bool,
+    pub exists: bool,
+}
+
+/// Stat dropped paths so the frontend can accept folders and reject files. Only
+/// metadata is read, so no scope check is needed.
+#[tauri::command]
+pub fn classify_paths(paths: Vec<String>) -> Vec<DroppedPath> {
+    paths
+        .into_iter()
+        .map(|path| {
+            let meta = std::fs::metadata(&path).ok();
+            DroppedPath {
+                is_dir: meta.as_ref().is_some_and(|m| m.is_dir()),
+                exists: meta.is_some(),
+                path,
+            }
+        })
+        .collect()
+}
+
 #[derive(serde::Serialize, TS)]
 #[ts(export)]
 pub struct PlanEntry {

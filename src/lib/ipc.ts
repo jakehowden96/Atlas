@@ -6,6 +6,7 @@ import type { ClaudeSessionStartEvent } from "../types/generated/ClaudeSessionSt
 import type { DirList } from "../types/generated/DirList";
 import type { DocList } from "../types/generated/DocList";
 import type { DocsChangedEvent } from "../types/generated/DocsChangedEvent";
+import type { DroppedPath } from "../types/generated/DroppedPath";
 import type { GhViewerResult } from "../types/generated/GhViewerResult";
 import type { GitStatus } from "../types/generated/GitStatus";
 import type { LiveSession } from "../types/generated/LiveSession";
@@ -244,6 +245,10 @@ export async function onClaudeSessionStart(
  * Capped at depth 8, 2000 entries and 100 000 directory entries looked at;
  * `truncated` says a cap cut the walk short.
  */
+export async function classifyPaths(paths: string[]): Promise<DroppedPath[]> {
+  return call("classify_paths", { paths });
+}
+
 export async function listWorkspaceDocs(workspacePath: string): Promise<DocList> {
   return call("list_workspace_docs", { workspacePath });
 }
