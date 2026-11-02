@@ -4,44 +4,103 @@
     label: string;
     /** Rendered as a mono numeral after the label. */
     count?: number;
-    /** Renders the count as a --warn pill instead (PRs needing attention). */
+    /** Renders the count inside a --warn ring instead (PRs needing attention). */
     alert?: boolean;
-    /** A bare --warn dot after the label — Files carries one while some open
+    /** A bare --warn dot after the label. Files carries one while some open
      *  file is unsaved, which is a state rather than a count. */
     dot?: boolean;
-    /** Shown but not selectable — Preview on a file that is not markdown. */
+    /** Shown but not selectable. Preview on a file that is not markdown. */
     disabled?: boolean;
   }
 </script>
 
 <script lang="ts" generics="Id extends string">
+  /*
+   * role "tablist" (default): the control swaps a panel. Top-bar views, Files
+   * (Edit/Preview), Stats, Changes, PRs.
+   * role "radiogroup": the control sets a value. Range, Unified/Split,
+   * appearance, ordering, Fresh/Resume.
+   * Callers are not switched yet; each picks its role in its own phase.
+   */
   interface Props {
     options: Segment<Id>[];
     value: Id;
     onChange: (id: Id) => void;
-    /** "md" = 12px / 4px 12px. "sm" = 11.5px / 3px 10px. */
+    /** "md" = --h-md. "sm" = --h-sm. */
     size?: "md" | "sm";
     /** Stretch every segment to equal width (Fresh/Resume, Unified/Split). */
     fill?: boolean;
+    role?: "tablist" | "radiogroup";
+    /** Accessible name of the group. */
+    label?: string;
   }
 
-  let { options, value, onChange, size = "md", fill = false }: Props = $props();
+  let {
+    options,
+    value,
+    onChange,
+    size = "md",
+    fill = false,
+    role = "tablist",
+    label,
+  }: Props = $props();
+
+  const itemRole = $derived(role === "tablist" ? "tab" : "radio");
+  // Roving tabindex: the selected segment, else the first enabled one.
+  const tabStop = $derived(
+    options.find((o) => o.id === value && !o.disabled)?.id ?? options.find((o) => !o.disabled)?.id,
+  );
+
+  function onKeydown(e: KeyboardEvent) {
+    const enabled = options.filter((o) => !o.disabled);
+    const focused = (e.target as HTMLElement).closest<HTMLElement>("[data-seg]")?.dataset.seg;
+    const at = enabled.findIndex((o) => o.id === focused);
+    let next: number;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (at + 1) % enabled.length;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp")
+      next = (at - 1 + enabled.length) % enabled.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = enabled.length - 1;
+    else return;
+    e.preventDefault();
+    const target = enabled[next];
+    if (!target) return;
+    onChange(target.id);
+    (e.currentTarget as HTMLElement)
+      .querySelector<HTMLElement>(`[data-seg="${CSS.escape(target.id)}"]`)
+      ?.focus();
+  }
 </script>
 
-<div class="seg-group" class:sm={size === "sm"} class:fill>
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<div
+  class="seg-group"
+  class:sm={size === "sm"}
+  class:fill
+  {role}
+  aria-label={label}
+  onkeydown={onKeydown}
+>
   {#each options as option (option.id)}
     <button
       type="button"
       class="seg"
       class:active={option.id === value}
+      role={itemRole}
+      aria-selected={role === "tablist" ? option.id === value : undefined}
+      aria-checked={role === "radiogroup" ? option.id === value : undefined}
+      tabindex={option.id === tabStop ? 0 : -1}
+      data-seg={option.id}
       disabled={option.disabled}
       onclick={() => onChange(option.id)}
     >
       {option.label}
-      {#if option.dot}<span class="dot"></span>{/if}
+      {#if option.dot}<span class="dot" aria-hidden="true"></span><span class="sr"
+          >needs attention</span
+        >{/if}
       {#if option.count !== undefined}
         {#if option.alert}
-          <span class="badge">{option.count}</span>
+          <span class="badge">{option.count}<span class="sr"> need attention</span></span>
         {:else}
           <span class="count">{option.count}</span>
         {/if}
@@ -51,15 +110,7 @@
 </div>
 
 <style>
-  /* Two ink tiers of the group's own. Inactive segments used to sit at
-     --muted, which is 5.2:1 on --surface2 in light and 5.7:1 in dark — over
-     4.5 on paper, but read at 11.5px — and the count sat at 0.7 opacity on top
-     of that, which lands at 3.5:1 in light and fails outright. These clear 5:1
-     at their smallest size in both themes. They live here rather than in
-     app.css because app.css belongs to another change this wave. */
   .seg-group {
-    --seg-ink: #4a4f57;
-    --seg-count: #5c626b;
     display: flex;
     gap: 1px;
     padding: 2px;
@@ -67,32 +118,22 @@
     background: var(--surface2);
   }
 
-  :global(:root[data-theme="dark"]) .seg-group {
-    --seg-ink: #adb2bb;
-    --seg-count: #979da6;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :global(:root:not([data-theme="light"])) .seg-group {
-      --seg-ink: #adb2bb;
-      --seg-count: #979da6;
-    }
-  }
-
   .seg-group.sm {
     border-radius: var(--r-md);
   }
 
   .seg {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    padding: 4px 12px;
+    gap: var(--sp-2);
+    min-height: var(--h-md);
+    padding: 0 var(--sp-4);
     border: none;
-    border-radius: 5px;
+    border-radius: var(--r-md);
     background: transparent;
-    color: var(--seg-ink);
+    color: var(--muted);
     font-family: var(--font-ui);
     font-size: var(--fs-sm);
     font-weight: 500;
@@ -101,9 +142,9 @@
   }
 
   .seg-group.sm .seg {
-    padding: 3px 10px;
+    min-height: var(--h-sm);
+    padding: 0 var(--sp-3);
     border-radius: var(--r-sm);
-    font-size: var(--fs-sm);
   }
 
   .seg-group.fill .seg {
@@ -115,7 +156,7 @@
   }
 
   .seg:disabled {
-    opacity: 0.45;
+    color: var(--disabled-ink);
     cursor: default;
   }
 
@@ -124,35 +165,42 @@
   .seg.active {
     background: var(--surface);
     color: var(--text);
-    box-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.08),
-      inset 0 0 0 1px var(--border2);
+    box-shadow: inset 0 0 0 1px var(--border2);
   }
 
   .count {
-    color: var(--seg-count);
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
   }
 
   .dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
+    width: var(--sp-2);
+    height: var(--sp-2);
+    border-radius: var(--r-pill);
     background: var(--warn);
   }
 
+  /* Transparent fill with a --warn ring: never white on --warn. */
   .badge {
     display: grid;
     place-items: center;
-    min-width: 16px;
-    height: 16px;
-    padding: 0 4px;
-    border-radius: 8px;
-    background: var(--warn);
-    color: #fff;
+    min-width: var(--h-2xs);
+    height: var(--h-2xs);
+    padding: 0 var(--sp-1);
+    border-radius: var(--r-pill);
+    box-shadow: inset 0 0 0 1px var(--warn);
+    color: var(--text);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     font-weight: 600;
+  }
+
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 </style>
