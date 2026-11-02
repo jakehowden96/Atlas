@@ -1,6 +1,15 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { dismissToast, runToastAction, toasts, type Toast } from "../stores/toast";
+  import Icon, { type IconName } from "./ui/Icon.svelte";
+  import {
+    dismissToast,
+    pauseToast,
+    resumeToast,
+    runToastAction,
+    toasts,
+    visibleToasts,
+    type Toast,
+  } from "../stores/toast";
 
   const EXIT_MS = 200;
 
@@ -34,26 +43,36 @@
     });
   });
 
-  function dotColour(type: Toast["type"]): string {
-    switch (type) {
-      case "error":
-        return "var(--danger)";
-      case "warning":
-        return "var(--warn)";
-      default:
-        return "var(--accent)";
-    }
-  }
+  const META: Record<Toast["type"], { icon: IconName; word: string; colour: string }> = {
+    error: { icon: "error", word: "Error", colour: "var(--danger)" },
+    warning: { icon: "warning", word: "Warning", colour: "var(--warn)" },
+    info: { icon: "info", word: "Info", colour: "var(--accent)" },
+    success: { icon: "check_circle", word: "Success", colour: "var(--accent)" },
+  };
+
+  // Only the newest few render; `rendered` lags removals for the exit animation.
+  let shownIds = $derived(new Set($visibleToasts.shown.map((t) => t.id)));
 </script>
 
 <!-- The live region stays mounted while empty: a region that appears together
      with its first message is often not announced. -->
 <div class="toast-stack" role="status" aria-live="polite">
-  {#each rendered as toast (toast.id)}
-    <div class="toast" class:leaving={leaving.has(toast.id)}>
-      <span class="dot" style="background: {dotColour(toast.type)}"></span>
+  {#each rendered.filter((t) => shownIds.has(t.id) || leaving.has(t.id)) as toast (toast.id)}
+    {@const meta = META[toast.type]}
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div
+      class="toast"
+      class:leaving={leaving.has(toast.id)}
+      style="--tone: {meta.colour}"
+      role={toast.type === "error" ? "alert" : undefined}
+      onmouseenter={() => pauseToast(toast.id)}
+      onmouseleave={() => resumeToast(toast.id)}
+      onfocusin={() => pauseToast(toast.id)}
+      onfocusout={() => resumeToast(toast.id)}
+    >
+      <span class="mark"><Icon name={meta.icon} size={18} /></span>
       <div class="text">
-        <div class="title">{toast.title}</div>
+        <div class="title"><span class="word">{meta.word}:</span> {toast.title}</div>
         {#if toast.body}
           <div class="body">{toast.body}</div>
         {/if}
@@ -67,10 +86,13 @@
         type="button"
         class="close"
         aria-label="Dismiss notification"
-        onclick={() => dismissToast(toast.id)}>✕</button
+        onclick={() => dismissToast(toast.id)}><Icon name="close" /></button
       >
     </div>
   {/each}
+  {#if $visibleToasts.hidden > 0}
+    <div class="more">+{$visibleToasts.hidden} in Notifications</div>
+  {/if}
 </div>
 
 <style>
@@ -78,11 +100,11 @@
     position: fixed;
     right: 16px;
     bottom: 16px;
-    z-index: 30;
+    z-index: var(--z-toast);
     display: flex;
     flex-direction: column;
     gap: 8px;
-    width: 320px;
+    width: 340px;
   }
 
   .toast {
@@ -91,9 +113,9 @@
     gap: 10px;
     padding: 12px 14px;
     border: 1px solid var(--border2);
-    border-radius: 9px;
+    border-radius: var(--r-card-lg);
     background: var(--surface);
-    box-shadow: var(--shadow);
+    box-shadow: var(--elev-2);
     animation: atlasSlideUp 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
@@ -101,12 +123,21 @@
     animation: atlasSinkOut 0.2s ease both;
   }
 
-  .dot {
+  .mark {
+    display: flex;
     flex-shrink: 0;
-    width: 8px;
-    height: 8px;
-    margin-top: 5px;
-    border-radius: 50%;
+    color: var(--tone);
+  }
+
+  .word {
+    color: var(--tone);
+  }
+
+  .more {
+    align-self: flex-end;
+    font-family: var(--font-ui);
+    font-size: var(--fs-xs);
+    color: var(--muted);
   }
 
   .text {
@@ -147,14 +178,17 @@
   }
 
   .close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
+    width: 24px;
+    height: 24px;
     padding: 0;
     border: none;
+    border-radius: var(--r-sm);
     background: transparent;
     color: var(--muted);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
-    line-height: 1;
     cursor: pointer;
   }
 

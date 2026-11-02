@@ -3,9 +3,10 @@
     checked: boolean;
     onChange: (checked: boolean) => void;
     label?: string;
+    disabled?: boolean;
   }
 
-  let { checked, onChange, label }: Props = $props();
+  let { checked, onChange, label, disabled = false }: Props = $props();
 </script>
 
 <button
@@ -15,6 +16,7 @@
   role="switch"
   aria-checked={checked}
   aria-label={label}
+  {disabled}
   onclick={() => onChange(!checked)}
 >
   <span class="knob"></span>
@@ -28,14 +30,21 @@
     height: 18px;
     padding: 0;
     border: none;
-    border-radius: 9px;
+    border-radius: var(--r-pill);
     background: var(--surface3);
+    box-shadow: inset 0 0 0 1px var(--border2);
     cursor: pointer;
-    transition: background 0.15s ease;
+    transition: background var(--dur-fast) var(--ease-out);
   }
 
   .toggle.on {
     background: var(--accent);
+    box-shadow: none;
+  }
+
+  .toggle:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .knob {
@@ -46,13 +55,12 @@
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    background: #fff;
-    /* Keeps the knob legible against --surface3 in the off state. */
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-    transition: transform 0.15s ease;
+    background: var(--muted);
+    transition: transform var(--dur-fast) var(--ease-out);
   }
 
   .toggle.on .knob {
+    background: var(--accent-ink);
     transform: translateX(14px);
   }
 </style>
