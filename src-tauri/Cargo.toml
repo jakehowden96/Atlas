@@ -40,7 +40,6 @@ reqwest = { version = "0.13.5", default-features = false, features = ["json", "r
 tempfile = "3"
 wiremock = "0.6"
 tokio = { version = "1.50.0", features = ["macros"] }
-wiremock = "0.6"
 
 [profile.release]
 # Size over peak speed: Atlas is I/O-bound (PTYs, file watching, git), so LTO,

@@ -132,7 +132,7 @@ async fn browser_tokens(
         });
     }
     Ok(tokens)
-}}
+}
 
 #[tauri::command(async)]
 pub fn connector_cancel(id: String, c: State<'_, Connectors>) -> Result<(), AtlasError> {
