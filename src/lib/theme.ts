@@ -119,6 +119,15 @@ export function applyTheme(mode: ThemeMode): void {
   }
 }
 
+/** `--bg` per theme; the native window background must match the first frame. */
+export const windowBackground = { light: "#f5f5f7", dark: "#0f1012" } as const;
+
+/** Effective theme from the stored mirror and the OS preference. */
+export function effectiveTheme(stored: unknown, prefersDark: boolean): "light" | "dark" {
+  if (stored === "light" || stored === "dark") return stored;
+  return prefersDark ? "dark" : "light";
+}
+
 /** The xterm ITheme matching `mode` right now. */
 export function activeXtermTheme(mode: ThemeMode) {
   return resolvedTheme(mode) === "dark" ? darkXtermTheme : lightXtermTheme;
@@ -139,4 +148,10 @@ export function activeBlockTints(mode: ThemeMode) {
 }
 
 /* Keep <html data-theme> in step with the store for the lifetime of the app. */
-themeMode.subscribe(applyTheme);
+themeMode.subscribe((mode) => {
+  applyTheme(mode);
+  // Mirror for public/theme-boot.js, which must read it before the app loads.
+  try {
+    localStorage.setItem("atlas-theme", mode);
+  } catch {}
+});
