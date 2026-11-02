@@ -35,6 +35,7 @@
         "fullscreen": false,
         "minWidth": 800,
         "minHeight": 500,
+        "visible": false,
         "backgroundColor": "#0f1012",
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,

@@ -8,6 +8,8 @@ import {
   resolvedTheme,
   activeXtermTheme,
   applyTheme,
+  effectiveTheme,
+  windowBackground,
   themeMode,
 } from "../theme";
 
@@ -174,6 +176,25 @@ describe("resolvedTheme", () => {
 
   it("falls back to light when matchMedia is unavailable", () => {
     expect(resolvedTheme("system")).toBe("light");
+  });
+});
+
+describe("effectiveTheme / windowBackground", () => {
+  it("prefers a stored explicit choice over the OS", () => {
+    expect(effectiveTheme("light", true)).toBe("light");
+    expect(effectiveTheme("dark", false)).toBe("dark");
+  });
+
+  it("follows the OS for system, missing or junk values", () => {
+    for (const stored of ["system", null, "bogus"]) {
+      expect(effectiveTheme(stored, true)).toBe("dark");
+      expect(effectiveTheme(stored, false)).toBe("light");
+    }
+  });
+
+  it("mirrors --bg", () => {
+    expect(windowBackground.light).toBe(LIGHT["--bg"]);
+    expect(windowBackground.dark).toBe(DARK_EXPLICIT["--bg"]);
   });
 });
 
