@@ -14,7 +14,10 @@
   } from "../../stores/settings";
   import { activeView, jumpOpen, newSessionOpen, shortcutsOpen, wsFilter } from "../../stores/view";
   import { visibleWorkspaces } from "../../stores/workspace";
+  import AtlasMark from "../ui/AtlasMark.svelte";
+  import Button from "../ui/Button.svelte";
   import Chip from "../ui/Chip.svelte";
+  import Kbd from "../ui/Kbd.svelte";
   import SessionTile from "./SessionTile.svelte";
 
   // Elapsed is derived from LiveSession.startedAt rather than stored, so the
@@ -282,7 +285,7 @@
   {:else}
     <div class="empty">
       <div class="empty-col">
-        <div class="glyph">›_</div>
+        <AtlasMark size={40} />
         <div class="empty-title">Nothing running</div>
         <p class="empty-copy">
           Start a Claude session in one of your {$visibleWorkspaces.length}
@@ -290,17 +293,13 @@
           listed here and can be resumed.
         </p>
         <div class="empty-actions">
-          <button type="button" class="primary" onclick={() => newSessionOpen.set(true)}>
-            + New session
-          </button>
-          <button type="button" class="secondary" onclick={addWorkspace}>
-            Add workspace folder
-          </button>
+          <Button variant="primary" onclick={() => newSessionOpen.set(true)}>New session</Button>
+          <Button variant="secondary" onclick={addWorkspace}>Add workspace folder</Button>
         </div>
         <div class="hints">
-          <span><kbd>{$chords.newSession}</kbd> new</span>
-          <span><kbd>{$chords.jump}</kbd> jump</span>
-          <span><kbd>{$chords.settings}</kbd> settings</span>
+          <span><Kbd>{$chords.newSession}</Kbd> new</span>
+          <span><Kbd>{$chords.jump}</Kbd> jump</span>
+          <span><Kbd>{$chords.settings}</Kbd> settings</span>
         </div>
       </div>
     </div>
@@ -362,20 +361,6 @@
     text-align: center;
   }
 
-  .glyph {
-    display: grid;
-    place-items: center;
-    width: 56px;
-    height: 56px;
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    background: var(--surface);
-    color: var(--accent);
-    font-family: var(--font-mono);
-    font-size: var(--fs-xl);
-    font-weight: 600;
-  }
-
   .empty-title {
     margin-top: 6px;
     font-size: var(--fs-lg);
@@ -395,29 +380,6 @@
     margin-top: 8px;
   }
 
-  .primary,
-  .secondary {
-    height: 32px;
-    padding: 0 14px;
-    border-radius: var(--r-lg);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
-    font-weight: 500;
-    cursor: pointer;
-  }
-
-  .primary {
-    border: none;
-    background: var(--ink);
-    color: var(--ink-text);
-  }
-
-  .secondary {
-    border: 1px solid var(--border2);
-    background: var(--surface);
-    color: var(--text);
-  }
-
   .hints {
     display: flex;
     gap: 14px;
@@ -431,16 +393,5 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
-  }
-
-  /* Without a chip the comma in "Ctrl+," runs into the label after it. */
-  .hints kbd {
-    padding: 1px 5px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-xs);
-    background: var(--surface);
-    font: inherit;
-    font-size: var(--fs-2xs);
-    color: var(--text);
   }
 </style>
