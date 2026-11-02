@@ -39,6 +39,22 @@ pub enum AtlasError {
     /// A bug or poisoned state on Atlas's side: a lock that a panic left
     /// poisoned, a background task that died.
     Internal { message: String },
+    /// The connector still has the placeholder client id.
+    ConnectorNotConfigured { message: String },
+    /// The connector has no sign-in.
+    ConnectorNotLinked { message: String },
+    /// The saved sign-in no longer works; the user must connect again.
+    ConnectorReconnectNeeded { message: String },
+    /// The service asked us to wait until `retry_at` (Unix seconds).
+    ConnectorRateLimited {
+        message: String,
+        #[serde(rename = "retryAt")]
+        retry_at: u64,
+    },
+    /// The service could not be reached.
+    ConnectorOffline { message: String },
+    /// The service answered with an error status.
+    ConnectorRemote { message: String, status: u16 },
 }
 
 impl AtlasError {
@@ -123,7 +139,13 @@ impl AtlasError {
             | Self::ToolFailed { message, .. }
             | Self::Timeout { message, .. }
             | Self::Parse { message }
-            | Self::Internal { message } => message,
+            | Self::Internal { message }
+            | Self::ConnectorNotConfigured { message }
+            | Self::ConnectorNotLinked { message }
+            | Self::ConnectorReconnectNeeded { message }
+            | Self::ConnectorRateLimited { message, .. }
+            | Self::ConnectorOffline { message }
+            | Self::ConnectorRemote { message, .. } => message,
         }
     }
 }
@@ -229,6 +251,44 @@ mod tests {
             (
                 AtlasError::internal("poisoned"),
                 json!({ "kind": "internal", "message": "poisoned" }),
+            ),
+            (
+                AtlasError::ConnectorNotConfigured {
+                    message: "m".into(),
+                },
+                json!({ "kind": "connectorNotConfigured", "message": "m" }),
+            ),
+            (
+                AtlasError::ConnectorNotLinked {
+                    message: "m".into(),
+                },
+                json!({ "kind": "connectorNotLinked", "message": "m" }),
+            ),
+            (
+                AtlasError::ConnectorReconnectNeeded {
+                    message: "m".into(),
+                },
+                json!({ "kind": "connectorReconnectNeeded", "message": "m" }),
+            ),
+            (
+                AtlasError::ConnectorRateLimited {
+                    message: "m".into(),
+                    retry_at: 5,
+                },
+                json!({ "kind": "connectorRateLimited", "message": "m", "retryAt": 5 }),
+            ),
+            (
+                AtlasError::ConnectorOffline {
+                    message: "m".into(),
+                },
+                json!({ "kind": "connectorOffline", "message": "m" }),
+            ),
+            (
+                AtlasError::ConnectorRemote {
+                    message: "m".into(),
+                    status: 502,
+                },
+                json!({ "kind": "connectorRemote", "message": "m", "status": 502 }),
             ),
         ];
         for (error, expected) in cases {
