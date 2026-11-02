@@ -12,7 +12,7 @@ use ts_rs::TS;
 
 use super::http::{offline, status_error};
 use super::keychain::StoredToken;
-use super::provider::ConnectorStatus;
+use super::provider::{AuthFlow, ConnectorStatus};
 use super::Connectors;
 use crate::error::AtlasError;
 
@@ -114,6 +114,10 @@ impl Connectors {
             .ok_or_else(|| AtlasError::ConnectorNotLinked {
                 message: format!("{} is not connected", provider.info().name),
             })?;
+        // shortcut: device-flow tokens (GitHub) do not expire and are stored whole, so there is nothing to refresh; revisit if a device-flow provider issues refresh tokens.
+        if provider.info().flow == AuthFlow::DeviceCode {
+            return Ok(stored.refresh_token);
+        }
         let cfg = provider.auth_config();
         let body = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("grant_type", "refresh_token")

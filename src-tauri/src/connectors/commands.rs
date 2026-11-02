@@ -49,8 +49,8 @@ fn linked<'a>(c: &'a Connectors, id: &str) -> Result<&'a Arc<dyn ConnectorProvid
     }
 }
 
-fn not_ready() -> AtlasError {
-    AtlasError::internal("Connector requests arrive with the sign-in flows")
+fn unsupported(p: &Arc<dyn ConnectorProvider>) -> AtlasError {
+    AtlasError::not_found(format!("{} does not support this", p.info().name))
 }
 
 #[tauri::command(async)]
@@ -150,24 +150,26 @@ pub fn connector_disconnect(id: String, c: State<'_, Connectors>) -> Result<(), 
     c.disconnect(&id)
 }
 
-#[tauri::command(async)]
-pub fn connector_get_ticket(
+#[tauri::command]
+pub async fn connector_get_ticket(
     connector_id: String,
     ticket_id: String,
     c: State<'_, Connectors>,
 ) -> Result<Ticket, AtlasError> {
-    let _ = ticket_id;
-    linked(&c, &connector_id)?;
-    Err(not_ready())
+    let p = Arc::clone(linked(&c, &connector_id)?);
+    let tickets = p.tickets().ok_or_else(|| unsupported(&p))?;
+    let token = c.access_token(&connector_id).await?;
+    tickets.get_ticket(&token, &ticket_id).await
 }
 
-#[tauri::command(async)]
-pub fn connector_list_pull_requests(
+#[tauri::command]
+pub async fn connector_list_pull_requests(
     connector_id: String,
     repos: Vec<RepoRef>,
     c: State<'_, Connectors>,
 ) -> Result<Vec<PullRequest>, AtlasError> {
-    let _ = repos;
-    linked(&c, &connector_id)?;
-    Err(not_ready())
+    let p = Arc::clone(linked(&c, &connector_id)?);
+    let prs = p.pull_requests().ok_or_else(|| unsupported(&p))?;
+    let token = c.access_token(&connector_id).await?;
+    prs.list_pull_requests(&token, &repos).await
 }
