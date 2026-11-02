@@ -3,6 +3,8 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ClaudeInfo } from "../types/generated/ClaudeInfo";
 import type { ClaudeNotificationEvent } from "../types/generated/ClaudeNotificationEvent";
 import type { ClaudeSessionStartEvent } from "../types/generated/ClaudeSessionStartEvent";
+import type { ConnectorState } from "../types/generated/ConnectorState";
+import type { DeviceCode } from "../types/generated/DeviceCode";
 import type { DirList } from "../types/generated/DirList";
 import type { DocList } from "../types/generated/DocList";
 import type { DocsChangedEvent } from "../types/generated/DocsChangedEvent";
@@ -19,10 +21,14 @@ import type { PtyExit } from "../types/generated/PtyExit";
 import type { RepoPrs } from "../types/generated/RepoPrs";
 import type { ResumableSession } from "../types/generated/ResumableSession";
 import type { SessionUpdateEvent } from "../types/generated/SessionUpdateEvent";
+import type { PullRequest } from "../types/generated/PullRequest";
+import type { RepoRef } from "../types/generated/RepoRef";
 import type { StateFile } from "../types/generated/StateFile";
 import type { StateLoad } from "../types/generated/StateLoad";
 import type { StatsSummary } from "../types/generated/StatsSummary";
+import type { StatusEvent } from "../types/generated/StatusEvent";
 import type { TextFile } from "../types/generated/TextFile";
+import type { Ticket } from "../types/generated/Ticket";
 import type { WorkspaceRepo } from "../types/generated/WorkspaceRepo";
 import type { WriteOutcome } from "../types/generated/WriteOutcome";
 import { toIpcError } from "./ipc-error";
@@ -152,6 +158,60 @@ export async function ghViewer(): Promise<GhViewerResult> {
  */
 export async function ghPrCheckout(cwd: string, number: number, repo: string): Promise<void> {
   return call("gh_pr_checkout", { cwd, number, repo });
+}
+
+export async function connectorList(): Promise<ConnectorState[]> {
+  return call("connector_list");
+}
+
+/** Resolves when the sign-in ends; progress arrives as `connector://progress`. */
+export async function connectorConnect(id: string): Promise<void> {
+  return call("connector_connect", { id });
+}
+
+export async function connectorCancel(id: string): Promise<void> {
+  return call("connector_cancel", { id });
+}
+
+export async function connectorDisconnect(id: string): Promise<void> {
+  return call("connector_disconnect", { id });
+}
+
+export async function connectorGetTicket(connectorId: string, ticketId: string): Promise<Ticket> {
+  return call("connector_get_ticket", { connectorId, ticketId });
+}
+
+export async function connectorListPullRequests(
+  connectorId: string,
+  repos: RepoRef[],
+): Promise<PullRequest[]> {
+  return call("connector_list_pull_requests", { connectorId, repos });
+}
+
+/** `connector://progress`: `connector` is absent on the device-code flow. */
+export interface ConnectorProgress {
+  connector?: string;
+  phase: "opened" | "waiting" | "exchanging" | "denied" | "expired" | "cancelled" | "failed";
+  message?: string;
+  expiresAt?: number;
+}
+
+export async function onConnectorStatus(
+  callback: (event: StatusEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<StatusEvent>("connector://status", (e) => callback(e.payload));
+}
+
+export async function onConnectorProgress(
+  callback: (event: ConnectorProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<ConnectorProgress>("connector://progress", (e) => callback(e.payload));
+}
+
+export async function onConnectorDeviceCode(
+  callback: (event: DeviceCode) => void,
+): Promise<UnlistenFn> {
+  return listen<DeviceCode>("connector://device-code", (e) => callback(e.payload));
 }
 
 export async function openUrl(url: string): Promise<void> {

@@ -20,6 +20,7 @@ vi.mock("../ipc", () => ({
 vi.mock("../logger", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
+vi.mock("../stores/connectors", () => ({ startConnectorEvents: vi.fn(async () => () => {}) }));
 vi.mock("../stores/stats", () => ({ startStatsFeed }));
 vi.mock("../sound", () => ({ playPing: vi.fn() }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
