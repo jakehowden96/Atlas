@@ -11,6 +11,14 @@ pub struct Registry {
 }
 
 impl Registry {
+    /// The providers that ship with Atlas.
+    pub fn builtin() -> Self {
+        let mut registry = Self::default();
+        registry.register(Arc::new(super::github::GithubProvider::default()));
+        registry.register(Arc::new(super::linear::LinearProvider::default()));
+        registry
+    }
+
     pub fn register(&mut self, provider: Arc<dyn ConnectorProvider>) {
         self.providers.insert(provider.info().id, provider);
     }
