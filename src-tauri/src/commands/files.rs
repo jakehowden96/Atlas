@@ -571,6 +571,201 @@ pub fn write_text_file_at(
     write_file(&scope, &path, &contents, expected_mtime)
 }
 
+// ── Create, rename, delete, export ────────────────────────────────────────────
+
+/// Largest export `save_export` writes.
+const MAX_EXPORT_BYTES: usize = 16 * 1024 * 1024;
+
+const RESERVED_NAMES: &[&str] = &[
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
+/// A single path component that is safe to create on every platform Atlas ships on.
+fn validate_name(name: &str) -> Result<(), AtlasError> {
+    let bad = |why: &str| {
+        Err(AtlasError::invalid_input(format!(
+            "Invalid name \"{name}\": {why}"
+        )))
+    };
+    if name.is_empty() || name.chars().count() > 255 {
+        return bad("must be 1 to 255 characters");
+    }
+    if name == "." || name == ".." {
+        return bad("must not be . or ..");
+    }
+    if name
+        .chars()
+        .any(|c| c == '/' || c == '\\' || c.is_control())
+    {
+        return bad("must not contain separators or control characters");
+    }
+    if name.starts_with(' ') || name.ends_with(' ') {
+        return bad("must not start or end with a space");
+    }
+    // Windows also strips trailing dots, and reserves `CON.txt` as well as `CON`.
+    let stem = name.split('.').next().unwrap_or("").trim_end();
+    if name.ends_with('.') || RESERVED_NAMES.iter().any(|r| stem.eq_ignore_ascii_case(r)) {
+        return bad("reserved on Windows");
+    }
+    Ok(())
+}
+
+/// `path` with its parent resolved through the scope and its last component
+/// validated as a name. The link itself is operated on, never its target, and
+/// the whole path must still pass the scope (so a symlink out is refused).
+fn scoped_child(scope: &FilesScope, path: &str) -> Result<PathBuf, AtlasError> {
+    let given = Path::new(path);
+    let (Some(parent), Some(name)) = (given.parent(), given.file_name().and_then(|n| n.to_str()))
+    else {
+        return Err(AtlasError::invalid_input(format!(
+            "Path has no parent directory or name: {path}"
+        )));
+    };
+    validate_name(name)?;
+    let child = scope.resolve(&parent.to_string_lossy())?.join(name);
+    scope.resolve(&child.to_string_lossy())?;
+    Ok(child)
+}
+
+fn exists(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok()
+}
+
+fn make_dir(scope: &FilesScope, path: &str) -> Result<(), AtlasError> {
+    let child = scoped_child(scope, path)?;
+    if exists(&child) {
+        return Err(AtlasError::already_exists(format!(
+            "Already exists: {}",
+            child.display()
+        )));
+    }
+    // Not `create_dir_all`: the parent must already exist.
+    std::fs::create_dir(&child).map_err(|e| AtlasError::io_at(&child, &e))
+}
+
+fn move_path(scope: &FilesScope, from: &str, to: &str) -> Result<(), AtlasError> {
+    let from = scoped_child(scope, from)?;
+    let to = scoped_child(scope, to)?;
+    if !exists(&from) {
+        return Err(AtlasError::not_found(format!(
+            "Not found: {}",
+            from.display()
+        )));
+    }
+    if scope.is_root(&from) {
+        return Err(AtlasError::forbidden(format!(
+            "Cannot move a workspace or Files root: {}",
+            from.display()
+        )));
+    }
+    if to.starts_with(&from) && to != from {
+        return Err(AtlasError::invalid_input(format!(
+            "Cannot move {} into itself",
+            from.display()
+        )));
+    }
+    // A case-only rename on a case-insensitive volume "exists" as the source.
+    let case_only = to != from
+        && to.parent() == from.parent()
+        && to
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&from.to_string_lossy());
+    if exists(&to) && !case_only {
+        return Err(AtlasError::already_exists(format!(
+            "Already exists: {}",
+            to.display()
+        )));
+    }
+    std::fs::rename(&from, &to).map_err(|e| AtlasError::io_at(&from, &e))
+}
+
+fn remove_path(scope: &FilesScope, path: &str, permanent: bool) -> Result<(), AtlasError> {
+    let child = scoped_child(scope, path)?;
+    let meta = std::fs::symlink_metadata(&child).map_err(|e| AtlasError::io_at(&child, &e))?;
+    if scope.is_root(&child) {
+        return Err(AtlasError::forbidden(format!(
+            "Cannot delete a workspace or Files root: {}",
+            child.display()
+        )));
+    }
+    if permanent {
+        let removed = if meta.is_dir() {
+            std::fs::remove_dir_all(&child)
+        } else {
+            std::fs::remove_file(&child)
+        };
+        return removed.map_err(|e| AtlasError::io_at(&child, &e));
+    }
+    trash::delete(&child).map_err(|e| {
+        AtlasError::io(format!(
+            "Could not move {} to the trash: {e}",
+            child.display()
+        ))
+    })
+}
+
+/// Write an export to a path the user picked in the save dialog. The dialog
+/// is the authority for where, so this is not limited to the Files roots; it
+/// refuses everything that is not a plain new or replaced file.
+fn write_export(path: &str, contents: &str) -> Result<(), AtlasError> {
+    let target = Path::new(path);
+    if !target.is_absolute() {
+        return Err(AtlasError::invalid_input(format!(
+            "Path must be absolute: {path}"
+        )));
+    }
+    if target
+        .components()
+        .any(|c| c == std::path::Component::ParentDir)
+    {
+        return Err(AtlasError::invalid_input(format!(
+            "Path must not contain '..': {path}"
+        )));
+    }
+    if contents.len() > MAX_EXPORT_BYTES {
+        return Err(AtlasError::invalid_input("Export is larger than 16 MB"));
+    }
+    if target.is_dir() {
+        return Err(AtlasError::invalid_input(format!(
+            "{path} is a folder, not a file"
+        )));
+    }
+    write_atomically(target, contents).map_err(|e| AtlasError::io_at(target, &e))
+}
+
+/// Create one folder; its parent must exist and the name must not.
+#[tauri::command(async)]
+pub fn create_dir(path: String, scope: State<'_, FilesScope>) -> Result<(), AtlasError> {
+    make_dir(&scope, &path)
+}
+
+/// Rename or move within the allowed roots; never overwrites.
+#[tauri::command(async)]
+pub fn rename_path(
+    from: String,
+    to: String,
+    scope: State<'_, FilesScope>,
+) -> Result<(), AtlasError> {
+    move_path(&scope, &from, &to)
+}
+
+/// Move to the OS trash. `permanent` deletes outright; the frontend leaves it unset.
+#[tauri::command(async)]
+pub fn delete_path(
+    path: String,
+    permanent: Option<bool>,
+    scope: State<'_, FilesScope>,
+) -> Result<(), AtlasError> {
+    remove_path(&scope, &path, permanent.unwrap_or(false))
+}
+
+/// Save a CSV or JSON export to a path from the save dialog.
+#[tauri::command(async)]
+pub fn save_export(path: String, contents: String) -> Result<(), AtlasError> {
+    write_export(&path, &contents)
+}
+
 /// Whether `path` is an existing absolute directory. A typed-in workspace path
 /// is checked with this before it is added, so a typo never becomes a
 /// workspace whose every session fails to spawn. It reads nothing, so it needs
@@ -1333,5 +1528,165 @@ mod tests {
 
         assert!(matches!(outcome, WriteOutcome::Saved { .. }));
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "mine");
+    }
+
+    // ── create / rename / delete / export ─────────────────────────────────
+
+    fn s(p: &Path) -> String {
+        p.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn names_are_validated() {
+        for ok in ["notes", "a b", "x.md", ".hidden", "CONSOLE"] {
+            assert!(validate_name(ok).is_ok(), "{ok}");
+        }
+        let long = "a".repeat(256);
+        for bad in [
+            "", "..", ".", "a/b", "a\\b", " a", "a ", "con", "NUL", "Com1", "nul.txt", "a.", &long,
+        ] {
+            assert!(validate_name(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn create_dir_succeeds_and_rejects() {
+        let dir = TempDir::new().unwrap();
+        let scope = scoped(&dir);
+        let new = dir.path().join("new");
+        make_dir(&scope, &s(&new)).unwrap();
+        assert!(new.is_dir());
+        assert!(matches!(
+            make_dir(&scope, &s(&new)),
+            Err(AtlasError::AlreadyExists { .. })
+        ));
+        // Parent missing: not recursive.
+        assert!(make_dir(&scope, &s(&dir.path().join("a").join("b"))).is_err());
+        assert!(matches!(
+            make_dir(&scope, &s(&dir.path().join("CON"))),
+            Err(AtlasError::InvalidInput { .. })
+        ));
+        assert!(matches!(
+            make_dir(&scope, &format!("{}/x/../y", dir.path().display())),
+            Err(AtlasError::InvalidInput { .. })
+        ));
+        let other = TempDir::new().unwrap();
+        assert!(matches!(
+            make_dir(&scope, &s(&other.path().join("out"))),
+            Err(AtlasError::Forbidden { .. })
+        ));
+        assert!(make_dir(&scope, "relative").is_err());
+    }
+
+    #[test]
+    fn rename_moves_and_rejects() {
+        let dir = TempDir::new().unwrap();
+        let scope = scoped(&dir);
+        let a = dir.path().join("a.md");
+        let b = dir.path().join("b.md");
+        touch(&a);
+        touch(&dir.path().join("taken.md"));
+        move_path(&scope, &s(&a), &s(&b)).unwrap();
+        assert!(!a.exists() && b.exists());
+        assert!(matches!(
+            move_path(&scope, &s(&b), &s(&dir.path().join("taken.md"))),
+            Err(AtlasError::AlreadyExists { .. })
+        ));
+        assert!(matches!(
+            move_path(&scope, &s(&a), &s(&dir.path().join("c.md"))),
+            Err(AtlasError::NotFound { .. })
+        ));
+        assert!(matches!(
+            move_path(&scope, &s(&b), &s(&dir.path().join("LPT1"))),
+            Err(AtlasError::InvalidInput { .. })
+        ));
+        let sub = dir.path().join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        assert!(matches!(
+            move_path(&scope, &s(&sub), &s(&sub.join("inner"))),
+            Err(AtlasError::InvalidInput { .. })
+        ));
+        let other = TempDir::new().unwrap();
+        assert!(matches!(
+            move_path(&scope, &s(&b), &s(&other.path().join("b.md"))),
+            Err(AtlasError::Forbidden { .. })
+        ));
+        assert!(matches!(
+            move_path(
+                &scope,
+                &s(&other.path().join("z")),
+                &s(&dir.path().join("z"))
+            ),
+            Err(AtlasError::Forbidden { .. })
+        ));
+        assert!(b.exists());
+    }
+
+    #[test]
+    fn windows_separators_are_handled() {
+        let dir = TempDir::new().unwrap();
+        let scope = scoped(&dir);
+        // A backslash is a separator on Windows and part of a name elsewhere;
+        // either way the result must not escape or be created as a name.
+        assert!(make_dir(&scope, &format!("{}/a\\b", dir.path().display())).is_err());
+        #[cfg(windows)]
+        {
+            let new = format!("{}\\win", dir.path().display());
+            make_dir(&scope, &new).unwrap();
+            assert!(dir.path().join("win").is_dir());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_escape_is_refused() {
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let scope = scoped(&dir);
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+        assert!(matches!(
+            make_dir(&scope, &s(&link.join("x"))),
+            Err(AtlasError::Forbidden { .. })
+        ));
+        assert!(remove_path(&scope, &s(&link), true).is_err());
+        assert!(outside.path().exists());
+    }
+
+    #[test]
+    fn delete_removes_and_rejects() {
+        let dir = TempDir::new().unwrap();
+        let scope = scoped(&dir);
+        let f = dir.path().join("f.md");
+        touch(&f);
+        remove_path(&scope, &s(&f), true).unwrap();
+        assert!(!f.exists());
+        assert!(matches!(
+            remove_path(&scope, &s(&f), true),
+            Err(AtlasError::NotFound { .. })
+        ));
+        // The scope root itself.
+        assert!(remove_path(&scope, &s(dir.path()), true).is_err());
+        assert!(dir.path().exists());
+        let other = TempDir::new().unwrap();
+        touch(&other.path().join("o.md"));
+        assert!(matches!(
+            remove_path(&scope, &s(&other.path().join("o.md")), true),
+            Err(AtlasError::Forbidden { .. })
+        ));
+        assert!(other.path().join("o.md").exists());
+    }
+
+    #[test]
+    fn export_writes_and_rejects() {
+        let dir = TempDir::new().unwrap();
+        let out = dir.path().join("out.csv");
+        write_export(&s(&out), "a,b\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "a,b\n");
+        assert!(write_export("out.csv", "x").is_err());
+        assert!(write_export(&s(dir.path()), "x").is_err());
+        assert!(write_export(&format!("{}/../x.csv", dir.path().display()), "x").is_err());
+        assert!(write_export(&s(&out), &"x".repeat(MAX_EXPORT_BYTES + 1)).is_err());
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "a,b\n");
     }
 }

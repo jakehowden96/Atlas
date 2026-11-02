@@ -22,6 +22,8 @@ pub enum AtlasError {
     /// What the command was asked about does not exist: a path, a terminal or
     /// language-server id, a branch.
     NotFound { message: String },
+    /// Something is already at the path a create or rename would write.
+    AlreadyExists { message: String },
     /// Atlas refused on purpose: the path is outside every folder the Files
     /// screen may touch, or is one it never exposes.
     Forbidden { message: String },
@@ -50,6 +52,12 @@ impl AtlasError {
 
     pub fn not_found(message: impl Into<String>) -> Self {
         Self::NotFound {
+            message: message.into(),
+        }
+    }
+
+    pub fn already_exists(message: impl Into<String>) -> Self {
+        Self::AlreadyExists {
             message: message.into(),
         }
     }
@@ -117,6 +125,7 @@ impl AtlasError {
         match self {
             Self::InvalidInput { message }
             | Self::NotFound { message }
+            | Self::AlreadyExists { message }
             | Self::Forbidden { message }
             | Self::Io { message }
             | Self::ToolMissing { message, .. }

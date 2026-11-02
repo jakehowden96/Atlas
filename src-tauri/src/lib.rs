@@ -288,6 +288,10 @@ pub fn run() -> std::process::ExitCode {
             commands::files::write_text_file_at,
             commands::files::validate_directory,
             commands::files_scope::files_grant,
+            commands::files::create_dir,
+            commands::files::rename_path,
+            commands::files::delete_path,
+            commands::files::save_export,
             commands::files::start_docs_watch,
             commands::files::stop_docs_watch,
         ])

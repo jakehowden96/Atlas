@@ -22,6 +22,7 @@ export class IpcError extends Error {
 const KINDS = {
   invalidInput: true,
   notFound: true,
+  alreadyExists: true,
   forbidden: true,
   io: true,
   toolMissing: true,
