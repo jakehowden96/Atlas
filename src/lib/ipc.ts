@@ -305,6 +305,26 @@ export async function writeTextFileAt(
   return call("write_text_file_at", { path, contents, expectedMtime });
 }
 
+/** Create one folder (absolute path); its parent must exist and the name must be free. */
+export async function createDir(path: string): Promise<void> {
+  return call("create_dir", { path });
+}
+
+/** Rename or move within the Files roots; rejects rather than overwrite. */
+export async function renamePath(from: string, to: string): Promise<void> {
+  return call("rename_path", { from, to });
+}
+
+/** Move to the OS trash. `permanent` is for a later pass; the UI does not send it. */
+export async function deletePath(path: string, permanent?: boolean): Promise<void> {
+  return call("delete_path", { path, permanent });
+}
+
+/** Write a CSV or JSON export (max 16 MB) to a path from the save dialog. */
+export async function saveExport(path: string, contents: string): Promise<void> {
+  return call("save_export", { path, contents });
+}
+
 /**
  * Watch a workspace for document edits made outside Atlas. Changes then arrive
  * as debounced `docs-changed` events until `stopDocsWatch`.

@@ -161,6 +161,11 @@ impl FilesScope {
         Ok(resolved)
     }
 
+    /// True when `resolved` (canonical) is itself an allowed root.
+    pub fn is_root(&self, resolved: &Path) -> bool {
+        self.roots().iter().any(|root| root == resolved)
+    }
+
     /// Allow a folder the user just picked in the native dialog, for this run.
     /// The choice is persisted separately (as a workspace or a file source).
     pub fn grant(&self, path: &str) -> Result<(), AtlasError> {
