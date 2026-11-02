@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRawSnippet, flushSync } from "svelte";
-import { render, screen } from "@testing-library/svelte";
+import { cleanup, render, screen } from "@testing-library/svelte";
 import Spinner from "../components/ui/Spinner.svelte";
 import spinnerSrc from "../components/ui/Spinner.svelte?raw";
 import Progress from "../components/ui/Progress.svelte";
@@ -9,12 +9,15 @@ import Skeleton from "../components/ui/Skeleton.svelte";
 import EmptyState from "../components/ui/EmptyState.svelte";
 import { delayedFlag } from "../ui/delay";
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe("Spinner", () => {
-  it("is a status with its label", () => {
+  it("is a status with its label", async () => {
     render(Spinner, { label: "Loading" });
-    expect(screen.getByRole("status").textContent).toContain("Loading");
+    expect((await screen.findByRole("status")).textContent).toContain("Loading");
   });
   it("shows nothing until the delay has passed", () => {
     vi.useFakeTimers();
@@ -47,14 +50,14 @@ describe("Progress", () => {
 });
 
 describe("Skeleton", () => {
-  it("renders a block", () => {
+  it("renders a block", async () => {
     const { container } = render(Skeleton, { width: "50%" });
-    expect(container.querySelector(".block")).toBeTruthy();
+    await vi.waitFor(() => expect(container.querySelector(".block")).toBeTruthy());
   });
-  it("marks its region aria-busy", () => {
+  it("marks its region aria-busy", async () => {
     const children = createRawSnippet(() => ({ render: () => "<span>x</span>" }));
     const { container } = render(Skeleton, { children });
-    expect(container.querySelector("[aria-busy='true']")).toBeTruthy();
+    await vi.waitFor(() => expect(container.querySelector("[aria-busy='true']")).toBeTruthy());
   });
 });
 

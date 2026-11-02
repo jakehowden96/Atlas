@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/svelte";
+import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { tick } from "svelte";
 import PopoverFixture from "./PopoverFixture.svelte";
+
+afterEach(cleanup);
 
 describe("Popover", () => {
   it("closes on outside click and restores focus to the trigger", async () => {

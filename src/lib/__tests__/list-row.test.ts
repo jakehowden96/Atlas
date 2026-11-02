@@ -1,12 +1,14 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRawSnippet } from "svelte";
-import { render, screen } from "@testing-library/svelte";
+import { cleanup, render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import ListRow from "../components/ui/ListRow.svelte";
 import Tree, { type TreeItem } from "../components/ui/Tree.svelte";
 
 const text = (s: string) => createRawSnippet(() => ({ render: () => `<span>${s}</span>` }));
+
+afterEach(cleanup);
 
 describe("ListRow", () => {
   it("is a button by default and reports selection", async () => {
@@ -35,9 +37,9 @@ describe("Tree", () => {
     expect(screen.getByRole("tree", { name: "Files" })).toBeTruthy();
     const rows = screen.getAllByRole("treeitem");
     expect(rows.map((r: HTMLElement) => r.tabIndex)).toEqual([0, -1, -1]);
-    expect(rows[1].getAttribute("aria-level")).toBe("2");
-    expect(rows[0].getAttribute("aria-expanded")).toBe("false");
-    expect(rows[2].hasAttribute("aria-expanded")).toBe(false);
+    expect(rows[1]?.getAttribute("aria-level")).toBe("2");
+    expect(rows[0]?.getAttribute("aria-expanded")).toBe("false");
+    expect(rows[2]?.hasAttribute("aria-expanded")).toBe(false);
   });
   it("arrows move focus and right expands", async () => {
     const user = userEvent.setup();
