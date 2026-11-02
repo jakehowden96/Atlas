@@ -16,6 +16,7 @@ import { themeMode, type ThemeMode } from "../theme";
 import { openFiles, sources } from "./file-tabs";
 import { liveSessions } from "./liveSessions";
 import { workspaces } from "./workspace";
+import { railOpen, railWidth, type RailWidth } from "./view";
 import { errorMessage } from "../ipc-error";
 
 export type OverviewOrdering = "attention" | "workspace" | "manual" | "opened";
@@ -50,6 +51,16 @@ export const DEFAULT_HARNESSES: readonly [HarnessConfig, ...HarnessConfig[]] = [
     readyMode: "immediate",
   },
 ];
+
+export type RailMode = RailWidth | "hidden";
+/** The rail tiles the user opened or closed by hand. A tile with no entry
+    follows its state (open while running, failed or needing attention). */
+export interface RailTiles {
+  plan?: boolean;
+  agents?: boolean;
+  pr?: boolean;
+}
+export const railTiles = writable<RailTiles>({});
 
 export const settingsOpen = writable(false);
 export const enableNotifications = writable(true);
@@ -126,6 +137,8 @@ interface PersistedSettings {
   fileSources?: string[];
   lspTrustedWorkspaces?: string[];
   claudeHook?: boolean;
+  railMode?: RailMode;
+  railTiles?: RailTiles;
   /** One binding per action in files written before alternates existed;
    *  a list since. `mergeKeymap` reads both. */
   keymap?: Partial<Record<Action, Binding | Binding[]>>;
@@ -202,6 +215,8 @@ export function migrateSettings(raw: unknown): {
  */
 export async function loadSettings() {
   log.info("settings", "loadSettings started");
+  // A saved rail mode overrides this; with none, a narrow window starts thin.
+  if (typeof window !== "undefined" && window.innerWidth < 1000) railWidth.set("thin");
   try {
     const loaded = await stateLoad("settings");
     if (loaded.recovered) reportStateRecovered("settings");
@@ -227,6 +242,20 @@ export async function loadSettings() {
     }
     if (typeof data.tailTranscripts === "boolean") tailTranscripts.set(data.tailTranscripts);
     if (typeof data.claudeHook === "boolean") claudeHook.set(data.claudeHook);
+    if (data.railMode === "expanded" || data.railMode === "thin") {
+      railOpen.set(true);
+      railWidth.set(data.railMode);
+    } else if (data.railMode === "hidden") {
+      railOpen.set(false);
+    }
+    if (data.railTiles && typeof data.railTiles === "object") {
+      const stored = data.railTiles as Record<string, unknown>;
+      const tiles: RailTiles = {};
+      for (const key of ["plan", "agents", "pr"] as const) {
+        if (typeof stored[key] === "boolean") tiles[key] = stored[key];
+      }
+      railTiles.set(tiles);
+    }
     const pinned = storedStrings(data.pinnedSessions);
     if (pinned) pinnedSessions.set(pinned);
     // Only overwrite the defaults when the file has a valid, non-empty list —
@@ -281,6 +310,8 @@ const persister = createStatePersister(
     lspTrustedWorkspaces: get(lspTrustedWorkspaces),
     claudeHook: get(claudeHook),
     keymap: get(keymap),
+    railMode: get(railOpen) ? get(railWidth) : "hidden",
+    railTiles: get(railTiles),
   }),
   (e) => {
     log.error("settings", "failed to persist settings", e);
@@ -292,6 +323,22 @@ const persister = createStatePersister(
  *  the latest state, and nothing is written before `loadSettings` has settled. */
 function persistSettings(): Promise<void> {
   return persister.request();
+}
+
+// The ⌘\ chord and the rail's own controls change these stores directly, so the
+// saved mode follows them here. The first call is the store's initial value.
+for (const store of [railOpen, railWidth]) {
+  let first = true;
+  store.subscribe(() => {
+    if (first) first = false;
+    else void persistSettings();
+  });
+}
+
+/** Remember a tile's open or closed state, overriding its automatic one. */
+export async function setRailTile(key: keyof RailTiles, open: boolean) {
+  railTiles.update((t) => ({ ...t, [key]: open }));
+  await persistSettings();
 }
 
 export function clampFontSize(size: number): number {

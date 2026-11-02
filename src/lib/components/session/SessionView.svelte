@@ -11,11 +11,21 @@
   import { liveTiles } from "../../stores/liveTiles";
   import { panelData } from "../../stores/panel";
   import { activeTabId, tabs } from "../../stores/terminal";
-  import { activeView, diffOpen, focusedSessionId, railOpen, showView } from "../../stores/view";
+  import {
+    activeView,
+    cycleRail,
+    diffOpen,
+    focusedSessionId,
+    railOpen,
+    railWidth,
+    showView,
+  } from "../../stores/view";
   import { workspaces } from "../../stores/workspace";
   import ChangesDrawer from "../changes/ChangesDrawer.svelte";
   import TerminalContainer from "../terminal/TerminalContainer.svelte";
+  import IconButton from "../ui/IconButton.svelte";
   import StatePill, { type PillState } from "../ui/StatePill.svelte";
+  import Tooltip from "../ui/Tooltip.svelte";
   import ActivityRail from "./ActivityRail.svelte";
 
   const PILL: Record<SessionState, PillState> = {
@@ -131,14 +141,18 @@
         <span class="removed">−{tile?.diff?.linesRemoved ?? 0}</span>
       </button>
 
-      <button
-        type="button"
-        class="rail-toggle"
-        class:on={$railOpen}
-        title={`Toggle activity rail (${$chords.toggleRail})`}
-        aria-label="Toggle activity rail"
-        onclick={() => railOpen.update((v) => !v)}>▥</button
-      >
+      <Tooltip text="Toggle activity rail" shortcut={$chords.toggleRail}>
+        <IconButton
+          icon={$railOpen ? "right_panel_close" : "right_panel_open"}
+          label="Toggle activity rail"
+          aria-pressed={$railOpen}
+          onclick={() => {
+            const next = cycleRail($railOpen, $railWidth);
+            railWidth.set(next.width);
+            railOpen.set(next.open);
+          }}
+        />
+      </Tooltip>
 
       <button
         type="button"
@@ -348,22 +362,6 @@
     font-family: var(--font-mono);
   }
 
-  .rail-toggle {
-    display: grid;
-    place-items: center;
-    flex-shrink: 0;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border: 1px solid var(--border2);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    color: var(--muted);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
-    cursor: pointer;
-  }
-
   .close-session {
     display: grid;
     place-items: center;
@@ -382,11 +380,6 @@
   .close-session:hover {
     background: var(--surface3);
     color: var(--danger);
-  }
-
-  .rail-toggle:hover,
-  .rail-toggle.on {
-    color: var(--text);
   }
 
   /* ── Terminal pane ─────────────────────────────────────────────────────── */
