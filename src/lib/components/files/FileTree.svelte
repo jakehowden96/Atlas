@@ -39,6 +39,26 @@
   import { openDialogOpen } from "../../stores/view";
   import { activeWorkspacePath, visibleWorkspaces } from "../../stores/workspace";
   import { errorMessage } from "../../ipc-error";
+  import Button from "../ui/Button.svelte";
+  import EmptyState from "../ui/EmptyState.svelte";
+  import Icon from "../ui/Icon.svelte";
+  import IconButton from "../ui/IconButton.svelte";
+  import InlineAlert from "../ui/InlineAlert.svelte";
+  import Kbd from "../ui/Kbd.svelte";
+  import SearchInput from "../ui/SearchInput.svelte";
+  import Select from "../ui/Select.svelte";
+  import Tooltip from "../ui/Tooltip.svelte";
+  import Tree, { type TreeItem } from "../ui/Tree.svelte";
+  import type { TreeKind } from "../ui/TreeRow.svelte";
+
+  // Rename, delete and the context-menu key are reported but not acted on here;
+  // phase 75 wires them.
+  interface Props {
+    onrename?: (id: string) => void;
+    ondelete?: (id: string) => void;
+    oncontextmenu?: (id: string) => void;
+  }
+  let { onrename, ondelete, oncontextmenu }: Props = $props();
 
   /** The tree filter. Matches on file and folder names, not on file contents. */
   let query = $state("");
@@ -93,6 +113,92 @@
   function diskFiles(source: string) {
     const entries = $sourceFiles.get(source) ?? [];
     return searching ? entries.filter((e) => matches(e.name)) : entries;
+  }
+
+  const kindOf = (name: string): TreeKind =>
+    /\.(md|markdown|mdx|txt)$/i.test(name)
+      ? "md"
+      : /\.(json|ya?ml|toml|csv)$/i.test(name)
+        ? "data"
+        : "source";
+
+  /** The workspace docs as the flat list of visible nodes that `Tree` takes. */
+  function flattenDocs(nodes: TreeNode[], level: number, parentId: string | null): TreeItem[] {
+    return nodes.flatMap((node): TreeItem[] => {
+      if (!node.isDir) {
+        return [
+          {
+            id: node.relPath,
+            label: node.name,
+            level,
+            kind: kindOf(node.name),
+            expandable: false,
+            expanded: false,
+            parentId,
+            unsaved: dirtyPaths.has(node.relPath),
+          },
+        ];
+      }
+      // Every folder is open while filtering: a match inside a collapsed one
+      // would otherwise be filtered in and still not on screen.
+      const open = searching || $expanded.has(fileKey($fileWs, node.relPath));
+      return [
+        {
+          id: node.relPath,
+          label: node.name,
+          level,
+          kind: "folder",
+          expandable: true,
+          expanded: open,
+          parentId,
+          unsaved: !open && hasUnsavedUnder(node, dirtyPaths),
+        },
+        ...(open ? flattenDocs(node.children, level + 1, node.relPath) : []),
+      ];
+    });
+  }
+
+  /** One-level lists (plans, disk): every row a leaf at level 1. */
+  function leaves(source: string, files: { id: string; label: string }[]): TreeItem[] {
+    return files.map(({ id, label }) => ({
+      id,
+      label,
+      level: 1,
+      kind: kindOf(label),
+      expandable: false,
+      expanded: false,
+      parentId: null,
+      unsaved: $dirtyFiles.has(fileKey(source, id)),
+    }));
+  }
+  const diskItems = (entries: { path: string; name: string }[]) =>
+    leaves(
+      "disk",
+      entries.map((e) => ({ id: e.path, label: e.name })),
+    );
+
+  let docItems = $derived(flattenDocs(tree, 1, null));
+  let planItems = $derived(
+    leaves(
+      "plans",
+      myPlans.map((p) => ({ id: p.path, label: planLabel(p.name) })),
+    ).map((item) => ({ ...item, kind: "md" as const })),
+  );
+  let looseItems = $derived(
+    diskItems(looseDiskFiles.map((path) => ({ path, name: basename(path) }))),
+  );
+
+  /** The active file's id when it is one of `items`, so only its tree shows a selection. */
+  const selectedIn = (source: string, items: TreeItem[]) =>
+    items.find((i) => fileKey(source, i.id) === $activeFile)?.id ?? null;
+
+  function openDoc(id: string) {
+    if (docItems.find((i) => i.id === id)?.expandable) toggleExpanded(fileKey($fileWs, id));
+    else openFile($fileWs, id);
+  }
+
+  function toggleDoc(id: string, expand: boolean) {
+    if ($expanded.has(fileKey($fileWs, id)) !== expand) toggleExpanded(fileKey($fileWs, id));
   }
 
   /** A new note is an unsaved buffer — nothing reaches disk until ⌘S. */
@@ -176,159 +282,126 @@
 
 <aside class="tree">
   <div class="ws-row">
-    <select class="ws-name" title={$fileWs} aria-label="Workspace" bind:value={$fileWs}>
-      {#if $visibleWorkspaces.length === 0}
-        <option value="">No workspace</option>
-      {/if}
-      {#each $visibleWorkspaces as ws (ws.path)}
-        <option value={ws.path}>{ws.name}</option>
-      {/each}
-    </select>
-    <button
-      type="button"
-      class="new-note"
-      title="New note"
-      aria-label="New note"
-      disabled={!$fileWs}
-      onclick={newNote}>+</button
-    >
+    <div class="ws-select">
+      <Select
+        size="sm"
+        aria-label="Workspace"
+        placeholder="No workspace"
+        options={$visibleWorkspaces.map((w) => ({ id: w.path, label: w.name }))}
+        value={$fileWs}
+        onChange={(id) => fileWs.set(id)}
+      />
+    </div>
+    <Tooltip text="New note">
+      <IconButton icon="add" label="New note" disabled={!$fileWs} onclick={newNote} />
+    </Tooltip>
   </div>
 
-  <!-- Filters the three sections below by name. `type="search"` for the native
-       clear affordance; no chord hint on it, because nothing handles one — the
-       label used to read "Ctrl+P", which on Windows is WebView2's own print
-       dialog. Open… keeps only the width its label needs, so the field gets
-       the rest of the column. -->
+  <!-- Filters the three sections below by name. No chord hint on the field,
+       because nothing handles one; Ctrl+P is WebView2's print dialog. -->
   <div class="finders">
-    <input
-      class="finder search"
-      type="search"
-      placeholder="Search files"
-      aria-label="Search files"
-      bind:value={query}
-    />
-    <button type="button" class="finder open" onclick={() => openDialogOpen.set(true)}>
-      Open… <span class="kbd">{$chords.openFile}</span>
-    </button>
+    <div class="search">
+      <SearchInput placeholder="Search files" aria-label="Search files" bind:value={query} />
+    </div>
+    <Button variant="ghost" size="sm" onclick={() => openDialogOpen.set(true)}>
+      Open…
+      {#snippet trailing()}<Kbd>{$chords.openFile}</Kbd>{/snippet}
+    </Button>
   </div>
 
   <div class="sections">
     <section>
       <h3 class="label">Claude plans</h3>
-      {#each myPlans as plan (plan.path)}
-        {@const key = fileKey("plans", plan.path)}
-        <button
-          type="button"
-          class="row"
-          class:active={$activeFile === key}
-          onclick={() => openFile("plans", plan.path)}
-          title={plan.path}
-        >
-          <span class="square"></span>
-          <span class="name">{planLabel(plan.name)}</span>
-          {#if $dirtyFiles.has(key)}<span class="unsaved"></span>{/if}
-        </button>
+      {#if planItems.length > 0}
+        <Tree
+          label="Claude plans"
+          nodes={planItems}
+          selectedId={selectedIn("plans", planItems)}
+          onopen={(id) => openFile("plans", id)}
+          {onrename}
+          {ondelete}
+          {oncontextmenu}
+        />
       {:else}
-        <p class="empty">Nothing yet</p>
-      {/each}
+        <EmptyState compact icon="article" title="No plans yet" />
+      {/if}
     </section>
 
     <section>
       <h3 class="label">{workspace?.name ?? "Workspace"} docs</h3>
-      {#each tree as node (node.relPath)}
-        {@render row(node, 0)}
-      {/each}
+      {#if docItems.length > 0}
+        <Tree
+          label="{workspace?.name ?? 'Workspace'} docs"
+          nodes={docItems}
+          selectedId={selectedIn($fileWs, docItems)}
+          onopen={openDoc}
+          ontoggle={toggleDoc}
+          {onrename}
+          {ondelete}
+          {oncontextmenu}
+        />
+      {:else if !searching}
+        <EmptyState compact icon="folder" title="No docs in this workspace" />
+      {/if}
     </section>
 
     <section>
       <h3 class="label">From disk</h3>
       {#each $sources as source (source)}
+        {@const items = diskItems(diskFiles(source))}
         <div class="source">
           <span class="source-name" title={source}>{basename(source)}</span>
-          <button
-            type="button"
-            class="forget"
-            title="Forget this folder"
-            aria-label="Forget {basename(source)}"
-            onclick={() => void removeSource(source)}>✕</button
-          >
+          <IconButton
+            icon="close"
+            size="sm"
+            label="Forget {basename(source)}"
+            onclick={() => void removeSource(source)}
+          />
         </div>
-        {#each diskFiles(source) as entry (entry.path)}
-          {@render diskRow(entry.path, entry.name, 1)}
+        {#if items.length > 0}
+          <Tree
+            label={basename(source)}
+            nodes={items}
+            selectedId={selectedIn("disk", items)}
+            onopen={(id) => openFile("disk", id)}
+            {onrename}
+            {ondelete}
+            {oncontextmenu}
+          />
         {:else}
-          <p class="empty nested">Nothing yet</p>
-        {/each}
+          <EmptyState compact icon="folder" title="No files here" />
+        {/if}
         {#if $truncatedSources.has(source)}
-          <p class="empty nested">List truncated — this folder has more files than are shown</p>
+          <p class="note"><Icon name="info" />Only part of this folder is shown</p>
         {/if}
       {/each}
-      {#each looseDiskFiles as path (path)}
-        {@render diskRow(path, basename(path), 0)}
-      {/each}
-      {#if $sources.length === 0 && looseDiskFiles.length === 0}
-        <p class="empty">Nothing yet</p>
+      {#if looseItems.length > 0}
+        <Tree
+          label="Opened files"
+          nodes={looseItems}
+          selectedId={selectedIn("disk", looseItems)}
+          onopen={(id) => openFile("disk", id)}
+          {onrename}
+          {ondelete}
+          {oncontextmenu}
+        />
+      {/if}
+      {#if $sources.length === 0 && looseItems.length === 0}
+        <EmptyState compact icon="folder" title="No folders added" />
+        <div class="add">
+          <Button variant="ghost" size="sm" onclick={() => openDialogOpen.set(true)}>
+            Add a folder
+          </Button>
+        </div>
       {/if}
     </section>
   </div>
 
-  {#if $listError}<p class="list-error" role="alert">{$listError}</p>{/if}
+  {#if $listError}<InlineAlert>{$listError}</InlineAlert>{/if}
   <div class="footer">
     {myPlans.length} plans · {docCount} docs{$docsTruncated ? " · list truncated" : ""}
   </div>
 </aside>
-
-{#snippet diskRow(path: string, name: string, depth: number)}
-  {@const key = fileKey("disk", path)}
-  <button
-    type="button"
-    class="row"
-    class:active={$activeFile === key}
-    style="padding-left: {8 + depth * 14}px"
-    title={path}
-    onclick={() => openFile("disk", path)}
-  >
-    <span class="circle"></span>
-    <span class="name">{name}</span>
-    {#if $dirtyFiles.has(key)}<span class="unsaved"></span>{/if}
-  </button>
-{/snippet}
-
-{#snippet row(node: TreeNode, depth: number)}
-  {@const key = fileKey($fileWs, node.relPath)}
-  {#if node.isDir}
-    <!-- Every folder is open while filtering: a match inside a collapsed one
-         would otherwise be filtered in and still not on screen. -->
-    {@const shut = !searching && !$expanded.has(key)}
-    <button
-      type="button"
-      class="row"
-      style="padding-left: {8 + depth * 14}px"
-      onclick={() => toggleExpanded(key)}
-    >
-      <span class="chev" class:open={!shut}>›</span>
-      <span class="name">{node.name}</span>
-      {#if shut && hasUnsavedUnder(node, dirtyPaths)}<span class="unsaved"></span>{/if}
-    </button>
-    {#if !shut}
-      {#each node.children as child (child.relPath)}
-        {@render row(child, depth + 1)}
-      {/each}
-    {/if}
-  {:else}
-    <button
-      type="button"
-      class="row"
-      class:active={$activeFile === key}
-      style="padding-left: {8 + depth * 14}px"
-      title={node.relPath}
-      onclick={() => openFile($fileWs, node.relPath)}
-    >
-      <span class="circle"></span>
-      <span class="name">{node.name}</span>
-      {#if dirtyPaths.has(node.relPath)}<span class="unsaved"></span>{/if}
-    </button>
-  {/if}
-{/snippet}
 
 <style>
   .tree {
@@ -344,106 +417,37 @@
   .ws-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    height: 40px;
-    padding: 0 8px;
+    gap: var(--sp-2);
+    padding: var(--sp-2);
     flex-shrink: 0;
   }
 
-  .ws-name {
+  .ws-select {
     flex: 1;
     min-width: 0;
-    overflow: hidden;
-    color: var(--text);
-    font-size: var(--fs-sm);
-    font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    cursor: pointer;
-  }
-
-  .new-note {
-    display: flex;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: var(--r-sm);
-    color: var(--muted);
-    font-size: var(--fs-md);
-    line-height: 1;
-    cursor: pointer;
-  }
-
-  .new-note:hover:not(:disabled) {
-    background: var(--surface2);
-    color: var(--text);
   }
 
   .finders {
     display: flex;
-    gap: 6px;
-    padding: 0 8px 8px;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: 0 var(--sp-2) var(--sp-2);
     flex-shrink: 0;
   }
 
-  .finder {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px;
-    height: 26px;
-    padding: 0 7px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    background: var(--surface2);
-    color: var(--muted);
-    font-size: var(--fs-xs);
-    white-space: nowrap;
-  }
-
-  /* The field takes the column; Open… keeps only what its label needs. It used
-     to be `flex: 1` on both, which spent half a 240px sidebar on a button. */
-  .finder.search {
+  /* The field takes the column; Open… keeps only what its label needs. */
+  .search {
     flex: 1;
     min-width: 0;
-    color: var(--text);
-    font-family: var(--font-ui);
-  }
-
-  .finder.search::placeholder {
-    color: var(--muted);
-  }
-
-  .finder.search:focus {
-    border-color: var(--border2);
-    outline: none;
-  }
-
-  .finder.open {
-    flex: 0 0 auto;
-    cursor: pointer;
-  }
-
-  .finder.open:hover {
-    border-color: var(--border2);
-    color: var(--text);
-  }
-
-  .kbd {
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
   }
 
   .sections {
     display: flex;
     flex: 1;
     flex-direction: column;
-    gap: 14px;
+    gap: var(--sp-4);
     min-height: 0;
-    padding: 0 8px 8px;
+    padding: 0 var(--sp-2) var(--sp-2);
     overflow-y: auto;
   }
 
@@ -453,30 +457,19 @@
   }
 
   .label {
-    margin: 0 0 4px 8px;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  .empty {
-    margin: 0 0 0 8px;
+    margin: 0 0 var(--sp-1) var(--sp-2);
     color: var(--muted);
     font-size: var(--fs-xs);
-  }
-
-  .empty.nested {
-    margin-left: 22px;
+    font-weight: var(--fw-semi);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
 
   .source {
     display: flex;
     align-items: center;
-    gap: 6px;
-    height: 26px;
-    padding: 0 8px;
+    gap: var(--sp-1);
+    padding: 0 var(--sp-2);
   }
 
   .source-name {
@@ -485,103 +478,26 @@
     overflow: hidden;
     color: var(--muted);
     font-size: var(--fs-sm);
-    font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  /* Forgetting a folder only drops the path — nothing on disk is touched. */
-  .forget {
-    flex-shrink: 0;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-    line-height: 1;
-    opacity: 0;
-    cursor: pointer;
-  }
-
-  .source:hover .forget {
-    opacity: 1;
-  }
-
-  .forget:hover {
-    color: var(--text);
-  }
-
-  .row {
+  .note {
     display: flex;
     align-items: center;
-    gap: 7px;
-    width: 100%;
-    height: 26px;
-    padding: 0 8px;
-    border-radius: var(--r-sm);
-    color: var(--text);
-    font-size: var(--fs-sm);
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .row:hover {
-    background: var(--surface2);
-  }
-
-  .row.active {
-    background: var(--surface);
-    box-shadow: inset 0 0 0 1px var(--border2);
-  }
-
-  .name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .chev {
-    flex-shrink: 0;
-    width: 8px;
+    gap: var(--sp-1);
+    margin: 0 0 0 var(--sp-2);
     color: var(--muted);
-    text-align: center;
-    transition: transform 0.15s ease;
+    font-size: var(--fs-xs);
   }
 
-  .chev.open {
-    transform: rotate(90deg);
-  }
-
-  .circle,
-  .square {
-    flex-shrink: 0;
-    width: 6px;
-    height: 6px;
-    background: var(--muted);
-  }
-
-  .circle {
-    border-radius: 50%;
-  }
-
-  .unsaved {
-    flex-shrink: 0;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--text);
-  }
-
-  .list-error {
-    margin: 0;
-    padding: 6px 12px;
-    color: var(--warn);
-    font-size: var(--fs-2xs);
-    word-break: break-word;
+  .add {
+    padding: 0 var(--sp-1);
   }
 
   .footer {
     flex-shrink: 0;
-    padding: 8px;
+    padding: var(--sp-2);
     border-top: 1px solid var(--border);
     color: var(--muted);
     font-size: var(--fs-xs);
