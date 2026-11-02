@@ -2,7 +2,7 @@
   interface Props {
     label: string;
     count?: number;
-    /** Workspace tag colour; renders the leading square dot when set. */
+    /** Workspace tag colour; renders as a leading swatch, never as text. */
     colour?: string;
     selected?: boolean;
     onClick: () => void;
@@ -11,7 +11,7 @@
   let { label, count, colour, selected = false, onClick }: Props = $props();
 </script>
 
-<button type="button" class="chip" class:selected onclick={onClick}>
+<button type="button" class="chip" class:selected aria-pressed={selected} onclick={onClick}>
   {#if colour}<span class="dot" style="background: {colour}"></span>{/if}
   {label}
   {#if count !== undefined}<span class="count">{count}</span>{/if}
@@ -22,10 +22,10 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    height: 26px;
+    height: var(--h-md);
     padding: 0 10px;
     border: 1px solid var(--border);
-    border-radius: 13px;
+    border-radius: var(--r-pill);
     background: var(--surface);
     color: var(--text);
     font-family: var(--font-ui);
@@ -55,6 +55,5 @@
   .count {
     font-family: var(--font-mono);
     font-size: var(--fs-2xs);
-    opacity: 0.7;
   }
 </style>

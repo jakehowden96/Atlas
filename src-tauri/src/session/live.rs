@@ -15,11 +15,19 @@ use std::collections::{HashMap, HashSet};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
+use crate::commands::stats::day_key;
 use crate::transcript::{
-    assistant_model, context_pct, line_type, request_key, tool_results, tool_uses, user_text,
-    ReqData,
+    activity_slot, assistant_model, context_pct, line_key, line_type, request_key, slot_start,
+    tool_results, tool_uses, user_text, ReqData,
 };
 use ts_rs::TS;
+
+/// `activity_slot` of a line's timestamp.
+fn obj_slot(obj: &Value) -> Option<i64> {
+    obj.get("timestamp")
+        .and_then(|v| v.as_str())
+        .and_then(activity_slot)
+}
 
 /// Transcript lines kept for the session view. The design shows the tail of the
 /// conversation, not its whole history.
@@ -103,6 +111,11 @@ pub struct Subagent {
     pub finished_at: Option<String>,
     pub tool_count: u32,
     pub done: bool,
+    /// The agent's cwd folder name, only when it differs from the session's.
+    pub worktree: Option<String>,
+    /// Short summary of its newest tool call, e.g. `Reading src/retry.rs`.
+    /// None once it is done.
+    pub current_action: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -125,6 +138,8 @@ pub struct LiveSession {
     pub title: Option<String>,
     pub model: Option<String>,
     pub git_branch: Option<String>,
+    /// Name of the linked git worktree the session's cwd is in, else None.
+    pub worktree: Option<String>,
     /// Newest `MAX_LINES` lines, oldest first.
     pub lines: Vec<TranscriptLine>,
     /// The task list from `TaskCreate`/`TaskUpdate`; without one, the newest `TodoWrite`'s todos or the newest `ExitPlanMode` plan's title.
@@ -136,6 +151,9 @@ pub struct LiveSession {
     pub pending_tool: Option<PendingTool>,
     pub output_tokens: u64,
     pub cost_estimate: f64,
+    /// The part of `cost_estimate` incurred on today's local calendar day, bucketed
+    /// like Stats' `by_day`. Equals `cost_estimate` for a session begun today.
+    pub cost_today: f64,
     /// Context the newest request carried, plus the reply it produced — the
     /// number Claude Code's own status line shows, which is read off the newest
     /// assistant message the same way (`context_window.total_input_tokens` plus
@@ -170,6 +188,7 @@ impl LiveSession {
             title: None,
             model: None,
             git_branch: None,
+            worktree: None,
             lines: Vec::new(),
             plan: Vec::new(),
             subagents: Vec::new(),
@@ -178,6 +197,7 @@ impl LiveSession {
             pending_tool: None,
             output_tokens: 0,
             cost_estimate: 0.0,
+            cost_today: 0.0,
             context_tokens: 0,
             peak_context: 0,
             context_pct: 0.0,
@@ -338,12 +358,15 @@ struct Spend {
     output_tokens: u64,
     cost: f64,
     peak_context: u64,
+    /// `cost` by `ReqData::slot`, so spend can be split by day.
+    by_slot: HashMap<Option<i64>, f64>,
 }
 
 impl Spend {
     fn add(&mut self, req: &ReqData) {
         self.output_tokens += req.output_tokens;
         self.cost += req.cost();
+        *self.by_slot.entry(req.slot).or_default() += req.cost();
         self.peak_context = self.peak_context.max(req.context());
     }
 
@@ -351,7 +374,33 @@ impl Spend {
     fn replace(&mut self, old: &ReqData, new: &ReqData) {
         self.output_tokens -= old.output_tokens;
         self.cost -= old.cost();
+        *self.by_slot.entry(old.slot).or_default() -= old.cost();
         self.add(new);
+    }
+
+    /// Spend on the local calendar day of `now` in `tz`. A request with no
+    /// timestamp counts on `fallback` (the session's start), as in Stats.
+    fn cost_on_day_of<Tz: chrono::TimeZone>(
+        &self,
+        now: chrono::DateTime<chrono::Utc>,
+        tz: &Tz,
+        fallback: Option<i64>,
+    ) -> f64
+    where
+        Tz::Offset: std::fmt::Display,
+    {
+        let today = day_key(now, tz);
+        self.by_slot
+            .iter()
+            .filter(|(slot, _)| {
+                (**slot)
+                    .or(fallback)
+                    .and_then(slot_start)
+                    .map(|at| day_key(at, tz))
+                    == Some(today.clone())
+            })
+            .map(|(_, cost)| cost)
+            .sum()
     }
 }
 
@@ -367,6 +416,10 @@ impl Spend {
 struct SubagentCounter {
     reader: LineReader,
     tool_count: u32,
+    /// Summary of the newest `tool_use`.
+    last_action: Option<String>,
+    /// The agent's working directory, from its first line that names one.
+    cwd: Option<String>,
     /// The requests already counted, deduplicated the same way as the parent's.
     seen: HashMap<String, ReqData>,
     spend: Spend,
@@ -377,6 +430,8 @@ impl SubagentCounter {
         SubagentCounter {
             reader: LineReader::new(),
             tool_count: 0,
+            last_action: None,
+            cwd: None,
             seen: HashMap::new(),
             spend: Spend::default(),
         }
@@ -385,11 +440,13 @@ impl SubagentCounter {
     /// Returns true when the count or the usage changed.
     fn poll(&mut self, path: &Path) -> bool {
         let before = (self.tool_count, self.seen.len(), self.spend.output_tokens);
+        let cwd_before = self.cwd.is_some();
         let mut changed = false;
         loop {
             let batch = self.reader.read_new(path);
             if batch.rewound {
                 self.tool_count = 0;
+                self.last_action = None;
                 self.seen.clear();
                 self.spend = Spend::default();
                 changed = true;
@@ -398,15 +455,24 @@ impl SubagentCounter {
                 let Ok(obj) = serde_json::from_str::<Value>(raw) else {
                     continue;
                 };
+                if self.cwd.is_none() {
+                    self.cwd = obj.get("cwd").and_then(|v| v.as_str()).map(str::to_string);
+                }
                 if line_type(&obj) != "assistant" {
                     continue;
                 }
                 let msg = obj.get("message").unwrap_or(&Value::Null);
-                self.tool_count += tool_uses(msg).len() as u32;
+                let uses = tool_uses(msg);
+                self.tool_count += uses.len() as u32;
+                if let Some(last) = uses.last() {
+                    self.last_action = Some(action_summary(last.name, last.input));
+                }
                 if let (Some(model), Some(key)) = (assistant_model(&obj), request_key(&obj)) {
-                    let new = ReqData::from_message(model, msg);
+                    let mut new = ReqData::from_message(model, msg);
+                    new.slot = obj_slot(&obj);
                     match self.seen.entry(key) {
                         Entry::Occupied(mut occupied) => {
+                            new.slot = occupied.get().slot;
                             self.spend.replace(occupied.get(), &new);
                             occupied.insert(new);
                         }
@@ -421,7 +487,9 @@ impl SubagentCounter {
                 break;
             }
         }
-        changed || (self.tool_count, self.seen.len(), self.spend.output_tokens) != before
+        changed
+            || (self.tool_count, self.seen.len(), self.spend.output_tokens) != before
+            || self.cwd.is_some() != cwd_before
     }
 }
 
@@ -443,8 +511,13 @@ pub struct SessionTail {
     last_request: Option<String>,
     /// Spend over `requests`, kept current as requests are first seen.
     spend: Spend,
+    /// `line_key`s of requests another transcript owns (a resumed session's
+    /// copied history): left out of cost, tokens and peak context.
+    foreign: HashSet<u64>,
     /// `tool_use` blocks over `requests`.
     tool_calls: u32,
+    /// The session's cwd, from the first line that names one.
+    cwd: Option<String>,
     /// Claude Code task ids, parallel to `session.plan` while the plan is a task list.
     task_ids: Vec<String>,
     /// `TaskCreate` tool_use id -> subject, until its result names the task id.
@@ -482,7 +555,12 @@ pub struct SessionTail {
 }
 
 impl SessionTail {
+    #[cfg(test)]
     pub fn new(session_uuid: String, path: PathBuf) -> Self {
+        Self::with_foreign(session_uuid, path, HashSet::new())
+    }
+
+    pub fn with_foreign(session_uuid: String, path: PathBuf, foreign: HashSet<u64>) -> Self {
         let subagents_dir = path
             .parent()
             .map(|p| p.join(&session_uuid).join("subagents"))
@@ -500,7 +578,9 @@ impl SessionTail {
             requests: HashMap::new(),
             last_request: None,
             spend: Spend::default(),
+            foreign,
             tool_calls: 0,
+            cwd: None,
             subagent_tool_ids: HashMap::new(),
             task_ids: Vec::new(),
             pending_tasks: HashMap::new(),
@@ -606,6 +686,9 @@ impl SessionTail {
                 self.session.started_at = Some(ts.clone());
             }
             self.session.last_activity = Some(ts.clone());
+        }
+        if self.cwd.is_none() {
+            self.cwd = obj.get("cwd").and_then(|v| v.as_str()).map(str::to_string);
         }
         if let Some(branch) = obj.get("gitBranch").and_then(|v| v.as_str()) {
             self.session.git_branch = Some(branch.to_string());
@@ -814,24 +897,31 @@ impl SessionTail {
                     finished_at: None,
                     tool_count: 0,
                     done: false,
+                    worktree: None,
+                    current_action: None,
                 });
             }
         }
 
         // A request's usage grows across its lines — the last line's is final.
+        if request_key(obj).is_some_and(|k| self.foreign.contains(&line_key(b'a', &k))) {
+            return;
+        }
         if let (Some(model), Some(key)) = (assistant_model(obj), request_key(obj)) {
             self.session.model = Some(model.to_string());
             self.last_request = Some(key.clone());
             let req = match self.requests.entry(key) {
                 Entry::Occupied(occupied) => {
                     let req = occupied.into_mut();
-                    let latest = ReqData::from_message(&req.model, msg);
+                    let mut latest = ReqData::from_message(&req.model, msg);
+                    latest.slot = req.slot;
                     self.spend.replace(req, &latest);
                     req.set_usage(msg);
                     req
                 }
                 Entry::Vacant(vacant) => {
-                    let req = ReqData::from_message(model, msg);
+                    let mut req = ReqData::from_message(model, msg);
+                    req.slot = obj_slot(obj);
                     self.spend.add(&req);
                     vacant.insert(req)
                 }
@@ -906,6 +996,9 @@ impl SessionTail {
     fn finalize(&mut self) {
         let mut output_tokens = self.spend.output_tokens;
         let mut cost_estimate = self.spend.cost;
+        let fallback = self.session.started_at.as_deref().and_then(activity_slot);
+        let now = chrono::Utc::now();
+        let mut cost_today = self.spend.cost_on_day_of(now, &chrono::Local, fallback);
         let peak_context = self.spend.peak_context;
         let tool_calls = self.tool_calls;
         // A subagent's requests are billed to this session but never written
@@ -913,6 +1006,7 @@ impl SessionTail {
         for counter in self.subagent_files.values() {
             output_tokens += counter.spend.output_tokens;
             cost_estimate += counter.spend.cost;
+            cost_today += counter.spend.cost_on_day_of(now, &chrono::Local, fallback);
         }
         // Newest request, not biggest: after a compact or a `/clear` the window
         // really is emptier, and a peak would stay pinned to the old high while
@@ -926,9 +1020,15 @@ impl SessionTail {
 
         self.session.output_tokens = output_tokens;
         self.session.cost_estimate = cost_estimate;
+        self.session.cost_today = cost_today;
         self.session.context_tokens = context_tokens;
         self.session.peak_context = peak_context;
         self.session.tool_calls = tool_calls;
+        self.session.worktree = self.cwd.as_deref().and_then(linked_worktree);
+        // Set while polling the agent's file, which can't see it finish.
+        for agent in self.session.subagents.iter_mut().filter(|a| a.done) {
+            agent.current_action = None;
+        }
         self.session.context_pct =
             context_pct(context_tokens, self.session.model.as_deref().unwrap_or(""));
 
@@ -1019,7 +1119,15 @@ impl SessionTail {
                 .entry(stem)
                 .or_insert_with(SubagentCounter::new);
             if counter.poll(&jsonl) {
-                self.session.subagents[idx].tool_count = counter.tool_count;
+                let agent = &mut self.session.subagents[idx];
+                agent.tool_count = counter.tool_count;
+                agent.current_action = counter.last_action.clone();
+                agent.worktree = counter
+                    .cwd
+                    .as_deref()
+                    .filter(|c| self.cwd.as_deref() != Some(*c))
+                    .and_then(|c| Path::new(c).file_name())
+                    .map(|n| n.to_string_lossy().into_owned());
                 changed = true;
             }
         }
@@ -1167,6 +1275,55 @@ pub(super) fn input_summary(input: &Value) -> String {
         }
     }
     String::new()
+}
+
+/// `Reading src/retry.rs`, `Running cargo test`; other tools show name and target.
+fn action_summary(name: &str, input: &Value) -> String {
+    let target = input_summary(input);
+    let verb = match name {
+        "Read" => "Reading",
+        "Edit" | "MultiEdit" => "Editing",
+        "Write" => "Writing",
+        "Bash" => "Running",
+        "Grep" | "Glob" => "Searching",
+        other => other,
+    };
+    format!("{} {}", verb, target).trim_end().to_string()
+}
+
+/// The linked worktree's folder name when `cwd` is inside one. One `git`
+/// call per cwd, cached for the process: a session's cwd does not move.
+fn linked_worktree(cwd: &str) -> Option<String> {
+    static CACHE: std::sync::Mutex<Option<HashMap<String, Option<String>>>> =
+        std::sync::Mutex::new(None);
+    let mut guard = CACHE.lock().ok()?;
+    guard
+        .get_or_insert_with(HashMap::new)
+        .entry(cwd.to_string())
+        .or_insert_with(|| {
+            let out = std::process::Command::new("git")
+                .args([
+                    "rev-parse",
+                    "--path-format=absolute",
+                    "--git-dir",
+                    "--git-common-dir",
+                    "--show-toplevel",
+                ])
+                .current_dir(cwd)
+                .output()
+                .ok()
+                .filter(|o| o.status.success())?;
+            let text = String::from_utf8_lossy(&out.stdout);
+            let mut lines = text.lines();
+            let (dir, common, top) = (lines.next()?, lines.next()?, lines.next()?);
+            if dir == common {
+                return None;
+            }
+            Path::new(top)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        })
+        .clone()
 }
 
 /// The `toolUseId` a subagent's `meta.json` names, or None while the file is
@@ -1373,6 +1530,8 @@ fn workflow_agents(run: &Value) -> Vec<(String, Subagent)> {
                     finished_at,
                     tool_count,
                     done,
+                    worktree: None,
+                    current_action: None,
                 },
             )
         })
@@ -2052,6 +2211,51 @@ mod tests {
             "an absent count means nothing before one has ever been written"
         );
         assert_eq!(tail.session().state, SessionState::Running);
+    }
+
+    #[test]
+    fn subagent_exposes_current_action_and_other_cwd_until_done() {
+        let lines = bg_lines();
+        let (dir, mut tail) = tail_with(&lines[SPAWN..=COUNT_ONE]);
+        let subagents = dir.path().join(UUID).join("subagents");
+        std::fs::create_dir_all(&subagents).unwrap();
+        std::fs::write(
+            subagents.join("agent-a64f02cb.meta.json"),
+            format!(r#"{{"toolUseId":"{}"}}"#, BG_ID),
+        )
+        .unwrap();
+        let jsonl = subagents.join("agent-a64f02cb.jsonl");
+        std::fs::write(
+            &jsonl,
+            concat!(
+                r#"{"type":"assistant","cwd":"/work/other","requestId":"r1","message":{"model":"claude-opus-5","content":[{"type":"tool_use","id":"s1","name":"Read","input":{"file_path":"src/retry.rs"}}]}}"#,
+                "
+",
+            ),
+        )
+        .unwrap();
+        tail.poll();
+        let agent = &tail.session().subagents[0];
+        assert_eq!(
+            agent.current_action.as_deref(),
+            Some("Reading src/retry.rs")
+        );
+        assert_eq!(agent.worktree.as_deref(), Some("other"));
+
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&jsonl)
+            .unwrap();
+        writeln!(f, r#"{{"type":"assistant","requestId":"r2","message":{{"model":"claude-opus-5","content":[{{"type":"tool_use","id":"s2","name":"Bash","input":{{"command":"cargo test"}}}}]}}}}"#).unwrap();
+        tail.poll();
+        assert_eq!(
+            tail.session().subagents[0].current_action.as_deref(),
+            Some("Running cargo test")
+        );
+
+        tail.session.subagents[0].done = true;
+        tail.finalize();
+        assert_eq!(tail.session().subagents[0].current_action, None);
     }
 
     #[test]
@@ -2820,5 +3024,139 @@ mod tests {
         tail.poll();
         assert!(tail.session().pending_tool.is_none());
         assert_eq!(tail.session().state, SessionState::Idle);
+    }
+
+    // ── One request is billed once across a resumed session ──────────────────
+
+    fn stamped(req: &str, ts: &str, out: u64) -> String {
+        format!(
+            r#"{{"type":"assistant","requestId":"{req}","timestamp":"{ts}","message":{{"model":"claude-opus-5","content":[],"usage":{{"output_tokens":{out}}}}}}}"#
+        )
+    }
+
+    /// File `a` (day 1) holds r1 and r2. File `b` is a resumed copy (day 2): the
+    /// same r1 and r2, then its own r3 and r4, plus a subagent request s1.
+    /// Returns (projects dir, stats.json path) with stats already computed.
+    fn resumed_pair() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let proj = dir.path().join("proj");
+        std::fs::create_dir_all(proj.join("b").join("subagents")).unwrap();
+        let day1 = "2026-03-01T10:00:00.000Z";
+        let day2 = "2026-03-02T10:00:00.000Z";
+        let r1 = stamped("r1", day1, 1000);
+        let r2 = stamped("r2", day1, 2000);
+        std::fs::write(
+            proj.join("a.jsonl"),
+            format!(
+                "{r1}
+{r2}
+"
+            ),
+        )
+        .unwrap();
+        // r3 launches the subagent, which is how the tail finds its transcript.
+        let r3 = stamped("r3", day2, 3000).replace(
+            r#""content":[]"#,
+            r#""content":[{"type":"tool_use","id":"toolu_agent1","name":"Agent","input":{}}]"#,
+        );
+        let b = [r1, r2, r3, stamped("r4", day2, 4000)];
+        std::fs::write(
+            proj.join("b.jsonl"),
+            b.join(
+                "
+",
+            ) + "
+",
+        )
+        .unwrap();
+        std::fs::write(
+            proj.join("b").join("subagents").join("agent-x.meta.json"),
+            r#"{"agentType":"Explore","description":"x","toolUseId":"toolu_agent1"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            proj.join("b").join("subagents").join("agent-x.jsonl"),
+            stamped("s1", day2, 500)
+                + "
+",
+        )
+        .unwrap();
+        // `b` is the newer file, so `a` owns the shared requests.
+        let newer = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+        std::fs::File::options()
+            .write(true)
+            .open(proj.join("b.jsonl"))
+            .unwrap()
+            .set_modified(newer)
+            .unwrap();
+        let stats = dir.path().join("stats.json");
+        crate::commands::stats::recompute_in(dir.path(), &stats).unwrap();
+        (dir, stats)
+    }
+
+    #[test]
+    fn a_resumed_session_bills_each_request_once_in_live_and_in_stats() {
+        let (dir, stats) = resumed_pair();
+        let price = |out: f64| out * 25.0 / 1_000_000.0;
+        let b_path = dir.path().join("proj").join("b.jsonl");
+        let mut tail = SessionTail::with_foreign(
+            "b".into(),
+            b_path.clone(),
+            crate::commands::stats::foreign_keys_in(&stats, "b"),
+        );
+        tail.poll();
+
+        let own = price(3000.0 + 4000.0 + 500.0);
+        assert!((tail.session().cost_estimate - own).abs() < 1e-9);
+        assert_eq!(tail.session().output_tokens, 7500);
+
+        let file: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&stats).unwrap()).unwrap();
+        let sessions = file["sessions"].as_array().unwrap();
+        let cost_of = |id: &str| {
+            sessions.iter().find(|r| r["sessionId"] == id).unwrap()["costEstimate"]
+                .as_f64()
+                .unwrap()
+        };
+        assert!((cost_of("b") - tail.session().cost_estimate).abs() < 1e-9);
+        let total: f64 = sessions
+            .iter()
+            .map(|r| r["costEstimate"].as_f64().unwrap())
+            .sum();
+        assert!((total - price(10_500.0)).abs() < 1e-9);
+
+        let summary = crate::commands::stats::recompute_in(dir.path(), &stats).unwrap();
+        let by_day: f64 = summary.by_day.values().map(|d| d.cost).sum();
+        assert!((summary.totals_all.cost - total).abs() < 1e-9);
+        assert!((by_day - total).abs() < 1e-9);
+    }
+
+    #[test]
+    fn cost_today_splits_spend_at_local_midnight() {
+        let (dir, stats) = resumed_pair();
+        let mut tail = SessionTail::with_foreign(
+            "b".into(),
+            dir.path().join("proj").join("b.jsonl"),
+            crate::commands::stats::foreign_keys_in(&stats, "b"),
+        );
+        tail.poll();
+        let at = |s: &str| chrono::DateTime::parse_from_rfc3339(s).unwrap().to_utc();
+        let today = |now: &str, tz: &chrono::FixedOffset| {
+            let fallback = tail.session().started_at.as_deref().and_then(activity_slot);
+            let mut c = tail.spend.cost_on_day_of(at(now), tz, fallback);
+            for counter in tail.subagent_files.values() {
+                c += counter.spend.cost_on_day_of(at(now), tz, fallback);
+            }
+            c
+        };
+        let utc = chrono::FixedOffset::east_opt(0).unwrap();
+        let plus2 = chrono::FixedOffset::east_opt(2 * 3600).unwrap();
+        // All of b's own spend (r3, r4, s1) happened on 2026-03-02.
+        let own = tail.session().cost_estimate;
+        assert!((today("2026-03-02T12:00:00Z", &utc) - own).abs() < 1e-9);
+        // 23:30 UTC on the 2nd is already the 3rd at +02:00: nothing today.
+        assert_eq!(today("2026-03-02T23:30:00Z", &plus2), 0.0);
+        // And the inherited day-1 requests were never counted at all.
+        assert_eq!(today("2026-03-01T12:00:00Z", &utc), 0.0);
     }
 }

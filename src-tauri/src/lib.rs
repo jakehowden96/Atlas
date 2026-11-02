@@ -2,6 +2,7 @@
 mod atomic_write;
 mod claude_hook;
 mod commands;
+pub mod connectors;
 pub mod error;
 pub mod hook;
 mod lsp;
@@ -259,8 +260,19 @@ pub fn run() -> std::process::ExitCode {
         .manage(lsp_manager)
         .manage(live_sessions.clone())
         .manage(commands::files::DocsWatchers::default())
+        .manage(connectors::Connectors::new(
+            connectors::registry::Registry::default(),
+            Box::new(connectors::keychain::KeyringStore),
+            connectors::config::ConfigStore::new(dirs::home_dir().map(|h| h.join(".atlas"))),
+        ))
         .invoke_handler(tauri::generate_handler![
             state::state_load,
+            connectors::commands::connector_list,
+            connectors::commands::connector_connect,
+            connectors::commands::connector_cancel,
+            connectors::commands::connector_disconnect,
+            connectors::commands::connector_get_ticket,
+            connectors::commands::connector_list_pull_requests,
             state::state_save,
             claude_hook::set_claude_hook,
             commands::frontend_log::log_write,

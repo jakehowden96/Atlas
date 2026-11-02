@@ -66,6 +66,8 @@ function agent(overrides: Partial<Subagent> = {}): Subagent {
     finishedAt: null,
     toolCount: 0,
     done: false,
+    worktree: null,
+    currentAction: null,
     ...overrides,
   };
 }

@@ -181,16 +181,6 @@
     box-sizing: border-box;
   }
 
-  :global(.material-symbols-outlined) {
-    font-variation-settings:
-      "FILL" 0,
-      "wght" 400,
-      "GRAD" 0,
-      "opsz" 24;
-    font-size: 1.25rem;
-    vertical-align: middle;
-  }
-
   .titlebar {
     position: fixed;
     top: 0;

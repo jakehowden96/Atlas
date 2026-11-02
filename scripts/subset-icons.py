@@ -1,14 +1,14 @@
 """Subset the Material Symbols Outlined variable font to the icons Atlas uses.
 
-The full font is 3.9 MB for four glyphs. To add an icon, list its name here and
-in the command below, regenerate, and commit src/assets/fonts/*.woff2.
+The full font is 3.9 MB. To add an icon, list its name in icon-names.txt and in
+the ICONS tuple of Icon.svelte, regenerate, and commit src/assets/fonts/*.woff2.
 
   python3 -m venv /tmp/fontenv && /tmp/fontenv/bin/pip install fonttools brotli
   npm pack material-symbols@0.44.3 && tar xzf material-symbols-0.44.3.tgz
   /tmp/fontenv/bin/python scripts/subset-icons.py \\
       package/material-symbols-outlined.woff2 \\
       src/assets/fonts/material-symbols-subset.woff2 \\
-      settings keep terminal progress_activity
+      src/assets/fonts/icon-names.txt
 
 The subsetter keeps the variable axes (FILL, wght, GRAD, opsz) and only the
 ligatures for the named icons: pyftsubset --layout-features would keep every
@@ -18,7 +18,8 @@ import sys
 from fontTools import subset
 from fontTools.ttLib import TTFont
 
-src, dst, *names = sys.argv[1:]
+src, dst, names_file = sys.argv[1:]
+names = open(names_file).read().split()
 font = TTFont(src)
 cmap = font.getBestCmap()
 order = font.getGlyphOrder()

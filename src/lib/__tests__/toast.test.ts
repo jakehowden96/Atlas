@@ -1,11 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { toasts, showToast, dismissToast, runToastAction } from "../stores/toast";
+import {
+  toasts,
+  visibleToasts,
+  notificationLog,
+  markAllRead,
+  clearLog,
+  pauseToast,
+  resumeToast,
+  showToast,
+  dismissToast,
+  runToastAction,
+} from "../stores/toast";
 import { get } from "svelte/store";
 
 describe("toast store", () => {
   beforeEach(() => {
     // Reset store
     toasts.set([]);
+    clearLog();
     vi.useFakeTimers();
   });
 
@@ -18,10 +30,10 @@ describe("toast store", () => {
     expect(get(toasts)[0]!.title).toBe("Second");
   });
 
-  it("auto-dismisses an info toast after 4s", () => {
+  it("auto-dismisses an info toast after 5s", () => {
     showToast("Temporary", { type: "info" });
     expect(get(toasts)).toHaveLength(1);
-    vi.advanceTimersByTime(3999);
+    vi.advanceTimersByTime(4999);
     expect(get(toasts)).toHaveLength(1);
     vi.advanceTimersByTime(2);
     expect(get(toasts)).toHaveLength(0);
@@ -37,7 +49,7 @@ describe("toast store", () => {
     expect(get(toasts)).toHaveLength(0);
 
     // Advance past the auto-dismiss time — should not throw or re-remove
-    vi.advanceTimersByTime(4000);
+    vi.advanceTimersByTime(5000);
     expect(get(toasts)).toHaveLength(0);
   });
 
@@ -51,19 +63,19 @@ describe("toast store", () => {
   });
 
   describe("action toasts", () => {
-    it("holds an action toast for 6s, not 4s", () => {
+    it("holds an action toast for 8s, not 5s", () => {
       showToast("Atlas removed", { type: "info", action: { label: "Undo", run: vi.fn() } });
-      vi.advanceTimersByTime(4000);
+      vi.advanceTimersByTime(5000);
       expect(get(toasts)).toHaveLength(1);
-      vi.advanceTimersByTime(1999);
+      vi.advanceTimersByTime(2999);
       expect(get(toasts)).toHaveLength(1);
       vi.advanceTimersByTime(2);
       expect(get(toasts)).toHaveLength(0);
     });
 
-    it("still dismisses a plain toast at 4s", () => {
+    it("still dismisses a plain toast at 5s", () => {
       showToast("Plain", { type: "info" });
-      vi.advanceTimersByTime(4001);
+      vi.advanceTimersByTime(5001);
       expect(get(toasts)).toHaveLength(0);
     });
 
@@ -77,7 +89,7 @@ describe("toast store", () => {
       expect(get(toasts)).toHaveLength(0);
 
       // The auto-dismiss timer was cleared with it, so nothing fires later.
-      vi.advanceTimersByTime(6000);
+      vi.advanceTimersByTime(8000);
       expect(run).toHaveBeenCalledTimes(1);
       expect(get(toasts)).toHaveLength(0);
     });
@@ -93,7 +105,7 @@ describe("toast store", () => {
     it("does not run the action when it auto-dismisses", () => {
       const run = vi.fn();
       showToast("Atlas removed", { type: "info", action: { label: "Undo", run } });
-      vi.advanceTimersByTime(6001);
+      vi.advanceTimersByTime(8001);
       expect(get(toasts)).toHaveLength(0);
       expect(run).not.toHaveBeenCalled();
     });
@@ -119,11 +131,31 @@ describe("toast store", () => {
     expect(remaining[1]!.title).toBe("Third");
   });
 
-  it("keeps an error up longer than an info toast, since its body is the only detail", () => {
+  it("keeps an error up until it is dismissed", () => {
     showToast("Could not save", { body: "disk full" });
-    vi.advanceTimersByTime(4001);
+    vi.advanceTimersByTime(600_000);
     expect(get(toasts)).toHaveLength(1);
-    vi.advanceTimersByTime(6000);
+  });
+
+  it("holds a warning for 8s", () => {
+    showToast("Careful", { type: "warning" });
+    vi.advanceTimersByTime(7999);
+    expect(get(toasts)).toHaveLength(1);
+    vi.advanceTimersByTime(2);
+    expect(get(toasts)).toHaveLength(0);
+  });
+
+  it("pauses the clock while hovered and resumes with the time left", () => {
+    showToast("Hover me", { type: "info" });
+    const id = get(toasts)[0]!.id;
+    vi.advanceTimersByTime(3000);
+    pauseToast(id);
+    vi.advanceTimersByTime(60_000);
+    expect(get(toasts)).toHaveLength(1);
+    resumeToast(id);
+    vi.advanceTimersByTime(1999);
+    expect(get(toasts)).toHaveLength(1);
+    vi.advanceTimersByTime(2);
     expect(get(toasts)).toHaveLength(0);
   });
 
@@ -132,16 +164,47 @@ describe("toast store", () => {
     vi.advanceTimersByTime(3000);
     showToast("Failed to list PRs", { body: "gh: not found", type: "info" });
     expect(get(toasts)).toHaveLength(1);
+    expect(get(notificationLog)).toHaveLength(1);
 
-    vi.advanceTimersByTime(3000);
+    vi.advanceTimersByTime(4000);
     expect(get(toasts)).toHaveLength(1);
     vi.advanceTimersByTime(1001);
     expect(get(toasts)).toHaveLength(0);
   });
 
-  it("keeps only the newest few when many pile up", () => {
+  it("shows only the newest three and counts the rest", () => {
     for (let i = 0; i < 10; i++) showToast(`Failure ${i}`);
-    const titles = get(toasts).map((t) => t.title);
-    expect(titles).toEqual(["Failure 6", "Failure 7", "Failure 8", "Failure 9"]);
+    const { shown, hidden } = get(visibleToasts);
+    expect(shown.map((t) => t.title)).toEqual(["Failure 7", "Failure 8", "Failure 9"]);
+    expect(hidden).toBe(7);
+  });
+
+  describe("notification log", () => {
+    it("records every toast, unread, and survives dismissal", () => {
+      showToast("One", { type: "info" });
+      showToast("Two", { body: "detail" });
+      dismissToast(get(toasts)[0]!.id);
+      const log = get(notificationLog);
+      expect(log.map((e) => [e.title, e.type, e.read])).toEqual([
+        ["One", "info", false],
+        ["Two", "error", false],
+      ]);
+      expect(log[1]!.body).toBe("detail");
+    });
+
+    it("keeps the last 50", () => {
+      for (let i = 0; i < 60; i++) showToast(`n${i}`, { type: "info" });
+      const log = get(notificationLog);
+      expect(log).toHaveLength(50);
+      expect(log[0]!.title).toBe("n10");
+    });
+
+    it("marks all read and clears", () => {
+      showToast("One");
+      markAllRead();
+      expect(get(notificationLog).every((e) => e.read)).toBe(true);
+      clearLog();
+      expect(get(notificationLog)).toHaveLength(0);
+    });
   });
 });

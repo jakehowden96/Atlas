@@ -562,7 +562,7 @@ pub async fn gh_pr_checkout(cwd: String, number: u64, repo: String) -> Result<()
 
 /// The platform's "open this in the default handler" launcher.
 /// Tauri 2 doesn't ship the opener plugin in this project, so we shell out.
-fn browser_launcher(url: &str) -> Command {
+pub(crate) fn browser_launcher(url: &str) -> Command {
     #[cfg(target_os = "macos")]
     let mut cmd = {
         let mut cmd = Command::new("open");
