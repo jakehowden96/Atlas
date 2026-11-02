@@ -1,6 +1,7 @@
-import { render, screen } from "@testing-library/svelte";
+// @vitest-environment happy-dom
+import { cleanup, render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import SegmentedControl, { type Segment } from "../components/ui/SegmentedControl.svelte";
 
 const options: Segment[] = [
@@ -11,6 +12,7 @@ const options: Segment[] = [
 ];
 
 describe("SegmentedControl", () => {
+  afterEach(cleanup);
   it("renders tablist with aria-selected and roving tabindex", () => {
     render(SegmentedControl, { options, value: "a", onChange: () => {} });
     expect(screen.getByRole("tablist")).toBeTruthy();
