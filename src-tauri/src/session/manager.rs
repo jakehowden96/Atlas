@@ -55,7 +55,11 @@ impl Tracked {
 
     fn claude(session_uuid: &str, path: PathBuf) -> Arc<Self> {
         Arc::new(Tracked {
-            tail: Mutex::new(SessionTail::new(session_uuid.to_string(), path.clone())),
+            tail: Mutex::new(SessionTail::with_foreign(
+                session_uuid.to_string(),
+                path.clone(),
+                crate::commands::stats::foreign_keys(session_uuid),
+            )),
             transcript: path,
         })
     }

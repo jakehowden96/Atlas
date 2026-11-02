@@ -53,3 +53,14 @@ Each `tauri-plugin-*` crate and its `@tauri-apps/plugin-*` npm package must shar
 
 Bump the three versions, update `CHANGELOG.md`, and push a tag `vX.Y.Z`. The release workflow builds
 the macOS (arm64 and x86_64) and Windows installers into a draft GitHub release.
+
+## Component tests and the gallery
+
+Component tests opt in to a DOM with `// @vitest-environment happy-dom` on the first line and use
+`@testing-library/svelte` (see `src/lib/__tests__/harness.test.ts`). Query by role and name, and
+drive the keyboard with `@testing-library/user-event`.
+
+`pnpm gallery` serves every `src/gallery/sections/*.svelte` at http://localhost:1430 in a plain
+browser, with theme, width and reduced-motion switches. Add a section by adding one file; no
+registry to edit. `node scripts/gallery-shots.mjs [--section <id>] [--width 1100]` writes light and
+dark PNGs to `gallery-shots/` using your installed Chrome. The gallery is not part of `pnpm build`.

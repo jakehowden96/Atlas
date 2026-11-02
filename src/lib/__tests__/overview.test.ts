@@ -39,6 +39,7 @@ function live(sessionUuid: string, overrides: Partial<LiveSession> = {}): LiveSe
     title: null,
     model: null,
     gitBranch: null,
+    worktree: null,
     lines: [],
     plan: [],
     subagents: [],
@@ -47,6 +48,7 @@ function live(sessionUuid: string, overrides: Partial<LiveSession> = {}): LiveSe
     pendingTool: null,
     outputTokens: 0,
     costEstimate: 0,
+    costToday: 0,
     contextTokens: 0,
     peakContext: 0,
     contextPct: 0,
@@ -481,7 +483,15 @@ describe("activity", () => {
   });
 
   it("counts the background agents a running session is waiting on", () => {
-    const agent = { task: "t", agentType: null, startedAt: null, finishedAt: null, toolCount: 0 };
+    const agent = {
+      task: "t",
+      agentType: null,
+      startedAt: null,
+      finishedAt: null,
+      toolCount: 0,
+      worktree: null,
+      currentAction: null,
+    };
     const session = live("uuid-a", {
       state: "running",
       subagents: [
@@ -921,7 +931,15 @@ describe("withLiveStatus", () => {
   });
 
   it("leaves a waiting-on-agents activity alone", () => {
-    const agent = { task: "t", agentType: null, startedAt: null, finishedAt: null, toolCount: 0 };
+    const agent = {
+      task: "t",
+      agentType: null,
+      startedAt: null,
+      finishedAt: null,
+      toolCount: 0,
+      worktree: null,
+      currentAction: null,
+    };
     const s = live("a", { subagents: [{ ...agent, done: false }] });
     const act = activity(s);
     expect(withLiveStatus(act, s, "Thinking…")).toBe(act);

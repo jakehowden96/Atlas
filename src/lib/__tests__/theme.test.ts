@@ -270,6 +270,23 @@ describe("app.css token blocks", () => {
     }
   });
 
+  it("declare the polish-pass tokens (theme-independent ones inherit into dark)", () => {
+    for (const t of [
+      "--sp-1", "--h-md", "--h-bar", "--r-pill", "--ring", "--elev-2", "--focus",
+      "--focus-width", "--focus-offset", "--z-popover", "--dur-base", "--ease-out",
+      "--pulse", "--hover-bg", "--active-bg", "--disabled-ink",
+    ]) {
+      expect(LIGHT[t], t).toBeTruthy();
+    }
+    expect(DARK_EXPLICIT["--elev-1"]).toBeTruthy();
+    expect(DARK_MEDIA["--elev-1"]).toBeTruthy();
+  });
+
+  it("has a global focus ring and a reduced-motion block", () => {
+    expect(APP_CSS).toMatch(/:focus-visible\s*\{[^}]*var\(--focus-width\)/);
+    expect(APP_CSS).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*--pulse:\s*none/);
+  });
+
   it("declare dark as a full override of every colour light sets", () => {
     // A colour token added to light and not to dark renders a light ink on a
     // dark surface. The model colours are the deliberate exception — app.css

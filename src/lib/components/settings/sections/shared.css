@@ -1,0 +1,173 @@
+/* Styles shared by several Settings sections. Scoped under .sec so the global
+ import cannot leak into the rest of the app. */
+/* ── Rows ──────────────────────────────────────────────────────────────── */
+.sec.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.sec.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+:where(.sec) .row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+:where(.sec) .row-text {
+  flex: 1;
+  min-width: 0;
+}
+
+:where(.sec) .row-title {
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+
+:where(.sec) .row-desc {
+  font-family: var(--font-ui);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+:where(.sec) code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+:where(.sec) .copy {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+:where(.sec) .ok {
+  color: var(--accent);
+}
+
+:where(.sec) .bad {
+  color: var(--warn);
+}
+
+/* ── Bordered lists (workspaces, hooks) ────────────────────────────────── */
+:where(.sec) .list {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+:where(.sec) .list-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+:where(.sec) .list-row:last-child {
+  border-bottom: none;
+}
+
+:where(.sec) .remove {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+:where(.sec) .remove:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+:where(.sec) .add-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: var(--bg);
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+:where(.sec) .add-row:hover {
+  color: var(--text);
+}
+
+:where(.sec) .add-glyph {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border: 1.5px dashed var(--border2);
+  border-radius: var(--r-xs);
+}
+
+:where(.sec) .add-hint {
+  margin-left: 4px;
+  font-size: var(--fs-xs);
+}
+
+/* Shaped like .remove, but neither button here is destructive, so hover
+   stays neutral rather than turning red. */
+:where(.sec) .key-btn {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+:where(.sec) .key-btn:hover {
+  border-color: var(--border2);
+  color: var(--text);
+}
+
+:where(.sec) .badge {
+  padding: 2px 7px;
+  border-radius: var(--r-sm);
+  background: var(--surface2);
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+}
+
+:where(.sec) .badge.on {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+:where(.sec) .mono-pill {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}

@@ -11,4 +11,13 @@ agentType: string | null, startedAt: string | null,
  * a clock that keeps running. None while it is still going, and also when
  * the line that ended it carried no timestamp — `done` is the flag.
  */
-finishedAt: string | null, toolCount: number, done: boolean, };
+finishedAt: string | null, toolCount: number, done: boolean, 
+/**
+ * The agent's cwd folder name, only when it differs from the session's.
+ */
+worktree: string | null, 
+/**
+ * Short summary of its newest tool call, e.g. `Reading src/retry.rs`.
+ * None once it is done.
+ */
+currentAction: string | null, };
