@@ -116,6 +116,7 @@ function pendingLive(row: WorkspaceSession): LiveSession {
     title: row.label,
     model: null,
     gitBranch: null,
+    worktree: null,
     lines: [],
     plan: [],
     subagents: [],

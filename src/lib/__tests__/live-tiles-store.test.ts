@@ -27,6 +27,7 @@ function live(sessionUuid: string): LiveSession {
     title: null,
     model: null,
     gitBranch: null,
+    worktree: null,
     lines: [],
     plan: [],
     subagents: [],

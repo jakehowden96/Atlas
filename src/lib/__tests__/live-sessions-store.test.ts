@@ -19,6 +19,7 @@ function session(sessionUuid: string, overrides: Partial<LiveSession> = {}): Liv
     title: null,
     model: null,
     gitBranch: null,
+    worktree: null,
     lines: [],
     plan: [],
     subagents: [],

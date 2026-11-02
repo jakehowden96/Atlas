@@ -222,6 +222,7 @@ function session(id: string, ts: string) {
     title: null,
     cwd: "/repo/a",
     gitBranch: null,
+    worktree: null,
     model: "Opus",
     lastTimestamp: ts,
     durationSecs: 60,

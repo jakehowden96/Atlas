@@ -111,6 +111,11 @@ pub struct Subagent {
     pub finished_at: Option<String>,
     pub tool_count: u32,
     pub done: bool,
+    /// The agent's cwd folder name, only when it differs from the session's.
+    pub worktree: Option<String>,
+    /// Short summary of its newest tool call, e.g. `Reading src/retry.rs`.
+    /// None once it is done.
+    pub current_action: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -133,6 +138,8 @@ pub struct LiveSession {
     pub title: Option<String>,
     pub model: Option<String>,
     pub git_branch: Option<String>,
+    /// Name of the linked git worktree the session's cwd is in, else None.
+    pub worktree: Option<String>,
     /// Newest `MAX_LINES` lines, oldest first.
     pub lines: Vec<TranscriptLine>,
     /// The task list from `TaskCreate`/`TaskUpdate`; without one, the newest `TodoWrite`'s todos or the newest `ExitPlanMode` plan's title.
@@ -181,6 +188,7 @@ impl LiveSession {
             title: None,
             model: None,
             git_branch: None,
+            worktree: None,
             lines: Vec::new(),
             plan: Vec::new(),
             subagents: Vec::new(),
@@ -408,6 +416,10 @@ impl Spend {
 struct SubagentCounter {
     reader: LineReader,
     tool_count: u32,
+    /// Summary of the newest `tool_use`.
+    last_action: Option<String>,
+    /// The agent's working directory, from its first line that names one.
+    cwd: Option<String>,
     /// The requests already counted, deduplicated the same way as the parent's.
     seen: HashMap<String, ReqData>,
     spend: Spend,
@@ -418,6 +430,8 @@ impl SubagentCounter {
         SubagentCounter {
             reader: LineReader::new(),
             tool_count: 0,
+            last_action: None,
+            cwd: None,
             seen: HashMap::new(),
             spend: Spend::default(),
         }
@@ -426,11 +440,13 @@ impl SubagentCounter {
     /// Returns true when the count or the usage changed.
     fn poll(&mut self, path: &Path) -> bool {
         let before = (self.tool_count, self.seen.len(), self.spend.output_tokens);
+        let cwd_before = self.cwd.is_some();
         let mut changed = false;
         loop {
             let batch = self.reader.read_new(path);
             if batch.rewound {
                 self.tool_count = 0;
+                self.last_action = None;
                 self.seen.clear();
                 self.spend = Spend::default();
                 changed = true;
@@ -439,11 +455,18 @@ impl SubagentCounter {
                 let Ok(obj) = serde_json::from_str::<Value>(raw) else {
                     continue;
                 };
+                if self.cwd.is_none() {
+                    self.cwd = obj.get("cwd").and_then(|v| v.as_str()).map(str::to_string);
+                }
                 if line_type(&obj) != "assistant" {
                     continue;
                 }
                 let msg = obj.get("message").unwrap_or(&Value::Null);
-                self.tool_count += tool_uses(msg).len() as u32;
+                let uses = tool_uses(msg);
+                self.tool_count += uses.len() as u32;
+                if let Some(last) = uses.last() {
+                    self.last_action = Some(action_summary(last.name, last.input));
+                }
                 if let (Some(model), Some(key)) = (assistant_model(&obj), request_key(&obj)) {
                     let mut new = ReqData::from_message(model, msg);
                     new.slot = obj_slot(&obj);
@@ -464,7 +487,9 @@ impl SubagentCounter {
                 break;
             }
         }
-        changed || (self.tool_count, self.seen.len(), self.spend.output_tokens) != before
+        changed
+            || (self.tool_count, self.seen.len(), self.spend.output_tokens) != before
+            || self.cwd.is_some() != cwd_before
     }
 }
 
@@ -491,6 +516,8 @@ pub struct SessionTail {
     foreign: HashSet<u64>,
     /// `tool_use` blocks over `requests`.
     tool_calls: u32,
+    /// The session's cwd, from the first line that names one.
+    cwd: Option<String>,
     /// Claude Code task ids, parallel to `session.plan` while the plan is a task list.
     task_ids: Vec<String>,
     /// `TaskCreate` tool_use id -> subject, until its result names the task id.
@@ -553,6 +580,7 @@ impl SessionTail {
             spend: Spend::default(),
             foreign,
             tool_calls: 0,
+            cwd: None,
             subagent_tool_ids: HashMap::new(),
             task_ids: Vec::new(),
             pending_tasks: HashMap::new(),
@@ -658,6 +686,9 @@ impl SessionTail {
                 self.session.started_at = Some(ts.clone());
             }
             self.session.last_activity = Some(ts.clone());
+        }
+        if self.cwd.is_none() {
+            self.cwd = obj.get("cwd").and_then(|v| v.as_str()).map(str::to_string);
         }
         if let Some(branch) = obj.get("gitBranch").and_then(|v| v.as_str()) {
             self.session.git_branch = Some(branch.to_string());
@@ -866,6 +897,8 @@ impl SessionTail {
                     finished_at: None,
                     tool_count: 0,
                     done: false,
+                    worktree: None,
+                    current_action: None,
                 });
             }
         }
@@ -991,6 +1024,11 @@ impl SessionTail {
         self.session.context_tokens = context_tokens;
         self.session.peak_context = peak_context;
         self.session.tool_calls = tool_calls;
+        self.session.worktree = self.cwd.as_deref().and_then(linked_worktree);
+        // Set while polling the agent's file, which can't see it finish.
+        for agent in self.session.subagents.iter_mut().filter(|a| a.done) {
+            agent.current_action = None;
+        }
         self.session.context_pct =
             context_pct(context_tokens, self.session.model.as_deref().unwrap_or(""));
 
@@ -1081,7 +1119,15 @@ impl SessionTail {
                 .entry(stem)
                 .or_insert_with(SubagentCounter::new);
             if counter.poll(&jsonl) {
-                self.session.subagents[idx].tool_count = counter.tool_count;
+                let agent = &mut self.session.subagents[idx];
+                agent.tool_count = counter.tool_count;
+                agent.current_action = counter.last_action.clone();
+                agent.worktree = counter
+                    .cwd
+                    .as_deref()
+                    .filter(|c| self.cwd.as_deref() != Some(*c))
+                    .and_then(|c| Path::new(c).file_name())
+                    .map(|n| n.to_string_lossy().into_owned());
                 changed = true;
             }
         }
@@ -1229,6 +1275,55 @@ pub(super) fn input_summary(input: &Value) -> String {
         }
     }
     String::new()
+}
+
+/// `Reading src/retry.rs`, `Running cargo test`; other tools show name and target.
+fn action_summary(name: &str, input: &Value) -> String {
+    let target = input_summary(input);
+    let verb = match name {
+        "Read" => "Reading",
+        "Edit" | "MultiEdit" => "Editing",
+        "Write" => "Writing",
+        "Bash" => "Running",
+        "Grep" | "Glob" => "Searching",
+        other => other,
+    };
+    format!("{} {}", verb, target).trim_end().to_string()
+}
+
+/// The linked worktree's folder name when `cwd` is inside one. One `git`
+/// call per cwd, cached for the process: a session's cwd does not move.
+fn linked_worktree(cwd: &str) -> Option<String> {
+    static CACHE: std::sync::Mutex<Option<HashMap<String, Option<String>>>> =
+        std::sync::Mutex::new(None);
+    let mut guard = CACHE.lock().ok()?;
+    guard
+        .get_or_insert_with(HashMap::new)
+        .entry(cwd.to_string())
+        .or_insert_with(|| {
+            let out = std::process::Command::new("git")
+                .args([
+                    "rev-parse",
+                    "--path-format=absolute",
+                    "--git-dir",
+                    "--git-common-dir",
+                    "--show-toplevel",
+                ])
+                .current_dir(cwd)
+                .output()
+                .ok()
+                .filter(|o| o.status.success())?;
+            let text = String::from_utf8_lossy(&out.stdout);
+            let mut lines = text.lines();
+            let (dir, common, top) = (lines.next()?, lines.next()?, lines.next()?);
+            if dir == common {
+                return None;
+            }
+            Path::new(top)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        })
+        .clone()
 }
 
 /// The `toolUseId` a subagent's `meta.json` names, or None while the file is
@@ -1435,6 +1530,8 @@ fn workflow_agents(run: &Value) -> Vec<(String, Subagent)> {
                     finished_at,
                     tool_count,
                     done,
+                    worktree: None,
+                    current_action: None,
                 },
             )
         })
@@ -2114,6 +2211,51 @@ mod tests {
             "an absent count means nothing before one has ever been written"
         );
         assert_eq!(tail.session().state, SessionState::Running);
+    }
+
+    #[test]
+    fn subagent_exposes_current_action_and_other_cwd_until_done() {
+        let lines = bg_lines();
+        let (dir, mut tail) = tail_with(&lines[SPAWN..=COUNT_ONE]);
+        let subagents = dir.path().join(UUID).join("subagents");
+        std::fs::create_dir_all(&subagents).unwrap();
+        std::fs::write(
+            subagents.join("agent-a64f02cb.meta.json"),
+            format!(r#"{{"toolUseId":"{}"}}"#, BG_ID),
+        )
+        .unwrap();
+        let jsonl = subagents.join("agent-a64f02cb.jsonl");
+        std::fs::write(
+            &jsonl,
+            concat!(
+                r#"{"type":"assistant","cwd":"/work/other","requestId":"r1","message":{"model":"claude-opus-5","content":[{"type":"tool_use","id":"s1","name":"Read","input":{"file_path":"src/retry.rs"}}]}}"#,
+                "
+",
+            ),
+        )
+        .unwrap();
+        tail.poll();
+        let agent = &tail.session().subagents[0];
+        assert_eq!(
+            agent.current_action.as_deref(),
+            Some("Reading src/retry.rs")
+        );
+        assert_eq!(agent.worktree.as_deref(), Some("other"));
+
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&jsonl)
+            .unwrap();
+        writeln!(f, r#"{{"type":"assistant","requestId":"r2","message":{{"model":"claude-opus-5","content":[{{"type":"tool_use","id":"s2","name":"Bash","input":{{"command":"cargo test"}}}}]}}}}"#).unwrap();
+        tail.poll();
+        assert_eq!(
+            tail.session().subagents[0].current_action.as_deref(),
+            Some("Running cargo test")
+        );
+
+        tail.session.subagents[0].done = true;
+        tail.finalize();
+        assert_eq!(tail.session().subagents[0].current_action, None);
     }
 
     #[test]
