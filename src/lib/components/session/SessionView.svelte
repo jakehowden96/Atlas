@@ -3,10 +3,10 @@
   import { onDestroy } from "svelte";
   import { get } from "svelte/store";
   import type { SessionState } from "../../../types/generated/SessionState";
-  import { formatTokens } from "../../format";
-  import { compareByAttention, formatElapsed, type SessionTile } from "../../overview";
+    import { compareByAttention, formatElapsed, type SessionTile } from "../../overview";
   import { closeSession } from "../../session-actions";
   import { refreshPanel } from "../../ipc";
+  import type { MenuItem } from "../ui/Menu.svelte";
   import { tabIdForSession } from "../../session-view";
   import { liveTiles } from "../../stores/liveTiles";
   import { panelData } from "../../stores/panel";
@@ -23,9 +23,13 @@
   import { workspaces } from "../../stores/workspace";
   import ChangesDrawer from "../changes/ChangesDrawer.svelte";
   import TerminalContainer from "../terminal/TerminalContainer.svelte";
+  import Button from "../ui/Button.svelte";
   import IconButton from "../ui/IconButton.svelte";
+  import MenuButton from "../ui/MenuButton.svelte";
   import StatePill, { type PillState } from "../ui/StatePill.svelte";
+  import Icon from "../ui/Icon.svelte";
   import Tooltip from "../ui/Tooltip.svelte";
+  import { tooltip } from "../../ui/tooltip";
   import ActivityRail from "./ActivityRail.svelte";
 
   const PILL: Record<SessionState, PillState> = {
@@ -89,7 +93,28 @@
   let elapsed = $derived(tile ? formatElapsed(tile.live.startedAt, now) : "");
   /* The workspace has its own chip in the header now, so the subtitle keeps
      only what changes underneath it. */
-  let subtitle = $derived(tile ? [tile.branch, elapsed].filter(Boolean).join(" · ") : "");
+  let changed = $derived((tile?.diff?.linesAdded ?? 0) + (tile?.diff?.linesRemoved ?? 0) > 0);
+
+  const STATE_WORD: Record<SessionState, string> = {
+    running: "running",
+    needsYou: "needs input",
+    idle: "idle",
+    error: "error",
+  };
+  let others = $derived(tiles.filter((t) => t.terminalTabId !== visibleTabId));
+  let othersLabel = $derived.by(() => {
+    if (!others.length) return "Other sessions";
+    const n = new Map<SessionState, number>();
+    for (const t of others) n.set(t.state, (n.get(t.state) ?? 0) + 1);
+    return `Other sessions · ${[...n].map(([k, v]) => `${v} ${STATE_WORD[k]}`).join(", ")}`;
+  });
+  let otherItems = $derived<MenuItem[]>(
+    others.map((t) => ({ id: t.sessionUuid, label: `${t.label} · ${STATE_WORD[t.state]}` })),
+  );
+  function pickOther(item: MenuItem) {
+    const t = others.find((o) => o.sessionUuid === item.id);
+    if (t) focus(t);
+  }
 
   function focus(target: SessionTile) {
     focusedSessionId.set(target.atlasSessionId);
@@ -102,44 +127,38 @@
 <div class="session">
   <div class="main">
     <header class="head">
-      <button type="button" class="back" onclick={() => showView("sessions")}>
-        ← Sessions <span class="hint">{$chords.backToSessions}</span>
-      </button>
+      <Tooltip text="Back to Sessions" shortcut={$chords.backToSessions}>
+        <IconButton icon="arrow_back" label="Back to Sessions" onclick={() => showView("sessions")} />
+      </Tooltip>
 
       {#if tile}
         <StatePill state={PILL[tile.state]} />
         <span class="label">{tile.label}</span>
-        <span class="ws" title={tile.workspacePath}>
-          <span class="ws-chip" style="--tc: {tile.workspaceColour}">{tile.workspaceName}</span>
+        <span class="ws" use:tooltip={{ text: tile.workspacePath }}>
+          <span class="swatch" style="--tc: {tile.workspaceColour}"></span>
+          <span class="ws-name">{tile.workspaceName}</span>
         </span>
-        <span class="subtitle">{subtitle}</span>
+        <span class="subtitle">
+          {#if tile.branch}<span class="branch">{tile.branch} · </span>{/if}{elapsed}
+        </span>
       {:else}
         <span class="label empty-label">No session selected</span>
       {/if}
 
       <div class="spacer"></div>
 
-      {#each tiles as t (t.sessionUuid)}
-        <button
-          type="button"
-          class="switch-dot {PILL[t.state]}"
-          class:active={t.terminalTabId === visibleTabId}
-          title={t.label}
-          aria-label="Switch to {t.label}"
-          onclick={() => focus(t)}
-        ></button>
-      {/each}
+      {#if others.length}
+        <MenuButton label={othersLabel} items={otherItems} onselect={pickOther} align="end" />
+      {/if}
 
-      <button
-        type="button"
-        class="changes"
-        class:on={$diffOpen}
-        onclick={() => diffOpen.update((v) => !v)}
-      >
-        Changes
-        <span class="added">+{tile?.diff?.linesAdded ?? 0}</span>
-        <span class="removed">−{tile?.diff?.linesRemoved ?? 0}</span>
-      </button>
+      <Button aria-pressed={$diffOpen} onclick={() => diffOpen.update((v) => !v)}>
+        {#snippet leading()}<Icon name="difference" />{/snippet}
+        <span class="changes-word">Changes</span>
+        {#if changed}
+          <span class="added">+{tile?.diff?.linesAdded ?? 0}</span>
+          <span class="removed">−{tile?.diff?.linesRemoved ?? 0}</span>
+        {/if}
+      </Button>
 
       <Tooltip text="Toggle activity rail" shortcut={$chords.toggleRail}>
         <IconButton
@@ -154,13 +173,9 @@
         />
       </Tooltip>
 
-      <button
-        type="button"
-        class="close-session"
-        title={`Close session (${$chords.closeSession})`}
-        aria-label="Close session"
-        onclick={endSession}>✕</button
-      >
+      <Tooltip text="Close session" shortcut={$chords.closeSession}>
+        <IconButton icon="close" label="Close session" onclick={endSession} />
+      </Tooltip>
     </header>
 
     <!-- No permission card over the terminal: Claude Code draws its own prompt
@@ -172,11 +187,9 @@
     </div>
 
     <footer class="foot">
-      <span class="last-tool">{tile?.live.lastTool ?? "—"}</span>
+      <span class="last-tool">{tile?.live.lastTool ?? "No tool calls yet"}</span>
       <div class="spacer"></div>
-      <span>{tile?.live.toolCalls ?? 0} tools</span>
-      <span>{formatTokens(tile?.live.contextTokens ?? 0)} ctx</span>
-      <span>${(tile?.live.costEstimate ?? 0).toFixed(2)}</span>
+      <span>{tile ? "Transcript live" : "No transcript"}</span>
     </footer>
   </div>
 
@@ -209,35 +222,10 @@
     display: flex;
     align-items: center;
     flex-shrink: 0;
-    gap: 10px;
-    height: 44px;
+    gap: var(--sp-3);
+    height: var(--h-bar);
     padding: 0 16px;
     border-bottom: 1px solid var(--border);
-  }
-
-  .back {
-    flex-shrink: 0;
-    height: 26px;
-    padding: 0 10px;
-    border: 1px solid var(--border2);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    color: var(--text);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
-    font-weight: 500;
-    white-space: nowrap;
-    cursor: pointer;
-  }
-
-  .back:hover {
-    background: var(--surface2);
-  }
-
-  .hint {
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
   }
 
   .label {
@@ -254,30 +242,28 @@
     font-weight: var(--fw-body);
   }
 
-  /* Which project this terminal belongs to. Same chip as the Sessions grid,
-     so the two screens read alike. */
   .ws {
     display: flex;
     align-items: center;
     flex-shrink: 0;
+    gap: var(--sp-2);
     max-width: 180px;
-    overflow: hidden;
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    color: var(--text);
+    font-size: var(--fs-sm);
   }
 
-  .ws-chip {
-    display: inline-block;
-    font-weight: 700;
-    padding: 3px 9px;
-    border-radius: 20px;
-    background: color-mix(in srgb, var(--tc) 34%, transparent);
-    border: 1px solid color-mix(in srgb, var(--tc) 55%, transparent);
-    color: var(--tc);
-    white-space: nowrap;
+  .swatch {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: var(--r-sm);
+    background: var(--tc);
+  }
+
+  .ws-name {
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%;
+    white-space: nowrap;
   }
 
   .subtitle {
@@ -293,65 +279,6 @@
     flex: 1;
   }
 
-  .switch-dot {
-    flex-shrink: 0;
-    width: 10px;
-    height: 10px;
-    margin-left: 6px;
-    padding: 0;
-    border: none;
-    border-radius: 50%;
-    cursor: pointer;
-  }
-
-  .switch-dot.running {
-    background: var(--accent);
-  }
-
-  .switch-dot.needs {
-    background: var(--warn);
-  }
-
-  .switch-dot.idle {
-    background: var(--muted);
-  }
-
-  .switch-dot.error {
-    background: var(--danger);
-  }
-
-  .switch-dot.active {
-    box-shadow:
-      0 0 0 2px var(--surface),
-      0 0 0 3.5px var(--text);
-  }
-
-  .changes {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-    gap: 6px;
-    height: 26px;
-    margin-left: 10px;
-    padding: 0 10px;
-    border: 1px solid var(--border2);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    color: var(--text);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
-    font-weight: 500;
-    cursor: pointer;
-  }
-
-  .changes.on {
-    border-color: var(--text);
-  }
-
-  .changes:hover {
-    background: var(--surface2);
-  }
-
   .added {
     color: var(--accent);
     font-family: var(--font-mono);
@@ -362,24 +289,12 @@
     font-family: var(--font-mono);
   }
 
-  .close-session {
-    display: grid;
-    place-items: center;
-    flex-shrink: 0;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border: none;
-    border-radius: var(--r-md);
-    background: transparent;
-    color: var(--muted);
-    font-size: var(--fs-sm);
-    cursor: pointer;
-  }
-
-  .close-session:hover {
-    background: var(--surface3);
-    color: var(--danger);
+  /* Small windows: drop the branch and the word, keep the icon. */
+  @media (max-width: 900px) {
+    .branch,
+    .changes-word {
+      display: none;
+    }
   }
 
   /* ── Terminal pane ─────────────────────────────────────────────────────── */

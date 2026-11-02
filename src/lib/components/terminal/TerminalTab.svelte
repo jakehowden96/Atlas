@@ -2,6 +2,10 @@
   import { onMount, onDestroy } from "svelte";
   import { closeSessionForTab, handleTerminalExit } from "../../session-actions";
   import { TerminalSession } from "../../terminal-session";
+  import { copyText } from "../../ui/copy";
+  import Banner from "../ui/Banner.svelte";
+  import Button from "../ui/Button.svelte";
+  import Spinner from "../ui/Spinner.svelte";
   import "@xterm/xterm/css/xterm.css";
 
   interface Props {
@@ -61,17 +65,18 @@
 </script>
 
 {#if spawnError}
-  <div class="loading-overlay" role="alert">
-    <span class="loading-text">Could not start the terminal.</span>
-    <span class="error-detail">{spawnError}</span>
-    <button type="button" class="close-session" onclick={() => void closeSessionForTab(tabId)}>
-      Close session
-    </button>
+  <div class="loading-overlay">
+    <Banner tone="error" title="Could not start the terminal">
+      <span class="error-detail">{spawnError}</span>
+      {#snippet actions()}
+        <Button onclick={() => void copyText(spawnError)}>Copy details</Button>
+        <Button onclick={() => void closeSessionForTab(tabId)}>Close session</Button>
+      {/snippet}
+    </Banner>
   </div>
 {:else if !ready}
   <div class="loading-overlay">
-    <span class="material-symbols-outlined loading-spinner">progress_activity</span>
-    <span class="loading-text">Starting {harnessLabel}...</span>
+    <Spinner label={`Starting ${harnessLabel}`} />
   </div>
 {/if}
 <div class="terminal-container" bind:this={containerEl}></div>
@@ -110,46 +115,11 @@
     justify-content: center;
     gap: 0.75rem;
     background: var(--term-bg);
-  }
-
-  .loading-spinner {
-    font-size: 1.5rem;
-    color: var(--accent);
-    animation: spin 1s linear infinite;
-  }
-
-  .loading-text {
-    color: var(--muted);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
+    padding: var(--sp-5);
   }
 
   .error-detail {
-    max-width: 32rem;
-    color: var(--muted);
     font-family: var(--font-mono);
-    font-size: var(--fs-sm);
-    text-align: center;
     overflow-wrap: anywhere;
-  }
-
-  .close-session {
-    padding: 0.35rem 0.9rem;
-    border: 1px solid var(--border2);
-    border-radius: 6px;
-    background: var(--surface2);
-    color: var(--text);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
-    cursor: pointer;
-  }
-
-  @keyframes spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
   }
 </style>
