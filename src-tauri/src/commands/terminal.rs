@@ -6,6 +6,46 @@ use super::panel::cleanup_session_analysis;
 use crate::error::AtlasError;
 use crate::pty::manager::PtyManager;
 
+/// Where the backend logs go (`~/.atlas/logs`), for "Copy path".
+#[tauri::command]
+pub fn logs_dir() -> Result<String, AtlasError> {
+    crate::logs_dir()
+        .map(|d| d.display().to_string())
+        .ok_or_else(|| AtlasError::internal("Could not resolve the home directory"))
+}
+
+/// Open the log directory in the OS file manager.
+#[tauri::command(async)]
+pub fn reveal_logs_dir() -> Result<(), AtlasError> {
+    let dir = crate::logs_dir()
+        .ok_or_else(|| AtlasError::internal("Could not resolve the home directory"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| AtlasError::io_at(&dir, &e))?;
+    #[cfg(target_os = "macos")]
+    let mut cmd = std::process::Command::new("open");
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut cmd = std::process::Command::new("rundll32");
+        cmd.arg("url.dll,FileProtocolHandler");
+        cmd
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let mut cmd = std::process::Command::new("xdg-open");
+    cmd.arg(&dir);
+    super::proc::no_window(&mut cmd);
+    let tool = cmd.get_program().to_string_lossy().into_owned();
+    let status = cmd
+        .status()
+        .map_err(|e| AtlasError::tool_failed(&tool, format!("Failed to open logs: {e}")))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(AtlasError::tool_failed(
+            &tool,
+            format!("exited with status {status}"),
+        ))
+    }
+}
+
 #[tauri::command(async)]
 pub fn pty_spawn(
     manager: State<'_, PtyManager>,

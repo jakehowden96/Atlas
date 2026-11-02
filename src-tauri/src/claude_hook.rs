@@ -4,6 +4,23 @@
 
 use crate::atomic_write;
 use crate::error::AtlasError;
+use serde::Serialize;
+use ts_rs::TS;
+
+/// Whether one of Atlas's hooks is in `~/.claude/settings.json`, and if so
+/// whether its command is the one this build would install.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum HookStatus {
+    Installed {
+        #[serde(rename = "upToDate")]
+        #[ts(rename = "upToDate")]
+        up_to_date: bool,
+    },
+    #[default]
+    NotInstalled,
+}
 
 /// Identifies Atlas's own entry in `hooks.Notification`. The command is
 /// `"<exe>" hook notification`, so the argv tail is the part that is stable
@@ -277,17 +294,40 @@ fn remove_atlas_hooks(settings: &mut serde_json::Value) -> bool {
     notification || session_start
 }
 
-/// True when `settings` has an Atlas-shaped command under `hooks[event]`.
-fn has_atlas_hook(settings: &serde_json::Value, event: &str, marker: &str) -> bool {
+/// True when some command under `hooks[event]` satisfies `pred`.
+fn any_hook_command(
+    settings: &serde_json::Value,
+    event: &str,
+    pred: impl Fn(&str) -> bool,
+) -> bool {
     settings["hooks"][event].as_array().is_some_and(|entries| {
         entries.iter().any(|entry| {
-            entry["hooks"].as_array().is_some_and(|inner| {
-                inner
-                    .iter()
-                    .any(|h| is_atlas_command(hook_command_str(h), marker))
-            })
+            entry["hooks"]
+                .as_array()
+                .is_some_and(|inner| inner.iter().any(|h| pred(hook_command_str(h))))
         })
     })
+}
+
+/// True when `settings` has an Atlas-shaped command under `hooks[event]`.
+fn has_atlas_hook(settings: &serde_json::Value, event: &str, marker: &str) -> bool {
+    any_hook_command(settings, event, |c| is_atlas_command(c, marker))
+}
+
+/// Installed-ness of Atlas's `event` hook, and whether `expected` (what this
+/// build would install) is among its commands.
+fn hook_status(
+    settings: &serde_json::Value,
+    event: &str,
+    marker: &str,
+    expected: &str,
+) -> HookStatus {
+    if !has_atlas_hook(settings, event, marker) {
+        return HookStatus::NotInstalled;
+    }
+    HookStatus::Installed {
+        up_to_date: any_hook_command(settings, event, |c| c == expected),
+    }
 }
 
 /// Whether `~/.claude/settings.json` carries Atlas's hook for `event`; what
@@ -306,6 +346,26 @@ pub(crate) fn notification_installed() -> bool {
 
 pub(crate) fn session_start_installed() -> bool {
     is_installed("SessionStart", SESSION_START_HOOK_MARKER)
+}
+
+fn status_of(event: &str, marker: &str, expected: Result<String, std::io::Error>) -> HookStatus {
+    let settings = claude_settings_path().and_then(|p| read_claude_settings(&p).ok());
+    match settings {
+        Some(settings) => hook_status(&settings, event, marker, &expected.unwrap_or_default()),
+        None => HookStatus::NotInstalled,
+    }
+}
+
+pub(crate) fn notification_status() -> HookStatus {
+    status_of("Notification", HOOK_MARKER, notification_hook_command())
+}
+
+pub(crate) fn session_start_status() -> HookStatus {
+    status_of(
+        "SessionStart",
+        SESSION_START_HOOK_MARKER,
+        session_start_hook_command(),
+    )
 }
 
 /// Install (`enabled`) or remove Atlas's hooks in the settings file at `path`.
@@ -835,5 +895,48 @@ mod tests {
 
         remove_atlas_hooks(&mut settings);
         assert!(!has_atlas_hook(&settings, "Notification", HOOK_MARKER));
+    }
+
+    #[test]
+    fn a_stale_atlas_command_is_installed_but_not_up_to_date() {
+        let mut settings = serde_json::json!({});
+        assert_eq!(
+            hook_status(&settings, "Notification", HOOK_MARKER, NEW),
+            HookStatus::NotInstalled
+        );
+        merge_notification_hook(&mut settings, "\"/old/atlas\" hook notification");
+        assert_eq!(
+            hook_status(&settings, "Notification", HOOK_MARKER, NEW),
+            HookStatus::Installed { up_to_date: false }
+        );
+        merge_notification_hook(&mut settings, NEW);
+        assert_eq!(
+            hook_status(&settings, "Notification", HOOK_MARKER, NEW),
+            HookStatus::Installed { up_to_date: true }
+        );
+    }
+
+    #[test]
+    fn a_stale_command_in_a_temp_settings_file_reports_out_of_date() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(
+            &path,
+            serde_json::json!({ "hooks": { "SessionStart": [{ "matcher": "", "hooks": [
+                { "type": "command", "command": "\"/old/atlas\" hook session-start" }
+            ] }] } })
+            .to_string(),
+        )
+        .unwrap();
+        let settings = read_claude_settings(&path).unwrap();
+        assert_eq!(
+            hook_status(
+                &settings,
+                "SessionStart",
+                SESSION_START_HOOK_MARKER,
+                NEW_SESSION_START
+            ),
+            HookStatus::Installed { up_to_date: false }
+        );
     }
 }
