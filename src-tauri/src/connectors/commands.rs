@@ -3,12 +3,14 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use serde_json::json;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::oneshot;
 
-use super::oauth::flow::run_browser_flow;
+use super::oauth::device::{self, DeviceOutcome};
+use super::oauth::flow::{run_browser_flow, Tokens};
 use super::provider::{
-    ConnectorProvider, ConnectorState, ConnectorStatus, PullRequest, RepoRef, Ticket,
+    AuthFlow, ConnectorProvider, ConnectorState, ConnectorStatus, PullRequest, RepoRef, Ticket,
 };
 use super::Connectors;
 use crate::error::AtlasError;
@@ -47,8 +49,8 @@ fn linked<'a>(c: &'a Connectors, id: &str) -> Result<&'a Arc<dyn ConnectorProvid
     }
 }
 
-fn not_ready() -> AtlasError {
-    AtlasError::internal("Connector requests arrive with the sign-in flows")
+fn unsupported(p: &Arc<dyn ConnectorProvider>) -> AtlasError {
+    AtlasError::not_found(format!("{} does not support this", p.info().name))
 }
 
 #[tauri::command(async)]
@@ -65,13 +67,49 @@ pub async fn connector_connect(
     app: AppHandle,
     c: State<'_, Connectors>,
 ) -> Result<(), AtlasError> {
-    let p = configured(&c, &id)?.clone();
+    let p = Arc::clone(configured(&c, &id)?);
+    let tokens = match p.info().flow {
+        AuthFlow::DeviceCode => {
+            let emit = |name: &str, payload: serde_json::Value| {
+                let _ = app.emit(name, payload);
+            };
+            let phase = match device::run(&id, &p.auth_config(), &emit).await? {
+                DeviceOutcome::Success(t) => t,
+                DeviceOutcome::Denied => return progress_end(&app, json!({ "phase": "denied" })),
+                DeviceOutcome::Expired => return progress_end(&app, json!({ "phase": "expired" })),
+                DeviceOutcome::Cancelled => {
+                    return progress_end(&app, json!({ "phase": "cancelled" }))
+                }
+                DeviceOutcome::Failed { message } => {
+                    return progress_end(&app, json!({ "phase": "failed", "message": message }))
+                }
+            };
+            phase
+        }
+        AuthFlow::Browser => browser_tokens(&p, &id, &app).await?,
+    };
+    // GitHub device tokens carry no refresh token: the access token is stored whole.
+    let secret = tokens.refresh.as_ref().unwrap_or(&tokens.access);
+    let account = p.viewer(&tokens.access).await?.login;
+    c.link(&id, &account, secret)
+}
+
+fn progress_end(app: &AppHandle, payload: serde_json::Value) -> Result<(), AtlasError> {
+    let _ = app.emit("connector://progress", payload);
+    Ok(())
+}
+
+async fn browser_tokens(
+    p: &Arc<dyn ConnectorProvider>,
+    id: &str,
+    app: &AppHandle,
+) -> Result<Tokens, AtlasError> {
     let (tx, rx) = oneshot::channel();
     // A second connect for the same id drops the older sender, cancelling it.
     PENDING
         .lock()?
         .get_or_insert_default()
-        .insert(id.clone(), tx);
+        .insert(id.to_string(), tx);
     let progress = |phase: &str| {
         let _ = app.emit(
             "connector://progress",
@@ -85,14 +123,15 @@ pub async fn connector_connect(
             .map_err(|e| AtlasError::tool_failed("browser", format!("Failed to open URL: {e}")))
     };
     let result = run_browser_flow(&p.auth_config(), rx, progress, open).await;
-    PENDING.lock()?.get_or_insert_default().remove(&id);
+    PENDING.lock()?.get_or_insert_default().remove(id);
     let tokens = result?;
-    let refresh = tokens.refresh.ok_or_else(|| AtlasError::ConnectorRemote {
-        message: "The service sent no refresh token".to_string(),
-        status: 200,
-    })?;
-    let account = p.viewer(&tokens.access).await?.login;
-    c.link(&id, &account, &refresh)
+    if tokens.refresh.is_none() {
+        return Err(AtlasError::ConnectorRemote {
+            message: "The service sent no refresh token".to_string(),
+            status: 200,
+        });
+    }
+    Ok(tokens)
 }
 
 #[tauri::command(async)]
@@ -101,6 +140,7 @@ pub fn connector_cancel(id: String, c: State<'_, Connectors>) -> Result<(), Atla
     if let Some(tx) = PENDING.lock()?.get_or_insert_default().remove(&id) {
         let _ = tx.send(());
     }
+    device::cancel(&id);
     Ok(())
 }
 
@@ -110,24 +150,26 @@ pub fn connector_disconnect(id: String, c: State<'_, Connectors>) -> Result<(), 
     c.disconnect(&id)
 }
 
-#[tauri::command(async)]
-pub fn connector_get_ticket(
+#[tauri::command]
+pub async fn connector_get_ticket(
     connector_id: String,
     ticket_id: String,
     c: State<'_, Connectors>,
 ) -> Result<Ticket, AtlasError> {
-    let _ = ticket_id;
-    linked(&c, &connector_id)?;
-    Err(not_ready())
+    let p = Arc::clone(linked(&c, &connector_id)?);
+    let tickets = p.tickets().ok_or_else(|| unsupported(&p))?;
+    let token = c.access_token(&connector_id).await?;
+    tickets.get_ticket(&token, &ticket_id).await
 }
 
-#[tauri::command(async)]
-pub fn connector_list_pull_requests(
+#[tauri::command]
+pub async fn connector_list_pull_requests(
     connector_id: String,
     repos: Vec<RepoRef>,
     c: State<'_, Connectors>,
 ) -> Result<Vec<PullRequest>, AtlasError> {
-    let _ = repos;
-    linked(&c, &connector_id)?;
-    Err(not_ready())
+    let p = Arc::clone(linked(&c, &connector_id)?);
+    let prs = p.pull_requests().ok_or_else(|| unsupported(&p))?;
+    let token = c.access_token(&connector_id).await?;
+    prs.list_pull_requests(&token, &repos).await
 }

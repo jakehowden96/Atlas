@@ -258,7 +258,7 @@ pub fn run() -> std::process::ExitCode {
         .manage(live_sessions.clone())
         .manage(commands::files::DocsWatchers::default())
         .manage(connectors::Connectors::new(
-            connectors::registry::Registry::default(),
+            connectors::registry::Registry::builtin(),
             Box::new(connectors::keychain::KeyringStore),
             connectors::config::ConfigStore::new(dirs::home_dir().map(|h| h.join(".atlas"))),
         ))
@@ -305,6 +305,11 @@ pub fn run() -> std::process::ExitCode {
             commands::files::stop_docs_watch,
         ])
         .setup(|app| {
+            let connector_handle = app.handle().clone();
+            app.state::<connectors::Connectors>()
+                .set_emitter(Box::new(move |e| {
+                    let _ = connector_handle.emit("connector://status", e);
+                }));
             let handle = app.handle().clone();
             match panel::watcher::start_watcher(handle) {
                 Ok(watcher) => {

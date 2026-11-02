@@ -8,12 +8,15 @@
 pub mod clients;
 pub mod commands;
 pub mod config;
+pub mod github;
+pub mod http;
 pub mod keychain;
 pub mod linear;
 pub mod oauth;
 pub mod provider;
 pub mod registry;
 pub mod ticket_hint;
+pub mod tokens;
 
 use crate::error::AtlasError;
 use config::ConfigStore;
@@ -26,6 +29,9 @@ pub struct Connectors {
     pub registry: Registry,
     tokens: Box<dyn TokenStore>,
     config: ConfigStore,
+    access: tokens::AccessCache,
+    http: reqwest::Client,
+    emitter: std::sync::OnceLock<tokens::Emitter>,
 }
 
 impl Connectors {
@@ -34,6 +40,9 @@ impl Connectors {
             registry,
             tokens,
             config,
+            access: Default::default(),
+            http: http::client(),
+            emitter: Default::default(),
         }
     }
 
@@ -43,6 +52,9 @@ impl Connectors {
         let Some(entry) = self.config.load()?.connectors.get(id).cloned() else {
             return Ok(ConnectorStatus::NotLinked);
         };
+        if let Some(reason) = self.access.reconnect_reason(id)? {
+            return Ok(ConnectorStatus::ReconnectNeeded { reason });
+        }
         Ok(match self.tokens.get(id)? {
             Some(_) => ConnectorStatus::Linked {
                 account: entry.account,
@@ -75,7 +87,10 @@ impl Connectors {
         )?;
         self.config.update(|c| {
             c.connectors.entry(id.to_string()).or_default().account = account.to_string();
-        })
+        })?;
+        self.access.clear(id)?;
+        self.emit_status(id);
+        Ok(())
     }
 
     /// Delete the keychain entry and the config for `id`.
@@ -83,7 +98,10 @@ impl Connectors {
         self.tokens.delete(id)?;
         self.config.update(|c| {
             c.connectors.remove(id);
-        })
+        })?;
+        self.access.clear(id)?;
+        self.emit_status(id);
+        Ok(())
     }
 }
 

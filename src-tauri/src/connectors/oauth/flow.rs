@@ -8,7 +8,7 @@ use super::pkce::Pkce;
 use crate::connectors::provider::AuthConfig;
 use crate::error::AtlasError;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Tokens {
     #[serde(rename = "access_token")]
     pub access: String,

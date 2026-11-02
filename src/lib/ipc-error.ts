@@ -35,6 +35,9 @@ const KINDS = {
   connectorRateLimited: true,
   connectorOffline: true,
   connectorRemote: true,
+  connectorPortBusy: true,
+  connectorDenied: true,
+  connectorCancelled: true,
 } satisfies Record<AtlasError["kind"], true>;
 
 const KIND_SET: ReadonlySet<string> = new Set(Object.keys(KINDS));
