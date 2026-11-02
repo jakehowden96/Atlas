@@ -25,7 +25,11 @@
     tabs,
   } from "../../stores/terminal";
   import { focusedSessionId, showView } from "../../stores/view";
+  import Button from "../ui/Button.svelte";
+  import IconButton from "../ui/IconButton.svelte";
+  import Kbd from "../ui/Kbd.svelte";
   import StatePill, { type PillState } from "../ui/StatePill.svelte";
+  import StatusMark from "../ui/StatusMark.svelte";
 
   interface Props {
     tile: SessionTile;
@@ -133,9 +137,16 @@
     showView("session");
   }
 
+  /* A click anywhere on the card opens it, except on its own controls (the
+     label opens it by itself). */
+  function onCardClick(e: MouseEvent) {
+    if ((e.target as Element).closest("button")) return;
+    open();
+  }
+
   /* Only the card's own keys — the pin, close, Deny and Allow buttons sit
-     inside it and answer Enter themselves, and the card must not open behind
-     them. Arrows are left to bubble; the grid does the moving. */
+     beside the label and answer Enter themselves, and the card must not open
+     behind them. Arrows are left to bubble; the grid does the moving. */
   function onKeydown(e: KeyboardEvent) {
     if (e.target !== e.currentTarget) return;
     if (e.key === "Enter" || e.key === " ") {
@@ -175,52 +186,44 @@
   }
 </script>
 
-<div
+<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+<article
   class="tile"
   class:focus-ring={focusVisible}
   class:needs={needsYou}
-  role="button"
+  aria-label={tile.label}
   tabindex={focused ? 0 : -1}
-  onclick={open}
+  onclick={onCardClick}
   onkeydown={onKeydown}
 >
   <!-- Same fields as the Session view's header, so the two screens read
        alike: which session, which project, which branch, how long. -->
   <div class="head">
     <div class="row1">
-      <span class="label">{tile.label}</span>
-      <button
-        type="button"
-        class="pin"
-        class:on={pinned}
-        title={pinned ? "Unpin from the top" : "Pin to the top"}
-        aria-label="{pinned ? 'Unpin' : 'Pin'} session {tile.label}"
+      <button type="button" class="label" tabindex="-1" onclick={open}>{tile.label}</button>
+      <IconButton
+        icon="keep"
+        size="sm"
+        label="{pinned ? 'Unpin' : 'Pin'} session {tile.label}"
         aria-pressed={pinned}
         onclick={togglePin}
-      >
-        <span class="material-symbols-outlined">keep</span>
-      </button>
-      <button
-        type="button"
-        class="close"
-        title="Close session"
-        aria-label="Close session {tile.label}"
-        onclick={close}
-      >
-        ✕
-      </button>
+      />
+      <IconButton icon="close" size="sm" label="Close session {tile.label}" onclick={close} />
     </div>
     <div class="row2">
       <StatePill state={PILL[tile.state]} />
-      <span class="ws-chip" style="--tc: {tile.workspaceColour}" title={tile.workspacePath}
-        >{tile.workspaceName}</span
-      >
+      <span class="ws" title={tile.workspacePath}>
+        <span class="swatch" style="background: {tile.workspaceColour}"></span>
+        <span class="ws-name">{tile.workspaceName}</span>
+      </span>
       {#if tile.branch}<span class="branch">{tile.branch}</span>{/if}
       <span class="elapsed">{elapsed}</span>
-      <span class="diff">
-        <span class="added">+{tile.diff?.linesAdded ?? 0}</span>
-        <span class="removed">−{tile.diff?.linesRemoved ?? 0}</span>
-      </span>
+      {#if tile.diff && (tile.diff.linesAdded > 0 || tile.diff.linesRemoved > 0)}
+        <span class="diff">
+          <span class="added">+{tile.diff.linesAdded}</span>
+          <span class="removed">−{tile.diff.linesRemoved}</span>
+        </span>
+      {/if}
     </div>
   </div>
 
@@ -287,24 +290,24 @@
 
   {#if permission && live.pendingTool}
     <div class="ask permission">
-      <i class="dot" aria-hidden="true"></i>
+      <StatusMark state="attention" />
       <span class="wants">
         Wants to run <span class="tool">{shortToolName(live.pendingTool.name)}</span
         >{#if live.pendingTool.inputSummary}
           · {live.pendingTool.inputSummary}{/if}
       </span>
-      <button type="button" class="deny" onclick={deny}>Deny <kbd>n</kbd></button>
-      <button type="button" class="allow" onclick={allow}>Allow <kbd>y</kbd></button>
+      <Button size="sm" variant="secondary" onclick={deny}>Deny <Kbd>n</Kbd></Button>
+      <Button size="sm" variant="primary" onclick={allow}>Allow <Kbd onInk>y</Kbd></Button>
     </div>
   {:else if question}
     <div class="ask">
-      <i class="dot" aria-hidden="true"></i><span class="wants">{plainText(question)}</span>
-      <span class="open-hint"><kbd>⏎</kbd> open</span>
+      <StatusMark state="attention" /><span class="wants">{plainText(question)}</span>
+      <span class="open-hint"><Kbd>⏎</Kbd> open</span>
     </div>
   {:else if needsYou}
     <div class="ask">
-      <i class="dot" aria-hidden="true"></i><span class="wants">Waiting for your input</span>
-      <span class="open-hint"><kbd>⏎</kbd> open</span>
+      <StatusMark state="attention" /><span class="wants">Waiting for your input</span>
+      <span class="open-hint"><Kbd>⏎</Kbd> open</span>
     </div>
   {/if}
 
@@ -324,7 +327,7 @@
       )}</span
     >
   </div>
-</div>
+</article>
 
 <style>
   /* Cards use a 1px inset ring instead of a drop shadow. */
@@ -336,31 +339,24 @@
     overflow: hidden;
     border-radius: var(--r-card-lg);
     background: var(--surface);
-    box-shadow:
-      0 0 0 1px var(--border),
-      0 1px 2px rgba(0, 0, 0, 0.04);
+    box-shadow: 0 0 0 1px var(--border);
     text-align: left;
     cursor: pointer;
   }
 
   .tile:hover {
-    box-shadow:
-      0 0 0 1px var(--border2),
-      0 8px 24px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 0 0 1px var(--border2);
   }
 
   /* Needs-you draws no ring: the amber action bar (`.ask`) carries it, so the
      ring is free to mean "focused" alone. */
 
-  /* Its own ring rather than the hover lift: with the arrow keys moving focus
-     around the grid, where focus is has to read differently from what the
-     pointer happens to be over. */
+  /* The global ring, also drawn by `focusVisible` (see the prop for why the
+     pseudo-class alone is not enough). Inset: the card clips its overflow. */
   .tile:focus-visible,
   .tile.focus-ring {
-    box-shadow:
-      0 0 0 2px var(--accent),
-      0 8px 24px rgba(0, 0, 0, 0.08);
-    outline: none;
+    outline: var(--focus-width) solid var(--focus);
+    outline-offset: -2px;
   }
 
   /* ── Header ──────────────────────────────────────────────────────────── */
@@ -385,10 +381,17 @@
     flex: 1;
     min-width: 0;
     overflow: hidden;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text);
+    font: inherit;
     font-size: var(--fs-md);
     font-weight: 600;
+    text-align: left;
     text-overflow: ellipsis;
     white-space: nowrap;
+    cursor: pointer;
   }
 
   .branch {
@@ -401,19 +404,27 @@
     font-size: var(--fs-xs);
   }
 
-  .ws-chip {
-    display: inline-block;
+  .ws {
+    display: inline-flex;
+    align-items: center;
     flex-shrink: 0;
+    gap: var(--sp-2);
     max-width: 40%;
-    font-weight: 700;
-    padding: 1px 8px;
-    border-radius: 20px;
-    background: color-mix(in srgb, var(--tc) 34%, transparent);
-    border: 1px solid color-mix(in srgb, var(--tc) 55%, transparent);
-    color: var(--tc);
-    white-space: nowrap;
+    color: var(--text);
+    font-size: var(--fs-xs);
+  }
+
+  .swatch {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: var(--r-xs);
+  }
+
+  .ws-name {
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .elapsed,
@@ -434,56 +445,9 @@
     color: var(--danger);
   }
 
-  /* Stays out of the way until the card is hovered, but remains reachable by
-     keyboard — focus-visible brings it back regardless of pointer. */
-  .pin,
-  .close {
-    display: grid;
-    place-items: center;
-    flex-shrink: 0;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    border: none;
-    border-radius: var(--r-sm);
-    background: transparent;
-    color: var(--muted);
-    font-size: var(--fs-xs);
-    line-height: 1;
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.12s ease;
-  }
-
-  .tile:hover .pin,
-  .pin:focus-visible,
-  .tile:hover .close,
-  .close:focus-visible {
-    opacity: 1;
-  }
-
   /* A pin is state, not just an action — it stays lit once set. */
-  .pin.on {
+  .row1 :global([aria-pressed="true"]) {
     color: var(--accent);
-    opacity: 1;
-  }
-
-  .pin :global(.material-symbols-outlined) {
-    font-size: var(--fs-md);
-  }
-
-  .pin.on :global(.material-symbols-outlined) {
-    font-variation-settings: "FILL" 1;
-  }
-
-  .pin:hover {
-    background: var(--surface3);
-    color: var(--text);
-  }
-
-  .close:hover {
-    background: var(--surface3);
-    color: var(--danger);
   }
 
   /* ── Card body ───────────────────────────────────────────────────────── */
@@ -676,26 +640,12 @@
     font-weight: 600;
   }
 
-  .dot {
-    flex-shrink: 0;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: currentColor;
-    animation: agentPulse 1.6s ease-in-out infinite;
-  }
-
   .open-hint {
+    display: inline-flex;
+    align-items: center;
     flex-shrink: 0;
+    gap: var(--sp-2);
     font-size: var(--fs-xs);
-  }
-
-  .open-hint kbd {
-    padding: 0 5px;
-    border: 1px solid currentColor;
-    border-radius: var(--r-xs);
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
   }
 
   .wants {
@@ -709,43 +659,6 @@
 
   .tool {
     font-family: var(--font-mono);
-  }
-
-  .deny,
-  .allow {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-    gap: 6px;
-    height: 24px;
-    padding: 0 10px;
-    border-radius: var(--r-md);
-    font-family: var(--font-ui);
-    font-size: var(--fs-xs);
-    cursor: pointer;
-  }
-
-  /* The keys answer the prompt on the focused tile, so the hint belongs on the
-     button rather than in a legend somewhere off the card. */
-  .deny kbd,
-  .allow kbd {
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    opacity: 0.65;
-  }
-
-  .deny {
-    border: 1px solid currentColor;
-    background: transparent;
-    color: inherit;
-    font-weight: 500;
-  }
-
-  .allow {
-    border: none;
-    background: var(--surface);
-    color: var(--text);
-    font-weight: 600;
   }
 
   /* ── Now line ────────────────────────────────────────────────────────── */
@@ -772,10 +685,6 @@
     font-family: var(--font-ui);
   }
 
-  /* Deliberately not gated on prefers-reduced-motion: this is an activity
-     indicator, not decorative motion, and macOS keeps its own spinners turning
-     under Reduce Motion. Gated, a running card shows a frozen ring that reads
-     as stalled. */
   .spin {
     flex-shrink: 0;
     width: 10px;
