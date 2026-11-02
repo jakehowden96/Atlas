@@ -31,6 +31,9 @@ export default defineConfig({
       ignored: ["**/src-tauri/**"],
     },
   },
+  /* Svelte 5 resolves its server build under node unless told otherwise;
+     component tests need the client runtime for `mount`. */
+  resolve: process.env.VITEST ? { conditions: ["browser"] } : undefined,
   test: {
     /* `app.css` is imported with `?raw` by `theme.test.ts`, which asserts the
        real token blocks rather than a copy of them. Vitest stubs CSS imports to
