@@ -1,6 +1,15 @@
 <script lang="ts">
   import "./shared.css";
-  import { harnesses, setHarnesses, type HarnessConfig } from "../../../stores/settings";
+  import {
+    harnesses,
+    removeHarnessWithUndo,
+    setHarnesses,
+    type HarnessConfig,
+  } from "../../../stores/settings";
+  import { errorMessage } from "../../../ipc-error";
+  import Button from "../../ui/Button.svelte";
+  import Field from "../../ui/Field.svelte";
+  import Input from "../../ui/Input.svelte";
   import SegmentedControl, { type Segment } from "../../ui/SegmentedControl.svelte";
   import Toggle from "../../ui/Toggle.svelte";
 
@@ -11,13 +20,26 @@
 
   /** Which harness's inline form is open. */
   let editingHarnessId = $state<string | null>(null);
+  /** The field that just saved (shows the tick for 2s) and per-field errors. */
+  let savedKey = $state<string | null>(null);
+  let errors = $state<Record<string, string>>({});
+  let savedTimer: ReturnType<typeof setTimeout> | undefined;
 
   function toggleHarnessEdit(id: string) {
     editingHarnessId = editingHarnessId === id ? null : id;
   }
 
-  function updateHarness(id: string, patch: Partial<HarnessConfig>) {
-    void setHarnesses($harnesses.map((h) => (h.id === id ? { ...h, ...patch } : h)));
+  async function updateHarness(id: string, field: string, patch: Partial<HarnessConfig>) {
+    const key = `${id}:${field}`;
+    try {
+      await setHarnesses($harnesses.map((h) => (h.id === id ? { ...h, ...patch } : h)));
+      errors[key] = "";
+      savedKey = key;
+      clearTimeout(savedTimer);
+      savedTimer = setTimeout(() => (savedKey = null), 2100);
+    } catch (e) {
+      errors[key] = `Could not save: ${errorMessage(e)}`;
+    }
   }
 
   /** The Settings UI's own limitation: an argument containing a literal space
@@ -40,15 +62,14 @@
   }
 
   function removeHarness(id: string) {
-    if ($harnesses.length <= 1) return;
-    void setHarnesses($harnesses.filter((h) => h.id !== id));
     if (editingHarnessId === id) editingHarnessId = null;
+    void removeHarnessWithUndo(id);
   }
 </script>
 
 <div class="stack sec">
   <p class="copy">
-    What New Session can launch. Claude Code is the only one Atlas can resume — anything else always
+    What New session can launch. Claude Code is the only one Atlas can resume. Anything else always
     starts fresh.
   </p>
   <div class="list">
@@ -65,60 +86,72 @@
             {h.command || "(nothing typed)"}{h.args.length ? ` ${h.args.join(" ")}` : ""}
           </span>
         </div>
-        <button type="button" class="key-btn" onclick={() => toggleHarnessEdit(h.id)}>
+        <Button size="sm" onclick={() => toggleHarnessEdit(h.id)}>
           {editingHarnessId === h.id ? "Done" : "Edit"}
-        </button>
-        <button
-          type="button"
-          class="remove"
+        </Button>
+        <Button
+          size="sm"
+          variant="danger"
           disabled={$harnesses.length <= 1}
+          title={$harnesses.length <= 1 ? "Keep at least one harness" : undefined}
           onclick={() => removeHarness(h.id)}
         >
           Remove
-        </button>
+        </Button>
       </div>
       {#if editingHarnessId === h.id}
         <div class="list-row harness-form">
-          <label class="field">
-            <span class="field-label">Label</span>
-            <input
-              class="field-input"
-              value={h.label}
-              onchange={(e) =>
-                updateHarness(h.id, {
-                  label: (e.currentTarget as HTMLInputElement).value,
-                })}
-            />
-          </label>
-          <label class="field">
-            <span class="field-label">Command</span>
-            <input
-              class="field-input mono"
-              value={h.command}
-              onchange={(e) =>
-                updateHarness(h.id, {
-                  command: (e.currentTarget as HTMLInputElement).value,
-                })}
-            />
-          </label>
-          <label class="field">
-            <span class="field-label">Args</span>
-            <input
-              class="field-input mono"
-              value={h.args.join(" ")}
-              onchange={(e) =>
-                updateHarness(h.id, {
-                  args: parseHarnessArgs((e.currentTarget as HTMLInputElement).value),
-                })}
-            />
-          </label>
+          <Field label="Label" error={errors[`${h.id}:label`]} saved={savedKey === `${h.id}:label`}>
+            {#snippet children(c)}
+              <Input
+                id={c.id}
+                aria-describedby={c["aria-describedby"]}
+                invalid={c.invalid}
+                value={h.label}
+                oncommit={(v) => v !== h.label && updateHarness(h.id, "label", { label: v })}
+              />
+            {/snippet}
+          </Field>
+          <Field
+            label="Command"
+            error={errors[`${h.id}:command`]}
+            saved={savedKey === `${h.id}:command`}
+          >
+            {#snippet children(c)}
+              <Input
+                id={c.id}
+                aria-describedby={c["aria-describedby"]}
+                invalid={c.invalid}
+                mono
+                value={h.command}
+                oncommit={(v) => v !== h.command && updateHarness(h.id, "command", { command: v })}
+              />
+            {/snippet}
+          </Field>
+          <Field label="Args" error={errors[`${h.id}:args`]} saved={savedKey === `${h.id}:args`}>
+            {#snippet children(c)}
+              <Input
+                id={c.id}
+                aria-describedby={c["aria-describedby"]}
+                invalid={c.invalid}
+                mono
+                value={h.args.join(" ")}
+                oncommit={(v) =>
+                  v.trim() !== h.args.join(" ") &&
+                  updateHarness(h.id, "args", { args: parseHarnessArgs(v) })}
+              />
+            {/snippet}
+          </Field>
           <div class="field">
             <span class="field-label">Resumable</span>
             <Toggle
               checked={h.resumable}
               label="{h.label} resumable"
-              onChange={(v) => updateHarness(h.id, { resumable: v })}
+              onChange={(v) => updateHarness(h.id, "resumable", { resumable: v })}
             />
+            {#if errors[`${h.id}:resumable`]}<span class="field-err"
+                >{errors[`${h.id}:resumable`]}</span
+              >{/if}
           </div>
           <div class="field">
             <span class="field-label">Ready</span>
@@ -126,8 +159,11 @@
               options={READY_MODE}
               value={h.readyMode}
               size="sm"
-              onChange={(id) => updateHarness(h.id, { readyMode: id })}
+              onChange={(id) => updateHarness(h.id, "readyMode", { readyMode: id })}
             />
+            {#if errors[`${h.id}:readyMode`]}<span class="field-err"
+                >{errors[`${h.id}:readyMode`]}</span
+              >{/if}
           </div>
         </div>
       {/if}
@@ -189,23 +225,8 @@
     text-transform: uppercase;
   }
 
-  .field-input {
-    height: 26px;
-    padding: 0 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    color: var(--text);
-    font-family: var(--font-ui);
-    font-size: var(--fs-xs);
-  }
-
-  .field-input.mono {
-    font-family: var(--font-mono);
-  }
-
-  .field-input:focus-visible {
-    border-color: var(--accent);
-    outline: none;
+  .field-err {
+    color: var(--danger);
+    font-size: var(--fs-2xs);
   }
 </style>

@@ -18,6 +18,7 @@ import { liveSessions } from "./liveSessions";
 import { workspaces } from "./workspace";
 import { railOpen, railWidth, type RailWidth } from "./view";
 import { errorMessage } from "../ipc-error";
+import { showToast } from "./toast";
 
 export type OverviewOrdering = "attention" | "workspace" | "manual" | "opened";
 export type PrRefreshMinutes = 1 | 3 | 10;
@@ -400,6 +401,29 @@ export async function togglePinnedSession(key: string) {
 export async function setHarnesses(list: HarnessConfig[]) {
   harnesses.set(list);
   await persistSettings();
+}
+
+/** Remove a harness with a 6s Undo that puts it back at its old position.
+ *  The last harness is never removed. */
+export async function removeHarnessWithUndo(id: string) {
+  const list = get(harnesses);
+  const index = list.findIndex((h) => h.id === id);
+  const removed = list[index];
+  if (!removed || list.length <= 1) return;
+  await setHarnesses(list.filter((h) => h.id !== id));
+  showToast(`${removed.label} removed`, {
+    type: "info",
+    action: {
+      label: "Undo",
+      run: () => {
+        const now = get(harnesses);
+        if (now.some((h) => h.id === id)) return;
+        const next = [...now];
+        next.splice(Math.min(index, next.length), 0, removed);
+        void setHarnesses(next);
+      },
+    },
+  });
 }
 
 export async function setLastHarnessId(id: string) {
