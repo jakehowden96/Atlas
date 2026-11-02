@@ -19,6 +19,10 @@ use tauri::{Emitter, Manager};
 
 const BACK_TO_SESSIONS_MENU_ID: &str = "back-to-sessions";
 
+pub(crate) fn logs_dir() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|h| h.join(".atlas").join("logs"))
+}
+
 /// Log to stderr and, when `~/.atlas/logs` is usable, to a dated file there.
 /// A missing home directory or an unwritable log directory degrades to
 /// stderr-only rather than aborting before the window opens.
@@ -36,7 +40,7 @@ fn setup_logging() {
         .level(log::LevelFilter::Info)
         .chain(std::io::stderr());
 
-    let log_dir = dirs::home_dir().map(|h| h.join(".atlas").join("logs"));
+    let log_dir = logs_dir();
     match &log_dir {
         Some(dir) => match std::fs::create_dir_all(dir) {
             Ok(()) => {
@@ -294,6 +298,9 @@ pub fn run() -> std::process::ExitCode {
             commands::session::start_session_tail,
             commands::session::stop_session_tail,
             commands::session::claude_info,
+            commands::session::claude_check,
+            commands::terminal::logs_dir,
+            commands::terminal::reveal_logs_dir,
             commands::files::list_workspace_docs,
             commands::files::list_claude_plans,
             commands::files::list_dir,

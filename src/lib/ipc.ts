@@ -177,6 +177,24 @@ export async function claudeInfo(): Promise<ClaudeInfo> {
 }
 
 /**
+ * Probe `<path> --version` without starting a session. Rejects with a typed
+ * error when the path is not a runnable `claude`.
+ */
+export async function claudeCheck(path: string | null): Promise<ClaudeInfo> {
+  return call("claude_check", { path });
+}
+
+/** The backend log directory, for "Copy path". */
+export async function logsDir(): Promise<string> {
+  return call("logs_dir");
+}
+
+/** Open the backend log directory in the OS file manager. */
+export async function revealLogsDir(): Promise<void> {
+  return call("reveal_logs_dir");
+}
+
+/**
  * Install (`true`) or remove (`false`) Atlas's two hooks in
  * `~/.claude/settings.json`. Only Atlas's own entries are added or removed;
  * rejects — leaving the file exactly as it was — when that file does not parse.
