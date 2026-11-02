@@ -304,6 +304,11 @@ pub fn run() -> std::process::ExitCode {
             commands::files::stop_docs_watch,
         ])
         .setup(|app| {
+            let connector_handle = app.handle().clone();
+            app.state::<connectors::Connectors>()
+                .set_emitter(Box::new(move |e| {
+                    let _ = connector_handle.emit("connector://status", e);
+                }));
             let handle = app.handle().clone();
             match panel::watcher::start_watcher(handle) {
                 Ok(watcher) => {
