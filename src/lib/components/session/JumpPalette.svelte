@@ -10,10 +10,16 @@
   import { openSession } from "../../session-actions";
   import { docEntries, fileWs, loadDocs, loadPlans, openFile, plans } from "../../stores/files";
   import { liveTiles } from "../../stores/liveTiles";
-  import { prRepos } from "../../stores/prs";
-  import { focusedSessionId, jumpOpen, showView } from "../../stores/view";
+  import { prRepos, prsLoading } from "../../stores/prs";
+  import { focusedSessionId, jumpOpen, openNewSession, showView } from "../../stores/view";
   import { activeWorkspacePath, visibleWorkspaces } from "../../stores/workspace";
+  import { modLabel, isMacPlatform } from "../../platform";
+  import Icon from "../ui/Icon.svelte";
+  import Kbd from "../ui/Kbd.svelte";
+  import ListRow from "../ui/ListRow.svelte";
   import Modal from "../ui/Modal.svelte";
+  import Skeleton from "../ui/Skeleton.svelte";
+  import StatusMark, { type MarkState } from "../ui/StatusMark.svelte";
 
   /** A `JumpRow` plus what ⏎ should do with it, so the ranking stays pure. */
   interface Row extends JumpRow {
@@ -29,13 +35,19 @@
     error: "error",
     idle: "idle",
   };
+  const MARK: Record<string, MarkState> = {
+    needsYou: "attention",
+    running: "running",
+    error: "failing",
+    idle: "idle",
+  };
+  const IS_MAC = isMacPlatform();
+  const optionId = (i: number) => `jump-opt-${i}`;
 
   let query = $state("");
   let index = $state(0);
   let inputEl = $state<HTMLInputElement | null>(null);
   let listEl = $state<HTMLDivElement | null>(null);
-  /** The rendered rows, indexed like `rows`, so the selection can be scrolled to. */
-  let rowEls: HTMLButtonElement[] = [];
 
   let tiles = $derived([...$liveTiles].sort(compareByAttention));
 
@@ -46,7 +58,7 @@
       label: tile.label,
       context: `${tile.workspaceName || "—"}${tile.branch ? ` · ${tile.branch}` : ""}`,
       haystack: `${tile.workspaceName} ${tile.branch}`,
-      state: STATE_LABEL[tile.state] ?? tile.state,
+      state: tile.state,
       needsYou: tile.state === "needsYou",
       open: () => openTile(tile),
     })),
@@ -91,6 +103,7 @@
 
   let all = $derived([...sessionRows, ...docRows, ...prRows]);
   let rows = $derived(rankJumpRows(all, query));
+  let loading = $derived($prsLoading && all.length === 0);
   let selected = $derived(Math.min(index, Math.max(0, rows.length - 1)));
 
   let wasOpen = false;
@@ -134,7 +147,7 @@
     // "nearest" only moves the list when the row is off screen, so stepping
     // through rows already visible does not jitter it, and wrapping round to
     // the last row pulls the bottom of the list into view.
-    rowEls[selected]?.scrollIntoView({ block: "nearest" });
+    document.getElementById(optionId(selected))?.scrollIntoView({ block: "nearest" });
   });
 
   function openTile(tile: SessionTile) {
@@ -173,54 +186,76 @@
     } else if (e.key === "Enter") {
       e.preventDefault();
       e.stopPropagation();
-      jump(selected);
+      if ((e.metaKey || e.ctrlKey) && total === 0) {
+        jumpOpen.set(false);
+        openNewSession();
+      } else jump(selected);
     }
   }
 </script>
 
-<Modal open={$jumpOpen} onClose={() => jumpOpen.set(false)} align="top" width="560px">
+<Modal
+  open={$jumpOpen}
+  onClose={() => jumpOpen.set(false)}
+  align="top"
+  width="560px"
+  ariaLabel="Jump to"
+>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="jump" onkeydown={onKeydown}>
     <div class="bar">
-      <span class="glyph">›_</span>
+      <Icon name="search" />
       <input
         bind:this={inputEl}
         bind:value={query}
         class="input"
         type="text"
+        role="combobox"
+        aria-label="Jump to"
+        aria-expanded={rows.length > 0}
+        aria-controls="jump-list"
+        aria-autocomplete="list"
+        aria-activedescendant={rows[selected] ? optionId(selected) : undefined}
         placeholder="Jump to…"
         autocomplete="off"
         spellcheck="false"
       />
-      <span class="kbd">esc</span>
+      <Kbd>esc</Kbd>
     </div>
 
-    <div class="list" bind:this={listEl}>
-      {#if rows.length === 0}
-        <p class="empty">
-          {all.length === 0 ? "Nothing to jump to yet." : `Nothing matches “${query}”.`}
+    <div class="list" id="jump-list" role="listbox" aria-label="Results" bind:this={listEl}>
+      {#if loading}
+        <Skeleton height="var(--h-lg)" radius="md" />
+        <Skeleton height="var(--h-lg)" radius="md" />
+        <Skeleton height="var(--h-lg)" radius="md" />
+      {:else if rows.length === 0}
+        <p class="empty" role="presentation">
+          {all.length === 0 ? "Nothing to jump to yet" : `Nothing matches “${query}”`}
         </p>
       {:else}
         {#each rows as row, i (row.id)}
-          <button
-            bind:this={rowEls[i]}
-            type="button"
-            class="row"
-            class:selected={i === selected}
-            onclick={() => jump(i)}
-          >
+          <ListRow option id={optionId(i)} selected={i === selected} onclick={() => jump(i)}>
             <span class="pill">{row.kind}</span>
             <span class="text">
               <span class="label">{row.label}</span>
               <span class="meta">{row.context}</span>
             </span>
             {#if row.state}
-              <span class="state" class:warn={row.needsYou}>{row.state}</span>
+              <span class="state" class:warn={row.needsYou}>
+                <StatusMark state={MARK[row.state] ?? "idle"} />{STATE_LABEL[row.state]}
+              </span>
             {/if}
-          </button>
+          </ListRow>
         {/each}
       {/if}
     </div>
+
+    {#if !loading && rows.length === 0 && query.trim()}
+      <div class="create">
+        <span>Start a new session instead</span>
+        <Kbd>{modLabel(IS_MAC)}↵</Kbd>
+      </div>
+    {/if}
   </div>
 </Modal>
 
@@ -238,13 +273,6 @@
     gap: 10px;
     padding: 12px 14px;
     border-bottom: 1px solid var(--border);
-  }
-
-  .glyph {
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-sm);
-    font-weight: 600;
   }
 
   .input {
@@ -268,15 +296,6 @@
     color: var(--muted);
   }
 
-  .kbd {
-    padding: 1px 5px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-xs);
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-  }
-
   .list {
     display: flex;
     flex-direction: column;
@@ -291,30 +310,6 @@
     font-size: var(--fs-xs);
   }
 
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
-    padding: 8px 10px;
-    border: none;
-    border-radius: var(--r-md);
-    background: transparent;
-    color: var(--text);
-    font-family: var(--font-ui);
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .row:hover {
-    background: var(--surface2);
-  }
-
-  .row.selected {
-    background: var(--surface2);
-    box-shadow: inset 0 0 0 1px var(--border2);
-  }
-
   .pill {
     flex-shrink: 0;
     width: 52px;
@@ -326,10 +321,6 @@
     font-size: var(--fs-xs);
     text-align: center;
     text-transform: uppercase;
-  }
-
-  .row.selected .pill {
-    background: var(--surface3);
   }
 
   .text {
@@ -356,7 +347,20 @@
     white-space: nowrap;
   }
 
+  .create {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: var(--fs-xs);
+  }
+
   .state {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     flex-shrink: 0;
     color: var(--muted);
     font-family: var(--font-mono);

@@ -6,6 +6,8 @@
     disabled?: boolean;
     /** Row is an option inside a listbox. Otherwise it is a button or link per `as`. */
     option?: boolean;
+    /** DOM id, for a combobox's aria-activedescendant. */
+    id?: string;
     as?: "button" | "a";
     href?: string;
     onclick?: (e: MouseEvent) => void;
@@ -18,6 +20,7 @@
     selected = false,
     disabled = false,
     option = false,
+    id,
     as = "button",
     href,
     onclick,
@@ -39,6 +42,7 @@
     class="row focus-inset"
     class:selected
     class:disabled
+    {id}
     role="option"
     aria-selected={selected}
     aria-disabled={disabled || undefined}
