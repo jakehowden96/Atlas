@@ -1,0 +1,5 @@
+{"data":{"r0":{"pullRequests":{"nodes":[]}},"r1":null,"r2":null,"r3":null},
+"errors":[
+{"type":"NOT_FOUND","path":["r1"],"message":"Could not resolve to a Repository with the name 'acme/gone'."},
+{"type":"FORBIDDEN","path":["r2"],"message":"Resource protected by organization SAML enforcement. You must grant your OAuth token access to this organization."}
+]}

@@ -8,6 +8,7 @@
 pub mod clients;
 pub mod commands;
 pub mod config;
+pub mod github;
 pub mod keychain;
 pub mod provider;
 pub mod registry;

@@ -257,7 +257,7 @@ pub fn run() -> std::process::ExitCode {
         .manage(live_sessions.clone())
         .manage(commands::files::DocsWatchers::default())
         .manage(connectors::Connectors::new(
-            connectors::registry::Registry::default(),
+            connectors::registry::Registry::builtin(),
             Box::new(connectors::keychain::KeyringStore),
             connectors::config::ConfigStore::new(dirs::home_dir().map(|h| h.join(".atlas"))),
         ))

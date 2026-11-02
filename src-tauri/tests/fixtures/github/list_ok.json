@@ -1,0 +1,29 @@
+{"data":{"r0":{"pullRequests":{"nodes":[
+{"number":42,"title":"Add retry to uploader","url":"https://github.com/acme/app/pull/42","state":"OPEN","isDraft":false,"updatedAt":"2026-10-30T12:00:00Z","author":{"login":"octo"},"headRefName":"feat/retry","isCrossRepository":false,"reviewDecision":"APPROVED",
+ "reviewThreads":{"nodes":[{"isResolved":true}]},
+ "commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"FAILURE","contexts":{"pageInfo":{"hasNextPage":false},"nodes":[
+  {"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://github.com/acme/app/actions/runs/1/job/1"},
+  {"__typename":"CheckRun","name":"lint","status":"COMPLETED","conclusion":"SKIPPED","detailsUrl":"https://github.com/acme/app/actions/runs/1/job/2"},
+  {"__typename":"CheckRun","name":"test","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://github.com/acme/app/actions/runs/1/job/3"},
+  {"__typename":"CheckRun","name":"deploy","status":"IN_PROGRESS","conclusion":null,"detailsUrl":null},
+  {"__typename":"StatusContext","context":"ci/legacy","state":"PENDING","targetUrl":"https://ci.example.test/legacy/9"}
+ ]}}}}]}},
+{"number":43,"title":"WIP: docs","url":"https://github.com/acme/app/pull/43","state":"OPEN","isDraft":true,"updatedAt":"2026-10-29T09:00:00Z","author":{"login":"fork-user"},"headRefName":"docs","isCrossRepository":true,"reviewDecision":null,
+ "reviewThreads":{"nodes":[{"isResolved":false},{"isResolved":false},{"isResolved":true}]},
+ "commits":{"nodes":[{"commit":{"statusCheckRollup":null}}]}},
+{"number":44,"title":"Rework cache","url":"https://github.com/acme/app/pull/44","state":"OPEN","isDraft":false,"updatedAt":"2026-10-28T09:00:00Z","author":null,"headRefName":"cache","isCrossRepository":false,"reviewDecision":"CHANGES_REQUESTED",
+ "reviewThreads":{"nodes":[{"isResolved":false}]},
+ "commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"PENDING","contexts":{"pageInfo":{"hasNextPage":true},"nodes":[
+  {"__typename":"CheckRun","name":"build","status":"QUEUED","conclusion":null,"detailsUrl":"https://github.com/acme/app/actions/runs/2/job/1"},
+  {"__typename":"CheckRun","name":"e2e","status":"COMPLETED","conclusion":"TIMED_OUT","detailsUrl":"https://github.com/acme/app/actions/runs/2/job/2"},
+  {"__typename":"CheckRun","name":"scan","status":"COMPLETED","conclusion":"CANCELLED","detailsUrl":null},
+  {"__typename":"CheckRun","name":"gate","status":"COMPLETED","conclusion":"ACTION_REQUIRED","detailsUrl":null},
+  {"__typename":"CheckRun","name":"odd","status":"COMPLETED","conclusion":"STALE","detailsUrl":null}
+ ]}}}}]}},
+{"number":45,"title":"Fix typo","url":"https://github.com/acme/app/pull/45","state":"OPEN","isDraft":false,"updatedAt":"2026-10-27T09:00:00Z","author":{"login":"octo"},"headRefName":"typo","isCrossRepository":false,"reviewDecision":"REVIEW_REQUIRED",
+ "reviewThreads":{"nodes":[]},
+ "commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"SUCCESS","contexts":{"pageInfo":{"hasNextPage":false},"nodes":[
+  {"__typename":"StatusContext","context":"ci/ok","state":"SUCCESS","targetUrl":"https://ci.example.test/ok/1"},
+  {"__typename":"StatusContext","context":"ci/err","state":"ERROR","targetUrl":null}
+ ]}}}}]}}
+]}}},"rateLimit":{"remaining":4990,"resetAt":"2026-11-02T13:00:00Z"}}
