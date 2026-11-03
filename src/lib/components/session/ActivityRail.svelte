@@ -12,9 +12,9 @@
   import { closeWith } from "../ui/Modal.svelte";
   import AgentsTile from "./rail/AgentsTile.svelte";
   import PlanTile from "./rail/PlanTile.svelte";
+  import PrTile from "./rail/PrTile.svelte";
   import RailHeader from "./rail/RailHeader.svelte";
   import ThinRail, { type ThinMark } from "./rail/ThinRail.svelte";
-  import Tile from "./rail/Tile.svelte";
 
   interface Props {
     /** Bound to `railOpen`. The rail unmounts itself once the exit run ends. */
@@ -102,12 +102,7 @@
         <div class="tiles">
           <PlanTile {plan} workspacePath={tile?.workspacePath} />
           <AgentsTile {agents} worktree={live?.worktree ?? null} {now} />
-          <Tile key="pr" label="PR" state="idle">
-            {#snippet headline()}
-              <span class="muted">No pull request for this branch</span>
-            {/snippet}
-            {#snippet children()}{/snippet}
-          </Tile>
+          <PrTile workspacePath={tile?.workspacePath} branch={tile?.branch ?? ""} {now} />
         </div>
       </div>
     {/if}
@@ -162,10 +157,6 @@
     padding: 8px;
     overflow-x: hidden;
     overflow-y: auto;
-  }
-
-  .muted {
-    color: var(--muted);
   }
 
   @keyframes railFade {

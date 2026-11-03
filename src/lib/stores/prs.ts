@@ -14,6 +14,7 @@ import { visibleWorkspaces } from "./workspace";
 import type { Check } from "../../types/generated/Check";
 import type { Pr as BasePr } from "../../types/generated/Pr";
 import type { PullRequest } from "../../types/generated/PullRequest";
+import type { PullRequestState } from "../../types/generated/PullRequestState";
 import type { ReviewState } from "../../types/generated/ReviewState";
 import type { WorkspaceRepo } from "../../types/generated/WorkspaceRepo";
 import { errorMessage, IpcError } from "../ipc-error";
@@ -22,6 +23,8 @@ import { errorMessage, IpcError } from "../ipc-error";
 export type Pr = BasePr & {
   checks: Check[];
   review: ReviewState;
+  /** Absent on PRs that came from the older `gh` path, which only listed open ones. */
+  state?: PullRequestState;
   /** What the connector needs to fetch this PR's code. */
   checkoutRef: { repo: string; number: number };
 };
@@ -226,6 +229,7 @@ function toPr(p: PullRequest, repo: string): Pr {
     commentsCount: p.commentsCount,
     checks: p.checks,
     review: p.review,
+    state: p.state,
     checkoutRef: { repo, number: p.number },
   };
 }

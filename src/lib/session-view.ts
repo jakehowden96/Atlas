@@ -4,11 +4,15 @@
  * Same reasoning as `overview.ts`: the joins and the formatting live here so
  * they can be unit-tested without a Svelte compiler (README → Conventions).
  */
+import type { Check } from "../types/generated/Check";
 import type { PanelData } from "../types/generated/PanelData";
 import type { PlanItem } from "../types/generated/PlanItem";
+import type { PullRequestState } from "../types/generated/PullRequestState";
+import type { ReviewState } from "../types/generated/ReviewState";
 import type { Subagent } from "../types/generated/Subagent";
 import { parseDiff } from "./diff-parser";
 import { toFlat } from "./diff-view";
+import { formatAgo } from "./format";
 import { formatElapsed, shortToolName } from "./overview";
 import type { Workspace } from "./stores/workspace";
 
@@ -174,6 +178,9 @@ export interface RailRowData {
   meta?: string;
   chip?: string;
   action?: string;
+  /** PR checks only: the check's details page, with the link's label. */
+  href?: string;
+  linkLabel?: string;
 }
 
 export interface PlanRows {
@@ -310,4 +317,122 @@ export function contextPercent(pct: number): number {
 /** `wants to run Bash` for the pending tool, or a generic line without one. */
 export function waitingSummary(pending: { name: string } | null): string {
   return pending ? `wants to run ${shortToolName(pending.name)}` : "needs your answer";
+}
+
+// ── Rail PR tile ─────────────────────────────────────────────────────────────
+
+/** The slice of a pull request the tile reads. */
+export interface RailPr {
+  number: number;
+  title: string;
+  state?: PullRequestState;
+  checks: Check[];
+  review: ReviewState;
+}
+
+export interface PrPhrase {
+  text: string;
+  tone: "text" | "accent" | "muted" | "danger" | "warn";
+  /** The `#n state` phrase is drawn at weight 500. */
+  strong?: boolean;
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+function checkCounts(pr: RailPr) {
+  const count = (s: Check["status"]) => pr.checks.filter((c) => c.status === s).length;
+  return { total: pr.checks.length, fail: count("fail"), pending: count("pending"), pass: count("pass") };
+}
+
+/** `#482 open`, `#482 draft` (muted) or `#482 merged`. */
+export function prOpenHeadline(pr: RailPr): PrPhrase {
+  return {
+    text: `#${pr.number} ${pr.state ?? "open"}`,
+    tone: pr.state === "draft" ? "muted" : "text",
+    strong: true,
+  };
+}
+
+/** `#482 open, 1 of 7 checks failing, 3 review comments`, as phrases to colour. */
+export function prHeadline(pr: RailPr): PrPhrase[] {
+  const out = [prOpenHeadline(pr)];
+  if (pr.state === "merged") return out;
+  const { total, fail, pending } = checkCounts(pr);
+  if (fail > 0) out.push({ text: `${fail} of ${plural(total, "check")} failing`, tone: "danger" });
+  else if (pending > 0) out.push({ text: `${pending} of ${plural(total, "check")} running`, tone: "accent" });
+  else if (total > 0) out.push({ text: `${plural(total, "check")} passed`, tone: "muted" });
+  const r = pr.review;
+  if (r.kind === "awaiting") out.push({ text: "awaiting review", tone: "muted" });
+  else if (r.kind === "comments") out.push({ text: plural(r.count, "review comment"), tone: "warn" });
+  else if (r.kind === "changes") out.push({ text: "changes requested", tone: "warn" });
+  else out.push({ text: "approved", tone: "accent" });
+  return out;
+}
+
+/** The whole headline as one sentence, for tooltips and the thin rail. */
+export function prHeadlineText(pr: RailPr): string {
+  return prHeadline(pr)
+    .map((p) => p.text)
+    .join(", ");
+}
+
+/** Failed, else attention, else running, else done once merged, else not yet. */
+export function prState(pr: RailPr | null, pollFailed: boolean): TileState {
+  if (!pr) return "idle";
+  const { fail, pending } = checkCounts(pr);
+  if (fail > 0) return "failing";
+  if (pr.review.kind === "comments" || pr.review.kind === "changes" || pollFailed) return "attention";
+  if (pending > 0) return "running";
+  return pr.state === "merged" ? "done" : "idle";
+}
+
+export interface PrRows {
+  running: RailRowData[];
+  attention: RailRowData[];
+  other: RailRowData[];
+  done: RailRowData[];
+}
+
+/** The expanded groups, in order: running, needs attention, other, done. */
+export function prRows(pr: RailPr, provider: string): PrRows {
+  const rows: PrRows = { running: [], attention: [], other: [], done: [] };
+  const { pass } = checkCounts(pr);
+  const failing = pr.checks.filter((c) => c.status === "fail");
+  for (const c of pr.checks) {
+    if (c.status === "pending") {
+      rows.running.push({ title: c.name, state: "running", word: "running", rest: "" });
+    } else if (c.status === "pass") {
+      rows.done.push({ title: c.name, state: "done", word: "passed", rest: "" });
+    }
+  }
+  failing.forEach((c, i) => {
+    const last = i === failing.length - 1 && pass > 0;
+    rows.attention.push({
+      title: c.name,
+      state: "failing",
+      word: "failing",
+      rest: last ? `, ${pass} other ${pass === 1 ? "check" : "checks"} passed` : "",
+      ...(c.detailsUrl ? { href: c.detailsUrl, linkLabel: `Open on ${provider}` } : {}),
+    });
+  });
+  const r = pr.review;
+  if (r.kind === "comments" || r.kind === "changes") {
+    const word = r.kind === "comments" ? plural(r.count, "review comment") : "changes requested";
+    rows.attention.push({ title: "Review", state: "attention", word, rest: "" });
+  } else if (pr.state !== "merged") {
+    const approved = r.kind === "approved";
+    rows.other.push({
+      title: "Review",
+      state: approved ? "done" : "idle",
+      word: approved ? "approved" : "awaiting review",
+      rest: "",
+    });
+  }
+  return rows;
+}
+
+/** `updated 12s ago`, or `last updated 3m ago, GitHub failed` once a refresh failed. */
+export function prPollLine(now: number, lastOk: number, failedProvider: string | null): string {
+  const ago = formatAgo(lastOk, now, "second");
+  return failedProvider ? `last updated ${ago}, ${failedProvider} failed` : `updated ${ago}`;
 }
