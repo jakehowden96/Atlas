@@ -40,7 +40,8 @@
     spawnHarnessSession,
     workOnPr,
   } from "../../session-actions";
-  import { prRepos, prSetupProblem, reposByWorkspace } from "../../stores/prs";
+  import { claudeMissing } from "../../stores/claude";
+  import { prRepos,prSetupProblem, reposByWorkspace } from "../../stores/prs";
   import {
     harnesses,
     lastHarnessId,
@@ -321,6 +322,12 @@
     const harness = selectedHarness;
     if (!ws || !harness || !canStart) return;
     const pr = pickedPr;
+    if (get(claudeMissing) && (pr || harness.id === "claude-code")) {
+      showToast("Claude Code not found", {
+        body: "Install it or choose its executable on the Sessions screen, then try again",
+      });
+      return;
+    }
     const resumeSessionId = pickedResume?.sessionId;
     close();
     if (pr) {

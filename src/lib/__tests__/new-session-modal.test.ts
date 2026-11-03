@@ -25,6 +25,7 @@ import { listResumableSessions } from "../ipc";
 import { spawnHarnessSession, workOnPr } from "../session-actions";
 import NewSessionModal from "../components/session/NewSessionModal.svelte";
 import { prRepos, reposByWorkspace } from "../stores/prs";
+import { claudeMissing } from "../stores/claude";
 import { newSessionOpen } from "../stores/view";
 import { workspaces } from "../stores/workspace";
 import type { Pr } from "../stores/prs";
@@ -71,6 +72,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   newSessionOpen.set(false);
+  claudeMissing.set(false);
   vi.clearAllMocks();
 });
 
@@ -121,6 +123,17 @@ describe("NewSessionModal", () => {
     await user.keyboard("{Enter}");
     await waitFor(() => expect(spawnHarnessSession).toHaveBeenCalled());
     expect(vi.mocked(spawnHarnessSession).mock.calls[0]![0]).toBe("/w/atlas");
+  });
+
+  it("does not start a Claude session while claude is missing", async () => {
+    claudeMissing.set(true);
+    const user = userEvent.setup();
+    render(NewSessionModal);
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("textbox", { name: "Workspace or path" }));
+    await user.keyboard("{Enter}");
+    expect(spawnHarnessSession).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
   it("From PR: empty state when the workspace has no open PRs", async () => {
