@@ -12,6 +12,9 @@
     <div class="status">
       <span class="word {row.state}">{row.word}</span>{row.rest}
     </div>
+    {#if row.href}
+      <a class="detail-link" href={row.href} target="_blank" rel="noreferrer">{row.linkLabel} →</a>
+    {/if}
     {#if row.meta}
       <div class="meta">
         {row.meta}{#if row.chip}<span class="chip">{row.chip}</span>{/if}
@@ -71,6 +74,15 @@
 
   .word.attention {
     color: var(--warn);
+  }
+
+  .detail-link {
+    color: var(--muted);
+    font-size: var(--fs-xs);
+  }
+
+  .detail-link:hover {
+    color: var(--text);
   }
 
   .meta,
