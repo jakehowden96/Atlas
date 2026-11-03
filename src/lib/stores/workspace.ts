@@ -19,6 +19,8 @@ export interface WorkspaceSession {
    *  existed — those predate the feature and were necessarily Claude Code, but
    *  that translation happens at the read site in `session-actions.ts`. */
   harnessId: string | null;
+  /** The ticket linked to this session; absent in rows written before linking existed. */
+  ticket?: { connectorId: string; id: string };
 }
 
 export interface Workspace {
@@ -107,6 +109,11 @@ function sanitizeSession(raw: unknown): WorkspaceSession | null {
   const s = raw as Record<string, unknown>;
   const status = SESSION_STATUSES.find((v) => v === s.status);
   if (typeof s.id !== "string" || typeof s.label !== "string" || !status) return null;
+  const t = s.ticket as Record<string, unknown> | undefined;
+  const ticket =
+    t && typeof t.connectorId === "string" && typeof t.id === "string"
+      ? { connectorId: t.connectorId, id: t.id }
+      : undefined;
   return {
     id: s.id,
     label: s.label,
@@ -120,6 +127,7 @@ function sanitizeSession(raw: unknown): WorkspaceSession | null {
       typeof s.claudeSessionId === "string" ? validSessionId(s.claudeSessionId) : null,
     // Written by a version of Atlas that predates harnesses.
     harnessId: typeof s.harnessId === "string" ? s.harnessId : null,
+    ...(ticket && { ticket }),
   };
 }
 
@@ -412,6 +420,16 @@ export async function rebindSessionClaudeId(
   );
   if (changed) await persist();
   return changed;
+}
+
+export async function setSessionTicket(sessionId: string, ticket: WorkspaceSession["ticket"]) {
+  workspaces.update((ws) =>
+    ws.map((w) => ({
+      ...w,
+      sessions: w.sessions.map((s) => (s.id === sessionId ? { ...s, ticket } : s)),
+    })),
+  );
+  await persist();
 }
 
 export async function updateSessionStatus(sessionId: string, status: WorkspaceSession["status"]) {
