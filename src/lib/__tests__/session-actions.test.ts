@@ -284,6 +284,35 @@ describe("ending a session's transcript tail", () => {
   });
 });
 
+describe("closing a session toasts a way back", () => {
+  beforeEach(() => {
+    tabs.set([]);
+    toasts.set([]);
+    vi.clearAllMocks();
+  });
+
+  it("offers Resume for a resumable session", async () => {
+    workspaces.set([{ path: "/w", name: "w", sessions: [row({ label: "Fix bug" })] }]);
+    await closeSession("row-1");
+    const t = get(toasts)[0]!;
+    expect(t.title).toBe("Ended Fix bug");
+    expect(t.type).toBe("info");
+    expect(t.action?.label).toBe("Resume");
+  });
+
+  it("offers no action when the session cannot be resumed", async () => {
+    workspaces.set([{ path: "/w", name: "w", sessions: [row({ claudeSessionId: null })] }]);
+    await closeSession("row-1");
+    expect(get(toasts)[0]!.action).toBeUndefined();
+  });
+
+  it("does not toast for an unknown session", async () => {
+    workspaces.set([]);
+    await closeSession("nope");
+    expect(get(toasts)).toEqual([]);
+  });
+});
+
 describe("closing a session's terminal tab", () => {
   beforeEach(() => {
     tabs.set([]);

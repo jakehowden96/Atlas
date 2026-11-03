@@ -365,6 +365,16 @@ export async function closeSession(sessionId: string) {
   // the store, and the gate then silently skips the return to Sessions.
   focusedSessionId.set("");
   showView("sessions");
+
+  // Every caller is a user action; only a conversation with a stored id can be resumed.
+  const resumable =
+    !!session.claudeSessionId && resolveHarness(session.harnessId ?? "claude-code").resumable;
+  showToast(`Ended ${session.label}`, {
+    type: "info",
+    action: resumable
+      ? { label: "Resume", run: () => openSession(ws!.path, sessionId) }
+      : undefined,
+  });
 }
 
 /** `closeSession` for a tab that only knows its own id — the error card a
