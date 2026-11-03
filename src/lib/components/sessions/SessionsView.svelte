@@ -3,6 +3,7 @@
   import { get } from "svelte/store";
   import { filterByWorkspace, handleGridKey, pinKey, tileComparator } from "../../overview";
   import { addWorkspaceFolder } from "../../session-actions";
+  import { claudeMissing, watchClaude } from "../../stores/claude";
   import { liveTiles } from "../../stores/liveTiles";
   import {
     chords,
@@ -16,6 +17,7 @@
   import { visibleWorkspaces } from "../../stores/workspace";
   import AtlasMark from "../ui/AtlasMark.svelte";
   import Button from "../ui/Button.svelte";
+  import ClaudeMissing from "../shell/ClaudeMissing.svelte";
   import Chip from "../ui/Chip.svelte";
   import Kbd from "../ui/Kbd.svelte";
   import SessionTile from "./SessionTile.svelte";
@@ -235,12 +237,18 @@
     opened: "In the order sessions were opened",
   };
 
+  $effect(() => watchClaude());
+
   async function addWorkspace() {
     await addWorkspaceFolder();
   }
 </script>
 
 <div class="sessions">
+  {#if $claudeMissing && allTiles.length === 0}
+    <ClaudeMissing />
+  {:else}
+  {#if $claudeMissing}<ClaudeMissing variant="banner" />{/if}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="chips" bind:this={chipsEl} onkeydown={onChipsKeydown}>
     <Chip
@@ -303,6 +311,7 @@
         </div>
       </div>
     </div>
+  {/if}
   {/if}
 </div>
 
