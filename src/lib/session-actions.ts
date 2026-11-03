@@ -387,6 +387,17 @@ export async function closeSessionForTab(tabId: string) {
   else await closeSessionTab(tabId);
 }
 
+/** Re-run the spawn for the session whose tab is on its error card. */
+export async function retrySessionForTab(tabId: string) {
+  const ws = get(workspaces).find((w) => w.sessions.some((s) => s.terminalTabId === tabId));
+  const session = ws?.sessions.find((s) => s.terminalTabId === tabId);
+  if (!ws || !session) return;
+  await spawnHarnessSession(ws.path, {
+    existingSessionId: session.id,
+    harnessId: session.harnessId ?? undefined,
+  });
+}
+
 /**
  * End whichever session the Session view is showing — the entry point for the
  * close chord.

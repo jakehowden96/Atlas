@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { closeSessionForTab, handleTerminalExit } from "../../session-actions";
+  import { closeSessionForTab, handleTerminalExit, retrySessionForTab } from "../../session-actions";
   import { TerminalSession } from "../../terminal-session";
   import { copyText } from "../../ui/copy";
   import Banner from "../ui/Banner.svelte";
@@ -70,6 +70,7 @@
       <span class="error-detail">{spawnError}</span>
       {#snippet actions()}
         <Button onclick={() => void copyText(spawnError)}>Copy details</Button>
+        <Button onclick={() => void retrySessionForTab(tabId)}>Retry</Button>
         <Button onclick={() => void closeSessionForTab(tabId)}>Close session</Button>
       {/snippet}
     </Banner>
