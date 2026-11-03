@@ -1,5 +1,5 @@
 import { get, writable } from "svelte/store";
-import { claudeCheck } from "../ipc";
+import { claudeCheck, claudeInfo } from "../ipc";
 import { claudeBinaryPath } from "./settings";
 
 /** True once a `claude_check` has failed; cleared by the next one that passes. */
@@ -28,4 +28,16 @@ export function watchClaude(): () => void {
     window.removeEventListener("focus", recheckClaude);
     unsub();
   };
+}
+
+/** True when a hook is installed but its command differs from this build's. */
+export const claudeHookStale = writable(false);
+
+export async function refreshHookStale(): Promise<void> {
+  try {
+    const i = await claudeInfo();
+    claudeHookStale.set([i.notificationHook, i.sessionStartHook].some((h) => h.kind === "installed" && !h.upToDate));
+  } catch {
+    claudeHookStale.set(false);
+  }
 }
