@@ -67,7 +67,8 @@ export interface PrStatus {
 export function prStatus(pr: Pr): PrStatus {
   if (pr.isDraft) return { state: "idle", word: "Draft" };
   if (pr.ciState === "failed") return { state: "failing", word: "Failing" };
-  if (pr.reviewState === "changes_requested") return { state: "attention", word: "Changes requested" };
+  if (pr.reviewState === "changes_requested")
+    return { state: "attention", word: "Changes requested" };
   if (pr.reviewState === "review_required") return { state: "attention", word: "Needs review" };
   if (pr.ciState === "pending") return { state: "running", word: "Running" };
   if (pr.reviewState === "approved") return { state: "done", word: "Ready" };

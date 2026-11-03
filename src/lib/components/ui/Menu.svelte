@@ -180,7 +180,11 @@
         class="row"
         class:danger={item.danger}
         class:disabled={item.disabled}
-        role={item.kind === "checkbox" ? "menuitemcheckbox" : item.kind === "radio" ? "menuitemradio" : "menuitem"}
+        role={item.kind === "checkbox"
+          ? "menuitemcheckbox"
+          : item.kind === "radio"
+            ? "menuitemradio"
+            : "menuitem"}
         tabindex="-1"
         data-id={item.id}
         aria-disabled={item.disabled ? "true" : undefined}
@@ -215,7 +219,15 @@
 {/snippet}
 
 <Popover bind:open {trigger} {side} {align} {label}>
-  <div class="menu" class:no-lead={!anyLead} role="menu" aria-label={label} bind:this={menuEl} use:keys tabindex="-1">
+  <div
+    class="menu"
+    class:no-lead={!anyLead}
+    role="menu"
+    aria-label={label}
+    bind:this={menuEl}
+    use:keys
+    tabindex="-1"
+  >
     {@render rows(items, false)}
   </div>
 </Popover>

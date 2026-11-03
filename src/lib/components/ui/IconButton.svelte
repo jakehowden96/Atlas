@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { HTMLButtonAttributes } from "svelte/elements";
   import { tooltip } from "../../ui/tooltip";
-  import Icon,{ type IconName } from "./Icon.svelte";
+  import Icon, { type IconName } from "./Icon.svelte";
 
   interface Props extends Omit<HTMLButtonAttributes, "children" | "aria-label"> {
     icon: IconName;
@@ -14,7 +14,13 @@
   let { icon, label, variant = "ghost", size = "md", type = "button", ...rest }: Props = $props();
 </script>
 
-<button {...rest} {type} class="ib {variant} {size}" aria-label={label} use:tooltip={{ text: label }}>
+<button
+  {...rest}
+  {type}
+  class="ib {variant} {size}"
+  aria-label={label}
+  use:tooltip={{ text: label }}
+>
   <Icon name={icon} size={size === "sm" ? 16 : 18} />
 </button>
 

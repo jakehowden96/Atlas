@@ -74,12 +74,7 @@
     {#each value as chip (chip)}
       <span class="chip">
         <span class="text">{chip}</span>
-        <IconButton
-          icon="close"
-          label="Remove {chip}"
-          size="sm"
-          onclick={() => remove(chip)}
-        />
+        <IconButton icon="close" label="Remove {chip}" size="sm" onclick={() => remove(chip)} />
       </span>
     {/each}
     <input

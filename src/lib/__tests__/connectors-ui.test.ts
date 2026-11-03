@@ -91,7 +91,9 @@ describe("sign-in dialogs", () => {
       verificationUri: "https://example.test/device",
       expiresAt: Date.now() + 30_000,
     });
-    await vi.waitFor(() => expect(screen.getByTestId("countdown").classList.contains("low")).toBe(true));
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("countdown").classList.contains("low")).toBe(true),
+    );
   });
 
   it.each([

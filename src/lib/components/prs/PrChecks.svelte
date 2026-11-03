@@ -65,7 +65,8 @@
         aria-expanded={showPassed}
         onclick={() => (showPassed = !showPassed)}
       >
-        {showPassed ? "Hide" : "Show"} {groups.passed.length} passed
+        {showPassed ? "Hide" : "Show"}
+        {groups.passed.length} passed
       </button>
       {#if showPassed}
         <ul>

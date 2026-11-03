@@ -4,7 +4,13 @@
   import type { PlanEntry } from "../../../../types/generated/PlanEntry";
   import type { PlanItem } from "../../../../types/generated/PlanItem";
   import { planWorkspace } from "../../../files";
-  import { planHeadline, planOpenHeadline, planProgress, planRows, planState } from "../../../session-view";
+  import {
+    planHeadline,
+    planOpenHeadline,
+    planProgress,
+    planRows,
+    planState,
+  } from "../../../session-view";
   import { fileWs, loadPlans, openFile, plans } from "../../../stores/files";
   import { showView } from "../../../stores/view";
   import { visibleWorkspaces } from "../../../stores/workspace";

@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { closeSessionForTab, handleTerminalExit, retrySessionForTab } from "../../session-actions";
+  import {
+    closeSessionForTab,
+    handleTerminalExit,
+    retrySessionForTab,
+  } from "../../session-actions";
   import { TerminalSession } from "../../terminal-session";
   import { copyText } from "../../ui/copy";
   import Banner from "../ui/Banner.svelte";

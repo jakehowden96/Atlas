@@ -4,11 +4,23 @@
   import { contextMenu } from "../../lib/ui/contextmenu";
   import type { MenuItem } from "../../lib/components/ui/Menu.svelte";
 
-  const plain: MenuItem[] = [{ id: "a", label: "Open" }, { id: "b", label: "Rename" }, { id: "c", label: "Duplicate" }];
+  const plain: MenuItem[] = [
+    { id: "a", label: "Open" },
+    { id: "b", label: "Rename" },
+    { id: "c", label: "Duplicate" },
+  ];
   const rich: MenuItem[] = [
     { id: "copy", label: "Copy path", icon: "content_copy", shortcut: "Ctrl C" },
     { id: "edit", label: "Rename", icon: "edit", shortcut: "F2" },
-    { id: "more", label: "More", icon: "more_horiz", children: [{ id: "x", label: "Reveal" }, { id: "y", label: "Pin" }] },
+    {
+      id: "more",
+      label: "More",
+      icon: "more_horiz",
+      children: [
+        { id: "x", label: "Reveal" },
+        { id: "y", label: "Pin" },
+      ],
+    },
     { id: "lock", label: "Move", icon: "folder", disabled: true },
     { id: "del", label: "Delete", icon: "delete", danger: true, separatorBefore: true },
   ];
@@ -16,7 +28,10 @@
   const onselect = (i: MenuItem) => (last = i.label);
 </script>
 
-<GallerySection title="Menu" states={["plain", "icons, shortcuts, separator, danger, disabled, submenu", "context menu"]}>
+<GallerySection
+  title="Menu"
+  states={["plain", "icons, shortcuts, separator, danger, disabled, submenu", "context menu"]}
+>
   <div class="row">
     <MenuButton label="Actions" items={plain} {onselect} />
     <MenuButton label="Row actions" icon="more_horiz" items={rich} {onselect} />

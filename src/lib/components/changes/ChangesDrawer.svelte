@@ -274,7 +274,9 @@
     });
   }
 
-  let installCommand = $derived(isMacPlatform() ? "xcode-select --install" : "winget install --id Git.Git");
+  let installCommand = $derived(
+    isMacPlatform() ? "xcode-select --install" : "winget install --id Git.Git",
+  );
   let gitMissing = $derived($panelData?.issue === "git_not_found");
 
   let submitting = $state(false);

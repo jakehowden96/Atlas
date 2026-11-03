@@ -58,7 +58,13 @@ function pr(number: number): Pr {
 }
 
 const resumeRows = [
-  { sessionId: "aaaa1111", title: "First", lastTimestamp: null, userMessages: 3, gitBranch: "main" },
+  {
+    sessionId: "aaaa1111",
+    title: "First",
+    lastTimestamp: null,
+    userMessages: 3,
+    gitBranch: "main",
+  },
   { sessionId: "bbbb2222", title: "Second", lastTimestamp: null, userMessages: 5, gitBranch: null },
 ];
 

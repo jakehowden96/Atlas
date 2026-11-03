@@ -41,8 +41,12 @@ function allowed(file: string, list: string[]): boolean {
 }
 
 function split(source: string): { markup: string; style: string } {
-  const style = [...source.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join("\n");
-  const markup = source.replace(/<style[^>]*>[\s\S]*?<\/style>/g, "").replace(/<!--[\s\S]*?-->/g, "");
+  const style = [...source.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)]
+    .map((m) => m[1])
+    .join("\n");
+  const markup = source
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/g, "")
+    .replace(/<!--[\s\S]*?-->/g, "");
   return { markup, style };
 }
 
@@ -62,7 +66,9 @@ function scan(
     const { markup, style } = split(source);
     const parts = pick === "markup" ? [markup] : pick === "style" ? [style] : [markup, style];
     for (const text of parts) {
-      for (const m of text.matchAll(new RegExp(pattern.source, `${pattern.flags}g`.replace("gg", "g")))) {
+      for (const m of text.matchAll(
+        new RegExp(pattern.source, `${pattern.flags}g`.replace("gg", "g")),
+      )) {
         if (test && !test(m as RegExpExecArray)) continue;
         out.push(`${file}:${lineOf(text, m.index ?? 0)} ${m[0].replace(/\s+/g, " ").slice(0, 60)}`);
       }
@@ -79,7 +85,12 @@ describe("design lint", () => {
   it("uses colour tokens, not hex or rgb literals", () => {
     const skip = [...ALLOW.color, ...ALLOW.gallery];
     expect([
-      ...scan("style", /#[0-9a-fA-F]{3,8}\b(?![\w-])/, skip, (m) => !/^#[0-9a-fA-F]*[g-zG-Z]/.test(m[0])),
+      ...scan(
+        "style",
+        /#[0-9a-fA-F]{3,8}\b(?![\w-])/,
+        skip,
+        (m) => !/^#[0-9a-fA-F]*[g-zG-Z]/.test(m[0]),
+      ),
       ...scan("both", /\brgba?\(/, skip),
     ]).toEqual([]);
   });
@@ -89,7 +100,9 @@ describe("design lint", () => {
   });
 
   it("uses --h-* tokens for control heights", () => {
-    expect(scan("style", /(?<![\w-])(?:min-)?height:\s*(?:2\d|3\d|4[0-4])px/, ALLOW.gallery)).toEqual([]);
+    expect(
+      scan("style", /(?<![\w-])(?:min-)?height:\s*(?:2\d|3\d|4[0-4])px/, ALLOW.gallery),
+    ).toEqual([]);
   });
 
   it("uses z-index tokens, not numbers", () => {
@@ -101,11 +114,19 @@ describe("design lint", () => {
   });
 
   it("uses Icon, not Unicode glyphs, for button content", () => {
-    expect(scan("markup", /<button\b[^>]*>\s*(?:[✕▥↑↗←▸›−+]|›_)\s*<\/button>/, ALLOW.gallery)).toEqual([]);
+    expect(
+      scan("markup", /<button\b[^>]*>\s*(?:[✕▥↑↗←▸›−+]|›_)\s*<\/button>/, ALLOW.gallery),
+    ).toEqual([]);
   });
 
   it("keeps the icon font class inside Icon", () => {
-    expect(scan("both", /material-symbols-outlined/, [...ALLOW.icon, ...ALLOW.gallery, "components/ui/Checkbox.svelte" /* styles the glyph of the Icon it renders */])).toEqual([]);
+    expect(
+      scan("both", /material-symbols-outlined/, [
+        ...ALLOW.icon,
+        ...ALLOW.gallery,
+        "components/ui/Checkbox.svelte" /* styles the glyph of the Icon it renders */,
+      ]),
+    ).toEqual([]);
   });
 
   it("does not nest buttons or inputs in role=button", () => {
@@ -114,8 +135,11 @@ describe("design lint", () => {
         const source = m.input.slice((m.index ?? 0) + m[0].length);
         const tag = m[1];
         let depth = 1;
-        for (const t of source.matchAll(new RegExp(`<(/?)${tag}\\b[^>]*>|<(?:button|input|select)\\b`, "g"))) {
-          if (t[0].startsWith("<button") || t[0].startsWith("<input") || t[0].startsWith("<select")) return true;
+        for (const t of source.matchAll(
+          new RegExp(`<(/?)${tag}\\b[^>]*>|<(?:button|input|select)\\b`, "g"),
+        )) {
+          if (t[0].startsWith("<button") || t[0].startsWith("<input") || t[0].startsWith("<select"))
+            return true;
           depth += t[1] ? -1 : 1;
           if (depth === 0) return false;
         }
@@ -126,16 +150,26 @@ describe("design lint", () => {
 
   it("gives clickable non-interactive elements a role and key handler", () => {
     expect(
-      scan("markup", /<(?:div|span|li|section|article|p|td|tr)\b(?:[^>]|(?<==)>)*?\sonclick=(?:[^>]|(?<==)>)*>/, [...ALLOW.gallery, ...ALLOW.click], (m) => {
-        const tag = m[0];
-        /* Backdrops that only close on a direct click are marked presentation. */
-        return !(/\srole=/.test(tag) && /\sonkeydown=|\sonkeyup=|\sonkeypress=|role="presentation"|role="none"/.test(tag));
-      }),
+      scan(
+        "markup",
+        /<(?:div|span|li|section|article|p|td|tr)\b(?:[^>]|(?<==)>)*?\sonclick=(?:[^>]|(?<==)>)*>/,
+        [...ALLOW.gallery, ...ALLOW.click],
+        (m) => {
+          const tag = m[0];
+          /* Backdrops that only close on a direct click are marked presentation. */
+          return !(
+            /\srole=/.test(tag) &&
+            /\sonkeydown=|\sonkeyup=|\sonkeypress=|role="presentation"|role="none"/.test(tag)
+          );
+        },
+      ),
     ).toEqual([]);
   });
 
   it("uses Select, not native <select>", () => {
-    expect(scan("markup", /<select\b/, [...ALLOW.gallery, "components/ui/Select.svelte"])).toEqual([]);
+    expect(scan("markup", /<select\b/, [...ALLOW.gallery, "components/ui/Select.svelte"])).toEqual(
+      [],
+    );
   });
 
   it("uses Atlas dialogs, not window.alert or confirm", () => {

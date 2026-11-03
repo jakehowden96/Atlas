@@ -3,7 +3,7 @@
   import { onDestroy } from "svelte";
   import { get } from "svelte/store";
   import type { SessionState } from "../../../types/generated/SessionState";
-    import { compareByAttention, formatElapsed, type SessionTile } from "../../overview";
+  import { compareByAttention, formatElapsed, type SessionTile } from "../../overview";
   import { closeSession } from "../../session-actions";
   import { refreshPanel } from "../../ipc";
   import type { MenuItem } from "../ui/Menu.svelte";
@@ -128,7 +128,11 @@
   <div class="main">
     <header class="head">
       <Tooltip text="Back to Sessions" shortcut={$chords.backToSessions}>
-        <IconButton icon="arrow_back" label="Back to Sessions" onclick={() => showView("sessions")} />
+        <IconButton
+          icon="arrow_back"
+          label="Back to Sessions"
+          onclick={() => showView("sessions")}
+        />
       </Tooltip>
 
       {#if tile}

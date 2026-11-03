@@ -40,7 +40,11 @@ describe("RadioGroup", () => {
     render(RadioGroup, { options, value: "b", label: "Pick" });
     expect(screen.getByRole("radiogroup", { name: "Pick" })).toBeTruthy();
     const radios = screen.getAllByRole("radio");
-    expect(radios.map((r: HTMLElement) => r.getAttribute("aria-checked"))).toEqual(["false", "true", "false"]);
+    expect(radios.map((r: HTMLElement) => r.getAttribute("aria-checked"))).toEqual([
+      "false",
+      "true",
+      "false",
+    ]);
   });
 
   it("is a single tab stop and moves with arrow keys", async () => {

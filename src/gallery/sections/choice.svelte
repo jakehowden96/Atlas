@@ -14,7 +14,10 @@
   ];
 </script>
 
-<GallerySection title="Choice controls" states={["on", "off", "indeterminate", "disabled", "focus"]}>
+<GallerySection
+  title="Choice controls"
+  states={["on", "off", "indeterminate", "disabled", "focus"]}
+>
   <div class="row">
     <Checkbox checked>On</Checkbox>
     <Checkbox>Off</Checkbox>

@@ -110,9 +110,15 @@
   {#if !$tabs.some((t) => t.id === visibleTabId)}
     <div class="empty-state">
       {#if ended}
-        <EmptyState icon="terminal" title="Session ended" description="Resume to pick the conversation back up">
+        <EmptyState
+          icon="terminal"
+          title="Session ended"
+          description="Resume to pick the conversation back up"
+        >
           {#snippet action()}
-            <Button variant="primary" onclick={() => openSession(ended.path, ended.id)}>Resume</Button>
+            <Button variant="primary" onclick={() => openSession(ended.path, ended.id)}
+              >Resume</Button
+            >
           {/snippet}
         </EmptyState>
       {:else}

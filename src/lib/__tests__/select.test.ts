@@ -57,10 +57,14 @@ describe("Select", () => {
     expect(trigger.getAttribute("aria-activedescendant")).toBe(first.id);
     await user.keyboard("{ArrowDown}");
     await tick();
-    expect(trigger.getAttribute("aria-activedescendant")).toBe(screen.getByRole("option", { name: "Cherry" }).id);
+    expect(trigger.getAttribute("aria-activedescendant")).toBe(
+      screen.getByRole("option", { name: "Cherry" }).id,
+    );
     await user.keyboard("{End}");
     await tick();
-    expect(trigger.getAttribute("aria-activedescendant")).toBe(screen.getByRole("option", { name: "Cranberry" }).id);
+    expect(trigger.getAttribute("aria-activedescendant")).toBe(
+      screen.getByRole("option", { name: "Cranberry" }).id,
+    );
     await user.keyboard("{Home}");
     await tick();
     expect(trigger.getAttribute("aria-activedescendant")).toBe(first.id);
@@ -78,7 +82,9 @@ describe("Select", () => {
     await tick();
     await user.keyboard("cra");
     await tick();
-    expect(trigger.getAttribute("aria-activedescendant")).toBe(screen.getByRole("option", { name: "Cranberry" }).id);
+    expect(trigger.getAttribute("aria-activedescendant")).toBe(
+      screen.getByRole("option", { name: "Cranberry" }).id,
+    );
   });
 
   it("Esc closes and restores focus; Tab closes", async () => {

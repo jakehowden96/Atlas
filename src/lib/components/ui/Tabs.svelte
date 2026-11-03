@@ -184,7 +184,12 @@
     {/if}
   </div>
   {#if selected && panel}
-    <div role="tabpanel" id="{uid}-panel-{selected.id}" aria-labelledby="{uid}-tab-{selected.id}" tabindex="0">
+    <div
+      role="tabpanel"
+      id="{uid}-panel-{selected.id}"
+      aria-labelledby="{uid}-tab-{selected.id}"
+      tabindex="0"
+    >
       {@render panel(selected)}
     </div>
   {/if}

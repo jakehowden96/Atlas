@@ -16,7 +16,9 @@
 
   let { label, value, delta, versus = "last week", threshold = 25, spark }: Props = $props();
 
-  const tone = $derived(delta === undefined || Math.abs(delta) < threshold ? "" : delta > 0 ? "up" : "down");
+  const tone = $derived(
+    delta === undefined || Math.abs(delta) < threshold ? "" : delta > 0 ? "up" : "down",
+  );
 </script>
 
 <div class="kpi">

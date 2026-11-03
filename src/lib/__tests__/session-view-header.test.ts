@@ -46,7 +46,13 @@ function tile(n: number, state: SessionTile["state"]): SessionTile {
     label: `Session ${n}`,
     branch: "main",
     state,
-    live: { lastTool: "Edit", toolCalls: 9, contextTokens: 5000, costEstimate: 1.5, startedAt: null },
+    live: {
+      lastTool: "Edit",
+      toolCalls: 9,
+      contextTokens: 5000,
+      costEstimate: 1.5,
+      startedAt: null,
+    },
     diff: null,
     createdAt: "",
   } as unknown as SessionTile;
@@ -56,7 +62,11 @@ afterEach(cleanup);
 
 describe("session view header", () => {
   it("lists other sessions in a menu and focuses the picked one", async () => {
-    (liveTiles as unknown as Writable<unknown>).set([tile(1, "running"), tile(2, "needsYou"), tile(3, "idle")] );
+    (liveTiles as unknown as Writable<unknown>).set([
+      tile(1, "running"),
+      tile(2, "needsYou"),
+      tile(3, "idle"),
+    ]);
     activeTabId.set("t1");
     focusedSessionId.set("s1");
     const user = userEvent.setup();
@@ -73,7 +83,7 @@ describe("session view header", () => {
   });
 
   it("footer has no totals", () => {
-    (liveTiles as unknown as Writable<unknown>).set([tile(1, "running")] );
+    (liveTiles as unknown as Writable<unknown>).set([tile(1, "running")]);
     activeTabId.set("t1");
     const { container } = render(SessionView);
     const foot = container.querySelector("footer")!;

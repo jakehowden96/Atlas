@@ -52,7 +52,8 @@
 
   function onwindowkeydown(e: KeyboardEvent) {
     if (editing || e.metaKey || e.ctrlKey || e.altKey || !root) return;
-    if ((e.target as HTMLElement | null)?.closest("input, textarea, select, [contenteditable]")) return;
+    if ((e.target as HTMLElement | null)?.closest("input, textarea, select, [contenteditable]"))
+      return;
     if (!root.closest(".rail")?.contains(document.activeElement)) return;
     const k = e.key.toLowerCase();
     if ((k === "e" && shown) || (k === "l" && !shown && !unlinked)) {
@@ -66,7 +67,12 @@
 
 <div class="ticket" class:stale bind:this={root}>
   {#if editing}
-    <TicketEditor {sessionId} {branch} initial={entry?.link?.id ?? ""} onclose={() => void close()} />
+    <TicketEditor
+      {sessionId}
+      {branch}
+      initial={entry?.link?.id ?? ""}
+      onclose={() => void close()}
+    />
   {:else if shown}
     <div class="head">
       <ConnectorLogo connector={connector?.info.id ?? ""} size={16} />
@@ -79,7 +85,9 @@
     <div class="title" class:dim={stale}>{shown.title}</div>
     {#if stale}
       <div class="note">
-        couldn't refresh · <Button variant="link" onclick={() => void retry(sessionId)}>Retry</Button>
+        couldn't refresh · <Button variant="link" onclick={() => void retry(sessionId)}
+          >Retry</Button
+        >
       </div>
     {/if}
   {:else if st.kind === "loading"}

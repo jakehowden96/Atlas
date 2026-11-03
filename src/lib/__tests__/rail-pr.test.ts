@@ -34,7 +34,11 @@ import { connectors } from "../stores/connectors";
 import { prRepos, reposByWorkspace, type Pr } from "../stores/prs";
 import { railTiles } from "../stores/settings";
 
-const chk = (name: string, status: Check["status"]): Check => ({ name, status, detailsUrl: `https://ci/${name}` });
+const chk = (name: string, status: Check["status"]): Check => ({
+  name,
+  status,
+  detailsUrl: `https://ci/${name}`,
+});
 const pr = (over: Partial<RailPr> = {}): RailPr => ({
   number: 482,
   title: "Retry-After",
@@ -61,9 +65,17 @@ describe("prHeadline", () => {
   });
 
   it("covers review phrases and draft or merged", () => {
-    expect(prHeadline(pr({ review: { kind: "changes" } }))[1]).toEqual({ text: "changes requested", tone: "warn" });
-    expect(prHeadline(pr({ review: { kind: "approved" } }))[1]).toEqual({ text: "approved", tone: "accent" });
-    expect(prHeadline(pr({ review: { kind: "comments", count: 1 } }))[1]?.text).toBe("1 review comment");
+    expect(prHeadline(pr({ review: { kind: "changes" } }))[1]).toEqual({
+      text: "changes requested",
+      tone: "warn",
+    });
+    expect(prHeadline(pr({ review: { kind: "approved" } }))[1]).toEqual({
+      text: "approved",
+      tone: "accent",
+    });
+    expect(prHeadline(pr({ review: { kind: "comments", count: 1 } }))[1]?.text).toBe(
+      "1 review comment",
+    );
     expect(prHeadline(pr({ state: "draft" }))[0]?.tone).toBe("muted");
     expect(prHeadline(pr({ state: "merged" }))).toHaveLength(1);
   });
@@ -73,7 +85,9 @@ describe("prState priority", () => {
   it("orders failing, attention, running, done, idle", () => {
     expect(prState(null, false)).toBe("idle");
     expect(prState(pr({ checks: seven, review: { kind: "changes" } }), true)).toBe("failing");
-    expect(prState(pr({ review: { kind: "comments", count: 2 }, checks: [chk("a", "pending")] }), false)).toBe("attention");
+    expect(
+      prState(pr({ review: { kind: "comments", count: 2 }, checks: [chk("a", "pending")] }), false),
+    ).toBe("attention");
     expect(prState(pr({ checks: [chk("a", "pending")] }), true)).toBe("attention");
     expect(prState(pr({ checks: [chk("a", "pending")] }), false)).toBe("running");
     expect(prState(pr({ state: "merged" }), false)).toBe("done");
@@ -99,7 +113,10 @@ describe("prRows", () => {
 
   it("puts a quiet review in other", () => {
     expect(prRows(pr(), "G").other[0]).toMatchObject({ state: "idle", word: "awaiting review" });
-    expect(prRows(pr({ review: { kind: "approved" } }), "G").other[0]).toMatchObject({ state: "done", word: "approved" });
+    expect(prRows(pr({ review: { kind: "approved" } }), "G").other[0]).toMatchObject({
+      state: "done",
+      word: "approved",
+    });
   });
 });
 
@@ -190,7 +207,9 @@ describe("PrTile polling", () => {
     render(PrTile, { workspacePath: "/w", branch: "feat", now: 0 });
     flushSync();
     expect(screen.getByText("No PR for this branch yet")).toBeTruthy();
-    prRepos.set([{ repo: "o/r", prs: [], error: { kind: "connectorRateLimited", message: "x", retryAt: 1 } }]);
+    prRepos.set([
+      { repo: "o/r", prs: [], error: { kind: "connectorRateLimited", message: "x", retryAt: 1 } },
+    ]);
     flushSync();
     expect(screen.getByText(/Rate limited, retrying at/)).toBeTruthy();
   });

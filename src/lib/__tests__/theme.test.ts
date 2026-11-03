@@ -326,9 +326,22 @@ describe("app.css token blocks", () => {
 
   it("declare the polish-pass tokens (theme-independent ones inherit into dark)", () => {
     for (const t of [
-      "--sp-1", "--h-md", "--h-bar", "--r-pill", "--ring", "--elev-2", "--focus",
-      "--focus-width", "--focus-offset", "--z-popover", "--dur-base", "--ease-out",
-      "--pulse", "--hover-bg", "--active-bg", "--disabled-ink",
+      "--sp-1",
+      "--h-md",
+      "--h-bar",
+      "--r-pill",
+      "--ring",
+      "--elev-2",
+      "--focus",
+      "--focus-width",
+      "--focus-offset",
+      "--z-popover",
+      "--dur-base",
+      "--ease-out",
+      "--pulse",
+      "--hover-bg",
+      "--active-bg",
+      "--disabled-ink",
     ]) {
       expect(LIGHT[t], t).toBeTruthy();
     }

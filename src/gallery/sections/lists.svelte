@@ -7,7 +7,14 @@
   const tree: Src[] = [
     { id: "src", parentId: null, expandable: true, label: "src", kind: "folder" },
     { id: "lib", parentId: "src", expandable: true, label: "lib", kind: "folder" },
-    { id: "app", parentId: "lib", expandable: false, label: "app.ts", kind: "source", unsaved: true },
+    {
+      id: "app",
+      parentId: "lib",
+      expandable: false,
+      label: "app.ts",
+      kind: "source",
+      unsaved: true,
+    },
     { id: "cfg", parentId: "lib", expandable: false, label: "config.toml", kind: "data" },
     { id: "docs", parentId: "src", expandable: true, label: "docs", kind: "folder" },
     { id: "readme", parentId: null, expandable: false, label: "README.md", kind: "md" },

@@ -36,7 +36,11 @@ export function computePosition(input: PositionInput): { x: number; y: number; s
   if (space(side) < need(side) && space(OPPOSITE[side]) > space(side)) placed = OPPOSITE[side];
 
   const cross = (start: number, len: number, floatLen: number) =>
-    align === "start" ? start : align === "end" ? start + len - floatLen : start + (len - floatLen) / 2;
+    align === "start"
+      ? start
+      : align === "end"
+        ? start + len - floatLen
+        : start + (len - floatLen) / 2;
   let x: number;
   let y: number;
   if (vertical(placed)) {
@@ -58,7 +62,11 @@ export interface PlaceOptions {
 }
 
 /** Position a fixed element against an anchor now and on scroll/resize. Returns a cleanup. */
-export function placeFloating(anchor: Element, floating: HTMLElement, opts: PlaceOptions = {}): () => void {
+export function placeFloating(
+  anchor: Element,
+  floating: HTMLElement,
+  opts: PlaceOptions = {},
+): () => void {
   const update = () => {
     const r = anchor.getBoundingClientRect();
     const { x, y, side } = computePosition({

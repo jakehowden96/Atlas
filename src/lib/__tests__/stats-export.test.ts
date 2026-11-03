@@ -47,7 +47,9 @@ describe("stats export", () => {
 
   it("orders sections tools, workspaces, weeks, days, sessions", () => {
     const csv = exportCsv(data([session({})]));
-    const at = ["tool,", "workspace,", "week,", "day,", "session,"].map((p) => csv.indexOf(`\n${p}`));
+    const at = ["tool,", "workspace,", "week,", "day,", "session,"].map((p) =>
+      csv.indexOf(`\n${p}`),
+    );
     expect(at).toEqual([...at].sort((a, b) => a - b));
     expect(at.every((i) => i > 0)).toBe(true);
   });

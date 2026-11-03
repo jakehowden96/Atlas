@@ -38,7 +38,12 @@ const linked = { kind: "linked", account: "a" } as const;
 const props = { sessionId: SID, branch: "eng-482-fix", branchLine: "" };
 const entry = (state: object, extra: object = {}) =>
   tickets.set({
-    [SID]: { link: { connectorId: "linear", id: "ENG-482" }, state: state as never, last: null, ...extra },
+    [SID]: {
+      link: { connectorId: "linear", id: "ENG-482" },
+      state: state as never,
+      last: null,
+      ...extra,
+    },
   });
 
 beforeEach(() => {

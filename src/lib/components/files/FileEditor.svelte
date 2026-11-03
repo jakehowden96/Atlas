@@ -243,7 +243,10 @@
     </div>
 
     {#if conflicted}
-      <Banner tone="warn" title="This file changed on disk (or was removed) while you had unsaved edits">
+      <Banner
+        tone="warn"
+        title="This file changed on disk (or was removed) while you had unsaved edits"
+      >
         {#snippet actions()}
           <Button size="sm" onclick={() => keepMine(key)}>Keep mine</Button>
           <Button size="sm" onclick={() => void reloadFromDisk(key)}>Reload from disk</Button>

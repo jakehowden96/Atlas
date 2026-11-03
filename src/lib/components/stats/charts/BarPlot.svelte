@@ -186,17 +186,25 @@
   }
   .seg.sonnet {
     background-color: var(--model-sonnet);
-    background-image: radial-gradient(color-mix(in srgb, var(--text) 45%, transparent) 1px, transparent 1.5px);
+    background-image: radial-gradient(
+      color-mix(in srgb, var(--text) 45%, transparent) 1px,
+      transparent 1.5px
+    );
     background-size: 6px 6px;
   }
   .seg.haiku {
     background-color: var(--model-haiku);
-    background-image: repeating-linear-gradient(
+    background-image:
+      repeating-linear-gradient(
         0deg,
         color-mix(in srgb, var(--text) 35%, transparent) 0 1px,
         transparent 1px 5px
       ),
-      repeating-linear-gradient(90deg, color-mix(in srgb, var(--text) 35%, transparent) 0 1px, transparent 1px 5px);
+      repeating-linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--text) 35%, transparent) 0 1px,
+        transparent 1px 5px
+      );
   }
   .max {
     position: absolute;

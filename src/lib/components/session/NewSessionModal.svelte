@@ -42,7 +42,7 @@
     workOnPr,
   } from "../../session-actions";
   import { claudeMissing } from "../../stores/claude";
-  import { prRepos,prSetupProblem, reposByWorkspace } from "../../stores/prs";
+  import { prRepos, prSetupProblem, reposByWorkspace } from "../../stores/prs";
   import {
     harnesses,
     lastHarnessId,
@@ -522,7 +522,11 @@
           />
         </div>
 
-        <div class="panel" role="tabpanel" aria-label={modeOptions.find((o) => o.id === view.mode)?.label}>
+        <div
+          class="panel"
+          role="tabpanel"
+          aria-label={modeOptions.find((o) => o.id === view.mode)?.label}
+        >
           {#if view.mode === "resume"}
             <div class="resume-pane" bind:this={resumePaneEl}>
               <div class="resume-caption">
@@ -555,9 +559,7 @@
               {#if $prSetupProblem}
                 <p class="empty">Link GitHub to list pull requests here</p>
                 <div>
-                  <Button size="sm" onclick={() => settingsOpen.set(true)}>
-                    Open settings
-                  </Button>
+                  <Button size="sm" onclick={() => settingsOpen.set(true)}>Open settings</Button>
                 </div>
               {:else if prsLoading}
                 <div class="skeletons" role="status" aria-label="Loading pull requests">

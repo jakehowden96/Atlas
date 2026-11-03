@@ -31,7 +31,6 @@
     { id: "manual", label: "Manual" },
     { id: "opened", label: "Opened" },
   ];
-
 </script>
 
 <div class="rows sec">
@@ -103,4 +102,3 @@
     />
   </div>
 </div>
-

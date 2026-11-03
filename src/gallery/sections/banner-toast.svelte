@@ -26,7 +26,9 @@
     </div>
     <div class="row">
       {#each types as type (type)}
-        <button type="button" onclick={() => showToast(`A ${type} toast`, { type, body: "Detail line" })}
+        <button
+          type="button"
+          onclick={() => showToast(`A ${type} toast`, { type, body: "Detail line" })}
           >Fire {type}</button
         >
       {/each}

@@ -25,9 +25,16 @@
 
 <span class="host" bind:this={host}>
   {#if icon}
-    <IconButton {icon} {label} aria-haspopup="menu" aria-expanded={open} onclick={() => (open = !open)} />
+    <IconButton
+      {icon}
+      {label}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      onclick={() => (open = !open)}
+    />
   {:else}
-    <Button aria-haspopup="menu" aria-expanded={open} onclick={() => (open = !open)}>{label}</Button>
+    <Button aria-haspopup="menu" aria-expanded={open} onclick={() => (open = !open)}>{label}</Button
+    >
   {/if}
 </span>
 <Menu bind:open {trigger} {items} {onselect} {label} {side} {align} />

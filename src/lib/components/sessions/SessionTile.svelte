@@ -32,7 +32,7 @@
   import Kbd from "../ui/Kbd.svelte";
   import StatePill, { type PillState } from "../ui/StatePill.svelte";
   import StatusMark from "../ui/StatusMark.svelte";
-import { tailStaleMinutes } from "../session/rail/TailingNote.svelte";
+  import { tailStaleMinutes } from "../session/rail/TailingNote.svelte";
 
   interface Props {
     tile: SessionTile;
@@ -324,7 +324,9 @@ import { tailStaleMinutes } from "../session/rail/TailingNote.svelte";
 
   {#if staleMin !== null}
     <div class="ask">
-      <StatusMark state="attention" /><span class="wants">Transcript stopped updating · {staleMin}m</span>
+      <StatusMark state="attention" /><span class="wants"
+        >Transcript stopped updating · {staleMin}m</span
+      >
     </div>
   {/if}
 
@@ -332,7 +334,9 @@ import { tailStaleMinutes } from "../session/rail/TailingNote.svelte";
   <div class="foot">
     <span class="last-tool">{shortToolName(live.pendingTool?.name ?? live.lastTool)}</span>
     <span class="stats"
-      >{live.toolCalls} tools · {formatTokens(live.contextTokens)} ctx · {fmtCost(live.costEstimate)}{#if costTodayLine(live)}
+      >{live.toolCalls} tools · {formatTokens(live.contextTokens)} ctx · {fmtCost(
+        live.costEstimate,
+      )}{#if costTodayLine(live)}
         · {costTodayLine(live)}{/if}</span
     >
   </div>

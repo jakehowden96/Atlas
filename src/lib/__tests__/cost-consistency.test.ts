@@ -25,18 +25,23 @@ describe("cost consistency", () => {
 
   it("sum of session costs equals the all-time total", () => {
     const sum = sessions.reduce((a, s) => a + s.costEstimate, 0);
-    expect(sum, `sessions ${sum} vs all-time ${summary.totalsAll.cost}`).toBeCloseTo(summary.totalsAll.cost, 2);
+    expect(sum, `sessions ${sum} vs all-time ${summary.totalsAll.cost}`).toBeCloseTo(
+      summary.totalsAll.cost,
+      2,
+    );
   });
 
   it("no session's cost_today exceeds the top bar today value", () => {
     const top = todayCost(summary, now);
-    for (const s of sessions) expect(s.costToday, `${s.id}: ${s.costToday} > ${top}`).toBeLessThanOrEqual(top);
+    for (const s of sessions)
+      expect(s.costToday, `${s.id}: ${s.costToday} > ${top}`).toBeLessThanOrEqual(top);
   });
 
   it("a session whose total exceeds today shows a today line", () => {
     const top = todayCost(summary, now);
     for (const s of sessions) {
-      if (s.costEstimate > top) expect(costTodayLine(s), `${s.id}: ${s.costEstimate} > ${top}`).not.toBeNull();
+      if (s.costEstimate > top)
+        expect(costTodayLine(s), `${s.id}: ${s.costEstimate} > ${top}`).not.toBeNull();
     }
     expect(costTodayLine(sessions[0] as (typeof sessions)[number])).toBe("$8.10 today");
   });
