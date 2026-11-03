@@ -35,7 +35,14 @@
     unreadable,
   } from "../../stores/files";
   import { openFiles } from "../../stores/file-tabs";
-  import { fileRailOpen, openNewSession } from "../../stores/view";
+  import { fileRailOpen, openDialogOpen, openNewSession } from "../../stores/view";
+  import Banner from "../ui/Banner.svelte";
+  import Button from "../ui/Button.svelte";
+  import EmptyState from "../ui/EmptyState.svelte";
+  import Icon from "../ui/Icon.svelte";
+  import IconButton from "../ui/IconButton.svelte";
+  import Kbd from "../ui/Kbd.svelte";
+  import Tabs from "../ui/Tabs.svelte";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
   import CodeEditor from "./CodeEditor.svelte";
 
@@ -56,6 +63,13 @@
     { id: "preview", label: "Preview", disabled: !markdown },
   ]);
 
+  let tabItems = $derived(
+    $openFiles.map((tab) => ({
+      id: tab,
+      label: basename(parseFileKey(tab).path),
+      dirty: $dirtyFiles.has(tab),
+    })),
+  );
   let files = $derived($docEntries.filter((e) => !e.is_dir));
   /* The preview and footer counts are whole-document passes, so they follow
      typing after a pause rather than on every key. A different file shows at once. */
@@ -170,29 +184,20 @@
 
 <div class="editor">
   {#if $openFiles.length === 0}
-    <p class="blank">No file open</p>
+    <EmptyState icon="description" title="No file open">
+      {#snippet action()}
+        <Button onclick={() => openDialogOpen.set(true)}>Open a file…</Button>
+      {/snippet}
+    </EmptyState>
   {:else}
     <div class="tabs">
-      {#each $openFiles as tab (tab)}
-        {@const f = parseFileKey(tab)}
-        <div class="tab" class:active={tab === $activeFile}>
-          <button
-            type="button"
-            class="tab-name"
-            title={absolutePath(f.source, f.path)}
-            onclick={() => activeFile.set(tab)}
-          >
-            {basename(f.path)}
-          </button>
-          {#if $dirtyFiles.has(tab)}<span class="dot"></span>{/if}
-          <button
-            type="button"
-            class="tab-close"
-            aria-label="Close {basename(f.path)}"
-            onclick={() => requestCloseFile(tab)}>✕</button
-          >
-        </div>
-      {/each}
+      <Tabs
+        label="Open files"
+        tabs={tabItems}
+        value={$activeFile}
+        onselect={(id) => activeFile.set(id)}
+        onclose={(id) => requestCloseFile(id)}
+      />
     </div>
 
     <div class="toolbar">
@@ -211,50 +216,39 @@
         options={modeOptions}
         value={mode}
         size="sm"
+        role="radiogroup"
+        label="View mode"
         onChange={(id) => fileMode.set(id as "source" | "split" | "preview")}
       />
-      <button type="button" class="ask" onclick={askClaude}>
-        Ask Claude <span class="glyph">›_</span>
-      </button>
-      <button
-        type="button"
-        class="save"
-        class:on={dirty}
+      <Button size="sm" onclick={askClaude}>
+        {#snippet leading()}<Icon name="terminal" />{/snippet}
+        Ask Claude
+      </Button>
+      <Button
+        size="sm"
+        variant={dirty ? "primary" : "secondary"}
         disabled={!dirty}
         onclick={() => void saveActiveFile()}
       >
-        Save <span class="kbd">{$chords.saveFile}</span>
-      </button>
-      <button
-        type="button"
-        class="rail-toggle"
-        class:on={$fileRailOpen}
-        title="File rail"
-        aria-label="Toggle the file rail"
+        Save
+        {#snippet trailing()}<Kbd onInk={dirty}>{$chords.saveFile}</Kbd>{/snippet}
+      </Button>
+      <IconButton
+        size="sm"
+        icon={$fileRailOpen ? "right_panel_close" : "right_panel_open"}
+        label="Toggle the file rail"
+        aria-pressed={$fileRailOpen}
         onclick={() => fileRailOpen.update((v) => !v)}
-      >
-        <svg viewBox="0 0 14 14" width="13" height="13" aria-hidden="true">
-          <rect
-            x="1.6"
-            y="2.6"
-            width="10.8"
-            height="8.8"
-            rx="1.6"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.2"
-          />
-          <line x1="9.2" y1="2.6" x2="9.2" y2="11.4" stroke="currentColor" stroke-width="1.2" />
-        </svg>
-      </button>
+      />
     </div>
 
     {#if conflicted}
-      <div class="conflict" role="alert">
-        <span>This file changed on disk (or was removed) while you had unsaved edits.</span>
-        <button type="button" onclick={() => void reloadFromDisk(key)}>Reload from disk</button>
-        <button type="button" onclick={() => keepMine(key)}>Keep mine</button>
-      </div>
+      <Banner tone="warn" title="This file changed on disk (or was removed) while you had unsaved edits">
+        {#snippet actions()}
+          <Button size="sm" onclick={() => keepMine(key)}>Keep mine</Button>
+          <Button size="sm" onclick={() => void reloadFromDisk(key)}>Reload from disk</Button>
+        {/snippet}
+      </Banner>
     {/if}
 
     <div class="body">
@@ -299,69 +293,10 @@
     background: var(--surface);
   }
 
-  .blank {
-    display: grid;
-    flex: 1;
-    place-items: center;
-    margin: 0;
-    color: var(--muted);
-    font-size: var(--fs-sm);
-  }
-
-  /* ── Tabs ──────────────────────────────────────────────────────────────── */
   .tabs {
-    display: flex;
     flex-shrink: 0;
-    height: 36px;
     background: var(--bg);
     border-bottom: 1px solid var(--border);
-    overflow-x: auto;
-  }
-
-  .tab {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    max-width: 200px;
-    padding: 0 8px 0 12px;
-    border-right: 1px solid var(--border);
-    color: var(--muted);
-  }
-
-  .tab.active {
-    background: var(--surface);
-    box-shadow: inset 0 -2px 0 var(--accent);
-    color: var(--text);
-  }
-
-  .tab-name {
-    min-width: 0;
-    overflow: hidden;
-    color: inherit;
-    font-size: var(--fs-sm);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    cursor: pointer;
-  }
-
-  .dot {
-    flex-shrink: 0;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--warn);
-  }
-
-  .tab-close {
-    flex-shrink: 0;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-    line-height: 1;
-    cursor: pointer;
-  }
-
-  .tab-close:hover {
-    color: var(--text);
   }
 
   /* ── Toolbar ───────────────────────────────────────────────────────────── */
@@ -397,8 +332,8 @@
 
   .pill {
     flex-shrink: 0;
-    padding: 1px 7px;
-    border-radius: 9px;
+    padding: 1px var(--sp-3);
+    border-radius: var(--r-pill);
     background: var(--surface2);
     color: var(--warn);
     font-size: var(--fs-2xs);
@@ -407,82 +342,6 @@
 
   .spacer {
     flex: 1;
-  }
-
-  .ask,
-  .save {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-    gap: 6px;
-    height: 26px;
-    padding: 0 10px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    color: var(--muted);
-    font-size: var(--fs-xs);
-    cursor: pointer;
-  }
-
-  .ask:hover {
-    color: var(--text);
-  }
-
-  .glyph {
-    font-family: var(--font-mono);
-    font-weight: 600;
-  }
-
-  .rail-toggle {
-    display: grid;
-    flex-shrink: 0;
-    place-items: center;
-    width: 26px;
-    height: 26px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    color: var(--muted);
-    cursor: pointer;
-  }
-
-  .rail-toggle:hover,
-  .rail-toggle.on {
-    color: var(--text);
-  }
-
-  .save.on {
-    border-color: transparent;
-    background: var(--ink);
-    color: var(--ink-text);
-  }
-
-  .save:disabled {
-    cursor: default;
-  }
-
-  .kbd {
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    opacity: 0.7;
-  }
-
-  .conflict {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 14px;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface2);
-    color: var(--warn);
-    font-size: var(--fs-xs);
-  }
-
-  .conflict button {
-    padding: 2px 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    color: var(--text);
-    cursor: pointer;
   }
 
   /* ── Body ──────────────────────────────────────────────────────────────── */

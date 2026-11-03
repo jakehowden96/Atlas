@@ -30,6 +30,8 @@
   import { sessionTouchedFiles } from "../../stores/panel";
   import { fileRailOpen, focusedSessionId, showView } from "../../stores/view";
   import { closeWith } from "../ui/Modal.svelte";
+  import EmptyState from "../ui/EmptyState.svelte";
+  import Tooltip from "../ui/Tooltip.svelte";
   import StatePill, { type PillState } from "../ui/StatePill.svelte";
 
   const EXIT_MS = 200;
@@ -139,7 +141,7 @@
           {heading.text}
         </button>
       {:else}
-        <p class="none">No headings</p>
+        <EmptyState compact icon="article" title="No headings" />
       {/each}
     </section>
 
@@ -169,7 +171,7 @@
           </span>
         </button>
       {:else}
-        <p class="none">No session has this file open</p>
+        <EmptyState compact icon="terminal" title="No session has this file open" />
       {/each}
     </section>
 
@@ -177,19 +179,23 @@
       <h3 class="label">Links</h3>
       {#each links as link (link.target)}
         {#if link.rel}
-          <button
-            type="button"
-            class="row link"
-            title={link.rel}
-            onclick={() => openFile($fileWs, link.rel as string)}
-          >
-            {link.target}
-          </button>
+          <Tooltip text={link.rel} side="left">
+            <a
+              class="row link"
+              href="#{link.rel}"
+              onclick={(e) => {
+                e.preventDefault();
+                openFile($fileWs, link.rel as string);
+              }}
+            >
+              {link.target}
+            </a>
+          </Tooltip>
         {:else}
           <span class="row broken">{link.target}</span>
         {/if}
       {:else}
-        <p class="none">No links</p>
+        <EmptyState compact icon="link_off" title="No links" />
       {/each}
     </section>
   </aside>
@@ -227,10 +233,8 @@
     text-transform: uppercase;
   }
 
-  .none {
-    margin: 0 0 0 8px;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+  section :global(.compact) {
+    margin-left: 8px;
   }
 
   .row {
@@ -258,6 +262,7 @@
 
   .link {
     color: var(--accent);
+    text-decoration: none;
   }
 
   .broken {
