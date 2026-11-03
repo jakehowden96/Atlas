@@ -82,7 +82,7 @@ certificate and its secrets to the workflow to change that.
 
 ### Generating the updater key
 
-Run `pnpm tauri signer generate -w ~/.tauri/atlas.key`. Put the public key in `plugins.updater.pubkey` in
-`src-tauri/tauri.conf.json` (replacing `REPLACE_WITH_UPDATER_PUBLIC_KEY`) and the private key and its
-password in the two secrets above. Never commit the private key. Until the pubkey is replaced, the app
-skips update checks.
+The updater key pair was generated with `pnpm tauri signer generate -w ~/.tauri/atlas.key`. The public key is
+in `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`; the private key and its password are the two
+secrets above. Never commit the private key. Losing it means installed copies cannot be updated, so keep a
+backup of `~/.tauri/atlas.key` and its password.

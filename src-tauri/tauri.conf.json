@@ -48,7 +48,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "REPLACE_WITH_UPDATER_PUBLIC_KEY",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhENEYzREI3QTMxRTdBRTUKUldUbGVoNmp0ejFQalQ0M0sxUW1KWm5WWStmMXViMkE4WGQzblRldUNTZXFFQkQwU3Fxb1MySEgK",
       "endpoints": ["https://github.com/jakehowden96/Atlas/releases/latest/download/latest.json"]
     }
   }
