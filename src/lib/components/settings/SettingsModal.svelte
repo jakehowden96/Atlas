@@ -1,9 +1,15 @@
 <script lang="ts">
   import { getVersion } from "@tauri-apps/api/app";
+  import { tick } from "svelte";
   import { log } from "../../logger";
+  import { searchSettings, type SectionId, type SettingEntry } from "../../settings-search";
   import { settingsOpen } from "../../stores/settings";
+  import IconButton from "../ui/IconButton.svelte";
   import Modal from "../ui/Modal.svelte";
+  import SearchInput from "../ui/SearchInput.svelte";
+  import Tabs, { type Tab } from "../ui/Tabs.svelte";
   import { errorMessage } from "../../ipc-error";
+  import About from "./sections/About.svelte";
   import ClaudeCode from "./sections/ClaudeCode.svelte";
   import General from "./sections/General.svelte";
   import Harnesses from "./sections/Harnesses.svelte";
@@ -11,21 +17,24 @@
   import PullRequests from "./sections/PullRequests.svelte";
   import Workspaces from "./sections/Workspaces.svelte";
 
-  type Section = "general" | "keyboard" | "workspaces" | "prs" | "claude" | "harnesses";
-
-  const NAV: { id: Section; label: string }[] = [
-    { id: "general", label: "General" },
-    { id: "keyboard", label: "Keyboard" },
-    { id: "workspaces", label: "Workspaces" },
-    { id: "prs", label: "Pull requests" },
-    { id: "claude", label: "Claude Code" },
-    { id: "harnesses", label: "Harnesses" },
+  const NAV: Tab[] = [
+    { id: "general", label: "General", group: "App" },
+    { id: "keyboard", label: "Keyboard", group: "App" },
+    { id: "workspaces", label: "Workspaces", group: "Work" },
+    { id: "prs", label: "Pull requests", group: "Work" },
+    { id: "harnesses", label: "Harnesses", group: "Work" },
+    { id: "claude", label: "Claude Code", group: "System" },
+    { id: "about", label: "About", group: "System" },
   ];
 
-  let section = $state<Section>("general");
+  let section = $state<SectionId>("general");
   let appVersion = $state("");
+  let query = $state("");
+  let paneBody = $state<HTMLElement>();
+  let searchBox = $state<HTMLElement>();
 
   let title = $derived(NAV.find((n) => n.id === section)?.label ?? "Settings");
+  let results = $derived(searchSettings(query));
 
   $effect(() => {
     getVersion()
@@ -36,35 +45,81 @@
   function close() {
     settingsOpen.set(false);
   }
+
+  function onWindowKeydown(e: KeyboardEvent) {
+    if (!$settingsOpen || !(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "f") return;
+    e.preventDefault();
+    searchBox?.querySelector("input")?.focus();
+  }
+
+  async function jump(entry: SettingEntry) {
+    section = entry.section;
+    query = "";
+    await tick();
+    const titleEl = [...(paneBody?.querySelectorAll<HTMLElement>(".row-title") ?? [])].find(
+      (el) => el.textContent?.trim() === entry.title,
+    );
+    const row = titleEl?.closest<HTMLElement>(".row");
+    if (!row) return;
+    row.scrollIntoView({ block: "nearest" });
+    row.classList.add("found");
+    setTimeout(() => row.classList.remove("found"), 1600);
+  }
 </script>
 
-<Modal open={$settingsOpen} onClose={close} width="760px">
+<svelte:window onkeydown={onWindowKeydown} />
+
+<Modal open={$settingsOpen} onClose={close} width="760px" ariaLabel="Settings">
   <div class="settings">
     <nav class="nav">
       <div class="nav-title">Settings</div>
-      {#each NAV as item (item.id)}
-        <button
-          type="button"
-          class="nav-item"
-          class:active={section === item.id}
-          onclick={() => (section = item.id)}
-        >
-          {item.label}
-        </button>
-      {/each}
+      <div bind:this={searchBox}>
+        <SearchInput
+          bind:value={query}
+          placeholder="Search settings"
+          aria-label="Search settings"
+        />
+      </div>
+      <Tabs
+        tabs={NAV}
+        value={section}
+        onselect={(id) => {
+          section = id as SectionId;
+          query = "";
+        }}
+        vertical
+        label="Settings sections"
+      />
       <div class="nav-spacer"></div>
       <div class="version">Atlas {appVersion} · ~/.atlas</div>
     </nav>
 
     <div class="pane">
       <div class="pane-head">
-        {title}
+        {query ? "Search results" : title}
         <div class="pane-spacer"></div>
-        <button type="button" class="close" onclick={close} aria-label="Close settings">✕</button>
+        <IconButton icon="close" size="sm" label="Close settings" onclick={close} />
       </div>
 
-      <div class="pane-body">
-        {#if section === "general"}
+      <div class="pane-body" bind:this={paneBody}>
+        {#if query}
+          {#if results.length === 0}
+            <p class="none">No settings match "{query}"</p>
+          {:else}
+            <ul class="results">
+              {#each results as r (r.section + r.title)}
+                <li>
+                  <button type="button" class="result" onclick={() => void jump(r)}>
+                    <span class="r-title">{r.title}</span>
+                    <span class="r-desc">
+                      {NAV.find((n) => n.id === r.section)?.label} · {r.description}
+                    </span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        {:else if section === "general"}
           <General />
         {:else if section === "keyboard"}
           <Keyboard />
@@ -74,6 +129,8 @@
           <PullRequests />
         {:else if section === "claude"}
           <ClaudeCode />
+        {:else if section === "about"}
+          <About version={appVersion} />
         {:else}
           <Harnesses />
         {/if}
@@ -92,42 +149,20 @@
   .nav {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 8px;
     flex-shrink: 0;
-    width: 180px;
+    width: 200px;
     padding: 14px 8px;
     border-right: 1px solid var(--border);
     background: var(--bg);
+    overflow: auto;
   }
 
   .nav-title {
-    padding: 0 10px 12px;
+    padding: 0 10px 4px;
     font-family: var(--font-ui);
     font-size: var(--fs-sm);
     font-weight: 600;
-  }
-
-  .nav-item {
-    padding: 7px 10px;
-    border: none;
-    border-radius: var(--r-md);
-    background: transparent;
-    color: var(--muted);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .nav-item:hover {
-    background: var(--surface2);
-    color: var(--text);
-  }
-
-  .nav-item.active {
-    background: var(--surface2);
-    color: var(--text);
-    font-weight: 500;
   }
 
   .nav-spacer {
@@ -165,27 +200,66 @@
     flex: 1;
   }
 
-  .close {
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border: none;
-    border-radius: var(--r-md);
-    background: transparent;
-    color: var(--muted);
-    font-family: var(--font-ui);
-    font-size: var(--fs-md);
-    cursor: pointer;
-  }
-
-  .close:hover {
-    background: var(--surface2);
-    color: var(--text);
-  }
-
   .pane-body {
     flex: 1;
     padding: 18px;
     overflow: auto;
+  }
+
+  /* ── Search results ────────────────────────────────────────────────────── */
+  .none {
+    margin: 0;
+    color: var(--muted);
+    font-size: var(--fs-sm);
+  }
+
+  .results {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .result {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    padding: 7px 10px;
+    border: none;
+    border-radius: var(--r-md);
+    background: transparent;
+    color: var(--text);
+    font-family: var(--font-ui);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .result:hover {
+    background: var(--surface2);
+  }
+
+  .r-title {
+    font-size: var(--fs-sm);
+    font-weight: 500;
+  }
+
+  .r-desc {
+    font-size: var(--fs-xs);
+    color: var(--muted);
+  }
+
+  /* Added to a section's row by jump(); the section components own the rows. */
+  :global(.pane-body .row.found) {
+    outline: var(--focus-width) solid var(--focus);
+    outline-offset: var(--focus-offset);
+    border-radius: var(--r-md);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :global(.pane-body .row.found) {
+      transition: outline-color var(--dur-slow) var(--ease-out);
+    }
   }
 </style>
