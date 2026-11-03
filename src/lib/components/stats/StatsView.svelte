@@ -1,22 +1,22 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import { save } from "@tauri-apps/plugin-dialog";
   import { basename } from "../../format";
+  import { saveExport } from "../../ipc";
+  import { errorMessage } from "../../ipc-error";
+  import { toCsv, type Point } from "../../stats-chart";
   import {
     agoLabel,
     daySeries,
     delta,
-    deltaLabel,
-    deltaTone,
     fmtCost,
     fmtCount,
     fmtDuration,
-    fmtF1,
     fmtTokens,
     HEATMAP_DAYS,
     modelColour,
     modelRows,
     modelsForRange,
-    peakDay,
     projectRows,
     RANGE_LABELS,
     recentForRange,
@@ -31,11 +31,34 @@
     WEEK_COUNT,
     type Range,
   } from "../../stats-derive";
+  import {
+    buildExportData,
+    exportCsv,
+    exportJson,
+    filterByBucket,
+    sortRecent,
+    type Bucket,
+    type RecentSortKey,
+  } from "../../stats-export";
+  import { settingsOpen } from "../../stores/settings";
   import { reloadStats, statsError, statsLoading, statsSummary } from "../../stores/stats";
+  import { showToast } from "../../stores/toast";
   import { openNewSession } from "../../stores/view";
   import { visibleWorkspaces } from "../../stores/workspace";
-  import Sparkline from "../ui/Sparkline.svelte";
+  import Banner from "../ui/Banner.svelte";
+  import Button from "../ui/Button.svelte";
+  import Chip from "../ui/Chip.svelte";
+  import CopyButton from "../ui/CopyButton.svelte";
+  import EmptyState from "../ui/EmptyState.svelte";
+  import MenuButton from "../ui/MenuButton.svelte";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
+  import Skeleton from "../ui/Skeleton.svelte";
+  import ChartCard from "./charts/ChartCard.svelte";
+  import HBarList from "./charts/HBarList.svelte";
+  import Heatmap from "./charts/Heatmap.svelte";
+  import Kpi from "./charts/Kpi.svelte";
+  import StackedBars from "./charts/StackedBars.svelte";
+  import type { Model } from "./charts/BarPlot.svelte";
 
   /* Both the summary and its loading flag live in `stores/stats`: the top bar
      needs the same figures while this screen is unmounted, and two independent
@@ -48,6 +71,9 @@
   /** Ticks so the "Ns ago" indicator stays honest between recomputes. */
   let now = $state(new Date());
   let ticker: ReturnType<typeof setInterval> | null = null;
+  let bucket = $state<Bucket | null>(null);
+  let sortKey = $state<RecentSortKey>("costEstimate");
+  let sortDesc = $state(true);
 
   const rangeOptions: Segment<Range>[] = [
     { id: "7d", label: "7 days" },
@@ -75,80 +101,67 @@
   let projects = $derived(summary ? projectRows(summary, range) : []);
   let recent = $derived(summary ? recentForRange(summary, range, now) : []);
   let spark = $derived(summary ? sparkSeries(summary.byDay ?? {}, range, now) : []);
+  let shownRecent = $derived(sortRecent(filterByBucket(recent, bucket), sortKey, sortDesc));
 
   // Fixed windows by design: the heatmap is always 30 days, the bar chart 8 weeks.
   let heatmap = $derived(summary ? daySeries(summary.byDay ?? {}, now, HEATMAP_DAYS) : []);
-  let heatmapPeak = $derived(peakDay(heatmap));
-  let heatmapMax = $derived(Math.max(1, ...heatmap.map((d) => d.stats.sessions)));
   let weeks = $derived(summary ? recentWeeks(summary.byWeek ?? {}, WEEK_COUNT) : []);
-  let weekMax = $derived(Math.max(1, ...weeks.map(([, w]) => w.sessions)));
-  let subagentMax = $derived(
-    Math.max(1, ...weeks.map(([, w]) => sum(Object.values(w.byModelSubagents ?? {})))),
-  );
   let families = $derived(weekFamilies(weeks));
-  let toolMax = $derived(Math.max(1, ...tools.map((t) => t.count)));
-  let projectMax = $derived(Math.max(1, ...projects.map(([, p]) => p.sessions)));
 
-  function sum(values: number[]): number {
-    return values.reduce((a, b) => a + b, 0);
-  }
+  const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
-  function per(value: number, sessions: number): number {
-    return sessions > 0 ? value / sessions : 0;
-  }
-
-  /** Six KPI cards: value, delta against the previous window, sparkline, caption. */
+  /** Six KPI cards: value, delta against the previous window, sparkline. */
   let kpis = $derived.by(() => {
     if (!totals) return [];
     const cur = totals.current;
     const prev = totals.previous;
-    const s = Math.max(1, cur.sessions);
-    const days = Math.max(1, spark.length);
+    const pct = (a: number, b: number | undefined) => {
+      const d = delta(a, prev ? (b ?? 0) : null);
+      return d.kind === "pct" ? d.value : undefined;
+    };
     return [
-      {
-        label: "Sessions",
-        value: fmtCount(cur.sessions),
-        delta: delta(cur.sessions, prev?.sessions ?? null),
-        sub: `${fmtF1(cur.sessions / days)} / day`,
-        values: spark.map((d) => d.stats.sessions),
-      },
-      {
-        label: "Messages sent",
-        value: fmtCount(cur.userMessages),
-        delta: delta(cur.userMessages, prev?.userMessages ?? null),
-        sub: `${fmtF1(per(cur.userMessages, s))} / session`,
-        values: spark.map((d) => d.stats.userMessages),
-      },
-      {
-        label: "Output tokens",
-        value: fmtTokens(cur.outputTokens),
-        delta: delta(cur.outputTokens, prev?.outputTokens ?? null),
-        sub: `${fmtTokens(per(cur.outputTokens, s))} / session`,
-        values: spark.map((d) => d.stats.outputTokens),
-      },
-      {
-        label: "Est. cost",
-        value: fmtCost(cur.cost),
-        delta: delta(cur.cost, prev?.cost ?? null),
-        sub: `${fmtCost(per(cur.cost, s))} / session`,
-        values: spark.map((d) => d.stats.cost),
-      },
-      {
-        label: "Peak context",
-        value: fmtTokens(cur.peakContext),
-        delta: delta(cur.peakContext, prev?.peakContext ?? null),
-        sub: "largest single session",
-        values: spark.map((d) => d.stats.peakContext),
-      },
-      {
-        label: "Subagents",
-        value: fmtCount(cur.subagents),
-        delta: delta(cur.subagents, prev?.subagents ?? null),
-        sub: `${fmtF1(per(cur.subagents, s))} / session`,
-        values: spark.map((d) => d.stats.subagents),
-      },
+      { label: "Sessions", value: fmtCount(cur.sessions), delta: pct(cur.sessions, prev?.sessions), spark: spark.map((d) => d.stats.sessions) },
+      { label: "Messages sent", value: fmtCount(cur.userMessages), delta: pct(cur.userMessages, prev?.userMessages), spark: spark.map((d) => d.stats.userMessages) },
+      { label: "Output tokens", value: fmtTokens(cur.outputTokens), delta: pct(cur.outputTokens, prev?.outputTokens), spark: spark.map((d) => d.stats.outputTokens) },
+      { label: "Est. cost", value: fmtCost(cur.cost), delta: pct(cur.cost, prev?.cost), spark: spark.map((d) => d.stats.cost) },
+      { label: "Peak context", value: fmtTokens(cur.peakContext), delta: pct(cur.peakContext, prev?.peakContext), spark: spark.map((d) => d.stats.peakContext) },
+      { label: "Subagents", value: fmtCount(cur.subagents), delta: pct(cur.subagents, prev?.subagents), spark: spark.map((d) => d.stats.subagents) },
     ];
   });
+
+  // ── Chart data ──────────────────────────────────────────────────────────
+  let weekSeries = $derived(
+    families.map((name) => ({ name, model: name.toLowerCase() as Model })),
+  );
+  let weekBuckets = $derived(
+    weeks.map(([key, w]) => ({
+      key,
+      label: weekLabel(key),
+      parts: families.map((f) => w.byModel?.[f] ?? 0),
+    })),
+  );
+  let weekPoints = $derived<Point[]>(
+    weeks.map(([key, w]) => ({ key, label: weekLabel(key), value: w.sessions })),
+  );
+  let allToolPoints = $derived<Point[]>(
+    tools.map((t) => ({
+      key: t.name,
+      label: t.name,
+      value: t.count,
+      context: t.errors > 0 ? `${t.errors} errors, ${t.errorPct.toFixed(1)}%` : "no errors",
+    })),
+  );
+  let toolPoints = $derived(allToolPoints.slice(0, visibleTools.length));
+  let projectPoints = $derived<Point[]>(
+    projects.map(([path, p]) => ({ key: path, label: basename(path), value: p.cost })),
+  );
+  let dayPoints = $derived<Point[]>(
+    heatmap.map((d) => ({ key: d.date, label: shortDate(d.date), value: d.stats.sessions })),
+  );
+
+  function select(kind: Bucket["kind"], key: string, label: string) {
+    bucket = { kind, key, label };
+  }
 
   /** Workspace colour from the workspace store, matched on the session's cwd. */
   function workspaceColour(path: string | null): string {
@@ -165,28 +178,72 @@
       .toLowerCase();
   }
 
-  /** Heatmap intensity: zero days sit at --surface3, busier days mix in --accent. */
-  function cellStyle(sessions: number): string {
-    if (sessions === 0) return "background: var(--surface3)";
-    const pct = Math.min(95, 25 + sessions * 8);
-    return `background: color-mix(in srgb, var(--accent) ${pct}%, var(--surface3))`;
-  }
-
-  function errorTone(pct: number): "danger" | "warn" | "muted" {
-    if (pct >= 5) return "danger";
-    if (pct >= 2) return "warn";
-    return "muted";
-  }
-
   function sessionTitle(title: string | null, id: string): string {
     return title && title.trim().length > 0 ? title : id.slice(0, 8);
+  }
+
+  function sortBy(key: RecentSortKey) {
+    if (sortKey === key) sortDesc = !sortDesc;
+    else {
+      sortKey = key;
+      sortDesc = key !== "title" && key !== "cwd" && key !== "model";
+    }
+  }
+
+  const ariaSort = (key: RecentSortKey) =>
+    sortKey === key ? (sortDesc ? "descending" : "ascending") : "none";
+
+  const recentColumns: { key: RecentSortKey; label: string; num?: boolean }[] = [
+    { key: "title", label: "Session" },
+    { key: "cwd", label: "Workspace" },
+    { key: "model", label: "Model" },
+    { key: "durationSecs", label: "Time", num: true },
+    { key: "outputTokens", label: "Output", num: true },
+    { key: "costEstimate", label: "Cost", num: true },
+  ];
+
+  let recentCsv = $derived(
+    toCsv([
+      ["Session", "Workspace", "Model", "Duration (s)", "Output tokens", "Cost (USD)"],
+      ...shownRecent.map((s) => [
+        sessionTitle(s.title, s.sessionId),
+        s.cwd ?? "",
+        s.model ?? "",
+        s.durationSecs,
+        s.outputTokens,
+        s.costEstimate,
+      ]),
+    ]),
+  );
+  let modelsCsv = $derived(
+    toCsv([["Metric", ...models.map(([f]) => f)], ...rows.map((r) => [r.label, ...r.values])]),
+  );
+
+  // ── Export ──────────────────────────────────────────────────────────────
+  async function exportAs(format: "csv" | "json") {
+    if (!summary) return;
+    const data = buildExportData(summary, range, now);
+    const text = format === "csv" ? exportCsv(data) : exportJson(data);
+    try {
+      const path = await save({
+        defaultPath: `atlas-stats-${range}.${format}`,
+        filters: [{ name: format.toUpperCase(), extensions: [format] }],
+      });
+      if (!path) return;
+      await saveExport(path, text);
+      showToast("Stats exported", { type: "success", body: path });
+    } catch (e) {
+      showToast("Couldn't export stats", { body: errorMessage(e) });
+    }
   }
 </script>
 
 <div class="stats-view">
-  <!-- Range bar — drives every panel below except the two fixed-window charts. -->
+  <!-- Range bar: drives every panel below except the two fixed-window charts. -->
   <div class="range-bar">
     <SegmentedControl
+      role="radiogroup"
+      label="Range"
       options={rangeOptions}
       value={range}
       onChange={(id) => (range = id)}
@@ -194,260 +251,242 @@
     />
     <span class="note">
       {range === "all"
-        ? "All time has no previous period to compare with."
-        : `Deltas compare with the previous ${RANGE_LABELS[range]}.`}
+        ? "All time has no previous period to compare with"
+        : `Deltas compare with the previous ${RANGE_LABELS[range]}`}
     </span>
     <div class="spacer"></div>
     <span class="live">
-      ~/.claude transcripts · live · {summary ? agoLabel(summary.generatedAt, now) : "…"}
+      ~/.claude transcripts, live, {summary ? agoLabel(summary.generatedAt, now) : "loading"}
     </span>
+    <MenuButton
+      label="Export"
+      align="end"
+      items={[
+        { id: "csv", label: "Export CSV" },
+        { id: "json", label: "Export JSON" },
+      ]}
+      onselect={(item) => void exportAs(item.id as "csv" | "json")}
+    />
   </div>
 
   {#if loading && !summary}
-    <div class="empty-page">Scanning transcripts…</div>
-  {:else if !summary && $statsError}
-    <div class="empty-page">
-      Could not read stats: {$statsError}
-      <button type="button" onclick={() => void reloadStats()}>Retry</button>
+    <div class="kpis" aria-busy="true" aria-label="Loading stats">
+      {#each Array(6) as _, i (i)}
+        <div class="card"><Skeleton height="var(--sp-8)" /></div>
+      {/each}
     </div>
+    <div class="row row2">
+      {#each Array(3) as _, i (i)}
+        <div class="card"><Skeleton height="var(--sp-10)" /></div>
+      {/each}
+    </div>
+    <div class="row row3">
+      {#each Array(3) as _, i (i)}
+        <div class="card"><Skeleton height="var(--sp-10)" /></div>
+      {/each}
+    </div>
+  {:else if !summary && $statsError}
+    <Banner tone="error" title="Couldn't read stats">
+      {$statsError}
+      {#snippet actions()}
+        <Button size="sm" onclick={() => void reloadStats()}>Retry</Button>
+      {/snippet}
+    </Banner>
   {:else if !summary}
-    <div class="empty-page">No transcripts found under ~/.claude/projects.</div>
+    <EmptyState
+      icon="search"
+      title="No transcripts found"
+      description="Atlas reads them from ~/.claude/projects"
+    >
+      {#snippet action()}
+        <Button variant="link" onclick={() => settingsOpen.set(true)}>
+          Check Claude Code is installed
+        </Button>
+      {/snippet}
+    </EmptyState>
   {:else}
-    <!-- KPI strip -->
     <div class="kpis">
       {#each kpis as kpi (kpi.label)}
-        <div class="kpi">
-          <div class="kpi-head">
-            <span class="kpi-label">{kpi.label}</span>
-            <span class="kpi-delta {deltaTone(kpi.delta)}">{deltaLabel(kpi.delta)}</span>
-          </div>
-          <div class="kpi-body">
-            <span class="kpi-value">{kpi.value}</span>
-            <Sparkline values={kpi.values} />
-          </div>
-          <span class="kpi-sub">{kpi.sub}</span>
+        <div class="card">
+          <Kpi
+            label={kpi.label}
+            value={kpi.value}
+            delta={kpi.delta}
+            versus={`previous ${RANGE_LABELS[range]}`}
+            spark={kpi.spark}
+          />
         </div>
       {/each}
     </div>
 
-    <!-- Row 2 — by model · sessions by week · tools -->
+    {#if bucket}
+      <div class="filter">
+        <Chip selected label={`Clear filter: ${bucket.label}`} onClick={() => (bucket = null)} />
+      </div>
+    {/if}
+
     <div class="row row2">
       <section class="card">
-        <div class="model-head" style="--cols: {models.length}">
-          <span class="card-title">By model</span>
-          {#each models as [family] (family)}
-            <span class="model-col">
-              <span class="swatch" style="background: {modelColour(family)}"></span>{family}
-            </span>
-          {/each}
+        <div class="card-head">
+          <h3>By model</h3>
+          <CopyButton value={modelsCsv} label="Copy by model as CSV" size="sm" />
         </div>
         {#if models.length === 0}
-          <p class="empty-card">No sessions in this window.</p>
+          <p class="empty-card">No sessions in this window</p>
         {:else}
-          {#each rows as row (row.label)}
-            <div class="model-row" style="--cols: {models.length}">
-              <span class="model-label">{row.label}</span>
-              {#each row.values as value, i (models[i]?.[0] ?? i)}
-                <span class="num">{value}</span>
-              {/each}
-            </div>
-          {/each}
-          <p class="footnote">
-            Model follows task difficulty — usage facts, not a controlled comparison.
-          </p>
-        {/if}
-      </section>
-
-      <section class="card weeks-card">
-        <div class="card-head">
-          <span class="card-title">Sessions by week</span>
-          <span class="card-sub">stacked by model · dot = subagents · last {WEEK_COUNT} weeks</span>
-        </div>
-        {#if weeks.length === 0}
-          <p class="empty-card">No sessions yet.</p>
-        {:else}
-          <div class="weeks">
-            {#each weeks as [key, week] (key)}
-              {@const agents = sum(Object.values(week.byModelSubagents ?? {}))}
-              <div class="week">
-                <span class="week-total">{week.sessions}</span>
-                <div
-                  class="stack"
-                  style="height: {(week.sessions / weekMax) * 100}%"
-                  title="{week.sessions} sessions"
-                >
-                  {#each families as family (family)}
-                    {@const n = week.byModel?.[family] ?? 0}
-                    {#if n > 0}
-                      <span
-                        class="seg"
-                        style="height: {(n / week.sessions) * 100}%; background: {modelColour(
-                          family,
-                        )}"
-                        title="{family}: {n}"
-                      ></span>
-                    {/if}
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Metric</th>
+                {#each models as [family] (family)}
+                  <th scope="col" class="num">
+                    <button
+                      type="button"
+                      class="plain"
+                      aria-pressed={bucket?.kind === "model" && bucket.key === family}
+                      onclick={() => select("model", family, family)}
+                    >
+                      <span class="swatch" style="background: {modelColour(family)}"></span>{family}
+                    </button>
+                  </th>
+                {/each}
+              </tr>
+            </thead>
+            <tbody>
+              {#each rows as row (row.label)}
+                <tr>
+                  <th scope="row">{row.label}</th>
+                  {#each row.values as value, i (models[i]?.[0] ?? i)}
+                    <td class="num">{value}</td>
                   {/each}
-                </div>
-                <span
-                  class="agent-dot"
-                  style="width: {4 + (agents / subagentMax) * 6}px; height: {4 +
-                    (agents / subagentMax) * 6}px; opacity: {agents > 0 ? 1 : 0}"
-                  title="{agents} subagents"
-                ></span>
-              </div>
-            {/each}
-          </div>
-          <div class="week-labels">
-            {#each weeks as [key] (key)}
-              <span class="week-label">{weekLabel(key)}</span>
-            {/each}
-          </div>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+          <p class="footnote">Model follows task difficulty. These are usage facts, not a controlled comparison</p>
         {/if}
       </section>
 
-      <section class="card">
-        <div class="card-head">
-          <span class="card-title">Tools</span>
-          <span class="card-sub">calls · error %</span>
-        </div>
-        {#if tools.length === 0}
-          <p class="empty-card">No tool calls in this window.</p>
-        {:else}
-          <div class="tool-list">
-            {#each visibleTools as tool (tool.name)}
-              <div class="tool-row">
-                <span class="tool-name" title={tool.name}>{tool.name}</span>
-                <span class="track">
-                  <span class="fill" style="width: {(tool.count / toolMax) * 100}%"></span>
-                </span>
-                <span class="num">{fmtCount(tool.count)}</span>
-                <span
-                  class="num err {errorTone(tool.errorPct)}"
-                  title="{tool.errors} of {tool.count} calls errored"
-                >
-                  {tool.errorPct.toFixed(1)}%
-                </span>
-              </div>
-            {/each}
-          </div>
-          {#if tools.length > TOOLS_COLLAPSED}
-            <button
-              type="button"
-              class="tool-toggle"
-              onclick={() => (toolsExpanded = !toolsExpanded)}
-            >
-              {toolsExpanded ? "Show fewer" : `Show all (${tools.length})`}
-            </button>
-          {/if}
+      <ChartCard
+        id="weeks"
+        title="Sessions by week"
+        summary={`Sessions per week for the last ${WEEK_COUNT} weeks, stacked by model`}
+        rows={weekPoints}
+        unit="count"
+      >
+        <StackedBars
+          series={weekSeries}
+          buckets={weekBuckets}
+          unit="count"
+          label="Sessions by week"
+          emptyText="No sessions yet"
+          onselect={(key) => select("week", key, `week of ${weekLabel(key)}`)}
+        />
+      </ChartCard>
+
+      <ChartCard
+        id="tools"
+        title="Tools"
+        summary={`${plural(tools.length, "tool")} used in the last ${RANGE_LABELS[range]}, by call count`}
+        rows={allToolPoints}
+        unit="count"
+      >
+        <HBarList
+          points={toolPoints}
+          unit="count"
+          label="Tool calls"
+          emptyText="No tool calls in this window"
+        />
+        {#if tools.length > TOOLS_COLLAPSED}
+          <Button variant="link" size="sm" onclick={() => (toolsExpanded = !toolsExpanded)}>
+            {toolsExpanded ? "Show fewer" : `Show all (${tools.length})`}
+          </Button>
         {/if}
-      </section>
+      </ChartCard>
     </div>
 
-    <!-- Row 3 — by workspace · activity · recent sessions -->
     <div class="row row3">
-      <section class="card">
-        <div class="ws-head">
-          <span class="card-title">By workspace</span>
-          <span class="num-head">Sess.</span>
-          <span class="num-head">Tokens</span>
-          <span class="num-head">Cost</span>
-        </div>
-        {#if projects.length === 0}
-          <p class="empty-card">No sessions in this window.</p>
-        {:else}
-          {#each projects as [path, project] (path)}
-            <div class="ws-row" title={path}>
-              <span class="ws-name">
-                <span class="dot" style="background: {workspaceColour(path)}"></span>
-                <span class="ws-bar" style="width: {(project.sessions / projectMax) * 100}%"></span>
-                <span class="ws-text">{basename(path)}</span>
-              </span>
-              <span class="num">{project.sessions}</span>
-              <span class="num">{fmtTokens(project.outputTokens)}</span>
-              <span class="num strong">{fmtCost(project.cost)}</span>
-            </div>
-          {/each}
-        {/if}
-      </section>
+      <ChartCard
+        id="workspaces"
+        title="By workspace"
+        summary={`Estimated cost per workspace over the last ${RANGE_LABELS[range]}`}
+        rows={projectPoints}
+        unit="usd"
+      >
+        <HBarList
+          points={projectPoints}
+          unit="usd"
+          label="Cost by workspace"
+          emptyText="No sessions in this window"
+          onselect={(key) => select("workspace", key, basename(key))}
+        />
+      </ChartCard>
 
-      <section class="card activity-card">
-        <div class="card-head">
-          <span class="card-title">Activity</span>
-          <span class="card-sub">sessions per day · {HEATMAP_DAYS}d</span>
-        </div>
-        <div class="activity">
-          <div class="heatmap">
-            {#each heatmap as day (day.date)}
-              <span
-                class="cell"
-                style={cellStyle(day.stats.sessions)}
-                title="{shortDate(day.date)} · {day.stats.sessions} sessions"
-              ></span>
-            {/each}
-          </div>
-          <div class="heat-caption">
-            <span>{heatmap[0] ? shortDate(heatmap[0].date) : ""}</span>
-            <span>
-              {heatmapPeak
-                ? `peak ${shortDate(heatmapPeak.date)} · ${heatmapPeak.stats.sessions}`
-                : "no sessions"}
-            </span>
-            <span>today</span>
-          </div>
-          <div class="heat-legend">
-            <span>less</span>
-            {#each [0, 1, Math.ceil(heatmapMax / 2), heatmapMax] as level, i (i)}
-              <span class="cell legend-cell" style={cellStyle(level)}></span>
-            {/each}
-            <span>more</span>
-          </div>
-        </div>
-      </section>
+      <ChartCard
+        id="activity"
+        title="Activity"
+        summary={`Sessions per day over the last ${HEATMAP_DAYS} days`}
+        rows={dayPoints}
+        unit="count"
+      >
+        <Heatmap
+          cells={dayPoints}
+          noun="session"
+          label="Sessions per day"
+          emptyText="No sessions in this window"
+          onselect={(key) => select("day", key, shortDate(key))}
+        />
+      </ChartCard>
 
       <section class="card recent-card">
-        <div class="recent-head">
-          <span class="card-title">Recent sessions</span>
-          <span>Workspace</span>
-          <span>Model</span>
-          <span class="num-head">Time</span>
-          <span class="num-head">Output</span>
-          <span class="num-head">Cost</span>
+        <div class="card-head">
+          <h3>Recent sessions</h3>
+          <CopyButton value={recentCsv} label="Copy recent sessions as CSV" size="sm" />
         </div>
-        {#if recent.length === 0}
-          <p class="empty-card">No sessions in this window.</p>
+        {#if shownRecent.length === 0}
+          <p class="empty-card">No sessions in this window</p>
         {:else}
-          <div class="recent-list">
-            {#each recent as session (session.sessionId)}
-              <!-- Reopens this conversation: New Session, Resume mode, this row picked. -->
-              <button
-                type="button"
-                class="recent-row"
-                onclick={() =>
-                  openNewSession({
-                    workspacePath: session.cwd ?? "",
-                    resumeSessionId: session.sessionId,
-                  })}
-                title="{sessionTitle(session.title, session.sessionId)} · {session.lastTimestamp
-                  ? agoLabel(session.lastTimestamp, now)
-                  : 'unknown'}{session.gitBranch ? ` · ${session.gitBranch}` : ''}"
-              >
-                <span class="recent-title">
-                  {sessionTitle(session.title, session.sessionId)}
-                </span>
-                <span class="recent-ws">
-                  <span class="dot" style="background: {workspaceColour(session.cwd)}"></span>
-                  <span class="ws-text">{session.cwd ? basename(session.cwd) : "—"}</span>
-                </span>
-                <span class="recent-model" style="color: {modelColour(session.model ?? '')}">
-                  {session.model ?? "—"}
-                </span>
-                <span class="num">{fmtDuration(session.durationSecs)}</span>
-                <span class="num">{fmtTokens(session.outputTokens)}</span>
-                <span class="num strong">{fmtCost(session.costEstimate)}</span>
-              </button>
-            {/each}
-          </div>
+          <table>
+            <thead>
+              <tr>
+                {#each recentColumns as col (col.key)}
+                  <th scope="col" class:num={col.num} aria-sort={ariaSort(col.key)}>
+                    <button type="button" class="plain" onclick={() => sortBy(col.key)}>
+                      {col.label}
+                    </button>
+                  </th>
+                {/each}
+              </tr>
+            </thead>
+            <tbody>
+              {#each shownRecent as session (session.sessionId)}
+                <tr>
+                  <td class="title-cell">
+                    <!-- Reopens this conversation: New Session, Resume mode, this row picked. -->
+                    <button
+                      type="button"
+                      class="plain open"
+                      onclick={() =>
+                        openNewSession({
+                          workspacePath: session.cwd ?? "",
+                          resumeSessionId: session.sessionId,
+                        })}
+                    >
+                      {sessionTitle(session.title, session.sessionId)}
+                    </button>
+                  </td>
+                  <td>
+                    <span class="dot" style="background: {workspaceColour(session.cwd)}"></span>
+                    {session.cwd ? basename(session.cwd) : "None"}
+                  </td>
+                  <td style="color: {modelColour(session.model ?? '')}">{session.model ?? "None"}</td>
+                  <td class="num">{fmtDuration(session.durationSecs)}</td>
+                  <td class="num">{fmtTokens(session.outputTokens)}</td>
+                  <td class="num">{fmtCost(session.costEstimate)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
         {/if}
       </section>
     </div>
@@ -459,20 +498,19 @@
     display: flex;
     flex-direction: column;
     flex: 1;
-    gap: 10px;
+    gap: var(--sp-3);
     min-height: 0;
-    padding: 10px 16px 14px;
+    padding: var(--sp-3) var(--sp-5) var(--sp-4);
     overflow: auto;
     font-family: var(--font-ui);
     color: var(--text);
   }
 
-  /* ── Range bar ─────────────────────────────────────────────────────────── */
   .range-bar {
     display: flex;
     align-items: center;
     flex-shrink: 0;
-    gap: 10px;
+    gap: var(--sp-3);
   }
 
   .note {
@@ -491,529 +529,128 @@
     white-space: nowrap;
   }
 
-  .empty-page {
-    display: grid;
-    place-items: center;
-    flex: 1;
-    color: var(--muted);
-    font-size: var(--fs-sm);
-  }
-
-  /* ── KPI strip ─────────────────────────────────────────────────────────── */
   .kpis {
     display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr));
     flex-shrink: 0;
-    gap: 8px;
+    gap: var(--sp-3);
   }
 
-  .kpi {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 9px 12px 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-card);
-    background: var(--surface);
-  }
-
-  .kpi-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 6px;
-  }
-
-  .kpi-label {
-    color: var(--muted);
-    font-size: var(--fs-xs);
-    white-space: nowrap;
-  }
-
-  .kpi-delta {
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    font-weight: 500;
-  }
-
-  .kpi-delta.up {
-    color: var(--accent);
-  }
-
-  .kpi-delta.down {
-    color: var(--danger);
-  }
-
-  .kpi-delta.flat {
-    color: var(--muted);
-  }
-
-  .kpi-body {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  .kpi-value {
-    font-family: var(--font-mono);
-    font-size: var(--fs-xl);
-    font-weight: 500;
-    line-height: 1.1;
-    letter-spacing: -0.01em;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .kpi-sub {
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    font-variant-numeric: tabular-nums;
-  }
-
-  /* ── Card shell ────────────────────────────────────────────────────────── */
   .row {
     display: grid;
-    flex-shrink: 0;
-    gap: 10px;
+    gap: var(--sp-3);
+    align-items: start;
   }
 
-  .row2 {
-    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr) minmax(0, 3fr);
-  }
-
+  .row2,
   .row3 {
-    grid-template-columns: minmax(0, 4fr) minmax(0, 3fr) minmax(0, 8fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  @media (max-width: 1100px) {
+    .kpis {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .row2,
+    .row3 {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
   .card {
-    display: flex;
-    flex-direction: column;
     min-width: 0;
+    padding: var(--sp-4);
     border: 1px solid var(--border);
     border-radius: var(--r-card);
     background: var(--surface);
-    overflow: hidden;
   }
 
   .card-head {
     display: flex;
-    align-items: baseline;
-    gap: 8px;
-    padding: 7px 12px;
-    border-bottom: 1px solid var(--border);
+    align-items: center;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-3);
   }
 
-  .card-title {
-    font-size: var(--fs-sm);
-    font-weight: 600;
-    white-space: nowrap;
-  }
-
-  .card-sub {
-    overflow: hidden;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .empty-card {
+  h3 {
+    flex: 1;
     margin: 0;
-    padding: 14px 12px;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semi);
+  }
+
+  .empty-card,
+  .footnote {
+    margin: 0;
     color: var(--muted);
     font-size: var(--fs-xs);
   }
 
   .footnote {
-    margin: 0;
-    padding: 6px 12px;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
+    margin-top: var(--sp-3);
   }
 
-  /* A number must never wrap. "16h 44m" outgrew the Time column and broke onto
-     a second line, which pushed the row past the fixed 24px `.recent-row`
-     height and left consecutive rows drawn over each other. */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--fs-xs);
+  }
+
+  th,
+  td {
+    padding: var(--sp-1) var(--sp-3);
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    font-weight: inherit;
+  }
+
+  thead th {
+    color: var(--muted);
+  }
+
   .num {
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-    font-variant-numeric: tabular-nums;
     text-align: right;
+    font-family: var(--font-mono);
+  }
+
+  .plain {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: inherit;
+    cursor: pointer;
+  }
+
+  .plain:focus-visible {
+    outline: var(--focus-width) solid var(--focus);
+    outline-offset: 1px;
+  }
+
+  .title-cell {
+    max-width: 0;
+    width: 40%;
+  }
+
+  .open {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .num.strong {
-    color: var(--text);
-  }
-
-  .num-head {
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-align: right;
-    text-transform: uppercase;
-  }
-
-  .dot {
-    flex-shrink: 0;
-    width: 7px;
-    height: 7px;
-    border-radius: 2px;
-  }
-
-  /* ── By model ──────────────────────────────────────────────────────────── */
-  .model-head,
-  .model-row {
-    display: grid;
-    grid-template-columns: 1.5fr repeat(var(--cols), minmax(0, 1fr));
-    align-items: center;
-    gap: 8px;
-    padding: 0 12px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .model-head {
-    padding: 7px 12px;
-  }
-
-  .model-col {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 5px;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
+  .dot,
   .swatch {
-    width: 7px;
-    height: 7px;
-    border-radius: 2px;
+    display: inline-block;
+    width: var(--sp-3);
+    height: var(--sp-3);
+    margin-right: var(--sp-2);
+    border-radius: var(--r-pill);
   }
 
-  .model-row {
-    height: 24px;
-    font-size: var(--fs-xs);
-  }
-
-  .model-row:hover {
-    background: var(--surface2);
-  }
-
-  .model-label {
-    overflow: hidden;
-    color: var(--muted);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* ── Sessions by week ──────────────────────────────────────────────────── */
-  .weeks {
+  .filter {
     display: flex;
-    align-items: flex-end;
-    gap: 10px;
-    height: 150px;
-    padding: 12px 12px 6px;
-  }
-
-  .week {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 4px;
-    height: 100%;
-  }
-
-  .week-total {
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-  }
-
-  .stack {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    max-width: 26px;
-    min-height: 2px;
-    border-radius: var(--r-xs);
-    background: var(--surface3);
-    overflow: hidden;
-  }
-
-  .seg {
-    display: block;
-    width: 100%;
-  }
-
-  .agent-dot {
-    display: block;
-    flex-shrink: 0;
-    border-radius: 50%;
-    background: var(--accent);
-  }
-
-  .week-labels {
-    display: flex;
-    gap: 10px;
-    padding: 0 12px 8px;
-  }
-
-  .week-label {
-    flex: 1;
-    overflow: hidden;
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    text-align: center;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* ── Tools ─────────────────────────────────────────────────────────────── */
-  /* 8 rows tall in both states: expanding scrolls here instead of growing the row.
-     The reserved gutter keeps the bars the same width once the scrollbar appears. */
-  .tool-list {
-    max-height: 192px;
-    overflow-y: auto;
-    scrollbar-gutter: stable;
-  }
-
-  .tool-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(24px, 0.8fr) 38px 40px;
-    align-items: center;
-    gap: 8px;
-    height: 24px;
-    padding: 0 12px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .tool-name {
-    overflow: hidden;
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .track {
-    height: 5px;
-    border-radius: var(--r-xs);
-    background: var(--surface3);
-    overflow: hidden;
-  }
-
-  .fill {
-    display: block;
-    height: 100%;
-    background: var(--accent);
-  }
-
-  .err.danger {
-    color: var(--danger);
-  }
-
-  .err.warn {
-    color: var(--warn);
-  }
-
-  .err.muted {
-    color: var(--muted);
-  }
-
-  .tool-toggle {
-    padding: 6px 12px;
-    color: var(--muted);
-    font-family: var(--font-ui);
-    font-size: var(--fs-2xs);
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .tool-toggle:hover {
-    color: var(--text);
-  }
-
-  /* ── By workspace ──────────────────────────────────────────────────────── */
-  .ws-head,
-  .ws-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 40px 52px 56px;
-    align-items: center;
-    gap: 8px;
-    padding: 0 12px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .ws-head {
-    padding: 7px 12px;
-  }
-
-  .ws-row {
-    height: 24px;
-  }
-
-  .ws-row:hover {
-    background: var(--surface2);
-  }
-
-  .ws-name {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-  }
-
-  /* A faint session-count bar behind the name, not a separate column. */
-  .ws-bar {
-    position: absolute;
-    left: 13px;
-    top: 50%;
-    height: 14px;
-    transform: translateY(-50%);
-    border-radius: var(--r-xs);
-    background: var(--surface2);
-    pointer-events: none;
-  }
-
-  .ws-text {
-    position: relative;
-    overflow: hidden;
-    font-size: var(--fs-xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* ── Activity heatmap ──────────────────────────────────────────────────── */
-  .activity-card {
-    min-height: 0;
-  }
-
-  .activity {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    justify-content: center;
-    gap: 6px;
-    padding: 10px 12px;
-  }
-
-  .heatmap {
-    display: grid;
-    grid-template-columns: repeat(15, minmax(0, 1fr));
-    gap: 3px;
-  }
-
-  .cell {
-    display: block;
-    aspect-ratio: 1;
-    border-radius: var(--r-xs);
-  }
-
-  .heat-caption {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    white-space: nowrap;
-  }
-
-  .heat-legend {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-  }
-
-  .legend-cell {
-    width: 9px;
-    height: 9px;
-  }
-
-  /* ── Recent sessions ───────────────────────────────────────────────────── */
-  .recent-card {
-    min-height: 0;
-  }
-
-  .recent-head,
-  .recent-row {
-    display: grid;
-    /* Time is 62px, not 52px: `fmtDuration` runs to "16h 44m" and nowrap would
-       otherwise push it under the Output column. */
-    grid-template-columns: minmax(0, 1.6fr) 90px 60px 62px 56px 52px;
-    align-items: center;
-    gap: 8px;
-    padding: 0 12px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .recent-head {
-    padding: 7px 12px;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  /* Fills whatever height the row's other cards give this one (height: 0 keeps
-     50 rows from stretching the row) and scrolls past it; never shorter than
-     the old fixed cap. */
-  .recent-list {
-    flex: 1 1 0;
-    height: 0;
-    min-height: 216px;
-    overflow-y: auto;
-  }
-
-  .recent-row {
-    width: 100%;
-    height: 24px;
-    border: none;
-    border-bottom: 1px solid var(--border);
-    background: transparent;
-    color: var(--muted);
-    font-family: var(--font-ui);
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .recent-row:hover {
-    background: var(--surface2);
-  }
-
-  .recent-title {
-    overflow: hidden;
-    color: var(--text);
-    font-size: var(--fs-xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .recent-ws {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-  }
-
-  .recent-model {
-    overflow: hidden;
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 </style>
