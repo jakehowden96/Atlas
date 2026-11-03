@@ -299,6 +299,7 @@ pub fn run() -> std::process::ExitCode {
             commands::session::claude_check,
             commands::terminal::logs_dir,
             commands::terminal::reveal_logs_dir,
+            commands::terminal::reveal_path,
             commands::files::list_workspace_docs,
             commands::files::list_claude_plans,
             commands::files::classify_paths,

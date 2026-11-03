@@ -16,6 +16,7 @@
   } from "../../files";
   import { basename } from "../../format";
   import { copyText } from "../../ui/copy";
+import { revealInFileManager } from "../../ui/reveal";
   import { contextMenu } from "../../ui/contextmenu";
   import { fileMenuItems } from "./FileContextMenu";
   import { showToast } from "../../stores/toast";
@@ -335,6 +336,7 @@
     else if (item.id === "rename") startRename(t.tree, t.id);
     else if (item.id === "delete") void askDelete(t.tree, t.id);
     else if (item.id === "copy-path") void copyText(absolutePath(sourceOf(t.tree), t.id));
+    else if (item.id === "reveal") void revealInFileManager(absolutePath(sourceOf(t.tree), t.id));
   }
 
   /** The active file's id when it is one of `items`, so only its tree shows a selection. */

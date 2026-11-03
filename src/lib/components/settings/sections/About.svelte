@@ -3,6 +3,7 @@
   import { claudeInfo, openUrl } from "../../../ipc";
   import { errorMessage } from "../../../ipc-error";
   import { log } from "../../../logger";
+  import { revealInFileManager } from "../../../ui/reveal";
   import { autoCheckUpdates, setAutoCheckUpdates } from "../../../stores/settings";
   import { checkForUpdate, installUpdate, updateState } from "../../../updater";
   import AtlasMark from "../../ui/AtlasMark.svelte";
@@ -87,6 +88,14 @@
       <div class="row-desc">Version, OS and Claude version for a bug report</div>
     </div>
     <CopyButton value={diagnostics} variant="text" size="sm" label="Copy diagnostics" />
+  </div>
+
+  <div class="row">
+    <div class="row-text">
+      <div class="row-title">Logs</div>
+      <div class="row-desc">Open the log folder to attach to a bug report</div>
+    </div>
+    <Button size="sm" onclick={() => void revealInFileManager()}>Open logs</Button>
   </div>
 
   <div class="row">

@@ -17,6 +17,7 @@
   import Tooltip from "../../ui/Tooltip.svelte";
   import { tooltip } from "../../../ui/tooltip";
   import { errorMessage } from "../../../ipc-error";
+import { revealInFileManager } from "../../../ui/reveal";
 
   /** Language servers run a workspace's own code, so they are opt-in per
    *  workspace; turning them off also stops any that are running. */
@@ -146,6 +147,7 @@
             />
             <span class="lsp-note">Runs this workspace's code</span>
           </div>
+          <Button size="sm" onclick={() => void revealInFileManager(ws.path)}>Reveal</Button>
           <Button variant="danger" size="sm" onclick={() => void removeWorkspaceWithUndo(ws.path)}>
             Remove
           </Button>
