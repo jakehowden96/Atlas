@@ -15,6 +15,7 @@
   } from "../../stores/settings";
   import { activeView, jumpOpen, newSessionOpen, shortcutsOpen, wsFilter } from "../../stores/view";
   import { visibleWorkspaces } from "../../stores/workspace";
+  import SetupBanners from "../shell/SetupBanners.svelte";
   import AtlasMark from "../ui/AtlasMark.svelte";
   import Button from "../ui/Button.svelte";
   import ClaudeMissing from "../shell/ClaudeMissing.svelte";
@@ -249,6 +250,7 @@
     <ClaudeMissing />
   {:else}
   {#if $claudeMissing}<ClaudeMissing variant="banner" />{/if}
+  <SetupBanners />
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="chips" bind:this={chipsEl} onkeydown={onChipsKeydown}>
     <Chip

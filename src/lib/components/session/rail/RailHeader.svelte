@@ -1,16 +1,22 @@
 <script lang="ts">
   import type { SessionTile } from "../../../overview";
   import { branchLine, waitingSummary } from "../../../session-view";
+  import { tailTranscripts } from "../../../stores/settings";
   import MeterStrip from "./MeterStrip.svelte";
   import RailTicket from "./RailTicket.svelte";
+  import TailingNote, { tailStaleMinutes } from "./TailingNote.svelte";
 
   let { tile, now }: { tile: SessionTile | null; now: number } = $props();
 
   let live = $derived(tile?.live ?? null);
   let waiting = $derived(tile?.state === "needsYou");
+  let staleMin = $derived(
+    tile && $tailTranscripts ? tailStaleMinutes(tile.state, live?.lastActivity ?? null, now) : null,
+  );
 </script>
 
 <div class="header">
+  {#if staleMin !== null}<TailingNote minutes={staleMin} />{/if}
   {#if waiting}
     <div class="waiting">Waiting for you: {waitingSummary(live?.pendingTool ?? null)}</div>
   {/if}
