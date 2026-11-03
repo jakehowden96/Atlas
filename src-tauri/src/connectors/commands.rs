@@ -173,3 +173,32 @@ pub async fn connector_list_pull_requests(
     let token = c.access_token(&connector_id).await?;
     prs.list_pull_requests(&token, &repos).await
 }
+
+/// Check out pull request `number` of `repo` in `cwd` with the user's own git.
+#[tauri::command]
+pub async fn connector_checkout_pull_request(
+    connector_id: String,
+    cwd: String,
+    repo: String,
+    number: u32,
+    c: State<'_, Connectors>,
+) -> Result<(), AtlasError> {
+    let p = Arc::clone(linked(&c, &connector_id)?);
+    let prs = p.pull_requests().ok_or_else(|| unsupported(&p))?;
+    let token = c.access_token(&connector_id).await?;
+    let listed = prs
+        .list_pull_requests(&token, &[RepoRef { slug: repo.clone() }])
+        .await?;
+    // A PR missing from the open list is treated as a fork: no upstream is set.
+    let (head, cross) = listed
+        .iter()
+        .find(|pr| pr.number == number)
+        .map_or((None, true), |pr| {
+            (Some(pr.head_ref_name.clone()), pr.is_cross_repository)
+        });
+    tokio::task::spawn_blocking(move || {
+        super::github::checkout::checkout_pull_request(&cwd, &repo, number, head.as_deref(), cross)
+    })
+    .await
+    .map_err(|e| AtlasError::internal(e.to_string()))?
+}

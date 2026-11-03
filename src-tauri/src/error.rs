@@ -41,6 +41,8 @@ pub enum AtlasError {
     /// A bug or poisoned state on Atlas's side: a lock that a panic left
     /// poisoned, a background task that died.
     Internal { message: String },
+    /// A checkout was refused because the work tree has uncommitted changes.
+    DirtyTree { message: String, count: u32 },
     /// The connector still has the placeholder client id.
     ConnectorNotConfigured { message: String },
     /// The connector has no sign-in.
@@ -155,6 +157,7 @@ impl AtlasError {
             | Self::Timeout { message, .. }
             | Self::Parse { message }
             | Self::Internal { message }
+            | Self::DirtyTree { message, .. }
             | Self::ConnectorNotConfigured { message }
             | Self::ConnectorNotLinked { message }
             | Self::ConnectorReconnectNeeded { message }

@@ -4,6 +4,7 @@
 //! repositories (`public_repo` covers public ones only), and Atlas needs
 //! private repos' pull requests and check runs. Atlas only ever reads.
 
+pub mod checkout;
 pub mod graphql;
 pub mod map;
 
