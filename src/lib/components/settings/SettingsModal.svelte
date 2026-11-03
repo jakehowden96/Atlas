@@ -188,7 +188,7 @@
     display: flex;
     align-items: center;
     flex-shrink: 0;
-    height: 44px;
+    height: var(--h-bar);
     padding: 0 18px;
     border-bottom: 1px solid var(--border);
     font-family: var(--font-ui);

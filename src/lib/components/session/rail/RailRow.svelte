@@ -37,7 +37,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 20px;
+    height: var(--h-xs);
   }
 
   .title {

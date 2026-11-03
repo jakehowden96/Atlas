@@ -305,7 +305,7 @@
     align-items: center;
     flex-shrink: 0;
     gap: 8px;
-    height: 40px;
+    height: var(--h-xl);
     padding: 0 12px;
     border-bottom: 1px solid var(--border);
   }
@@ -374,7 +374,7 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    height: 28px;
+    height: var(--h-md);
     padding: 0 12px;
     border-top: 1px solid var(--border);
     color: var(--muted);

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tooltip } from "../../ui/tooltip";
   import { chord, enterLabel } from "../../platform";
   /**
    * The command-style New Session modal: pick a workspace on the left, then
@@ -449,7 +450,7 @@
             >
               <span class="swatch" style="background: {ws.color ?? 'var(--accent)'}"></span>
               <span class="ws-name">{ws.name}</span>
-              <span class="ws-path" title={ws.path}>{ws.path}</span>
+              <span class="ws-path" use:tooltip={{ text: ws.path }}>{ws.path}</span>
               <span class="ws-last">{lastUsed(ws)}</span>
               {#snippet actions()}
                 <IconButton
@@ -491,7 +492,7 @@
       <div class="right-col">
         <div>
           <div class="col-head mode-head">
-            <span class="mode-title" title={selected?.name}>
+            <span class="mode-title">
               Start in {selected?.name ?? "…"}
             </span>
             {#if counts.harnesses > 1}

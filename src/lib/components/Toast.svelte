@@ -183,7 +183,7 @@
     justify-content: center;
     flex-shrink: 0;
     width: 24px;
-    height: 24px;
+    height: var(--h-sm);
     padding: 0;
     border: none;
     border-radius: var(--r-sm);

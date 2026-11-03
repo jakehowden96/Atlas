@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tooltip } from "../../ui/tooltip";
   import { untrack } from "svelte";
   import type { SessionState } from "../../../types/generated/SessionState";
   import { formatTokens } from "../../format";
@@ -215,7 +216,7 @@ import { tailStaleMinutes } from "../session/rail/TailingNote.svelte";
     </div>
     <div class="row2">
       <StatePill state={PILL[tile.state]} />
-      <span class="ws" title={tile.workspacePath}>
+      <span class="ws" use:tooltip={{ text: tile.workspacePath }}>
         <span class="swatch" style="background: {tile.workspaceColour}"></span>
         <span class="ws-name">{tile.workspaceName}</span>
       </span>
@@ -472,7 +473,7 @@ import { tailStaleMinutes } from "../session/rail/TailingNote.svelte";
     overflow: hidden;
     padding: 20px 14px 14px;
     font-size: var(--fs-sm);
-    mask-image: linear-gradient(to bottom, transparent, #000 20px);
+    mask-image: linear-gradient(to bottom, transparent, var(--text) 20px);
   }
 
   .kept-prompts {

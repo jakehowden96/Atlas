@@ -237,7 +237,7 @@
     gap: 8px;
     padding: 4px 8px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--r-md);
     background: var(--surface);
     font-family: var(--font-ui);
     font-size: var(--fs-2xs);
@@ -247,7 +247,7 @@
   .lsp-note button {
     padding: 0 6px;
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
     background: transparent;
     font: inherit;
     color: var(--text);

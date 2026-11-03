@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tooltip } from "../../ui/tooltip";
   import { toggled } from "../../sets";
   import {
     buildTree,
@@ -57,7 +58,7 @@
         type="button"
         class="name"
         class:viewed={viewedFiles.has(key)}
-        title={node.path}
+        use:tooltip={{ text: node.path }}
         onclick={() => onSelectFile(key)}>{node.name}</button
       >
       <span class="add">+{addedByKey.get(key) ?? 0}</span>

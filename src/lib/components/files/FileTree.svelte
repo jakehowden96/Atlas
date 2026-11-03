@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tooltip } from "../../ui/tooltip";
   import type { UnlistenFn } from "@tauri-apps/api/event";
   import { get } from "svelte/store";
   import {
@@ -527,7 +528,7 @@
       {#each $sources as source (source)}
         {@const items = diskItems(diskFiles(source))}
         <div class="source">
-          <span class="source-name" title={source}>{basename(source)}</span>
+          <span class="source-name" use:tooltip={{ text: source }}>{basename(source)}</span>
           <IconButton
             icon="close"
             size="sm"

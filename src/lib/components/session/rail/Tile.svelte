@@ -82,7 +82,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 20px;
+    height: var(--h-xs);
   }
 
   .label {
@@ -97,7 +97,7 @@
   .twisty {
     display: flex;
     align-items: center;
-    height: 20px;
+    height: var(--h-xs);
     color: var(--muted);
     transition: transform var(--dur-fast) var(--ease-out);
   }

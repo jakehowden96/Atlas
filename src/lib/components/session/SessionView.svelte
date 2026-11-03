@@ -311,7 +311,7 @@
     align-items: center;
     flex-shrink: 0;
     gap: 14px;
-    height: 30px;
+    height: var(--h-lg);
     padding: 0 16px;
     border-top: 1px solid var(--border);
     color: var(--muted);

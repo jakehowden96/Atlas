@@ -49,7 +49,7 @@
     display: block;
     width: 8px;
     height: 8px;
-    border-radius: 2px;
+    border-radius: var(--r-xs);
   }
 
   .count {
