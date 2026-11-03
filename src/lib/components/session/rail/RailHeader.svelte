@@ -14,7 +14,11 @@
   {#if waiting}
     <div class="waiting">Waiting for you: {waitingSummary(live?.pendingTool ?? null)}</div>
   {/if}
-  <RailTicket branchLine={branchLine(tile?.branch || live?.gitBranch, live?.worktree ?? null)} />
+  <RailTicket
+    sessionId={tile?.atlasSessionId ?? ""}
+    branch={tile?.branch || live?.gitBranch || ""}
+    branchLine={branchLine(tile?.branch || live?.gitBranch, live?.worktree ?? null)}
+  />
   <MeterStrip {live} {now} />
 </div>
 
