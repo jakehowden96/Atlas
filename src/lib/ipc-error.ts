@@ -23,6 +23,7 @@ const KINDS = {
   invalidInput: true,
   notFound: true,
   alreadyExists: true,
+  dirtyTree: true,
   forbidden: true,
   io: true,
   toolMissing: true,

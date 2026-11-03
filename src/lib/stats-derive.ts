@@ -332,6 +332,7 @@ export const TODAY_COST_TIP =
   "All sessions, since midnight. Session totals can be higher because they include earlier days.";
 
 /** "$8.10 today" under a session's own cost, or null when the session began today. */
-export function costTodayLine(live: { costEstimate: number; costToday: number }): string | null {
+export function costTodayLine(live: { costEstimate: number; costToday?: number }): string | null {
+  if (live.costToday == null) return null;
   return Math.abs(live.costEstimate - live.costToday) < 0.005 ? null : `${fmtCost(live.costToday)} today`;
 }

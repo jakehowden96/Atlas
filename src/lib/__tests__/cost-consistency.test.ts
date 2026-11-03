@@ -20,7 +20,7 @@ const summary = { byDay, totalsAll: { cost: 19.28 } } as any;
 
 describe("cost consistency", () => {
   it("top bar today equals byDay[today].cost", () => {
-    expect(todayCost(summary, now)).toBe(byDay[today].cost);
+    expect(todayCost(summary, now)).toBe(byDay[today]?.cost);
   });
 
   it("sum of session costs equals the all-time total", () => {
@@ -38,6 +38,6 @@ describe("cost consistency", () => {
     for (const s of sessions) {
       if (s.costEstimate > top) expect(costTodayLine(s), `${s.id}: ${s.costEstimate} > ${top}`).not.toBeNull();
     }
-    expect(costTodayLine(sessions[0])).toBe("$8.10 today");
+    expect(costTodayLine(sessions[0] as (typeof sessions)[number])).toBe("$8.10 today");
   });
 });
