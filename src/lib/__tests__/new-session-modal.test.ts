@@ -6,8 +6,7 @@ import userEvent from "@testing-library/user-event";
 vi.mock("../ipc", () => ({
   listResumableSessions: vi.fn(),
   validateDirectory: vi.fn(),
-  ghViewer: vi.fn(),
-  listRepoPrs: vi.fn(),
+  connectorListPullRequests: vi.fn(),
   listWorkspaceRepos: vi.fn(),
   getGitStatus: vi.fn(),
   openUrl: vi.fn(),
@@ -28,7 +27,7 @@ import NewSessionModal from "../components/session/NewSessionModal.svelte";
 import { prRepos, reposByWorkspace } from "../stores/prs";
 import { newSessionOpen } from "../stores/view";
 import { workspaces } from "../stores/workspace";
-import type { Pr } from "../../types/generated/Pr";
+import type { Pr } from "../stores/prs";
 
 // happy-dom does no layout; Modal's tabbables() skips zero-size elements.
 Object.defineProperty(HTMLElement.prototype, "offsetWidth", { configurable: true, get: () => 1 });
@@ -51,6 +50,9 @@ function pr(number: number): Pr {
     reviewState: "none",
     reviewRequestLogins: [],
     commentsCount: 0,
+    checks: [],
+    review: { kind: "awaiting" },
+    checkoutRef: { repo: "o/atlas", number },
   };
 }
 
@@ -147,7 +149,7 @@ describe("NewSessionModal", () => {
 
   it("From PR: shows a link to settings when GitHub is not set up", async () => {
     prRepos.set([
-      { repo: "o/atlas", prs: [], error: { kind: "not_authenticated" } as never },
+      { repo: "o/atlas", prs: [], error: { kind: "connectorReconnectNeeded", message: "x" } },
     ]);
     render(NewSessionModal);
     await fireEvent.click(await screen.findByRole("tab", { name: /From PR/ }));

@@ -4,31 +4,53 @@
  * called once from `App.svelte`; the view is a pure renderer of these stores.
  */
 import { derived, get, writable } from "svelte/store";
-import { ghViewer, listRepoPrs, listWorkspaceRepos } from "../ipc";
-import { setupProblem } from "../gh-setup";
+import { connectorListPullRequests, listWorkspaceRepos } from "../ipc";
+import { setupProblem } from "../pr-setup";
 import { log } from "../logger";
+import { byKind, connectors, online, reportFetch } from "./connectors";
 import { autoAddReposFromWorkspaces, prRefreshMinutes, watchedRepos } from "./settings";
-import { online } from "./connectors";
 import { showToast } from "./toast";
 import { visibleWorkspaces } from "./workspace";
-import type { GhError } from "../../types/generated/GhError";
-import type { GhViewer } from "../../types/generated/GhViewer";
-import type { Pr } from "../../types/generated/Pr";
-import type { RepoPrs } from "../../types/generated/RepoPrs";
+import type { Check } from "../../types/generated/Check";
+import type { Pr as BasePr } from "../../types/generated/Pr";
+import type { PullRequest } from "../../types/generated/PullRequest";
+import type { ReviewState } from "../../types/generated/ReviewState";
 import type { WorkspaceRepo } from "../../types/generated/WorkspaceRepo";
-import { errorMessage } from "../ipc-error";
+import { errorMessage, IpcError } from "../ipc-error";
+
+/** A pull request with the connector's per-check detail. */
+export type Pr = BasePr & {
+  checks: Check[];
+  review: ReviewState;
+  /** What the connector needs to fetch this PR's code. */
+  checkoutRef: { repo: string; number: number };
+};
+
+/** Why one repo's list failed: an `AtlasError` kind, plus when to retry if rate limited. */
+export interface PrRepoError {
+  kind: string;
+  message: string;
+  retryAt?: number;
+}
+
+export interface RepoPrs {
+  repo: string;
+  prs: Pr[];
+  error: PrRepoError | null;
+}
 
 export type PrFilter = "all" | "mine" | "review";
 
 export const prRepos = writable<RepoPrs[] | null>(null);
 export const prsLoading = writable(false);
 export const prsLastUpdated = writable<number | null>(null);
-export const prViewer = writable<GhViewer | null>(null);
-/** Why there is no viewer, when gh said so: missing, or not signed in. */
-export const prViewerError = writable<GhError | null>(null);
-/** `gh` missing or signed out, from the viewer lookup or any repo's answer. */
-export const prSetupProblem = derived([prRepos, prViewerError], ([$repos, $error]) =>
-  setupProblem($repos, $error),
+/** The signed-in account of the linked pull request connector. */
+export const prViewer = derived(byKind, ($k) =>
+  $k.pullRequests?.status.kind === "linked" ? { login: $k.pullRequests.status.account } : null,
+);
+/** No usable connector, offline, rate limited: why there is nothing to show. */
+export const prSetupProblem = derived([connectors, prRepos], ([$c, $repos]) =>
+  setupProblem($c, $repos),
 );
 export const prFilter = writable<PrFilter>("all");
 
@@ -177,18 +199,53 @@ export const effectiveWatchedRepos = derived(
   },
 );
 
-async function loadViewer(): Promise<void> {
+const CI = { pass: "passed", fail: "failed", pending: "pending" } as const;
+
+/** The aggregate pills still read until phase 72; "awaiting" stays quiet, as gh's `none` did. */
+const LEGACY_REVIEW = {
+  awaiting: "none",
+  comments: "none",
+  changes: "changes_requested",
+  approved: "approved",
+} as const;
+
+function toPr(p: PullRequest, repo: string): Pr {
+  return {
+    number: p.number,
+    title: p.title,
+    url: p.url,
+    author: { login: p.author },
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+    isDraft: p.state === "draft",
+    isCrossRepository: p.isCrossRepository,
+    headRefName: p.headRefName,
+    ciState: p.ci ? CI[p.ci] : "none",
+    reviewState: LEGACY_REVIEW[p.review.kind],
+    reviewRequestLogins: p.reviewRequestLogins,
+    commentsCount: p.commentsCount,
+    checks: p.checks,
+    review: p.review,
+    checkoutRef: { repo, number: p.number },
+  };
+}
+
+function toRepoError(e: unknown): PrRepoError {
+  const retryAt = e instanceof IpcError ? e.fields.retryAt : undefined;
+  return {
+    kind: e instanceof IpcError ? e.kind : "unknown",
+    message: errorMessage(e),
+    ...(typeof retryAt === "number" ? { retryAt } : {}),
+  };
+}
+
+/** One repo per call, so a failure stays on that repo's card. */
+async function fetchRepo(connectorId: string, repo: string): Promise<RepoPrs> {
   try {
-    const result = await ghViewer();
-    prViewer.set(result.viewer);
-    prViewerError.set(result.error);
+    const prs = await connectorListPullRequests(connectorId, [{ slug: repo }]);
+    return { repo, prs: prs.map((p) => toPr(p, repo)), error: null };
   } catch (e) {
-    // gh_viewer reports a missing gh in its result rather than rejecting, so
-    // this is a broken IPC channel — still not worth a toast, the screen
-    // degrades to All-only.
-    log.warn("prs", `gh_viewer failed: ${errorMessage(e)}`);
-    prViewer.set(null);
-    prViewerError.set(null);
+    return { repo, prs: [], error: toRepoError(e) };
   }
 }
 
@@ -203,24 +260,53 @@ export async function refreshPrs(): Promise<void> {
   const mine = ++latestRefresh;
   inFlight++;
   prsLoading.set(true);
-  // No viewer means gh was missing or signed out when it was last asked; the
-  // user may have signed in since, and Mine / Needs my review depend on it.
-  if (get(prViewer) === null) void loadViewer();
   try {
-    const result = await listRepoPrs(get(effectiveWatchedRepos));
+    const connector = get(byKind).pullRequests;
+    const result = connector
+      ? await Promise.all(
+          get(effectiveWatchedRepos).map((repo) => fetchRepo(connector.info.id, repo)),
+        )
+      : [];
     if (mine !== latestRefresh) return;
     prRepos.set(result);
     prsLastUpdated.set(Date.now());
-    lastRefreshFailed = false;
-  } catch (e) {
-    if (mine !== latestRefresh) return;
-    log.error("prs", "list_repo_prs failed", e);
-    // Offline has its own top-bar chip; a toast per failed fetch is noise.
-    if (!lastRefreshFailed && get(online)) showToast("Failed to list PRs", { body: errorMessage(e) });
-    lastRefreshFailed = true;
+    const failed = result.length > 0 && result.every((r) => r.error);
+    if (result.some((r) => r.error?.kind === "connectorOffline")) reportFetch(false);
+    else if (result.length > 0) reportFetch(true);
+    // A setup problem has its own panel; a toast on top would repeat it.
+    if (failed && !get(prSetupProblem) && !lastRefreshFailed && get(online)) {
+      log.error("prs", "connector_list_pull_requests failed", result[0]?.error);
+      showToast("Failed to list PRs", { body: result[0]?.error?.message });
+    }
+    lastRefreshFailed = failed;
   } finally {
     inFlight--;
     if (mine === latestRefresh) prsLoading.set(false);
+  }
+}
+
+/** Repos whose rail refresh has not answered yet. */
+const repoInFlight = new Set<string>();
+
+/**
+ * Refresh one repo's PRs for the session rail, replacing just its entry in
+ * `prRepos`. Does nothing while that repo's previous refresh is still out, so
+ * the rail's 60s timer never stacks requests. The rail picks `branch`'s PR.
+ */
+export async function refreshPrsForBranch(repo: string, _branch: string): Promise<void> {
+  const connector = get(byKind).pullRequests;
+  if (!connector || repoInFlight.has(repo)) return;
+  repoInFlight.add(repo);
+  try {
+    const fresh = await fetchRepo(connector.info.id, repo);
+    prRepos.update((all) => {
+      const rest = all ?? [];
+      return rest.some((r) => r.repo === repo)
+        ? rest.map((r) => (r.repo === repo ? fresh : r))
+        : [...rest, fresh];
+    });
+  } finally {
+    repoInFlight.delete(repo);
   }
 }
 
@@ -237,7 +323,7 @@ export function startPrPolling(): () => void {
   });
   // `effectiveWatchedRepos` hands out a new array on every recompute, and
   // resolving a workspace's remotes recomputes it even when the list is the
-  // same; only a different list is worth another `gh pr list` fan-out.
+  // same; only a different list is worth another connector fan-out.
   let watchedKey: string | null = null;
   // Fires immediately on subscribe, which is the initial fetch.
   const stopRepos = effectiveWatchedRepos.subscribe((repos) => {
@@ -245,6 +331,13 @@ export function startPrPolling(): () => void {
     if (key === watchedKey) return;
     watchedKey = key;
     void refreshPrs();
+  });
+  // The connector list loads after boot and changes on sign-in or sign-out.
+  let connectorKey: string | null = null;
+  const stopConnector = byKind.subscribe(($k) => {
+    const key = $k.pullRequests ? `${$k.pullRequests.info.id}:${$k.pullRequests.status.kind}` : "";
+    if (connectorKey !== null && key !== connectorKey) void refreshPrs();
+    connectorKey = key;
   });
   const stopInterval = prRefreshMinutes.subscribe((minutes) => {
     if (timer) clearInterval(timer);
@@ -258,6 +351,7 @@ export function startPrPolling(): () => void {
   return () => {
     stopSlugs();
     stopRepos();
+    stopConnector();
     stopInterval();
     if (timer) clearInterval(timer);
     timer = null;

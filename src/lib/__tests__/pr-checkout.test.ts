@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../ipc", () => ({
-  ghPrCheckout: vi.fn(),
+  connectorCheckoutPullRequest: vi.fn(),
   gitCheckoutBranch: vi.fn(),
 }));
 
-import { ghPrCheckout, gitCheckoutBranch } from "../ipc";
+import { connectorCheckoutPullRequest, gitCheckoutBranch } from "../ipc";
 import { checkoutPullRequest } from "../pr-checkout";
+import { connectors } from "../stores/connectors";
 import type { Pr } from "../../types/generated/Pr";
 
 function pr(overrides: Partial<Pr>): Pr {
@@ -29,14 +30,22 @@ function pr(overrides: Partial<Pr>): Pr {
 }
 
 describe("checkoutPullRequest", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    connectors.set([
+      {
+        info: { id: "github", name: "GitHub", kind: "pullRequests" },
+        status: { kind: "linked", account: "octocat" },
+      } as never,
+    ]);
+  });
 
   it("fetches a fork PR by number instead of checking out its branch name", async () => {
     // The fork's branch is called `main`; `git checkout main` would land on the
     // local main and start the session on the wrong code.
     await checkoutPullRequest("/w/r", "o/r", pr({ isCrossRepository: true, headRefName: "main" }));
 
-    expect(ghPrCheckout).toHaveBeenCalledWith("/w/r", 7, "o/r");
+    expect(connectorCheckoutPullRequest).toHaveBeenCalledWith("github", "/w/r", "o/r", 7);
     expect(gitCheckoutBranch).not.toHaveBeenCalled();
   });
 
@@ -44,13 +53,20 @@ describe("checkoutPullRequest", () => {
     await checkoutPullRequest("/w/r", "o/r", pr({}));
 
     expect(gitCheckoutBranch).toHaveBeenCalledWith("/w/r", "feature");
-    expect(ghPrCheckout).not.toHaveBeenCalled();
+    expect(connectorCheckoutPullRequest).not.toHaveBeenCalled();
   });
 
   it("lets a failed checkout reject so the caller can toast it", async () => {
-    vi.mocked(ghPrCheckout).mockRejectedValueOnce("gh: not signed in");
+    vi.mocked(connectorCheckoutPullRequest).mockRejectedValueOnce("dirty tree");
     await expect(checkoutPullRequest("/w/r", "o/r", pr({ isCrossRepository: true }))).rejects.toBe(
-      "gh: not signed in",
+      "dirty tree",
+    );
+  });
+
+  it("rejects a fork checkout when no connector is linked", async () => {
+    connectors.set([]);
+    await expect(checkoutPullRequest("/w/r", "o/r", pr({ isCrossRepository: true }))).rejects.toThrow(
+      /Connect/,
     );
   });
 });

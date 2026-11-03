@@ -127,7 +127,11 @@ pub struct PullRequest {
     pub ci: Option<CheckStatus>,
     pub checks: Vec<Check>,
     pub review: ReviewState,
+    pub created_at: String,
     pub updated_at: String,
+    /// Logins of individually requested reviewers; team requests carry none.
+    pub review_request_logins: Vec<String>,
+    pub comments_count: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

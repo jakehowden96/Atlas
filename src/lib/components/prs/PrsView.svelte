@@ -1,8 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { openUrl } from "../../ipc";
-  import { setupHint } from "../../gh-setup";
-  import { isMacPlatform } from "../../platform";
+  import { setupHint } from "../../pr-setup";
   import { workOnPr } from "../../session-actions";
   import {
     effectiveWatchedRepos,
@@ -40,9 +39,9 @@
     if (tick) clearInterval(tick);
   });
 
-  // gh missing or signed out fails every repo the same way, so it gets one
-  // explanation with the fix in place of a wall of identical card errors.
-  const setup = $derived($prSetupProblem ? setupHint($prSetupProblem, isMacPlatform()) : null);
+  // A missing or expired connector fails every repo the same way, so it gets one
+  // explanation in place of a wall of identical card errors.
+  const setup = $derived($prSetupProblem ? setupHint($prSetupProblem) : null);
 
   const viewerLogin = $derived($prViewer?.login ?? null);
   // Without a viewer there is nothing to match Mine / Needs my review against,
@@ -169,9 +168,6 @@
       <div class="setup" role="status">
         <p class="setup-title">{setup.title}</p>
         <p class="setup-detail">{setup.detail}</p>
-        {#each setup.commands as command (command)}
-          <code class="setup-command">{command}</code>
-        {/each}
       </div>
     {:else if $prRepos === null}
       <p class="empty">Loading…</p>
@@ -331,17 +327,6 @@
   .setup-title {
     color: var(--text);
     font-weight: 600;
-  }
-
-  .setup-command {
-    padding: 4px 10px;
-    border: 1px solid var(--border2);
-    border-radius: var(--r-md);
-    background: var(--surface2);
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-    user-select: all;
   }
 
   .link {

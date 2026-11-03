@@ -1,4 +1,6 @@
-import { ghPrCheckout, gitCheckoutBranch } from "./ipc";
+import { get } from "svelte/store";
+import { connectorCheckoutPullRequest, gitCheckoutBranch } from "./ipc";
+import { byKind } from "./stores/connectors";
 import type { Pr } from "../types/generated/Pr";
 
 /**
@@ -6,12 +8,14 @@ import type { Pr } from "../types/generated/Pr";
  *
  * A fork PR's `headRefName` is the fork's branch name, which is often `main`:
  * checking that name out would silently land on the local `main`, not the PR.
- * `gh pr checkout` fetches the PR's own commits, so forks go through it. A PR
+ * The connector fetches the PR's own commits, so forks go through it. A PR
  * from a branch of the repo itself is a local branch by name, as before.
  */
 export async function checkoutPullRequest(path: string, repo: string, pr: Pr): Promise<void> {
   if (pr.isCrossRepository) {
-    await ghPrCheckout(path, pr.number, repo);
+    const connector = get(byKind).pullRequests;
+    if (!connector) throw new Error("Connect a pull request service to check out a fork's PR");
+    await connectorCheckoutPullRequest(connector.info.id, path, repo, pr.number);
   } else {
     await gitCheckoutBranch(path, pr.headRefName);
   }
