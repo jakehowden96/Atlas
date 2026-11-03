@@ -1,8 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { openUrl } from "../../ipc";
   import { setupHint } from "../../pr-setup";
-  import { workOnPr } from "../../session-actions";
+  import { retryLabel, searchPrs, SORT_OPTIONS, sortPrs, type PrSort } from "../../pr-view";
   import {
     effectiveWatchedRepos,
     matchesFilter,
@@ -18,15 +17,23 @@
     matchRepo,
     type PrFilter,
   } from "../../stores/prs";
-  import { prRefreshMinutes, settingsOpen } from "../../stores/settings";
-  import { showToast } from "../../stores/toast";
+  import { byKind } from "../../stores/connectors";
+  import { prRefreshMinutes, setWatchedRepos, settingsOpen, watchedRepos } from "../../stores/settings";
   import { visibleWorkspaces } from "../../stores/workspace";
   import { formatAgo } from "../../format";
+  import { tooltip } from "../../ui/tooltip";
+  import Banner from "../ui/Banner.svelte";
+  import Button from "../ui/Button.svelte";
+  import ChipInput from "../ui/ChipInput.svelte";
+  import EmptyState from "../ui/EmptyState.svelte";
+  import Icon from "../ui/Icon.svelte";
+  import SearchInput from "../ui/SearchInput.svelte";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
-  import type { Pr } from "../../../types/generated/Pr";
-  import { errorMessage } from "../../ipc-error";
+  import Select from "../ui/Select.svelte";
+  import Skeleton from "../ui/Skeleton.svelte";
+  import PrRow from "./PrRow.svelte";
 
-  // Track "now" so "refreshed 2m ago" ticks between polls. Fetching itself is
+  // Track "now" so "Updated 2m ago" ticks between polls. Fetching itself is
   // owned by the store, so the badge stays live with this view unmounted.
   let now = $state(Date.now());
   let tick: ReturnType<typeof setInterval> | null = null;
@@ -39,9 +46,14 @@
     if (tick) clearInterval(tick);
   });
 
+  let query = $state("");
+  let sort = $state<PrSort>("updated");
+
   // A missing or expired connector fails every repo the same way, so it gets one
   // explanation in place of a wall of identical card errors.
   const setup = $derived($prSetupProblem ? setupHint($prSetupProblem) : null);
+  const rateLimit = $derived($prSetupProblem?.kind === "rateLimited" ? $prSetupProblem : null);
+  const providerName = $derived($byKind.pullRequests?.info.name ?? "the service");
 
   const viewerLogin = $derived($prViewer?.login ?? null);
   // Without a viewer there is nothing to match Mine / Needs my review against,
@@ -66,15 +78,36 @@
         repo: entry.repo,
         error: entry.error,
         openCount: entry.prs.length,
-        prs: entry.prs.filter((pr) => matchesFilter(pr, activeFilter, viewerLogin)),
+        prs: sortPrs(
+          searchPrs(
+            entry.prs.filter((pr) => matchesFilter(pr, activeFilter, viewerLogin)),
+            query,
+          ),
+          sort,
+          viewerLogin,
+        ),
       }))
-      .filter((card) => card.prs.length > 0 || card.error),
+      .filter((card) => card.prs.length > 0 || card.error)
+      .sort((a, b) => (sort === "repo" ? a.repo.localeCompare(b.repo) : 0)),
   );
+
+  // Repos found in linked workspaces that are not watched yet.
+  const suggestions = $derived(
+    [
+      ...new Set(
+        Object.values($reposByWorkspace).flatMap((rs) =>
+          rs.flatMap((r) => (r.slug ? [r.slug] : [])),
+        ),
+      ),
+    ].filter((slug) => !$watchedRepos.includes(slug)),
+  );
+
+  const validateRepo = (v: string) => (/^[\w.-]+\/[\w.-]+$/.test(v) ? null : "Use the form owner/name");
 
   /**
    * The workspace a repo card belongs to, for its colour dot and name. The
    * session itself starts in the repo's own directory, not here — see
-   * `workOnIt`.
+   * `workOnPr`.
    */
   function workspaceFor(repo: string) {
     const match = matchRepo($reposByWorkspace, repo);
@@ -82,59 +115,11 @@
     return $visibleWorkspaces.find((w) => w.path === match.workspacePath) ?? null;
   }
 
-  function relativeTime(iso: string, ref: number): string {
-    const then = Date.parse(iso);
-    return Number.isNaN(then) ? iso : formatAgo(then, ref);
-  }
-
-  /* Distinct from a plain age: a refresh that just landed should read "just
-     now" for half a minute rather than flicking straight to "1m ago". */
-  function lastUpdatedLabel(updated: number | null, ref: number): string {
-    if (updated == null) return "never";
-    return ref - updated < 30_000 ? "just now" : formatAgo(updated, ref);
-  }
-
-  type Pill = { label: string; tone: "accent" | "danger" | "warn" | "muted" };
-
-  function ciPill(s: Pr["ciState"]): Pill | null {
-    switch (s) {
-      case "passed":
-        return { label: "CI passed", tone: "accent" };
-      case "failed":
-        return { label: "CI failed", tone: "danger" };
-      case "pending":
-        return { label: "CI pending", tone: "muted" };
-      default:
-        return null;
-    }
-  }
-
-  function reviewPill(s: Pr["reviewState"]): Pill | null {
-    switch (s) {
-      case "approved":
-        return { label: "Approved", tone: "accent" };
-      case "changes_requested":
-        return { label: "Changes requested", tone: "danger" };
-      case "review_required":
-        return { label: "Review required", tone: "warn" };
-      default:
-        return null;
-    }
-  }
-
-  function commentsPill(n: number): Pill | null {
-    if (n === 0) return null;
-    return { label: n === 1 ? "1 comment" : `${n} comments`, tone: "muted" };
-  }
-
-  function pillsFor(pr: Pr): Pill[] {
-    return [ciPill(pr.ciState), reviewPill(pr.reviewState), commentsPill(pr.commentsCount)].filter(
-      (p): p is Pill => p !== null,
-    );
-  }
-
-  function openPr(pr: Pr) {
-    openUrl(pr.url).catch((e) => showToast("Failed to open PR", { body: errorMessage(e) }));
+  /* A refresh that just landed reads "just now" for half a minute rather than
+     flicking straight to "1m ago". */
+  function updatedLabel(updated: number | null, ref: number): string {
+    if (updated == null) return "Not updated yet";
+    return ref - updated < 30_000 ? "Updated just now" : `Updated ${formatAgo(updated, ref)}`;
   }
 </script>
 
@@ -143,38 +128,88 @@
     <SegmentedControl
       options={filterOptions}
       value={activeFilter}
+      role="radiogroup"
+      label="Filter pull requests"
       onChange={(id) => prFilter.set(id)}
     />
+    <div class="search">
+      <SearchInput bind:value={query} placeholder="Search title, author, branch" aria-label="Search pull requests" />
+    </div>
+    <Select
+      size="sm"
+      aria-label="Sort pull requests"
+      options={SORT_OPTIONS}
+      value={sort}
+      onChange={(id) => (sort = id as PrSort)}
+    />
     <div class="spacer"></div>
-    <span class="meta">
-      via gh · refreshed {$prsLoading ? "…" : lastUpdatedLabel($prsLastUpdated, now)} · every {$prRefreshMinutes}m
+    <span class="meta" use:tooltip={{ text: `Refreshes every ${$prRefreshMinutes} minutes` }}>
+      {$prsLoading ? "Updating" : updatedLabel($prsLastUpdated, now)}
     </span>
-    <button type="button" class="btn" onclick={() => refreshPrs()} disabled={$prsLoading}>
+    <Button size="sm" loading={$prsLoading} onclick={() => refreshPrs()}>
+      {#snippet leading()}<Icon name="refresh" size={16} />{/snippet}
       Refresh
-    </button>
-    <button type="button" class="btn" onclick={() => settingsOpen.set(true)}>Watched repos</button>
+    </Button>
+    <Button size="sm" onclick={() => settingsOpen.set(true)}>Watched repos</Button>
   </div>
 
   <div class="cards">
-    {#if $effectiveWatchedRepos.length === 0}
-      <p class="empty">
-        No watched repos yet.
-        <button type="button" class="link" onclick={() => settingsOpen.set(true)}>
-          Add some in Settings › Pull requests
-        </button>
-        to see open PRs here.
-      </p>
-    {:else if setup}
-      <div class="setup" role="status">
-        <p class="setup-title">{setup.title}</p>
-        <p class="setup-detail">{setup.detail}</p>
-      </div>
+    {#if setup}
+      <EmptyState
+        icon={rateLimit ? "warning" : "error"}
+        title={setup.title}
+        description={rateLimit ? `${setup.detail} ${retryLabel(rateLimit.retryAt, now)}` : setup.detail}
+      >
+        {#snippet action()}
+          {#if setup.action === "connect" || setup.action === "reconnect"}
+            <Button variant="primary" onclick={() => settingsOpen.set(true)}>Open connectors</Button>
+          {:else if setup.action === "retry"}
+            <Button onclick={() => refreshPrs()}>Retry</Button>
+          {/if}
+        {/snippet}
+      </EmptyState>
+    {:else if $effectiveWatchedRepos.length === 0}
+      <EmptyState
+        icon="info"
+        title="No repositories watched yet"
+        description="Add the repositories whose open pull requests you want here"
+      >
+        {#snippet action()}
+          <div class="add">
+            <ChipInput
+              label="Watched repositories"
+              placeholder="owner/name"
+              value={$watchedRepos}
+              validate={validateRepo}
+              onChange={(v) => void setWatchedRepos(v)}
+            />
+            {#if suggestions.length > 0}
+              <div class="suggest" role="group" aria-label="Repositories in your workspaces">
+                {#each suggestions as slug (slug)}
+                  <Button size="sm" onclick={() => void setWatchedRepos([...$watchedRepos, slug])}>
+                    Add {slug}
+                  </Button>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/snippet}
+      </EmptyState>
     {:else if $prRepos === null}
-      <p class="empty">Loading…</p>
+      <div class="card" aria-busy="true" aria-label="Loading pull requests">
+        {#each [0, 1, 2] as i (i)}
+          <div class="skel-row">
+            <Skeleton width="60%" height="var(--sp-4)" />
+            <Skeleton width="35%" height="var(--sp-4)" />
+          </div>
+        {/each}
+      </div>
     {:else if cards.length === 0}
-      <p class="empty">
-        {activeFilter === "all" ? "No open pull requests." : "Nothing matches this filter."}
-      </p>
+      {#if activeFilter === "all" && !query.trim()}
+        <EmptyState icon="info" title="No open pull requests" description="Nothing is open in the watched repositories" />
+      {:else}
+        <EmptyState icon="info" title="Nothing matches" description="Try another filter or search" />
+      {/if}
     {:else}
       {#each cards as card (card.repo)}
         {@const ws = workspaceFor(card.repo)}
@@ -187,52 +222,25 @@
             {#if ws}
               <span class="linked">workspace <span class="linked-name">{ws.name}</span></span>
             {:else}
-              <button type="button" class="link-ws" onclick={() => settingsOpen.set(true)}>
+              <Button size="sm" variant="link" onclick={() => settingsOpen.set(true)}>
                 Link a workspace to start sessions from PRs
-              </button>
+              </Button>
             {/if}
           </header>
 
           {#if card.error}
-            <p class="card-error">{card.error.message}</p>
+            <Banner tone={card.error.kind === "connectorRateLimited" ? "warn" : "error"} title={card.error.message}>
+              {#if card.error.kind === "connectorRateLimited"}
+                {retryLabel(card.error.retryAt ?? 0, now)}
+              {/if}
+              {#snippet actions()}
+                <Button size="sm" onclick={() => refreshPrs()}>Retry</Button>
+              {/snippet}
+            </Banner>
           {/if}
 
           {#each card.prs as pr (pr.number)}
-            <div class="pr-row">
-              <span class="pr-dot" class:draft={pr.isDraft}></span>
-              <div class="pr-body">
-                <div class="pr-line">
-                  <span class="pr-title">{pr.title}</span>
-                  <span class="pr-number">#{pr.number}</span>
-                  {#if pr.isDraft}<span class="draft-pill">Draft</span>{/if}
-                </div>
-                <div class="pr-sub">
-                  {pr.headRefName} · opened {relativeTime(pr.createdAt, now)} by @{pr.author.login}
-                </div>
-              </div>
-              <div class="pills">
-                {#each pillsFor(pr) as pill (pill.label)}
-                  <span class="pill pill-{pill.tone}">{pill.label}</span>
-                {/each}
-              </div>
-              <button
-                type="button"
-                class="btn work"
-                title="Start a Claude session on this PR's branch"
-                onclick={() => void workOnPr(card.repo, pr)}
-              >
-                Work on it ›_
-              </button>
-              <button
-                type="button"
-                class="ext"
-                title="Open on GitHub"
-                aria-label="Open on GitHub"
-                onclick={() => openPr(pr)}
-              >
-                ↗
-              </button>
-            </div>
+            <PrRow repo={card.repo} {pr} {now} {providerName} />
           {/each}
         </section>
       {/each}
@@ -255,9 +263,14 @@
   .toolbar {
     display: flex;
     flex-shrink: 0;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
-    padding: 14px 16px 0;
+    gap: var(--sp-3);
+    padding: var(--sp-4) var(--sp-5) 0;
+  }
+
+  .search {
+    width: 240px;
   }
 
   .spacer {
@@ -266,76 +279,36 @@
 
   .meta {
     color: var(--muted);
-    font-family: var(--font-mono);
     font-size: var(--fs-xs);
     white-space: nowrap;
-  }
-
-  .btn {
-    height: 26px;
-    padding: 0 10px;
-    border: 1px solid var(--border2);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    color: var(--text);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
-    font-weight: 500;
-    white-space: nowrap;
-    cursor: pointer;
-  }
-
-  .btn:hover:not(:disabled) {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-
-  .btn:disabled {
-    cursor: default;
-    opacity: 0.6;
   }
 
   .cards {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 14px 16px 16px;
+    gap: var(--sp-4);
+    padding: var(--sp-4) var(--sp-5) var(--sp-5);
   }
 
-  .empty {
-    margin: 24px 0;
-    color: var(--muted);
-    font-size: var(--fs-sm);
-    text-align: center;
-  }
-
-  .setup {
+  .add {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    margin: 24px 0;
-    color: var(--muted);
-    font-size: var(--fs-sm);
-    text-align: center;
+    gap: var(--sp-3);
+    width: min(420px, 100%);
   }
 
-  .setup p {
-    margin: 0;
+  .suggest {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
   }
 
-  .setup-title {
-    color: var(--text);
-    font-weight: 600;
-  }
-
-  .link {
-    padding: 0;
-    border: none;
-    background: none;
-    color: var(--accent);
-    font: inherit;
-    cursor: pointer;
+  .skel-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    padding: var(--sp-4);
+    border-bottom: 1px solid var(--border);
   }
 
   /* ── Repo card ─────────────────────────────────────────────────────────── */
@@ -349,16 +322,16 @@
   .card-head {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
     border-bottom: 1px solid var(--border);
   }
 
   .ws-dot {
     flex-shrink: 0;
-    width: 8px;
-    height: 8px;
-    border-radius: 2px;
+    width: var(--sp-3);
+    height: var(--sp-3);
+    border-radius: var(--r-xs);
   }
 
   .repo {
@@ -384,159 +357,6 @@
   }
 
   .linked-name {
-    color: var(--text);
-  }
-
-  .link-ws {
-    padding: 0;
-    border: none;
-    background: none;
-    color: var(--accent);
-    font-family: var(--font-ui);
-    font-size: var(--fs-xs);
-    white-space: nowrap;
-    cursor: pointer;
-  }
-
-  .card-error {
-    margin: 0;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-    background: color-mix(in srgb, var(--danger) 8%, transparent);
-    color: var(--danger);
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-    line-height: 1.4;
-  }
-
-  /* ── PR row ────────────────────────────────────────────────────────────── */
-  .pr-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .pr-row:last-child {
-    border-bottom: none;
-  }
-
-  .pr-row:hover {
-    background: var(--surface2);
-  }
-
-  .pr-dot {
-    flex-shrink: 0;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--accent);
-  }
-
-  .pr-dot.draft {
-    background: var(--muted);
-  }
-
-  .pr-body {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    gap: 3px;
-    min-width: 0;
-  }
-
-  .pr-line {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .pr-title {
-    overflow: hidden;
-    font-size: var(--fs-sm);
-    font-weight: 500;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .pr-number {
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-  }
-
-  .draft-pill {
-    padding: 0 6px;
-    border: 1px solid var(--border2);
-    border-radius: 9px;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-    white-space: nowrap;
-  }
-
-  .pr-sub {
-    overflow: hidden;
-    color: var(--muted);
-    font-size: var(--fs-xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .pills {
-    display: flex;
-    flex-shrink: 0;
-    gap: 6px;
-  }
-
-  .pill {
-    display: inline-flex;
-    align-items: center;
-    height: 20px;
-    padding: 0 8px;
-    border-radius: 10px;
-    background: color-mix(in srgb, currentColor 14%, transparent);
-    font-size: var(--fs-2xs);
-    font-weight: 600;
-    white-space: nowrap;
-  }
-
-  .pill-accent {
-    color: var(--accent);
-  }
-  .pill-danger {
-    color: var(--danger);
-  }
-  .pill-warn {
-    color: var(--warn);
-  }
-  .pill-muted {
-    color: var(--muted);
-  }
-
-  .work {
-    font-size: var(--fs-xs);
-  }
-
-  .ext {
-    display: grid;
-    flex-shrink: 0;
-    place-items: center;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border: none;
-    border-radius: var(--r-md);
-    background: transparent;
-    color: var(--muted);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
-    cursor: pointer;
-  }
-
-  .ext:hover {
-    background: var(--surface2);
     color: var(--text);
   }
 </style>
