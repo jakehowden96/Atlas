@@ -1,12 +1,21 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/svelte";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import SetupBanners from "../components/shell/SetupBanners.svelte";
 import { tailStaleMinutes } from "../components/session/rail/TailingNote.svelte";
+import { claudeHookStale } from "../stores/claude";
 import { claudeHook, tailTranscripts } from "../stores/settings";
+
+const h = vi.hoisted(() => ({ info: vi.fn(), set: vi.fn() }));
+vi.mock("../ipc", async (orig) => ({ ...(await orig<object>()), claudeInfo: h.info }));
+vi.mock("../stores/settings", async (orig) => ({ ...(await orig<object>()), setClaudeHookEnabled: h.set }));
+
+const stale = { kind: "installed", upToDate: false };
+const ok = { kind: "installed", upToDate: true };
 
 afterEach(() => {
   cleanup();
+  claudeHookStale.set(false);
   claudeHook.set(true);
   tailTranscripts.set(true);
 });
@@ -23,6 +32,25 @@ describe("SetupBanners", () => {
     render(SetupBanners);
     expect(screen.getByRole("button", { name: "Install hooks" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Turn on" })).toBeTruthy();
+  });
+});
+
+describe("out-of-date hook banner", () => {
+  it("offers Update, which reinstalls and refreshes", async () => {
+    h.info.mockResolvedValueOnce({ notificationHook: ok, sessionStartHook: stale });
+    h.info.mockResolvedValueOnce({ notificationHook: ok, sessionStartHook: ok });
+    h.set.mockResolvedValue(undefined);
+    render(SetupBanners);
+    await fireEvent.click(await screen.findByRole("button", { name: "Update" }));
+    expect(h.set).toHaveBeenCalledWith(true);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Update" })).toBeNull());
+  });
+
+  it("stays hidden when hooks are current", async () => {
+    h.info.mockResolvedValue({ notificationHook: ok, sessionStartHook: ok });
+    render(SetupBanners);
+    await waitFor(() => expect(h.info).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: "Update" })).toBeNull();
   });
 });
 
