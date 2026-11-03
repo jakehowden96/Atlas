@@ -9,7 +9,6 @@ import type { DirList } from "../types/generated/DirList";
 import type { DocList } from "../types/generated/DocList";
 import type { DocsChangedEvent } from "../types/generated/DocsChangedEvent";
 import type { DroppedPath } from "../types/generated/DroppedPath";
-import type { GhViewerResult } from "../types/generated/GhViewerResult";
 import type { GitStatus } from "../types/generated/GitStatus";
 import type { LiveSession } from "../types/generated/LiveSession";
 import type { LspExit } from "../types/generated/LspExit";
@@ -19,7 +18,6 @@ import type { PanelData } from "../types/generated/PanelData";
 import type { PanelUpdateEvent } from "../types/generated/PanelUpdateEvent";
 import type { PlanEntry } from "../types/generated/PlanEntry";
 import type { PtyExit } from "../types/generated/PtyExit";
-import type { RepoPrs } from "../types/generated/RepoPrs";
 import type { ResumableSession } from "../types/generated/ResumableSession";
 import type { SessionUpdateEvent } from "../types/generated/SessionUpdateEvent";
 import type { PullRequest } from "../types/generated/PullRequest";
@@ -140,25 +138,17 @@ export async function listWorkspaceRepos(workspacePath: string): Promise<Workspa
   return call("list_workspace_repos", { workspacePath });
 }
 
-export async function listRepoPrs(repos: string[]): Promise<RepoPrs[]> {
-  return call("list_repo_prs", { repos });
-}
-
 /**
- * The signed-in GitHub user, or why there is none. `gh` missing or logged out
- * is a result, not a rejection, so the PRs screen can show the fix and degrade
- * to All-only.
+ * Fetch pull request `number` of `repo` into the work tree at `cwd` and switch
+ * to it, through the connector: the only way to reach a fork's branch.
  */
-export async function ghViewer(): Promise<GhViewerResult> {
-  return call("gh_viewer");
-}
-
-/**
- * Check a pull request out into the repo at `cwd` with `gh pr checkout`, which
- * fetches the PR's own commits — the only way to reach a fork's branch.
- */
-export async function ghPrCheckout(cwd: string, number: number, repo: string): Promise<void> {
-  return call("gh_pr_checkout", { cwd, number, repo });
+export async function connectorCheckoutPullRequest(
+  connectorId: string,
+  cwd: string,
+  repo: string,
+  number: number,
+): Promise<void> {
+  return call("connector_checkout_pull_request", { connectorId, cwd, repo, number });
 }
 
 export async function connectorList(): Promise<ConnectorState[]> {

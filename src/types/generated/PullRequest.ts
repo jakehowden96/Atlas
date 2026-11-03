@@ -8,4 +8,8 @@ export type PullRequest = { number: number, title: string, url: string, state: P
 /**
  * Aggregate of `checks`; `None` when the PR has none.
  */
-ci: CheckStatus | null, checks: Array<Check>, review: ReviewState, updatedAt: string, };
+ci: CheckStatus | null, checks: Array<Check>, review: ReviewState, createdAt: string, updatedAt: string, 
+/**
+ * Logins of individually requested reviewers; team requests carry none.
+ */
+reviewRequestLogins: Array<string>, commentsCount: number, };

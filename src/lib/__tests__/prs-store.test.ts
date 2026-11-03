@@ -2,14 +2,15 @@ import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { get } from "svelte/store";
 
 vi.mock("../ipc", () => ({
-  ghViewer: vi.fn(),
+  connectorListPullRequests: vi.fn(),
   listWorkspaceRepos: vi.fn(),
-  listRepoPrs: vi.fn(),
 }));
 vi.mock("../logger", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
-import { ghViewer, listRepoPrs, listWorkspaceRepos } from "../ipc";
+import { connectorListPullRequests, listWorkspaceRepos } from "../ipc";
+import { IpcError } from "../ipc-error";
+import { connectors } from "../stores/connectors";
 import {
   isMine,
   matchesFilter,
@@ -21,15 +22,45 @@ import {
   prSetupProblem,
   prViewer,
   refreshPrs,
+  refreshPrsForBranch,
   reposByWorkspace,
   startPrPolling,
+  type Pr,
 } from "../stores/prs";
 import { toasts } from "../stores/toast";
 import { prRefreshMinutes, watchedRepos } from "../stores/settings";
-import type { Pr } from "../../types/generated/Pr";
-import type { RepoPrs } from "../../types/generated/RepoPrs";
+import type { ConnectorState } from "../../types/generated/ConnectorState";
+import type { PullRequest } from "../../types/generated/PullRequest";
 
-const NO_VIEWER = { viewer: null, error: null };
+const listPrs = vi.mocked(connectorListPullRequests);
+
+function github(status: ConnectorState["status"]): ConnectorState {
+  return {
+    info: { id: "github", name: "GitHub", kind: "pullRequests", flow: "browser", configured: true },
+    status,
+  } as ConnectorState;
+}
+const LINKED = github({ kind: "linked", account: "octocat" });
+
+function neutral(overrides: Partial<PullRequest> = {}): PullRequest {
+  return {
+    number: 1,
+    title: "A change",
+    url: "https://github.com/o/r/pull/1",
+    state: "open",
+    headRefName: "feat/thing",
+    author: "octocat",
+    isCrossRepository: false,
+    ci: "pass",
+    checks: [{ name: "build", status: "pass", detailsUrl: null }],
+    review: { kind: "approved" },
+    createdAt: "2026-08-01T00:00:00Z",
+    updatedAt: "2026-09-01T00:00:00Z",
+    reviewRequestLogins: ["hubot"],
+    commentsCount: 3,
+    ...overrides,
+  };
+}
 
 function pr(overrides: Partial<Pr> = {}): Pr {
   return {
@@ -46,6 +77,9 @@ function pr(overrides: Partial<Pr> = {}): Pr {
     reviewState: "none",
     reviewRequestLogins: [],
     commentsCount: 0,
+    checks: [],
+    review: { kind: "awaiting" },
+    checkoutRef: { repo: "o/r", number: 1 },
     ...overrides,
   };
 }
@@ -148,10 +182,10 @@ describe("pr polling", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.mocked(ghViewer).mockResolvedValue(NO_VIEWER);
-    vi.mocked(listRepoPrs).mockResolvedValue([]);
-    vi.mocked(listRepoPrs).mockClear();
-    watchedRepos.set([]);
+    connectors.set([LINKED]);
+    listPrs.mockReset();
+    listPrs.mockResolvedValue([]);
+    watchedRepos.set(["owner/repo"]);
     prRefreshMinutes.set(3);
   });
 
@@ -163,32 +197,41 @@ describe("pr polling", () => {
 
   it("fetches once immediately, then on the configured interval", async () => {
     stop = startPrPolling();
-    expect(listRepoPrs).toHaveBeenCalledTimes(1);
+    expect(listPrs).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(3 * 60_000);
-    expect(listRepoPrs).toHaveBeenCalledTimes(2);
+    expect(listPrs).toHaveBeenCalledTimes(2);
   });
 
   it("re-arms the timer when the interval setting changes", async () => {
     stop = startPrPolling();
     await vi.advanceTimersByTimeAsync(0);
-    vi.mocked(listRepoPrs).mockClear();
+    listPrs.mockClear();
     prRefreshMinutes.set(1);
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(listRepoPrs).toHaveBeenCalledTimes(1);
+    expect(listPrs).toHaveBeenCalledTimes(1);
   });
 
   it("re-fetches when the watched repo list changes", () => {
     stop = startPrPolling();
-    vi.mocked(listRepoPrs).mockClear();
-    watchedRepos.set(["owner/repo"]);
-    expect(listRepoPrs).toHaveBeenCalledWith(["owner/repo"]);
+    listPrs.mockClear();
+    watchedRepos.set(["owner/other"]);
+    expect(listPrs).toHaveBeenCalledWith("github", [{ slug: "owner/other" }]);
+  });
+
+  it("re-fetches when the connector signs in", async () => {
+    connectors.set([github({ kind: "notLinked" })]);
+    stop = startPrPolling();
+    listPrs.mockClear();
+    connectors.set([LINKED]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(listPrs).toHaveBeenCalledTimes(1);
   });
 
   it("stops polling once torn down", () => {
     startPrPolling()();
-    vi.mocked(listRepoPrs).mockClear();
+    listPrs.mockClear();
     vi.advanceTimersByTime(30 * 60_000);
-    expect(listRepoPrs).not.toHaveBeenCalled();
+    expect(listPrs).not.toHaveBeenCalled();
   });
 });
 
@@ -236,28 +279,21 @@ describe("matchRepo", () => {
 describe("pr refresh", () => {
   let stop: (() => void) | null = null;
 
-  function repoPrs(repo: string): RepoPrs[] {
-    return [{ repo, prs: [pr()], error: null }];
-  }
-
   beforeEach(async () => {
     vi.useFakeTimers();
-    vi.mocked(ghViewer).mockReset();
-    vi.mocked(ghViewer).mockResolvedValue(NO_VIEWER);
-    vi.mocked(listRepoPrs).mockReset();
-    vi.mocked(listRepoPrs).mockResolvedValue([]);
+    connectors.set([LINKED]);
+    listPrs.mockReset();
+    listPrs.mockResolvedValue([]);
     vi.mocked(listWorkspaceRepos).mockReset();
     vi.mocked(listWorkspaceRepos).mockResolvedValue([]);
-    watchedRepos.set([]);
+    watchedRepos.set(["owner/repo"]);
     prRefreshMinutes.set(3);
     reposByWorkspace.set({});
     prRepos.set(null);
     // The store remembers whether its last refresh failed; start from a good one.
     await refreshPrs();
-    vi.mocked(listRepoPrs).mockClear();
-    vi.mocked(ghViewer).mockClear();
+    listPrs.mockClear();
     prRepos.set(null);
-    prViewer.set(null);
     toasts.set([]);
   });
 
@@ -267,55 +303,126 @@ describe("pr refresh", () => {
     vi.useRealTimers();
   });
 
+  it("maps connector pull requests onto the screen's shape, keeping per-check detail", async () => {
+    listPrs.mockResolvedValue([neutral({ ci: "fail", state: "draft" })]);
+    await refreshPrs();
+
+    const [entry] = get(prRepos) ?? [];
+    expect(entry?.repo).toBe("owner/repo");
+    expect(entry?.prs[0]).toMatchObject({
+      number: 1,
+      author: { login: "octocat" },
+      isDraft: true,
+      ciState: "failed",
+      createdAt: "2026-08-01T00:00:00Z",
+      reviewState: "approved",
+      review: { kind: "approved" },
+      reviewRequestLogins: ["hubot"],
+      commentsCount: 3,
+      checks: [{ name: "build", status: "pass", detailsUrl: null }],
+      checkoutRef: { repo: "owner/repo", number: 1 },
+    });
+  });
+
+  it("reads the viewer from the linked connector account", () => {
+    expect(get(prViewer)).toEqual({ login: "octocat" });
+    connectors.set([github({ kind: "notLinked" })]);
+    expect(get(prViewer)).toBeNull();
+  });
+
+  it("asks the connector one repo at a time and keeps a failing repo on its own card", async () => {
+    watchedRepos.set(["a/one", "b/two"]);
+    listPrs.mockImplementation(async (_id, repos) => {
+      if (repos[0]?.slug === "b/two") throw new IpcError("connectorRemote", "502", { status: 502 });
+      return [neutral()];
+    });
+    await refreshPrs();
+
+    const [one, two] = get(prRepos) ?? [];
+    expect(one?.error).toBeNull();
+    expect(one?.prs).toHaveLength(1);
+    expect(two?.error).toMatchObject({ kind: "connectorRemote", message: "502" });
+    expect(get(prSetupProblem)).toBeNull();
+    expect(get(toasts)).toHaveLength(0);
+  });
+
+  it("reports a rate limit with when to retry, and does not toast", async () => {
+    listPrs.mockRejectedValue(new IpcError("connectorRateLimited", "slow down", { retryAt: 42 }));
+    await refreshPrs();
+
+    expect(get(prSetupProblem)).toEqual({ kind: "rateLimited", retryAt: 42 });
+    expect(get(toasts)).toHaveLength(0);
+  });
+
+  it("reports an offline connector", async () => {
+    listPrs.mockRejectedValue(new IpcError("connectorOffline", "no network"));
+    await refreshPrs();
+    expect(get(prSetupProblem)).toEqual({ kind: "offline" });
+  });
+
+  it("reports no connector and fetches nothing", async () => {
+    connectors.set([github({ kind: "notLinked" })]);
+    await refreshPrs();
+
+    expect(listPrs).not.toHaveBeenCalled();
+    expect(get(prSetupProblem)).toEqual({ kind: "noConnector" });
+    expect(get(prRepos)).toEqual([]);
+  });
+
+  it("reports a connector that needs reconnecting", () => {
+    connectors.set([github({ kind: "reconnectNeeded", reason: "expired" })]);
+    expect(get(prSetupProblem)).toEqual({ kind: "reconnect" });
+  });
+
   it("does not refetch when only the resolved workspace remotes changed", async () => {
     stop = startPrPolling();
     await vi.advanceTimersByTimeAsync(0);
-    vi.mocked(listRepoPrs).mockClear();
+    listPrs.mockClear();
 
     reposByWorkspace.set({ "/w": [] });
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(listRepoPrs).not.toHaveBeenCalled();
+    expect(listPrs).not.toHaveBeenCalled();
   });
 
   it("keeps the newest result when an older request answers last", async () => {
-    let answerFirst: (value: RepoPrs[]) => void = () => {};
-    vi.mocked(listRepoPrs)
+    let answerFirst: (value: PullRequest[]) => void = () => {};
+    listPrs
       .mockReturnValueOnce(
-        new Promise<RepoPrs[]>((resolve) => {
+        new Promise<PullRequest[]>((resolve) => {
           answerFirst = resolve;
         }),
       )
-      .mockResolvedValueOnce(repoPrs("new/repo"));
+      .mockResolvedValueOnce([neutral({ title: "new" })]);
 
     const first = refreshPrs();
     await refreshPrs();
-    answerFirst(repoPrs("old/repo"));
+    answerFirst([neutral({ title: "old" })]);
     await first;
 
-    expect(get(prRepos)?.[0]?.repo).toBe("new/repo");
+    expect(get(prRepos)?.[0]?.prs[0]?.title).toBe("new");
   });
 
   it("does not start another poll while one is still in flight", async () => {
-    let answer: (value: RepoPrs[]) => void = () => {};
-    vi.mocked(listRepoPrs).mockReturnValue(
-      new Promise<RepoPrs[]>((resolve) => {
+    let answer: (value: PullRequest[]) => void = () => {};
+    listPrs.mockReturnValue(
+      new Promise<PullRequest[]>((resolve) => {
         answer = resolve;
       }),
     );
     stop = startPrPolling();
-    vi.mocked(listRepoPrs).mockClear();
+    listPrs.mockClear();
 
     await vi.advanceTimersByTimeAsync(10 * 60_000);
-    expect(listRepoPrs).not.toHaveBeenCalled();
+    expect(listPrs).not.toHaveBeenCalled();
 
     answer([]);
     await vi.advanceTimersByTimeAsync(3 * 60_000);
-    expect(listRepoPrs).toHaveBeenCalledTimes(1);
+    expect(listPrs).toHaveBeenCalledTimes(1);
   });
 
   it("toasts a failing poll once, not on every interval", async () => {
-    vi.mocked(listRepoPrs).mockRejectedValue(new Error("gh: not found"));
+    listPrs.mockRejectedValue(new IpcError("connectorRemote", "bad gateway", { status: 502 }));
     const shown = new Set<string>();
     const unsubscribe = toasts.subscribe((list) => {
       for (const t of list) shown.add(t.id);
@@ -325,15 +432,15 @@ describe("pr refresh", () => {
     await vi.advanceTimersByTimeAsync(3 * 3 * 60_000);
     unsubscribe();
 
-    expect(listRepoPrs).toHaveBeenCalledTimes(4);
+    expect(listPrs).toHaveBeenCalledTimes(4);
     expect(shown.size).toBe(1);
   });
 
   it("toasts again after a success followed by a new failure", async () => {
-    vi.mocked(listRepoPrs)
-      .mockRejectedValueOnce(new Error("down"))
+    listPrs
+      .mockRejectedValueOnce(new IpcError("connectorRemote", "down", { status: 502 }))
       .mockResolvedValueOnce([])
-      .mockRejectedValueOnce(new Error("down again"));
+      .mockRejectedValueOnce(new IpcError("connectorRemote", "down again", { status: 502 }));
     const shown = new Set<string>();
     const unsubscribe = toasts.subscribe((list) => {
       for (const t of list) shown.add(t.id);
@@ -346,36 +453,35 @@ describe("pr refresh", () => {
     expect(shown.size).toBe(2);
   });
 
-  it("picks the viewer up on a later poll once gh is signed in", async () => {
-    stop = startPrPolling();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(get(prViewer)).toBeNull();
+  it("refreshes one repo for the rail without touching the others", async () => {
+    prRepos.set([
+      { repo: "owner/repo", prs: [], error: null },
+      { repo: "keep/me", prs: [pr()], error: null },
+    ]);
+    listPrs.mockResolvedValue([neutral({ title: "fresh" })]);
+    await refreshPrsForBranch("owner/repo", "feat/thing");
 
-    vi.mocked(ghViewer).mockResolvedValue({ viewer: { login: "octocat" }, error: null });
-    await vi.advanceTimersByTimeAsync(3 * 60_000);
-
-    expect(get(prViewer)?.login).toBe("octocat");
+    const all = get(prRepos) ?? [];
+    expect(all[0]?.prs[0]?.title).toBe("fresh");
+    expect(all[1]?.prs).toHaveLength(1);
+    expect(listPrs).toHaveBeenCalledWith("github", [{ slug: "owner/repo" }]);
   });
 
-  it("reports a missing gh from the viewer lookup and clears it once gh answers", async () => {
-    const missing = { kind: "not_installed", message: "no gh" } as const;
-    vi.mocked(ghViewer).mockResolvedValue({ viewer: null, error: missing });
-    stop = startPrPolling();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(get(prSetupProblem)).toEqual(missing);
-    expect(get(prViewer)).toBeNull();
+  it("does not stack rail refreshes for the same repo", async () => {
+    let answer: (value: PullRequest[]) => void = () => {};
+    listPrs.mockReturnValue(
+      new Promise<PullRequest[]>((resolve) => {
+        answer = resolve;
+      }),
+    );
+    const first = refreshPrsForBranch("owner/repo", "b");
+    await refreshPrsForBranch("owner/repo", "b");
+    expect(listPrs).toHaveBeenCalledTimes(1);
 
-    vi.mocked(ghViewer).mockResolvedValue({ viewer: { login: "octocat" }, error: null });
-    await vi.advanceTimersByTimeAsync(3 * 60_000);
-    expect(get(prSetupProblem)).toBeNull();
-  });
-
-  it("reports a signed-out gh from a repo's answer even when the viewer lookup said nothing", async () => {
-    const signedOut = { kind: "not_authenticated", message: "run gh auth login" } as const;
-    watchedRepos.set(["owner/repo"]);
-    vi.mocked(listRepoPrs).mockResolvedValue([{ repo: "owner/repo", prs: [], error: signedOut }]);
-    await refreshPrs();
-    expect(get(prSetupProblem)).toEqual(signedOut);
+    answer([]);
+    await first;
+    await refreshPrsForBranch("owner/repo", "b");
+    expect(listPrs).toHaveBeenCalledTimes(2);
   });
 
   it("asks git for a workspace's remotes once when two callers race", async () => {

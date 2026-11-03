@@ -9,8 +9,7 @@ vi.mock("../ipc", () => ({
   onClaudeSessionStart: vi.fn(),
   onBackToSessions: vi.fn(),
   onClaudeNotification: vi.fn(),
-  ghViewer: vi.fn(),
-  listRepoPrs: vi.fn(),
+  connectorListPullRequests: vi.fn(),
   listWorkspaceRepos: vi.fn(),
   startSessionTail: vi.fn(),
   stopSessionTail: vi.fn(),
@@ -20,7 +19,10 @@ vi.mock("../ipc", () => ({
 vi.mock("../logger", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
-vi.mock("../stores/connectors", () => ({ startConnectorEvents: vi.fn(async () => () => {}) }));
+vi.mock("../stores/connectors", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../stores/connectors")>()),
+  startConnectorEvents: vi.fn(async () => () => {}),
+}));
 vi.mock("../stores/stats", () => ({ startStatsFeed }));
 vi.mock("../sound", () => ({ playPing: vi.fn() }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
@@ -38,8 +40,6 @@ import {
   onClaudeSessionStart,
   onPanelUpdate,
   onSessionUpdate,
-  ghViewer,
-  listRepoPrs,
 } from "../ipc";
 import { playPing } from "../sound";
 import { enableNotifications, soundOnNeedsYou } from "../stores/settings";
@@ -57,8 +57,6 @@ const LISTENERS = [
 beforeEach(() => {
   vi.clearAllMocks();
   for (const on of LISTENERS) vi.mocked(on).mockResolvedValue(vi.fn());
-  vi.mocked(ghViewer).mockResolvedValue({ viewer: null, error: null });
-  vi.mocked(listRepoPrs).mockResolvedValue([]);
   tabs.set([]);
   activeTabId.set("");
   activeView.set("sessions");

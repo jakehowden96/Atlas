@@ -30,6 +30,7 @@ const KINDS = {
   timeout: true,
   parse: true,
   internal: true,
+  dirtyTree: true,
   connectorNotConfigured: true,
   connectorNotLinked: true,
   connectorReconnectNeeded: true,

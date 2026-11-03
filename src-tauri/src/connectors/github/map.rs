@@ -80,6 +80,16 @@ pub fn map_pr(node: PrNode) -> MappedPr {
         _ => PullRequestState::Open,
     };
     let review = review(&node);
+    let review_request_logins = node
+        .review_requests
+        .map(|r| {
+            r.nodes
+                .into_iter()
+                .filter_map(|n| n.requested_reviewer.map(|u| u.login))
+                .filter(|l| !l.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
     MappedPr {
         checks_truncated: rollup.is_some_and(|r| r.contexts.page_info.has_next_page),
         pr: PullRequest {
@@ -93,7 +103,10 @@ pub fn map_pr(node: PrNode) -> MappedPr {
             ci,
             checks,
             review,
+            created_at: node.created_at,
             updated_at: node.updated_at,
+            review_request_logins,
+            comments_count: node.comments.map_or(0, |c| c.total_count),
         },
     }
 }

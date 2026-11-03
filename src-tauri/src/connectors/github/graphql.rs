@@ -9,7 +9,8 @@ use crate::error::AtlasError;
 pub const BATCH: usize = 5;
 
 const PR_FIELDS: &str =
-    "fragment PrFields on PullRequest { number title url state isDraft updatedAt \
+    "fragment PrFields on PullRequest { number title url state isDraft createdAt updatedAt \
+comments{totalCount} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} \
 author{login} headRefName isCrossRepository reviewDecision \
 reviewThreads(first:100){nodes{isResolved}} \
 commits(last:1){nodes{commit{statusCheckRollup{state contexts(first:100){pageInfo{hasNextPage} \
@@ -122,13 +123,30 @@ pub struct PrNode {
     /// `OPEN`, `MERGED` or `CLOSED`.
     pub state: String,
     pub is_draft: bool,
+    #[serde(default)]
+    pub created_at: String,
     pub updated_at: String,
+    pub comments: Option<TotalCount>,
+    pub review_requests: Option<Connection<ReviewRequest>>,
     pub author: Option<Login>,
     pub head_ref_name: String,
     pub is_cross_repository: bool,
     pub review_decision: Option<String>,
     pub review_threads: Option<Connection<Thread>>,
     pub commits: Option<Connection<CommitNode>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TotalCount {
+    pub total_count: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewRequest {
+    /// `None` for a team or other non-user reviewer: the inline fragment is empty.
+    pub requested_reviewer: Option<Login>,
 }
 
 #[derive(Debug, Deserialize)]

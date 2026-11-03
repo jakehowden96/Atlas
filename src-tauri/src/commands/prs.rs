@@ -22,7 +22,7 @@ pub enum CiState {
 
 /// Where a pull request stands with its reviewers.
 #[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, TS)]
-#[ts(export)]
+#[ts(export, rename = "GhReviewState")]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewState {
     Approved,
