@@ -80,6 +80,43 @@ pub(crate) fn validate_branch_name(branch: &str) -> Result<(), AtlasError> {
     Ok(())
 }
 
+/// Reject anything that isn't a plain `owner/repo` slug. Mirrors GitHub's own
+/// constraints (letters, digits, dot, underscore, hyphen) — keeps stray shell
+/// metacharacters out of the `--repo` argument even though we never go through
+/// a shell.
+pub(crate) fn validate_repo_slug(slug: &str) -> Result<(), AtlasError> {
+    if slug.is_empty() {
+        return Err(AtlasError::invalid_input("Repo slug cannot be empty"));
+    }
+    let parts: Vec<&str> = slug.split('/').collect();
+    if parts.len() != 2 {
+        return Err(AtlasError::invalid_input(format!(
+            "Expected owner/repo, got '{slug}'"
+        )));
+    }
+    for part in &parts {
+        if *part == "." || *part == ".." {
+            return Err(AtlasError::invalid_input(format!(
+                "Invalid path segment in '{slug}'"
+            )));
+        }
+        if part.is_empty() {
+            return Err(AtlasError::invalid_input(format!(
+                "Empty owner or repo in '{slug}'"
+            )));
+        }
+        if !part
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+        {
+            return Err(AtlasError::invalid_input(format!(
+                "Invalid characters in '{slug}'"
+            )));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,5 +230,40 @@ mod tests {
     fn validate_branch_name_rejects_control_chars() {
         assert!(validate_branch_name("bad\x01name").is_err());
         assert!(validate_branch_name("bad\tname").is_err());
+    }
+
+    #[test]
+    fn slug_accepts_owner_repo() {
+        assert!(validate_repo_slug("owner/repo").is_ok());
+        assert!(validate_repo_slug("my-org/my.repo_42").is_ok());
+    }
+
+    #[test]
+    fn slug_rejects_missing_slash() {
+        assert!(validate_repo_slug("owner-repo").is_err());
+    }
+
+    #[test]
+    fn slug_rejects_extra_slashes() {
+        assert!(validate_repo_slug("owner/repo/extra").is_err());
+    }
+
+    #[test]
+    fn slug_rejects_empty_parts() {
+        assert!(validate_repo_slug("/repo").is_err());
+        assert!(validate_repo_slug("owner/").is_err());
+    }
+
+    #[test]
+    fn slug_rejects_shell_metacharacters() {
+        assert!(validate_repo_slug("owner/repo;rm").is_err());
+        assert!(validate_repo_slug("owner/repo$(id)").is_err());
+        assert!(validate_repo_slug("owner /repo").is_err());
+    }
+
+    #[test]
+    fn slug_rejects_dot_segments() {
+        assert!(validate_repo_slug("./repo").is_err());
+        assert!(validate_repo_slug("owner/..").is_err());
     }
 }

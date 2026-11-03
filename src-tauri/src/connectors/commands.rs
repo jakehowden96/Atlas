@@ -117,7 +117,7 @@ async fn browser_tokens(
         );
     };
     let open = |url: &str| {
-        super::super::commands::prs::browser_launcher(url)
+        super::super::commands::url::browser_launcher(url)
             .spawn()
             .map(drop)
             .map_err(|e| AtlasError::tool_failed("browser", format!("Failed to open URL: {e}")))

@@ -3,4 +3,4 @@
 /**
  * Where a pull request stands with its reviewers.
  */
-export type GhReviewState = "approved" | "changes_requested" | "review_required" | "none";
+export type ReviewDecision = "approved" | "changes_requested" | "review_required" | "none";

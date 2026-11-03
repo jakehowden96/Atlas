@@ -67,7 +67,7 @@ export const settingsOpen = writable(false);
 export const enableNotifications = writable(true);
 /** Repos the user typed in by hand. Auto-added ones are unioned in `stores/prs`. */
 export const watchedRepos = writable<string[]>([]);
-/** How often the Pull requests screen re-polls `gh`, in minutes. */
+/** How often the Pull requests screen re-polls, in minutes. */
 export const prRefreshMinutes = writable<PrRefreshMinutes>(3);
 /** xterm font size in px. The design handoff specifies 12.5, but xterm derives
     cell metrics from this and a fractional size rounds unevenly across rows, so

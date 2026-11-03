@@ -11,7 +11,7 @@ Mission control for [Claude Code](https://claude.com/claude-code). Run several s
 - **Session view** — the actual Claude Code terminal, so `/mcp`, `/resume`, `/model`, plan mode and Shift+Tab all keep working. Highlighting text copies it, whichever harness is running. Beside it, an activity rail with the plan checklist, subagents, turn stats and files touched. If the shell exits, the tab says so.
 - **Resumable sessions** — Atlas spawns `claude --session-id <uuid>` and remembers it, so quitting and relaunching lets you pick a prior conversation back up with its history intact. The New Session modal offers Fresh or Resume per workspace.
 - **Changes drawer** — the session's git diff as a slide-over: file tree, unified or split, viewed-state tracking, and inline review comments you can send back to the session as a prompt. Very large diffs are cut at a size cap and the drawer says how much was shown.
-- **Pull requests** — open PRs across your watched repos grouped into cards, with CI and review status, All / Mine / Needs-my-review filters, and "Work on it" to check the branch out (fork PRs via `gh pr checkout`) and start a session on it. Backed by the `gh` CLI.
+- **Pull requests** — open PRs across your watched repos grouped into cards, with CI and review status, All / Mine / Needs-my-review filters, and "Work on it" to check the branch out and start a session on it. Backed by your GitHub connector.
 - **Files** — a three-column document workspace: Claude's plans (`~/.claude/plans`), your workspaces' documents and any folders you add, with a tabbed editor, Source / Split / Preview modes, an outline and links rail, and ⌘S to save. Saving refuses to overwrite a file that changed on disk since it was read, and unsaved edits are guarded on tab close and on quit. Source files get syntax highlighting; language servers (TypeScript/JavaScript, Svelte, Rust, Python, Go, when installed) are off by default and enabled per workspace in Settings > Workspaces, because a language server runs code from the workspace.
 - **Stats** — a dense dashboard over your whole Claude Code history: per-model tokens and cost, tools and error rates, weekly activity by local day, per-workspace spend, recent sessions.
 - **Live, not polled** — plan, subagents, tools, context and cost come from tailing `~/.claude/projects/**.jsonl`. Two Claude Code hooks tell Atlas when a session is waiting on you and when its session id changes (see [Hooks](#claude-code-hooks)).
@@ -27,7 +27,6 @@ Installers (macOS `.dmg` for Apple silicon and Intel, Windows `.exe`) are attach
 
 - [Claude Code](https://claude.com/claude-code) CLI (`claude`) — the thing Atlas manages
 - `git` — the Changes drawer and workspace discovery
-- [GitHub CLI](https://cli.github.com/) (`gh`), signed in with `gh auth login` — only for the Pull Requests screen
 
 ### Build from source
 
@@ -41,10 +40,9 @@ macOS: the `.dmg` is in `src-tauri/target/release/bundle/dmg/`. Windows: the ins
 
 ## Troubleshooting
 
-Atlas finds `claude`, `gh` and `git` on the `PATH` it was launched with. A macOS app started from Finder does not get your shell's `PATH`, so Atlas adds the usual install locations itself (Homebrew, `~/.local/bin`, `~/.cargo/bin`, `~/.bun/bin`, npm-global, Volta, mise/asdf shims and the newest nvm Node). If something lives elsewhere, launch Atlas from a terminal or symlink the binary into one of those folders.
+Atlas finds `claude` and `git` on the `PATH` it was launched with. A macOS app started from Finder does not get your shell's `PATH`, so Atlas adds the usual install locations itself (Homebrew, `~/.local/bin`, `~/.cargo/bin`, `~/.bun/bin`, npm-global, Volta, mise/asdf shims and the newest nvm Node). If something lives elsewhere, launch Atlas from a terminal or symlink the binary into one of those folders.
 
 - **`claude` not found** — Settings > Claude Code shows the detected binary and version, or says none was found. Sessions cannot start until `claude` is installed.
-- **`gh` missing or signed out** — the Pull Requests screen shows one message with the install and `gh auth login` commands instead of per-card errors.
 - **`git` missing** — the Changes drawer says so and shows the install command.
 - **A state file is corrupt** — `settings.json` and `workspaces.json` are kept as `<name>.json.bak` and Atlas starts from defaults, with a notice. Nothing is overwritten before the backup exists.
 - **Logs** — `~/.atlas/logs/`, one file per day, pruned after 14 days. Frontend and backend log to the same file.

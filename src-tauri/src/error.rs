@@ -3,7 +3,7 @@
 //! It crosses IPC as `{ "kind": "<variant>", "message": "...", ...fields }`
 //! (internally tagged), so the webview branches on `kind` and shows `message`
 //! and never has to match on text. A condition the UI handles as an ordinary
-//! outcome (a save `conflict`, a missing `gh` in `RepoPrs.error`, git absent in
+//! outcome (a save `conflict`, git absent in
 //! a panel's `issue`) is an `Ok` value of the command, not one of these.
 
 use std::fmt;
@@ -258,12 +258,12 @@ mod tests {
                 json!({ "kind": "toolMissing", "tool": "git", "message": "install git" }),
             ),
             (
-                AtlasError::tool_failed("gh", "boom"),
-                json!({ "kind": "toolFailed", "tool": "gh", "message": "boom" }),
+                AtlasError::tool_failed("claude", "boom"),
+                json!({ "kind": "toolFailed", "tool": "claude", "message": "boom" }),
             ),
             (
-                AtlasError::timeout("gh", "too slow"),
-                json!({ "kind": "timeout", "tool": "gh", "message": "too slow" }),
+                AtlasError::timeout("claude", "too slow"),
+                json!({ "kind": "timeout", "tool": "claude", "message": "too slow" }),
             ),
             (
                 AtlasError::parse("not json"),
