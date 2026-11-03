@@ -8,6 +8,7 @@ import { ghViewer, listRepoPrs, listWorkspaceRepos } from "../ipc";
 import { setupProblem } from "../gh-setup";
 import { log } from "../logger";
 import { autoAddReposFromWorkspaces, prRefreshMinutes, watchedRepos } from "./settings";
+import { online } from "./connectors";
 import { showToast } from "./toast";
 import { visibleWorkspaces } from "./workspace";
 import type { GhError } from "../../types/generated/GhError";
@@ -214,7 +215,8 @@ export async function refreshPrs(): Promise<void> {
   } catch (e) {
     if (mine !== latestRefresh) return;
     log.error("prs", "list_repo_prs failed", e);
-    if (!lastRefreshFailed) showToast("Failed to list PRs", { body: errorMessage(e) });
+    // Offline has its own top-bar chip; a toast per failed fetch is noise.
+    if (!lastRefreshFailed && get(online)) showToast("Failed to list PRs", { body: errorMessage(e) });
     lastRefreshFailed = true;
   } finally {
     inFlight--;
