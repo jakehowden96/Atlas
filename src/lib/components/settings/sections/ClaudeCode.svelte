@@ -177,17 +177,6 @@
     padding: 9px 12px;
   }
 
-  .hook-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--surface3);
-  }
-
-  .hook-dot.on {
-    background: var(--accent);
-  }
-
   .hook-name {
     width: 130px;
     font-family: var(--font-mono);

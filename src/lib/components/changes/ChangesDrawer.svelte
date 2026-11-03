@@ -499,7 +499,7 @@
   .repo {
     position: sticky;
     top: 0;
-    z-index: 1;
+    z-index: var(--z-sticky);
     padding: 6px 14px;
     border-bottom: 1px solid var(--border);
     background: var(--surface2);

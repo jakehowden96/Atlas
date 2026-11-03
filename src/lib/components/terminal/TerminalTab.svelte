@@ -108,7 +108,7 @@
   .loading-overlay {
     position: absolute;
     inset: 0;
-    z-index: 1;
+    z-index: var(--z-sticky);
     display: flex;
     flex-direction: column;
     align-items: center;

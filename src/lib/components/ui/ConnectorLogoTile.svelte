@@ -20,7 +20,7 @@
     justify-content: center;
     flex: none;
     width: 32px;
-    height: 32px;
+    height: var(--h-lg);
     background: var(--surface3);
     border-radius: var(--r-md);
   }

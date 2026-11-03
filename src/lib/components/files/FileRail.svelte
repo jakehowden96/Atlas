@@ -306,7 +306,7 @@
     margin-bottom: 6px;
     padding: 8px 10px;
     border: 1px solid var(--border);
-    border-radius: 7px;
+    border-radius: var(--r-lg);
     background: var(--surface);
     text-align: left;
     cursor: pointer;
