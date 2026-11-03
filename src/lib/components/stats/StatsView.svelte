@@ -40,7 +40,7 @@
     type Bucket,
     type RecentSortKey,
   } from "../../stats-export";
-  import { settingsOpen } from "../../stores/settings";
+  import { openSettings } from "../../stores/settings";
   import { reloadStats, statsError, statsLoading, statsSummary } from "../../stores/stats";
   import { showToast } from "../../stores/toast";
   import { openNewSession } from "../../stores/view";
@@ -299,7 +299,7 @@
       description="Atlas reads them from ~/.claude/projects"
     >
       {#snippet action()}
-        <Button variant="link" onclick={() => settingsOpen.set(true)}>
+        <Button variant="link" onclick={() => openSettings("claude")}>
           Check Claude Code is installed
         </Button>
       {/snippet}

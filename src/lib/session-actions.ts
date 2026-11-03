@@ -20,7 +20,7 @@ import {
   DEFAULT_HARNESSES,
   harnesses,
   lastHarnessId,
-  settingsOpen,
+  openSettings,
   tailTranscripts,
   type HarnessConfig,
 } from "./stores/settings";
@@ -505,7 +505,7 @@ export async function workOnPr(repo: string, pr: Pr): Promise<boolean> {
       body: `Add ${repo}'s folder — or the folder holding it — in Settings › Workspaces to work on its PRs.`,
       type: "warning",
     });
-    settingsOpen.set(true);
+    openSettings("workspaces");
     return false;
   }
   try {

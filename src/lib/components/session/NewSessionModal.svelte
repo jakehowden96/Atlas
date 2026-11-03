@@ -47,7 +47,7 @@
     harnesses,
     lastHarnessId,
     setLastHarnessId,
-    settingsOpen,
+    openSettings,
     type HarnessConfig,
   } from "../../stores/settings";
   import { showToast } from "../../stores/toast";
@@ -555,7 +555,7 @@
               {#if $prSetupProblem}
                 <p class="empty">Link GitHub to list pull requests here</p>
                 <div>
-                  <Button size="sm" onclick={() => settingsOpen.set(true)}>
+                  <Button size="sm" onclick={() => openSettings("connectors")}>
                     Open settings
                   </Button>
                 </div>

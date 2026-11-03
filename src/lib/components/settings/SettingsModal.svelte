@@ -3,7 +3,7 @@
   import { tick } from "svelte";
   import { log } from "../../logger";
   import { searchSettings, type SectionId, type SettingEntry } from "../../settings-search";
-  import { settingsOpen } from "../../stores/settings";
+  import { settingsOpen, settingsSection } from "../../stores/settings";
   import IconButton from "../ui/IconButton.svelte";
   import Modal from "../ui/Modal.svelte";
   import SearchInput from "../ui/SearchInput.svelte";
@@ -40,6 +40,14 @@
     getVersion()
       .then((v) => (appVersion = v))
       .catch((e) => log.warn("settings", `could not read the app version: ${errorMessage(e)}`));
+  });
+
+  $effect(() => {
+    if ($settingsOpen && $settingsSection) {
+      section = $settingsSection;
+      query = "";
+      settingsSection.set(null);
+    }
   });
 
   function close() {

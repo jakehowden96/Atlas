@@ -10,6 +10,7 @@ import {
   type Keymap,
 } from "../keymap";
 import { log } from "../logger";
+import type { SectionId } from "../settings-search";
 import { createStatePersister } from "../state-persist";
 import { reportNewerState, reportStateRecovered, reportStorageFailure } from "../storage-failure";
 import { themeMode, type ThemeMode } from "../theme";
@@ -64,6 +65,12 @@ export interface RailTiles {
 export const railTiles = writable<RailTiles>({});
 
 export const settingsOpen = writable(false);
+/** Section the Settings modal should show on its next open; the modal clears it. */
+export const settingsSection = writable<SectionId | null>(null);
+export function openSettings(section?: SectionId) {
+  if (section) settingsSection.set(section);
+  settingsOpen.set(true);
+}
 export const enableNotifications = writable(true);
 /** Repos the user typed in by hand. Auto-added ones are unioned in `stores/prs`. */
 export const watchedRepos = writable<string[]>([]);

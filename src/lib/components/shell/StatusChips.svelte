@@ -29,7 +29,7 @@
   import { installUpdate } from "../../updater";
   import { connect } from "../../stores/connectors";
   import { prsLastUpdated } from "../../stores/prs";
-  import { settingsOpen } from "../../stores/settings";
+  import { openSettings } from "../../stores/settings";
 
   const reconnects = $derived($activeReconnects);
   const update = $derived($updateState.kind === "available" ? $updateState : null);
@@ -49,7 +49,7 @@
 
   function reconnect(id: string) {
     open = null;
-    settingsOpen.set(true);
+    openSettings("connectors");
     void connect(id);
   }
 

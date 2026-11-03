@@ -8,7 +8,7 @@
     reposByWorkspace,
     type Pr,
   } from "../../../stores/prs";
-  import { settingsOpen } from "../../../stores/settings";
+  import { openSettings } from "../../../stores/settings";
   import { setupProblem } from "../../../pr-setup";
   import { formatAgo } from "../../../format";
   import { prHeadline, prOpenHeadline, prPollLine, prRows, prState } from "../../../session-view";
@@ -100,9 +100,9 @@
 
 {#snippet setupLink()}
   {#if problem?.kind === "noConnector"}
-    <button type="button" class="link" onclick={() => settingsOpen.set(true)}>Link {provider} →</button>
+    <button type="button" class="link" onclick={() => openSettings("connectors")}>Link {provider} →</button>
   {:else if problem?.kind === "reconnect"}
-    <button type="button" class="link" onclick={() => settingsOpen.set(true)}>Reconnect {provider} →</button>
+    <button type="button" class="link" onclick={() => openSettings("connectors")}>Reconnect {provider} →</button>
   {/if}
 {/snippet}
 

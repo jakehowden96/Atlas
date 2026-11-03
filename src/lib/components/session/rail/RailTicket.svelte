@@ -2,7 +2,7 @@
   import { tick } from "svelte";
   import { openUrl } from "../../../ipc";
   import { connectors } from "../../../stores/connectors";
-  import { settingsOpen } from "../../../stores/settings";
+  import { openSettings } from "../../../stores/settings";
   import { retry, tickets, unlinkTicket } from "../../../stores/tickets";
   import Button from "../../ui/Button.svelte";
   import ConnectorLogo from "../../ui/ConnectorLogo.svelte";
@@ -86,7 +86,7 @@
     <Spinner label="Loading ticket" />
   {:else if unlinked || st.kind === "noConnector"}
     <div class="none">Link {providerName} to show tickets</div>
-    <Button size="sm" onclick={() => settingsOpen.set(true)}>Link →</Button>
+    <Button size="sm" onclick={() => openSettings("connectors")}>Link →</Button>
   {:else if entry?.link}
     <div class="head"><span class="id">{entry.link.id}</span></div>
     <div class="none">Couldn't load this ticket</div>
