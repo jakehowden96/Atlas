@@ -2,7 +2,7 @@ export type SectionId =
   | "general"
   | "keyboard"
   | "workspaces"
-  | "prs"
+  | "connectors"
   | "harnesses"
   | "claude"
   | "about";
@@ -24,8 +24,8 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   { section: "keyboard", title: "Reset all shortcuts", description: "Restore the default keyboard shortcuts", keywords: ["keybindings", "chords", "hotkeys", "default"] },
   { section: "keyboard", title: "Shortcuts", description: "Rebind the global keyboard shortcuts", keywords: ["keybindings", "chords", "hotkeys", "keys"] },
   { section: "workspaces", title: "Language servers", description: "Run a language server per workspace for diagnostics in Files", keywords: ["lsp", "trust", "typescript", "rust"] },
-  { section: "prs", title: "Auto-add repos from workspaces", description: "Watch every workspace's GitHub remote", keywords: ["github", "pull requests", "remote"] },
-  { section: "prs", title: "Refresh interval", description: "How often pull requests are re-polled", keywords: ["poll", "minutes", "github"] },
+  { section: "connectors", title: "Auto-add repos from workspaces", description: "Watch every workspace's GitHub remote", keywords: ["github", "pull requests", "remote"] },
+  { section: "connectors", title: "Refresh interval", description: "How often pull requests are re-polled", keywords: ["poll", "minutes", "github"] },
   { section: "harnesses", title: "Harnesses", description: "The commands New Session can launch", keywords: ["command", "args", "terminal", "agent"] },
   { section: "claude", title: "Install hooks", description: "Flags sessions that need you and follows /clear and /compact", keywords: ["notification", "sessionstart", "settings.json"] },
   { section: "claude", title: "Tail transcripts", description: "Shows context, tokens, cost and subagents on each session", keywords: ["jsonl", "cost", "tokens", "live"] },
