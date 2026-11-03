@@ -36,7 +36,9 @@ export const claudeHookStale = writable(false);
 export async function refreshHookStale(): Promise<void> {
   try {
     const i = await claudeInfo();
-    claudeHookStale.set([i.notificationHook, i.sessionStartHook].some((h) => h.kind === "installed" && !h.upToDate));
+    claudeHookStale.set(
+      [i.notificationHook, i.sessionStartHook].some((h) => h.kind === "installed" && !h.upToDate),
+    );
   } catch {
     claudeHookStale.set(false);
   }

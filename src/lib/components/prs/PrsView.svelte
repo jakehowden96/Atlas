@@ -18,7 +18,12 @@
     type PrFilter,
   } from "../../stores/prs";
   import { byKind } from "../../stores/connectors";
-  import { prRefreshMinutes, setWatchedRepos, openSettings, watchedRepos } from "../../stores/settings";
+  import {
+    prRefreshMinutes,
+    setWatchedRepos,
+    openSettings,
+    watchedRepos,
+  } from "../../stores/settings";
   import { visibleWorkspaces } from "../../stores/workspace";
   import { formatAgo } from "../../format";
   import { tooltip } from "../../ui/tooltip";
@@ -102,7 +107,8 @@
     ].filter((slug) => !$watchedRepos.includes(slug)),
   );
 
-  const validateRepo = (v: string) => (/^[\w.-]+\/[\w.-]+$/.test(v) ? null : "Use the form owner/name");
+  const validateRepo = (v: string) =>
+    /^[\w.-]+\/[\w.-]+$/.test(v) ? null : "Use the form owner/name";
 
   /**
    * The workspace a repo card belongs to, for its colour dot and name. The
@@ -133,7 +139,11 @@
       onChange={(id) => prFilter.set(id)}
     />
     <div class="search">
-      <SearchInput bind:value={query} placeholder="Search title, author, branch" aria-label="Search pull requests" />
+      <SearchInput
+        bind:value={query}
+        placeholder="Search title, author, branch"
+        aria-label="Search pull requests"
+      />
     </div>
     <Select
       size="sm"
@@ -158,11 +168,15 @@
       <EmptyState
         icon={rateLimit ? "warning" : "error"}
         title={setup.title}
-        description={rateLimit ? `${setup.detail} ${retryLabel(rateLimit.retryAt, now)}` : setup.detail}
+        description={rateLimit
+          ? `${setup.detail} ${retryLabel(rateLimit.retryAt, now)}`
+          : setup.detail}
       >
         {#snippet action()}
           {#if setup.action === "connect" || setup.action === "reconnect"}
-            <Button variant="primary" onclick={() => openSettings("connectors")}>Open connectors</Button>
+            <Button variant="primary" onclick={() => openSettings("connectors")}
+              >Open connectors</Button
+            >
           {:else if setup.action === "retry"}
             <Button onclick={() => refreshPrs()}>Retry</Button>
           {/if}
@@ -206,9 +220,17 @@
       </div>
     {:else if cards.length === 0}
       {#if activeFilter === "all" && !query.trim()}
-        <EmptyState icon="info" title="No open pull requests" description="Nothing is open in the watched repositories" />
+        <EmptyState
+          icon="info"
+          title="No open pull requests"
+          description="Nothing is open in the watched repositories"
+        />
       {:else}
-        <EmptyState icon="info" title="Nothing matches" description="Try another filter or search" />
+        <EmptyState
+          icon="info"
+          title="Nothing matches"
+          description="Try another filter or search"
+        />
       {/if}
     {:else}
       {#each cards as card (card.repo)}
@@ -229,7 +251,10 @@
           </header>
 
           {#if card.error}
-            <Banner tone={card.error.kind === "connectorRateLimited" ? "warn" : "error"} title={card.error.message}>
+            <Banner
+              tone={card.error.kind === "connectorRateLimited" ? "warn" : "error"}
+              title={card.error.message}
+            >
               {#if card.error.kind === "connectorRateLimited"}
                 {retryLabel(card.error.retryAt ?? 0, now)}
               {/if}

@@ -8,7 +8,10 @@ import { claudeHook, tailTranscripts } from "../stores/settings";
 
 const h = vi.hoisted(() => ({ info: vi.fn(), set: vi.fn() }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<object>()), claudeInfo: h.info }));
-vi.mock("../stores/settings", async (orig) => ({ ...(await orig<object>()), setClaudeHookEnabled: h.set }));
+vi.mock("../stores/settings", async (orig) => ({
+  ...(await orig<object>()),
+  setClaudeHookEnabled: h.set,
+}));
 
 const stale = { kind: "installed", upToDate: false };
 const ok = { kind: "installed", upToDate: true };

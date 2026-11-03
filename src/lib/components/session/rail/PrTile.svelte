@@ -100,9 +100,13 @@
 
 {#snippet setupLink()}
   {#if problem?.kind === "noConnector"}
-    <button type="button" class="link" onclick={() => openSettings("connectors")}>Link {provider} →</button>
+    <button type="button" class="link" onclick={() => openSettings("connectors")}
+      >Link {provider} →</button
+    >
   {:else if problem?.kind === "reconnect"}
-    <button type="button" class="link" onclick={() => openSettings("connectors")}>Reconnect {provider} →</button>
+    <button type="button" class="link" onclick={() => openSettings("connectors")}
+      >Reconnect {provider} →</button
+    >
   {/if}
 {/snippet}
 

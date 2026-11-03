@@ -23,13 +23,21 @@ describe("deriveFirstRun", () => {
 
   it("tracks each item independently", () => {
     expect(done(info({ binary: null }), 0)).toEqual([false, true, false]);
-    expect(done(info({ sessionStartHook: { kind: "notInstalled" } }), 1)).toEqual([true, false, true]);
+    expect(done(info({ sessionStartHook: { kind: "notInstalled" } }), 1)).toEqual([
+      true,
+      false,
+      true,
+    ]);
   });
 
   it("treats an out-of-date hook as not done", () => {
     const stale = { kind: "installed", upToDate: false } as const;
     expect(done(info({ sessionStartHook: stale }), 1)).toEqual([true, false, true]);
-    expect(done(info({ notificationHook: { kind: "notInstalled" } }), 1)).toEqual([true, false, true]);
+    expect(done(info({ notificationHook: { kind: "notInstalled" } }), 1)).toEqual([
+      true,
+      false,
+      true,
+    ]);
   });
 
   it("is complete when everything is done", () => {
