@@ -6,7 +6,7 @@
   import { compareByAttention, formatElapsed, type SessionTile } from "../../overview";
   import { closeSession } from "../../session-actions";
   import { refreshPanel } from "../../ipc";
-import { revealInFileManager } from "../../ui/reveal";
+  import { revealInFileManager } from "../../ui/reveal";
   import type { MenuItem } from "../ui/Menu.svelte";
   import { tabIdForSession } from "../../session-view";
   import { liveTiles } from "../../stores/liveTiles";

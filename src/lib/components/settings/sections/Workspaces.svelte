@@ -17,7 +17,7 @@
   import Tooltip from "../../ui/Tooltip.svelte";
   import { tooltip } from "../../../ui/tooltip";
   import { errorMessage } from "../../../ipc-error";
-import { revealInFileManager } from "../../../ui/reveal";
+  import { revealInFileManager } from "../../../ui/reveal";
 
   /** Language servers run a workspace's own code, so they are opt-in per
    *  workspace; turning them off also stops any that are running. */

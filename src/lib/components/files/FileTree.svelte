@@ -16,7 +16,7 @@
   } from "../../files";
   import { basename } from "../../format";
   import { copyText } from "../../ui/copy";
-import { revealInFileManager } from "../../ui/reveal";
+  import { revealInFileManager } from "../../ui/reveal";
   import { contextMenu } from "../../ui/contextmenu";
   import { fileMenuItems } from "./FileContextMenu";
   import { showToast } from "../../stores/toast";
