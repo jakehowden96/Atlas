@@ -6,6 +6,7 @@
     import { compareByAttention, formatElapsed, type SessionTile } from "../../overview";
   import { closeSession } from "../../session-actions";
   import { refreshPanel } from "../../ipc";
+import { revealInFileManager } from "../../ui/reveal";
   import type { MenuItem } from "../ui/Menu.svelte";
   import { tabIdForSession } from "../../session-view";
   import { liveTiles } from "../../stores/liveTiles";
@@ -149,6 +150,16 @@
 
       {#if others.length}
         <MenuButton label={othersLabel} items={otherItems} onselect={pickOther} align="end" />
+      {/if}
+
+      {#if tile}
+        <Tooltip text="Reveal workspace in file manager">
+          <IconButton
+            icon="folder"
+            label="Reveal workspace in file manager"
+            onclick={() => void revealInFileManager(tile.workspacePath)}
+          />
+        </Tooltip>
       {/if}
 
       <Button aria-pressed={$diffOpen} onclick={() => diffOpen.update((v) => !v)}>

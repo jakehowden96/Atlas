@@ -23,6 +23,7 @@ export function fileMenuItems(target: FileTarget | null, hasWorkspace: boolean):
     ...newItems,
     { id: "rename", label: "Rename", shortcut: "F2", separatorBefore: true },
     { id: "copy-path", label: "Copy path" },
+    { id: "reveal", label: "Reveal in file manager" },
     {
       id: "delete",
       label: "Move to trash",

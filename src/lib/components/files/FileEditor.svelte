@@ -13,6 +13,7 @@
   import { basename, formatAgo } from "../../format";
   import { openUrl } from "../../ipc";
   import { renderMarkdown } from "../../markdown";
+  import { revealInFileManager } from "../../ui/reveal";
   import { chords } from "../../stores/settings";
   import {
     activeFile,
@@ -219,6 +220,12 @@
         role="radiogroup"
         label="View mode"
         onChange={(id) => fileMode.set(id as "source" | "split" | "preview")}
+      />
+      <IconButton
+        size="sm"
+        icon="folder"
+        label="Reveal in file manager"
+        onclick={() => void revealInFileManager(absolutePath(file.source, file.path))}
       />
       <Button size="sm" onclick={askClaude}>
         {#snippet leading()}<Icon name="terminal" />{/snippet}

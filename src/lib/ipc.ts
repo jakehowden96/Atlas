@@ -240,6 +240,11 @@ export async function logsDir(): Promise<string> {
   return call("logs_dir");
 }
 
+/** Show a file or folder in the OS file manager, selected. */
+export async function revealPath(path: string): Promise<void> {
+  return call("reveal_path", { path });
+}
+
 /** Open the backend log directory in the OS file manager. */
 export async function revealLogsDir(): Promise<void> {
   return call("reveal_logs_dir");
