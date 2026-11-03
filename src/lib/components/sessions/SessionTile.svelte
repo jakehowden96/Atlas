@@ -31,6 +31,7 @@
   import Kbd from "../ui/Kbd.svelte";
   import StatePill, { type PillState } from "../ui/StatePill.svelte";
   import StatusMark from "../ui/StatusMark.svelte";
+import { tailStaleMinutes } from "../session/rail/TailingNote.svelte";
 
   interface Props {
     tile: SessionTile;
@@ -64,6 +65,7 @@
   let live = $derived(tile.live);
   let needsYou = $derived(tile.state === "needsYou");
   let elapsed = $derived(formatElapsed(live.startedAt, now));
+  let staleMin = $derived(tailing ? tailStaleMinutes(tile.state, live.lastActivity, now) : null);
 
   /** A permission prompt the hook flagged and the terminal screen really
       shows, as opposed to needs-you off a question — a closing one or an
@@ -316,6 +318,12 @@
     <div class="now" class:done={!act.running}>
       {#if act.running}<i class="spin" aria-hidden="true"></i>{/if}
       <span>{act.text}</span>
+    </div>
+  {/if}
+
+  {#if staleMin !== null}
+    <div class="ask">
+      <StatusMark state="attention" /><span class="wants">Transcript stopped updating · {staleMin}m</span>
     </div>
   {/if}
 
