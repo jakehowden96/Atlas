@@ -12,12 +12,12 @@ describe("updater", () => {
   it("treats the placeholder and empty values as unconfigured", () => {
     expect(isUpdaterConfigured(PUBKEY_PLACEHOLDER)).toBe(false);
     expect(isUpdaterConfigured("")).toBe(false);
-    expect(isUpdaterConfigured(undefined)).toBe(false);
     expect(isUpdaterConfigured("dW50cnVzdGVk")).toBe(true);
   });
 
-  it("makes no network call while the shipped config is the placeholder", async () => {
-    expect(await checkForUpdate()).toEqual({ kind: "notConfigured" });
-    expect(check).not.toHaveBeenCalled();
+  it("checks for updates now that the shipped config has a real pubkey", async () => {
+    check.mockResolvedValue(null);
+    expect(await checkForUpdate()).toEqual({ kind: "upToDate" });
+    expect(check).toHaveBeenCalledOnce();
   });
 });

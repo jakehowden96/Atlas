@@ -112,6 +112,12 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     description: "Version, OS and Claude version for a bug report",
     keywords: ["bug", "support", "debug", "info"],
   },
+  {
+    section: "about",
+    title: "Logs",
+    description: "Open the log folder to attach to a bug report",
+    keywords: ["folder", "reveal", "debug", "bug", "support"],
+  },
 ];
 
 function score(e: SettingEntry, q: string): number {
