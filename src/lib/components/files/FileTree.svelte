@@ -2,6 +2,7 @@
   import type { UnlistenFn } from "@tauri-apps/api/event";
   import { get } from "svelte/store";
   import {
+    absolutePath,
     buildDocTree,
     fileKey,
     filterDocTree,
@@ -9,14 +10,22 @@
     parseFileKey,
     planWorkspace,
     slugifyPath,
+    type FileSource,
     type TreeNode,
   } from "../../files";
   import { basename } from "../../format";
+  import { copyText } from "../../ui/copy";
+  import { contextMenu } from "../../ui/contextmenu";
+  import { fileMenuItems } from "./FileContextMenu";
+  import { showToast } from "../../stores/toast";
   import { onDocsChanged, startDocsWatch, stopDocsWatch } from "../../ipc";
   import { log } from "../../logger";
   import { chords } from "../../stores/settings";
   import {
     activeFile,
+    createFolder,
+    deleteEntry,
+    renameEntry,
     dirtyFiles,
     docEntries,
     docsTruncated,
@@ -40,6 +49,9 @@
   import { activeWorkspacePath, visibleWorkspaces } from "../../stores/workspace";
   import { errorMessage } from "../../ipc-error";
   import Button from "../ui/Button.svelte";
+  import { confirmAction } from "../ui/ConfirmDialog.svelte";
+  import Input from "../ui/Input.svelte";
+  import type { MenuItem } from "../ui/Menu.svelte";
   import EmptyState from "../ui/EmptyState.svelte";
   import Icon from "../ui/Icon.svelte";
   import IconButton from "../ui/IconButton.svelte";
@@ -50,15 +62,6 @@
   import Tooltip from "../ui/Tooltip.svelte";
   import Tree, { type TreeItem } from "../ui/Tree.svelte";
   import type { TreeKind } from "../ui/TreeRow.svelte";
-
-  // Rename, delete and the context-menu key are reported but not acted on here;
-  // phase 75 wires them.
-  interface Props {
-    onrename?: (id: string) => void;
-    ondelete?: (id: string) => void;
-    oncontextmenu?: (id: string) => void;
-  }
-  let { onrename, ondelete, oncontextmenu }: Props = $props();
 
   /** The tree filter. Matches on file and folder names, not on file contents. */
   let query = $state("");
@@ -177,6 +180,39 @@
       entries.map((e) => ({ id: e.path, label: e.name })),
     );
 
+  // Inline edit: a rename turns a row into a field; a new folder adds a field row.
+  type TreeName = "plans" | "docs" | "disk";
+  interface Edit {
+    kind: "rename" | "folder";
+    tree: TreeName;
+    source: FileSource;
+    /** The renamed row's path, or the folder the new one goes in ("" for the root). */
+    id: string;
+    isDir: boolean;
+    value: string;
+    error: string;
+  }
+  const NEW_ROW = "\0new-folder";
+  let edit = $state<Edit | null>(null);
+
+  function withEdit(items: TreeItem[], tree: TreeName): TreeItem[] {
+    const e = edit;
+    if (!e || e.tree !== tree) return items;
+    if (e.kind === "rename") return items.map((i) => (i.id === e.id ? { ...i, editing: true } : i));
+    const at = e.id ? items.findIndex((i) => i.id === e.id) : -1;
+    const row: TreeItem = {
+      id: NEW_ROW,
+      label: "",
+      level: at === -1 ? 1 : items[at]!.level + 1,
+      kind: "folder",
+      expandable: false,
+      expanded: false,
+      parentId: e.id || null,
+      editing: true,
+    };
+    return [...items.slice(0, at + 1), row, ...items.slice(at + 1)];
+  }
+
   let docItems = $derived(flattenDocs(tree, 1, null));
   let planItems = $derived(
     leaves(
@@ -187,6 +223,118 @@
   let looseItems = $derived(
     diskItems(looseDiskFiles.map((path) => ({ path, name: basename(path) }))),
   );
+
+  const sourceOf = (tree: TreeName): FileSource => (tree === "docs" ? $fileWs : tree);
+  const dirOf = (path: string) => path.replace(/[\\/]?[^\\/]*$/, "");
+
+  /** Focus the field and select the name without its extension. */
+  function seed(node: HTMLElement) {
+    const input = node.querySelector("input");
+    if (!input) return;
+    input.focus();
+    const dot = input.value.lastIndexOf(".");
+    input.setSelectionRange(0, edit?.isDir || dot <= 0 ? input.value.length : dot);
+  }
+
+  function startRename(tree: TreeName, id: string) {
+    const isDir = tree === "docs" && !!docItems.find((i) => i.id === id)?.expandable;
+    edit = {
+      kind: "rename",
+      tree,
+      source: sourceOf(tree),
+      id,
+      isDir,
+      value: basename(id),
+      error: "",
+    };
+  }
+
+  function startFolder(parent: string) {
+    if (parent && !$expanded.has(fileKey($fileWs, parent)))
+      toggleExpanded(fileKey($fileWs, parent));
+    edit = {
+      kind: "folder",
+      tree: "docs",
+      source: $fileWs,
+      id: parent,
+      isDir: true,
+      value: "",
+      error: "",
+    };
+  }
+
+  let committing = false;
+  async function commitEdit() {
+    const e = edit;
+    if (!e || committing) return;
+    if (e.kind === "folder" && !e.value.trim()) {
+      edit = null;
+      return;
+    }
+    committing = true;
+    try {
+      if (e.kind === "rename") await renameEntry(e.source, e.id, e.value);
+      else await createFolder(e.source, e.id, e.value);
+      if (edit === e) edit = null;
+    } catch (err) {
+      if (edit === e) e.error = errorMessage(err);
+    } finally {
+      committing = false;
+    }
+  }
+
+  async function askDelete(tree: TreeName, id: string) {
+    const ok = await confirmAction({
+      title: `Move ${basename(id)} to the trash?`,
+      body: "You can restore it from the trash.",
+      confirmLabel: "Move to trash",
+      tone: "danger",
+    });
+    if (!ok) return;
+    try {
+      await deleteEntry(sourceOf(tree), id);
+    } catch (err) {
+      showToast("Could not move to the trash", { body: errorMessage(err) });
+    }
+  }
+
+  // The context menu. Targets come from the DOM in the capture phase, because
+  // the menu action listens natively and so runs before Svelte's delegated
+  // handlers; the item array is edited in place for the same reason.
+  const menuItems: MenuItem[] = fileMenuItems(null, false);
+  let menuTarget: { tree: TreeName; id: string; isDir: boolean } | null = null;
+
+  function aimMenu(el: EventTarget | null) {
+    const node = el as HTMLElement;
+    const id = node.closest<HTMLElement>("[data-id]")?.dataset.id;
+    const tree = node.closest<HTMLElement>("[data-tree]")?.dataset.tree as TreeName | undefined;
+    menuTarget =
+      id && tree
+        ? { tree, id, isDir: tree === "docs" && !!docItems.find((i) => i.id === id)?.expandable }
+        : null;
+    menuItems.splice(
+      0,
+      menuItems.length,
+      ...fileMenuItems(
+        menuTarget && { inWorkspace: menuTarget.tree === "docs", isDir: menuTarget.isDir },
+        !!$fileWs,
+      ),
+    );
+  }
+
+  /** The folder a new note or folder goes in for the current target. */
+  const parentOf = (t: NonNullable<typeof menuTarget>) =>
+    t.tree !== "docs" ? "" : t.isDir ? t.id : dirOf(t.id);
+
+  function onMenu(item: MenuItem) {
+    const t = menuTarget;
+    if (item.id === "new-note") newNote(t ? parentOf(t) : "");
+    else if (item.id === "new-folder") startFolder(t ? parentOf(t) : "");
+    else if (!t) return;
+    else if (item.id === "rename") startRename(t.tree, t.id);
+    else if (item.id === "delete") void askDelete(t.tree, t.id);
+    else if (item.id === "copy-path") void copyText(absolutePath(sourceOf(t.tree), t.id));
+  }
 
   /** The active file's id when it is one of `items`, so only its tree shows a selection. */
   const selectedIn = (source: string, items: TreeItem[]) =>
@@ -202,7 +350,7 @@
   }
 
   /** A new note is an unsaved buffer — nothing reaches disk until ⌘S. */
-  function newNote() {
+  function newNote(dir = "") {
     const ws = $fileWs;
     if (!ws) return;
     const taken = new Set($docEntries.map((e) => e.rel_path));
@@ -210,8 +358,9 @@
       const file = parseFileKey(key);
       if (file.source === ws) taken.add(file.path);
     }
-    let name = "untitled.md";
-    for (let n = 2; taken.has(name); n++) name = `untitled-${n}.md`;
+    const at = (file: string) => (dir ? `${dir}/${file}` : file);
+    let name = at("untitled.md");
+    for (let n = 2; taken.has(name); n++) name = at(`untitled-${n}.md`);
     setDoc(fileKey(ws, name), "");
     openFile(ws, name);
   }
@@ -293,7 +442,7 @@
       />
     </div>
     <Tooltip text="New note">
-      <IconButton icon="add" label="New note" disabled={!$fileWs} onclick={newNote} />
+      <IconButton icon="add" label="New note" disabled={!$fileWs} onclick={() => newNote()} />
     </Tooltip>
   </div>
 
@@ -309,43 +458,71 @@
     </Button>
   </div>
 
-  <div class="sections">
-    <section>
+  {#snippet editor(item: TreeItem)}
+    {#if edit}
+      <div class="edit" use:seed>
+        <Input
+          bind:value={edit.value}
+          aria-label={edit.kind === "rename" ? `Rename ${item.label}` : "New folder name"}
+          placeholder={edit.kind === "folder" ? "Folder name" : undefined}
+          invalid={!!edit.error}
+          oncommit={() => void commitEdit()}
+          onkeydown={(e) => {
+            if (e.key === "Escape") {
+              e.stopPropagation();
+              edit = null;
+            }
+          }}
+        />
+        {#if edit.error}<InlineAlert>{edit.error}</InlineAlert>{/if}
+      </div>
+    {/if}
+  {/snippet}
+
+  <div
+    class="sections"
+    use:contextMenu={{ items: menuItems, onselect: onMenu }}
+    oncontextmenucapture={(e) => aimMenu(e.target)}
+    onkeydowncapture={(e) => {
+      if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) aimMenu(e.target);
+    }}
+  >
+    <section data-tree="plans">
       <h3 class="label">Claude plans</h3>
       {#if planItems.length > 0}
         <Tree
           label="Claude plans"
-          nodes={planItems}
+          nodes={withEdit(planItems, "plans")}
           selectedId={selectedIn("plans", planItems)}
           onopen={(id) => openFile("plans", id)}
-          {onrename}
-          {ondelete}
-          {oncontextmenu}
+          onrename={(id) => startRename("plans", id)}
+          ondelete={(id) => void askDelete("plans", id)}
+          {editor}
         />
       {:else}
         <EmptyState compact icon="article" title="No plans yet" />
       {/if}
     </section>
 
-    <section>
+    <section data-tree="docs">
       <h3 class="label">{workspace?.name ?? "Workspace"} docs</h3>
       {#if docItems.length > 0}
         <Tree
           label="{workspace?.name ?? 'Workspace'} docs"
-          nodes={docItems}
+          nodes={withEdit(docItems, "docs")}
           selectedId={selectedIn($fileWs, docItems)}
           onopen={openDoc}
           ontoggle={toggleDoc}
-          {onrename}
-          {ondelete}
-          {oncontextmenu}
+          onrename={(id) => startRename("docs", id)}
+          ondelete={(id) => void askDelete("docs", id)}
+          {editor}
         />
       {:else if !searching}
         <EmptyState compact icon="folder" title="No docs in this workspace" />
       {/if}
     </section>
 
-    <section>
+    <section data-tree="disk">
       <h3 class="label">From disk</h3>
       {#each $sources as source (source)}
         {@const items = diskItems(diskFiles(source))}
@@ -361,12 +538,12 @@
         {#if items.length > 0}
           <Tree
             label={basename(source)}
-            nodes={items}
+            nodes={withEdit(items, "disk")}
             selectedId={selectedIn("disk", items)}
             onopen={(id) => openFile("disk", id)}
-            {onrename}
-            {ondelete}
-            {oncontextmenu}
+            onrename={(id) => startRename("disk", id)}
+            ondelete={(id) => void askDelete("disk", id)}
+            {editor}
           />
         {:else}
           <EmptyState compact icon="folder" title="No files here" />
@@ -378,12 +555,12 @@
       {#if looseItems.length > 0}
         <Tree
           label="Opened files"
-          nodes={looseItems}
+          nodes={withEdit(looseItems, "disk")}
           selectedId={selectedIn("disk", looseItems)}
           onopen={(id) => openFile("disk", id)}
-          {onrename}
-          {ondelete}
-          {oncontextmenu}
+          onrename={(id) => startRename("disk", id)}
+          ondelete={(id) => void askDelete("disk", id)}
+          {editor}
         />
       {/if}
       {#if $sources.length === 0 && looseItems.length === 0}
@@ -480,6 +657,13 @@
     font-size: var(--fs-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .edit {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    padding-right: var(--sp-2);
   }
 
   .note {
