@@ -11,7 +11,7 @@
   import { claudeCheck } from "../../ipc";
   import { errorMessage } from "../../ipc-error";
   import { recheckClaude } from "../../stores/claude";
-  import { setClaudeBinaryPath, settingsOpen } from "../../stores/settings";
+  import { setClaudeBinaryPath, openSettings } from "../../stores/settings";
   import Banner from "../ui/Banner.svelte";
   import Button from "../ui/Button.svelte";
   import CopyButton from "../ui/CopyButton.svelte";
@@ -43,7 +43,7 @@
 {#snippet buttons()}
   <Button variant="primary" onclick={choose}>Choose executable…</Button>
   <Button onclick={recheckClaude}>Check again</Button>
-  <Button variant="link" onclick={() => settingsOpen.set(true)}>Open Claude Code settings</Button>
+  <Button variant="link" onclick={() => openSettings("claude")}>Open Claude Code settings</Button>
 {/snippet}
 
 {#if variant === "banner"}

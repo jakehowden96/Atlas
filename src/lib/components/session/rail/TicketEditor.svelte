@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { connectors } from "../../../stores/connectors";
-  import { settingsOpen } from "../../../stores/settings";
+  import { openSettings } from "../../../stores/settings";
   import { linkTicket, retry, tickets } from "../../../stores/tickets";
   import { normalizeTicketId, suggestTicketId } from "../../../tickets";
   import Button from "../../ui/Button.svelte";
@@ -78,7 +78,7 @@
     <InlineAlert>No ticket {normalizeTicketId(value)} found</InlineAlert>
   {:else if st?.kind === "unauthorized"}
     <InlineAlert tone="warn">{name} needs you to sign in again</InlineAlert>
-    <Button variant="link" onclick={() => settingsOpen.set(true)}>Reconnect →</Button>
+    <Button variant="link" onclick={() => openSettings("connectors")}>Reconnect →</Button>
   {:else if st?.kind === "offline"}
     <InlineAlert tone="warn">You are offline</InlineAlert>
     <Button variant="link" onclick={() => void retry(sessionId)}>Retry</Button>

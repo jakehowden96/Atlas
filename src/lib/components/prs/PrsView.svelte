@@ -18,7 +18,7 @@
     type PrFilter,
   } from "../../stores/prs";
   import { byKind } from "../../stores/connectors";
-  import { prRefreshMinutes, setWatchedRepos, settingsOpen, watchedRepos } from "../../stores/settings";
+  import { prRefreshMinutes, setWatchedRepos, openSettings, watchedRepos } from "../../stores/settings";
   import { visibleWorkspaces } from "../../stores/workspace";
   import { formatAgo } from "../../format";
   import { tooltip } from "../../ui/tooltip";
@@ -150,7 +150,7 @@
       {#snippet leading()}<Icon name="refresh" size={16} />{/snippet}
       Refresh
     </Button>
-    <Button size="sm" onclick={() => settingsOpen.set(true)}>Watched repos</Button>
+    <Button size="sm" onclick={() => openSettings("connectors")}>Watched repos</Button>
   </div>
 
   <div class="cards">
@@ -162,7 +162,7 @@
       >
         {#snippet action()}
           {#if setup.action === "connect" || setup.action === "reconnect"}
-            <Button variant="primary" onclick={() => settingsOpen.set(true)}>Open connectors</Button>
+            <Button variant="primary" onclick={() => openSettings("connectors")}>Open connectors</Button>
           {:else if setup.action === "retry"}
             <Button onclick={() => refreshPrs()}>Retry</Button>
           {/if}
@@ -222,7 +222,7 @@
             {#if ws}
               <span class="linked">workspace <span class="linked-name">{ws.name}</span></span>
             {:else}
-              <Button size="sm" variant="link" onclick={() => settingsOpen.set(true)}>
+              <Button size="sm" variant="link" onclick={() => openSettings("connectors")}>
                 Link a workspace to start sessions from PRs
               </Button>
             {/if}
