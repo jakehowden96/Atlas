@@ -8,6 +8,9 @@
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
   import StatusMark from "../ui/StatusMark.svelte";
   import Tooltip from "../ui/Tooltip.svelte";
+  import Badge from "../ui/Badge.svelte";
+  import NotificationsPanel, { unreadNotificationCount } from "../ui/NotificationsPanel.svelte";
+  import StatusChips, { statusChipCount } from "./StatusChips.svelte";
   import { isMacPlatform } from "../../platform";
   import { TODAY_COST_TIP, todayCost } from "../../stats-derive";
   import { dirtyFiles } from "../../stores/files";
@@ -61,6 +64,12 @@
   let chip = $state<HTMLElement>();
   let chipOpen = $state(false);
 
+  let bell = $state<HTMLElement>();
+  let bellOpen = $state(false);
+  // Under 800px the status chips fold into the bell menu.
+  let collapsed = $derived(width < 800);
+  let bellCount = $derived($unreadNotificationCount + (collapsed ? $statusChipCount : 0));
+
   function markState(p: StatusPart) {
     if (p.kind === "running") return "running";
     if (p.kind === "needsYou") return "attention";
@@ -107,8 +116,9 @@
 
   <div class="spacer" data-tauri-drag-region></div>
 
-  <!-- slot: status chips (phase 79) -->
-  <div class="slot" data-slot="chips"></div>
+  <div class="slot" data-slot="chips">
+    {#if !collapsed}<StatusChips />{/if}
+  </div>
 
   {#if tier === "compact"}
     <button
@@ -129,8 +139,24 @@
     <span class="status">{@render line(parts, true)}</span>
   {/if}
 
-  <!-- slot: notifications bell (phase 79) -->
-  <div class="slot" data-slot="bell"></div>
+  <div class="slot bell" data-slot="bell">
+    <span bind:this={bell} class="bell-anchor">
+      <IconButton
+        icon="notifications"
+        label={bellCount > 0 ? `Notifications, ${bellCount} new` : "Notifications"}
+        aria-haspopup="dialog"
+        aria-expanded={bellOpen}
+        onclick={() => (bellOpen = !bellOpen)}
+      />
+      {#if bellCount > 0}<span class="bell-badge"><Badge count={bellCount} alert /></span>{/if}
+    </span>
+    <Popover bind:open={bellOpen} trigger={bell} align="end" label="Notifications">
+      <div class="bell-pop">
+        {#if collapsed}<StatusChips />{/if}
+        <NotificationsPanel />
+      </div>
+    </Popover>
+  </div>
 
   {#if tier === "compact"}
     <Tooltip text="Jump to" shortcut={$chords.jump}>
@@ -190,6 +216,31 @@
 
   .slot:empty {
     display: none;
+  }
+
+  .slot:not(.bell):not(:empty) {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+
+  .bell-anchor {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .bell-badge {
+    position: absolute;
+    top: calc(var(--sp-1) * -1);
+    right: calc(var(--sp-1) * -1);
+    pointer-events: none;
+  }
+
+  .bell-pop {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-2);
   }
 
   .status,
