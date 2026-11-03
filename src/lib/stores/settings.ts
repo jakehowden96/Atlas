@@ -90,6 +90,8 @@ export const pinnedSessions = writable<string[]>([]);
     `~/.claude/settings.json`. On by default; the backend reads this at launch
     (from `settings.json`) to decide whether to install them. */
 export const claudeHook = writable(true);
+/** Check for a new Atlas release in the background (hourly). */
+export const autoCheckUpdates = writable(true);
 /** Absolute path to a `claude` binary the user chose; "" means look it up on PATH. */
 export const claudeBinaryPath = writable("");
 /** Workspace paths the user turned language servers on for. Off by default: a
@@ -140,6 +142,7 @@ interface PersistedSettings {
   fileSources?: string[];
   lspTrustedWorkspaces?: string[];
   claudeHook?: boolean;
+  autoCheckUpdates?: boolean;
   claudeBinaryPath?: string;
   railMode?: RailMode;
   railTiles?: RailTiles;
@@ -246,6 +249,7 @@ export async function loadSettings() {
     }
     if (typeof data.tailTranscripts === "boolean") tailTranscripts.set(data.tailTranscripts);
     if (typeof data.claudeHook === "boolean") claudeHook.set(data.claudeHook);
+    if (typeof data.autoCheckUpdates === "boolean") autoCheckUpdates.set(data.autoCheckUpdates);
     if (typeof data.claudeBinaryPath === "string") claudeBinaryPath.set(data.claudeBinaryPath);
     if (data.railMode === "expanded" || data.railMode === "thin") {
       railOpen.set(true);
@@ -314,6 +318,7 @@ const persister = createStatePersister(
     fileSources: get(sources),
     lspTrustedWorkspaces: get(lspTrustedWorkspaces),
     claudeHook: get(claudeHook),
+    autoCheckUpdates: get(autoCheckUpdates),
     claudeBinaryPath: get(claudeBinaryPath),
     keymap: get(keymap),
     railMode: get(railOpen) ? get(railWidth) : "hidden",
@@ -481,6 +486,11 @@ export async function setKeymap(next: Keymap) {
 
 export async function resetKeymap() {
   keymap.set({ ...DEFAULT_KEYMAP });
+  await persistSettings();
+}
+
+export async function setAutoCheckUpdates(value: boolean) {
+  autoCheckUpdates.set(value);
   await persistSettings();
 }
 
