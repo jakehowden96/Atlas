@@ -13,8 +13,11 @@ import {
   type FileSource,
 } from "../files";
 import {
+  createDir,
+  deletePath,
   listClaudePlans,
   listDir,
+  renamePath,
   listWorkspaceDocs,
   readTextFileAt,
   writeTextFileAt,
@@ -412,6 +415,80 @@ export function keepMine(key: string): void {
   else diskMtimes.set(key, newer);
   conflictMtimes.delete(key);
   setMember(conflicts, key, false);
+}
+
+/** Re-list everything the tree draws; expansion lives in its own store, so it survives. */
+async function refreshTree(): Promise<void> {
+  await Promise.all([loadDocs(get(fileWs)), loadSourceFiles(get(sources)), loadPlans()]);
+}
+
+/** Keys at or under `fromKey` move to `toKey`, in every store and map that holds per-file state. */
+function rekey(fromKey: string, toKey: string): void {
+  const re = (k: string) =>
+    k === fromKey || k.startsWith(`${fromKey}/`) ? toKey + k.slice(fromKey.length) : k;
+  const reMap = <T>(m: Map<string, T>) => new Map([...m].map(([k, v]): [string, T] => [re(k), v]));
+  const reSet = (s: Set<string>) => new Set([...s].map(re));
+  docs.update(reMap);
+  diskDocs.update(reMap);
+  unreadable.update(reSet);
+  conflicts.update(reSet);
+  expanded.update(reSet);
+  for (const m of [diskMtimes, conflictMtimes] as Map<string, number | null>[]) {
+    const moved = reMap(m);
+    m.clear();
+    for (const [k, v] of moved) m.set(k, v);
+  }
+  void setOpenFiles(get(openFiles).map(re));
+  activeFile.update(re);
+}
+
+const SLASH = /[\\/]/;
+
+/** Rename a file or folder in place. Rejects with the backend's message (reserved name, exists). */
+export async function renameEntry(
+  source: FileSource,
+  path: string,
+  newName: string,
+): Promise<void> {
+  const name = newName.trim();
+  if (!name) throw new Error("Enter a name");
+  if (SLASH.test(name)) throw new Error("A name cannot contain a slash");
+  const newPath = path.replace(/[^\\/]*$/, name);
+  if (newPath === path) return;
+  await renamePath(absolutePath(source, path), absolutePath(source, newPath));
+  rekey(fileKey(source, path), fileKey(source, newPath));
+  await refreshTree();
+}
+
+/** Move a file or folder to the trash (never permanent) and close its tabs. */
+export async function deleteEntry(source: FileSource, path: string): Promise<void> {
+  await deletePath(absolutePath(source, path));
+  const gone = fileKey(source, path);
+  for (const key of get(openFiles)) {
+    if (key !== gone && !key.startsWith(`${gone}/`)) continue;
+    // shortcut: the unsaved dialog holds one request, so a folder with several dirty tabs asks about the last; upgrade if that bites.
+    requestCloseFile(key);
+  }
+  showToast(`Moved ${path.split(SLASH).pop()} to the trash`, {
+    type: "info",
+    body: "You can restore it from the trash.",
+  });
+  await refreshTree();
+}
+
+/** Create a folder under a workspace directory (`""` for the root) and expand to it. */
+export async function createFolder(ws: string, parentRel: string, name: string): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Enter a name");
+  if (SLASH.test(trimmed)) throw new Error("A name cannot contain a slash");
+  const rel = parentRel ? `${parentRel}/${trimmed}` : trimmed;
+  await createDir(absolutePath(ws, rel));
+  expanded.update((current) => {
+    const next = new Set(current);
+    for (const dir of [...ancestorPaths(rel), rel]) next.add(fileKey(ws, dir));
+    return next;
+  });
+  await refreshTree();
 }
 
 export function toggleExpanded(key: string): void {

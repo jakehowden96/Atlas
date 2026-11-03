@@ -6,10 +6,13 @@
     label: string;
     kind: TreeKind;
     unsaved?: boolean;
+    /** Draws the `editor` snippet in place of the row (inline rename, new folder). */
+    editing?: boolean;
   }
 </script>
 
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import TreeRow from "./TreeRow.svelte";
   import { navigate, typeahead } from "../../ui/tree-nav";
 
@@ -23,6 +26,7 @@
     oncontextmenu?: (id: string) => void;
     onrename?: (id: string) => void;
     ondelete?: (id: string) => void;
+    editor?: Snippet<[TreeItem]>;
   }
 
   let {
@@ -34,6 +38,7 @@
     oncontextmenu,
     onrename,
     ondelete,
+    editor,
   }: Props = $props();
 
   let focusId = $state<string | null>(null);
@@ -96,21 +101,25 @@
   }}
 >
   {#each nodes as n (n.id)}
-    <TreeRow
-      id={n.id}
-      label={n.label}
-      level={n.level}
-      kind={n.kind}
-      expandable={n.expandable}
-      expanded={n.expanded}
-      selected={n.id === selectedId}
-      unsaved={n.unsaved}
-      tabindex={n.id === tabId ? 0 : -1}
-      onclick={() => {
-        focusNode(n.id);
-        onopen?.(n.id);
-      }}
-      ontwisty={() => ontoggle?.(n.id, !n.expanded)}
-    />
+    {#if n.editing && editor}
+      <div style:padding-left="calc({n.level - 1} * 20px + var(--sp-2))">{@render editor(n)}</div>
+    {:else}
+      <TreeRow
+        id={n.id}
+        label={n.label}
+        level={n.level}
+        kind={n.kind}
+        expandable={n.expandable}
+        expanded={n.expanded}
+        selected={n.id === selectedId}
+        unsaved={n.unsaved}
+        tabindex={n.id === tabId ? 0 : -1}
+        onclick={() => {
+          focusNode(n.id);
+          onopen?.(n.id);
+        }}
+        ontwisty={() => ontoggle?.(n.id, !n.expanded)}
+      />
+    {/if}
   {/each}
 </div>
