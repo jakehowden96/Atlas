@@ -13,6 +13,8 @@
   import { chord, enterLabel } from "../../platform";
   import { chords } from "../../stores/settings";
   import { shortcutsOpen } from "../../stores/view";
+  import IconButton from "../ui/IconButton.svelte";
+  import Kbd from "../ui/Kbd.svelte";
   import Modal from "../ui/Modal.svelte";
 
   /** A row is either a keymap action or a chord this screen fixes itself. */
@@ -56,6 +58,7 @@
         { action: "toggleRail" },
         { action: "closeSession" },
         { keys: "Esc", label: "Back to Sessions, unless the terminal has focus" },
+        { keys: "E / L", label: "Edit / link the ticket, with the rail focused" },
       ],
     },
     {
@@ -72,8 +75,20 @@
       rows: [
         { action: "saveFile" },
         { action: "openFile" },
+        { keys: "← ↑ → ↓", label: "Move through the file tree" },
+        { keys: "F2", label: "Rename the focused file" },
+        { keys: "Delete", label: "Delete the focused file" },
+        { keys: "⇧F10 / Menu", label: "Open the context menu" },
+        { keys: "← →", label: "Move between open file tabs" },
+        { keys: "Home / End", label: "First / last file tab" },
+        // Only while a tab has focus, so it never meets Close session (⌘⇧W).
+        { keys: chord("W"), label: "Close the focused file tab" },
         { keys: ENTER, label: "Follow the focused link in the preview" },
       ],
+    },
+    {
+      title: "Settings",
+      rows: [{ keys: chord("F"), label: "Search settings" }],
     },
     {
       title: "New session",
@@ -103,18 +118,16 @@
   }
 </script>
 
-<Modal open={$shortcutsOpen} onClose={() => shortcutsOpen.set(false)} width="720px">
+<Modal title="Keyboard shortcuts" open={$shortcutsOpen} onClose={() => shortcutsOpen.set(false)} width="720px">
   <div class="sheet">
     <div class="head">
-      Keyboard shortcuts
       <span class="hint">Rebind the global ones in Settings › Keyboard</span>
-      <div class="spacer"></div>
-      <button
-        type="button"
-        class="close"
-        aria-label="Close shortcuts"
-        onclick={() => shortcutsOpen.set(false)}>✕</button
-      >
+      <IconButton
+        icon="close"
+        size="sm"
+        label="Close shortcuts"
+        onclick={() => shortcutsOpen.set(false)}
+      />
     </div>
 
     <div class="body">
@@ -123,7 +136,7 @@
           <h3 class="group-title">{group.title}</h3>
           {#each group.rows as row (labelOf(row) + keysOf(row))}
             <div class="row">
-              <span class="keys">{keysOf(row)}</span>
+              <span class="keys"><Kbd>{keysOf(row)}</Kbd></span>
               <span class="what">{labelOf(row)}</span>
             </div>
           {/each}
@@ -142,40 +155,17 @@
 
   .head {
     display: flex;
-    align-items: baseline;
+    align-items: center;
+    justify-content: space-between;
     flex-shrink: 0;
-    gap: 10px;
-    padding: 14px 16px;
+    gap: var(--sp-3);
+    padding: var(--sp-2) var(--sp-4);
     border-bottom: 1px solid var(--border);
-    font-size: var(--fs-sm);
-    font-weight: 600;
   }
 
   .hint {
     color: var(--muted);
     font-size: var(--fs-xs);
-    font-weight: var(--fw-body);
-  }
-
-  .spacer {
-    flex: 1;
-  }
-
-  .close {
-    align-self: center;
-    display: grid;
-    place-items: center;
-    width: 22px;
-    height: 22px;
-    border-radius: var(--r-sm);
-    color: var(--muted);
-    font-size: var(--fs-sm);
-    cursor: pointer;
-  }
-
-  .close:hover {
-    background: var(--surface2);
-    color: var(--text);
   }
 
   /* Two columns of groups, so the whole sheet is one screenful without a
@@ -211,9 +201,6 @@
   .keys {
     flex-shrink: 0;
     min-width: 78px;
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
   }
 
   .what {
