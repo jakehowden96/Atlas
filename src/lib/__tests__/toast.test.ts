@@ -160,9 +160,9 @@ describe("toast store", () => {
   });
 
   it("shows a repeated identical toast once and gives it a fresh lifetime", () => {
-    showToast("Failed to list PRs", { body: "gh: not found", type: "info" });
+    showToast("Failed to list PRs", { body: "not found", type: "info" });
     vi.advanceTimersByTime(3000);
-    showToast("Failed to list PRs", { body: "gh: not found", type: "info" });
+    showToast("Failed to list PRs", { body: "not found", type: "info" });
     expect(get(toasts)).toHaveLength(1);
     expect(get(notificationLog)).toHaveLength(1);
 

@@ -191,7 +191,7 @@ fn extended_path(
 }
 
 /// macOS GUI apps inherit launchd's bare PATH (/usr/bin:/bin:...), so direct
-/// `Command::new("gh")` / `claude` spawns fail when Atlas is launched from
+/// `Command::new("claude")` spawns fail when Atlas is launched from
 /// Finder/Dock rather than a terminal. Append the standard Homebrew and
 /// user-level tool locations that exist. [UNVERIFIED on Windows]
 fn extend_path_for_gui_launch() {
@@ -290,10 +290,7 @@ pub fn run() -> std::process::ExitCode {
             commands::git::get_git_status,
             commands::git::git_checkout_branch,
             commands::git::list_workspace_repos,
-            commands::prs::list_repo_prs,
-            commands::prs::gh_viewer,
-            commands::prs::gh_pr_checkout,
-            commands::prs::open_url,
+            commands::url::open_url,
             commands::stats::get_claude_stats,
             commands::stats::list_resumable_sessions,
             commands::session::start_session_tail,

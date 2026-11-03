@@ -147,7 +147,7 @@
     />
     <div class="spacer"></div>
     <span class="meta">
-      via gh · refreshed {$prsLoading ? "…" : lastUpdatedLabel($prsLastUpdated, now)} · every {$prRefreshMinutes}m
+      Refreshed {$prsLoading ? "…" : lastUpdatedLabel($prsLastUpdated, now)} · every {$prRefreshMinutes}m
     </span>
     <button type="button" class="btn" onclick={() => refreshPrs()} disabled={$prsLoading}>
       Refresh

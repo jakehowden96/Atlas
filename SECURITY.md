@@ -8,8 +8,8 @@ vulnerability"). Please do not open a public issue for security problems.
 ## Threat model
 
 Atlas is a local desktop app. It has no server and sends no telemetry. It spawns your shell and
-Claude Code in pseudo-terminals, reads Claude Code transcripts under `~/.claude/`, runs `git` and
-`gh` in your workspaces, and stores its own state under `~/.atlas/`.
+Claude Code in pseudo-terminals, reads Claude Code transcripts under `~/.claude/`, runs `git`
+in your workspaces, and stores its own state under `~/.atlas/`.
 
 Anything running in the app's webview can call Atlas's IPC commands, so the webview is the trust
 boundary, and the backend does not trust it:
@@ -26,7 +26,7 @@ boundary, and the backend does not trust it:
 - **Language servers run workspace code**, so they are off per workspace until you enable them in
   Settings, and the decision is read by the backend from `settings.json`, not passed in by the
   webview.
-- **Subprocesses** (`git`, `gh`, language servers) are started without a shell and with validated
+- **Subprocesses** (`git`, language servers) are started without a shell and with validated
   arguments, `--` before user-controlled refs, and no console window on Windows.
 - **Claude Code settings.** Atlas edits only its own two hook entries in `~/.claude/settings.json`
   (see the README), never when the file does not parse, and you can switch it off.

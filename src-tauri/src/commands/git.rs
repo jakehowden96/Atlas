@@ -1,5 +1,5 @@
 use super::proc::no_window;
-use super::prs::validate_repo_slug;
+use super::validate::validate_repo_slug;
 use super::validate::{validate_branch_name, validate_cwd};
 use crate::error::AtlasError;
 use crate::panel::types::GitStatus;

@@ -62,8 +62,8 @@ export function isMine(pr: Pr, viewer: string | null): boolean {
 }
 
 /**
- * Exact, not approximated: `reviewRequestLogins` comes from gh's
- * `reviewRequests`, so this is "GitHub asked *me* for a review" rather than
+ * Exact, not approximated: `reviewRequestLogins` comes from the
+ * connector's review requests, so this is "GitHub asked *me* for a review" rather than
  * "someone's review is outstanding". Team requests carry no login and so never
  * match — a known gap, and the one the exact form trades for precision.
  */
