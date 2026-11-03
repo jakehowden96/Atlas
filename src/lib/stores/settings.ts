@@ -94,6 +94,9 @@ export const claudeHook = writable(true);
 export const autoCheckUpdates = writable(true);
 /** Absolute path to a `claude` binary the user chose; "" means look it up on PATH. */
 export const claudeBinaryPath = writable("");
+/** The first-run checklist was skipped or completed. Starts true so nothing
+    flashes before the settings file has loaded; `loadSettings` sets the real value. */
+export const firstRunDismissed = writable(true);
 /** Workspace paths the user turned language servers on for. Off by default: a
     server runs the workspace's own code, so the backend starts none for a path
     that is not listed here (it reads this list from `settings.json` itself). */
@@ -144,6 +147,7 @@ interface PersistedSettings {
   claudeHook?: boolean;
   autoCheckUpdates?: boolean;
   claudeBinaryPath?: string;
+  firstRunDismissed?: boolean;
   railMode?: RailMode;
   railTiles?: RailTiles;
   /** One binding per action in files written before alternates existed;
@@ -227,7 +231,10 @@ export async function loadSettings() {
   try {
     const loaded = await stateLoad("settings");
     if (loaded.recovered) reportStateRecovered("settings");
-    if (loaded.contents === null) return;
+    if (loaded.contents === null) {
+      firstRunDismissed.set(false);
+      return;
+    }
     const { data, newerThanKnown } = migrateSettings(JSON.parse(loaded.contents));
     if (newerThanKnown) reportNewerState("settings");
     if (data.enableNotifications === false) enableNotifications.set(false);
@@ -251,6 +258,7 @@ export async function loadSettings() {
     if (typeof data.claudeHook === "boolean") claudeHook.set(data.claudeHook);
     if (typeof data.autoCheckUpdates === "boolean") autoCheckUpdates.set(data.autoCheckUpdates);
     if (typeof data.claudeBinaryPath === "string") claudeBinaryPath.set(data.claudeBinaryPath);
+    firstRunDismissed.set(data.firstRunDismissed === true);
     if (data.railMode === "expanded" || data.railMode === "thin") {
       railOpen.set(true);
       railWidth.set(data.railMode);
@@ -320,6 +328,7 @@ const persister = createStatePersister(
     claudeHook: get(claudeHook),
     autoCheckUpdates: get(autoCheckUpdates),
     claudeBinaryPath: get(claudeBinaryPath),
+    firstRunDismissed: get(firstRunDismissed),
     keymap: get(keymap),
     railMode: get(railOpen) ? get(railWidth) : "hidden",
     railTiles: get(railTiles),
@@ -451,6 +460,11 @@ export async function setFileSources(paths: string[]) {
 /** Remember the chosen `claude` binary; "" goes back to the PATH lookup. */
 export async function setClaudeBinaryPath(path: string) {
   claudeBinaryPath.set(path);
+  await persistSettings();
+}
+
+export async function setFirstRunDismissed(value: boolean) {
+  firstRunDismissed.set(value);
   await persistSettings();
 }
 

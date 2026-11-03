@@ -5,14 +5,29 @@
   import SessionView from "../session/SessionView.svelte";
   import SessionsView from "../sessions/SessionsView.svelte";
   import StatsView from "../stats/StatsView.svelte";
+  import { firstRunDismissed } from "../../stores/settings";
   import { activeView } from "../../stores/view";
+  import { visibleWorkspaces } from "../../stores/workspace";
+  import FirstRun from "./FirstRun.svelte";
+
+  // Latched once a fresh profile is seen, so the checklist stays up as items
+  // complete (adding the workspace must not hide it) until done or skipped.
+  let firstRun = $state(false);
+  $effect(() => {
+    if (!$firstRunDismissed && $visibleWorkspaces.length === 0) firstRun = true;
+    else if ($firstRunDismissed) firstRun = false;
+  });
 </script>
 
 <div class="view-host">
   <!-- Sessions stays mounted too: rebuilding the grid from scratch on every
        return was the visible delay coming back from a session. -->
   <div class="view" class:hidden={$activeView !== "sessions"}>
-    <ErrorBoundary name="Sessions"><SessionsView /></ErrorBoundary>
+    {#if firstRun}
+      <FirstRun />
+    {:else}
+      <ErrorBoundary name="Sessions"><SessionsView /></ErrorBoundary>
+    {/if}
   </div>
   {#if $activeView === "files"}
     <div class="view"><ErrorBoundary name="Files"><FilesView /></ErrorBoundary></div>
