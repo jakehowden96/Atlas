@@ -274,6 +274,7 @@ pub fn run() -> std::process::ExitCode {
             connectors::commands::connector_disconnect,
             connectors::commands::connector_get_ticket,
             connectors::commands::connector_list_pull_requests,
+            connectors::commands::connector_checkout_pull_request,
             state::state_save,
             claude_hook::set_claude_hook,
             commands::frontend_log::log_write,
