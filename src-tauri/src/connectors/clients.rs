@@ -3,7 +3,7 @@
 
 pub const PLACEHOLDER: &str = "REPLACE_ME";
 
-pub const LINEAR_CLIENT_ID: &str = PLACEHOLDER;
+pub const LINEAR_CLIENT_ID: &str = "1fd7afc5a2a0cbc224ac7827ab947ec3";
 /// Loopback ports for the Linear browser flow: primary, then two fallbacks.
 pub const LINEAR_REDIRECT_PORTS: [u16; 3] = [53682, 53683, 53684];
 pub const GITHUB_CLIENT_ID: &str = "Ov23liodkMUnqn2a36ox";
