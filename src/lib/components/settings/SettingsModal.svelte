@@ -6,18 +6,18 @@
   import { errorMessage } from "../../ipc-error";
   import ClaudeCode from "./sections/ClaudeCode.svelte";
   import General from "./sections/General.svelte";
+  import Connectors from "./sections/Connectors.svelte";
   import Harnesses from "./sections/Harnesses.svelte";
   import Keyboard from "./sections/Keyboard.svelte";
-  import PullRequests from "./sections/PullRequests.svelte";
   import Workspaces from "./sections/Workspaces.svelte";
 
-  type Section = "general" | "keyboard" | "workspaces" | "prs" | "claude" | "harnesses";
+  type Section = "general" | "keyboard" | "workspaces" | "connectors" | "claude" | "harnesses";
 
   const NAV: { id: Section; label: string }[] = [
     { id: "general", label: "General" },
     { id: "keyboard", label: "Keyboard" },
     { id: "workspaces", label: "Workspaces" },
-    { id: "prs", label: "Pull requests" },
+    { id: "connectors", label: "Connectors" },
     { id: "claude", label: "Claude Code" },
     { id: "harnesses", label: "Harnesses" },
   ];
@@ -70,8 +70,8 @@
           <Keyboard />
         {:else if section === "workspaces"}
           <Workspaces />
-        {:else if section === "prs"}
-          <PullRequests />
+        {:else if section === "connectors"}
+          <Connectors />
         {:else if section === "claude"}
           <ClaudeCode />
         {:else}
