@@ -8,7 +8,14 @@
   const items: MenuItem[] = [
     { id: "open", label: "Open", shortcut: "Enter" },
     { id: "rename", label: "Rename" },
-    { id: "share", label: "Share", children: [{ id: "link", label: "Copy link" }, { id: "mail", label: "Email" }] },
+    {
+      id: "share",
+      label: "Share",
+      children: [
+        { id: "link", label: "Copy link" },
+        { id: "mail", label: "Email" },
+      ],
+    },
     { id: "lock", label: "Locked", disabled: true },
     { id: "delete", label: "Delete", danger: true, separatorBefore: true },
   ];

@@ -65,8 +65,8 @@ describe("checkoutPullRequest", () => {
 
   it("rejects a fork checkout when no connector is linked", async () => {
     connectors.set([]);
-    await expect(checkoutPullRequest("/w/r", "o/r", pr({ isCrossRepository: true }))).rejects.toThrow(
-      /Connect/,
-    );
+    await expect(
+      checkoutPullRequest("/w/r", "o/r", pr({ isCrossRepository: true })),
+    ).rejects.toThrow(/Connect/);
   });
 });

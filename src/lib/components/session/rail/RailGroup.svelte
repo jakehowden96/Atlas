@@ -23,7 +23,12 @@
 {#if rows.length > 0}
   {#if fold}
     <div class="group">
-      <button type="button" class="toggle" aria-expanded={expanded} onclick={() => (expanded = !expanded)}>
+      <button
+        type="button"
+        class="toggle"
+        aria-expanded={expanded}
+        onclick={() => (expanded = !expanded)}
+      >
         <span class="mark"><StatusMark state="done" /></span>
         <span>{rows.length} {fold}</span>
         <span class="twisty" class:open={expanded}><Icon name="chevron_right" /></span>

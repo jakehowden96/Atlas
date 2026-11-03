@@ -22,14 +22,34 @@
   let v = $state<string | undefined>();
 </script>
 
-<GallerySection title="Select" states={["closed", "open", "grouped", "long list", "invalid", "disabled"]}>
+<GallerySection
+  title="Select"
+  states={["closed", "open", "grouped", "long list", "invalid", "disabled"]}
+>
   <div class="col">
-    <Field label="Workspace">{#snippet children(p)}<Select {...p} options={few} bind:value={closed} />{/snippet}</Field>
-    <Field label="Ref">{#snippet children(p)}<Select {...p} options={grouped} bind:value={g} placeholder="Pick a ref" />{/snippet}</Field>
-    <Field label="Long list">{#snippet children(p)}<Select {...p} options={long} bind:value={l} />{/snippet}</Field>
-    <Field label="Invalid" error="Choose a workspace">{#snippet children(p)}<Select {...p} options={few} bind:value={v} />{/snippet}</Field>
-    <Field label="Disabled">{#snippet children(p)}<Select {...p} options={few} value="b" disabled />{/snippet}</Field>
-    <Field label="Small">{#snippet children(p)}<Select {...p} options={few} value="b" size="sm" />{/snippet}</Field>
+    <Field label="Workspace"
+      >{#snippet children(p)}<Select {...p} options={few} bind:value={closed} />{/snippet}</Field
+    >
+    <Field label="Ref"
+      >{#snippet children(p)}<Select
+          {...p}
+          options={grouped}
+          bind:value={g}
+          placeholder="Pick a ref"
+        />{/snippet}</Field
+    >
+    <Field label="Long list"
+      >{#snippet children(p)}<Select {...p} options={long} bind:value={l} />{/snippet}</Field
+    >
+    <Field label="Invalid" error="Choose a workspace"
+      >{#snippet children(p)}<Select {...p} options={few} bind:value={v} />{/snippet}</Field
+    >
+    <Field label="Disabled"
+      >{#snippet children(p)}<Select {...p} options={few} value="b" disabled />{/snippet}</Field
+    >
+    <Field label="Small"
+      >{#snippet children(p)}<Select {...p} options={few} value="b" size="sm" />{/snippet}</Field
+    >
   </div>
 </GallerySection>
 

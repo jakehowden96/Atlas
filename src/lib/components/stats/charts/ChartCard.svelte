@@ -42,7 +42,9 @@
 
   const sorted = $derived([...rows].sort((a, b) => (desc ? b.value - a.value : a.value - b.value)));
   const copyCsv = () =>
-    navigator.clipboard?.writeText(toCsv([["Bucket", "Value"], ...rows.map((r) => [r.label, r.value])]));
+    navigator.clipboard?.writeText(
+      toCsv([["Bucket", "Value"], ...rows.map((r) => [r.label, r.value])]),
+    );
 </script>
 
 <figure class="card">
@@ -60,7 +62,13 @@
       value={view}
       onChange={setView}
     />
-    <MenuButton icon="more_horiz" label={`${title} options`} items={[{ id: "csv", label: "Copy as CSV" }]} onselect={copyCsv} align="end" />
+    <MenuButton
+      icon="more_horiz"
+      label={`${title} options`}
+      items={[{ id: "csv", label: "Copy as CSV" }]}
+      onselect={copyCsv}
+      align="end"
+    />
   </header>
   <div class="body">
     {#if loading}

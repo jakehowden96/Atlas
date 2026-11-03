@@ -1,5 +1,12 @@
 <script lang="ts">
-  import { formatValue, medianText, pointText, roving, type Point, type Unit } from "../../../stats-chart";
+  import {
+    formatValue,
+    medianText,
+    pointText,
+    roving,
+    type Point,
+    type Unit,
+  } from "../../../stats-chart";
   import { tooltip } from "../../../ui/tooltip";
 
   interface Props {
@@ -16,7 +23,8 @@
   const max = $derived(Math.max(0, ...values));
   let live = $state("");
   let pinned = $state("");
-  const text = (p: Point) => pointText({ ...p, context: p.context ?? medianText(p.value, values) }, unit);
+  const text = (p: Point) =>
+    pointText({ ...p, context: p.context ?? medianText(p.value, values) }, unit);
 </script>
 
 <div class="list" role="group" aria-label={label} use:roving>
@@ -38,7 +46,9 @@
       }}
     >
       <span class="name">{p.label}</span>
-      <span class="track"><span class="fill" style:width={max ? `${(p.value / max) * 100}%` : "0"}></span></span>
+      <span class="track"
+        ><span class="fill" style:width={max ? `${(p.value / max) * 100}%` : "0"}></span></span
+      >
       <span class="val">{formatValue(p.value, unit)}</span>
     </button>
   {/each}

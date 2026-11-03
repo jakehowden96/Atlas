@@ -9,7 +9,15 @@
     onSelect: () => void;
   }
 
-  let { checked, label, description, disabled = false, tabindex, value, onSelect }: Props = $props();
+  let {
+    checked,
+    label,
+    description,
+    disabled = false,
+    tabindex,
+    value,
+    onSelect,
+  }: Props = $props();
 </script>
 
 <button

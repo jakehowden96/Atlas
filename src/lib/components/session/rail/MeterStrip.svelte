@@ -17,7 +17,9 @@
 </script>
 
 <div class="meter">
-  <div class="line" role="presentation"><span class="fill" class:hot={pct > 75} style="width: {pct}%"></span></div>
+  <div class="line" role="presentation">
+    <span class="fill" class:hot={pct > 75} style="width: {pct}%"></span>
+  </div>
   <div class="cells">
     <div class="cell">
       <span class="lbl">Context</span>
@@ -25,7 +27,8 @@
     </div>
     <div class="cell">
       <span class="lbl">
-        {#if model.family}<span class="dot" style="background: var(--model-{model.family})"></span>{/if}{model.name}
+        {#if model.family}<span class="dot" style="background: var(--model-{model.family})"
+          ></span>{/if}{model.name}
       </span>
       <span class="val">{live ? fmtCost(live.costEstimate) : "—"}</span>
       {#if costSub}<span class="lbl">{costSub}</span>{/if}

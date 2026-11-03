@@ -1,5 +1,10 @@
 <script lang="ts">
-  import { claudeHook, setClaudeHookEnabled, setTailTranscripts, tailTranscripts } from "../../stores/settings";
+  import {
+    claudeHook,
+    setClaudeHookEnabled,
+    setTailTranscripts,
+    tailTranscripts,
+  } from "../../stores/settings";
   import { errorMessage } from "../../ipc-error";
   import { onMount } from "svelte";
   import { claudeHookStale, refreshHookStale } from "../../stores/claude";
@@ -46,7 +51,8 @@
   <Banner tone="info" title="Transcript tailing is off">
     Tiles and the session rail will not update from Claude's transcripts.
     {#snippet actions()}
-      <Button size="sm" variant="secondary" onclick={() => setTailTranscripts(true)}>Turn on</Button>
+      <Button size="sm" variant="secondary" onclick={() => setTailTranscripts(true)}>Turn on</Button
+      >
     {/snippet}
   </Banner>
 {/if}

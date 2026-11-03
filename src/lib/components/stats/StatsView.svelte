@@ -120,19 +120,47 @@
       return d.kind === "pct" ? d.value : undefined;
     };
     return [
-      { label: "Sessions", value: fmtCount(cur.sessions), delta: pct(cur.sessions, prev?.sessions), spark: spark.map((d) => d.stats.sessions) },
-      { label: "Messages sent", value: fmtCount(cur.userMessages), delta: pct(cur.userMessages, prev?.userMessages), spark: spark.map((d) => d.stats.userMessages) },
-      { label: "Output tokens", value: fmtTokens(cur.outputTokens), delta: pct(cur.outputTokens, prev?.outputTokens), spark: spark.map((d) => d.stats.outputTokens) },
-      { label: "Est. cost", value: fmtCost(cur.cost), delta: pct(cur.cost, prev?.cost), spark: spark.map((d) => d.stats.cost) },
-      { label: "Peak context", value: fmtTokens(cur.peakContext), delta: pct(cur.peakContext, prev?.peakContext), spark: spark.map((d) => d.stats.peakContext) },
-      { label: "Subagents", value: fmtCount(cur.subagents), delta: pct(cur.subagents, prev?.subagents), spark: spark.map((d) => d.stats.subagents) },
+      {
+        label: "Sessions",
+        value: fmtCount(cur.sessions),
+        delta: pct(cur.sessions, prev?.sessions),
+        spark: spark.map((d) => d.stats.sessions),
+      },
+      {
+        label: "Messages sent",
+        value: fmtCount(cur.userMessages),
+        delta: pct(cur.userMessages, prev?.userMessages),
+        spark: spark.map((d) => d.stats.userMessages),
+      },
+      {
+        label: "Output tokens",
+        value: fmtTokens(cur.outputTokens),
+        delta: pct(cur.outputTokens, prev?.outputTokens),
+        spark: spark.map((d) => d.stats.outputTokens),
+      },
+      {
+        label: "Est. cost",
+        value: fmtCost(cur.cost),
+        delta: pct(cur.cost, prev?.cost),
+        spark: spark.map((d) => d.stats.cost),
+      },
+      {
+        label: "Peak context",
+        value: fmtTokens(cur.peakContext),
+        delta: pct(cur.peakContext, prev?.peakContext),
+        spark: spark.map((d) => d.stats.peakContext),
+      },
+      {
+        label: "Subagents",
+        value: fmtCount(cur.subagents),
+        delta: pct(cur.subagents, prev?.subagents),
+        spark: spark.map((d) => d.stats.subagents),
+      },
     ];
   });
 
   // ── Chart data ──────────────────────────────────────────────────────────
-  let weekSeries = $derived(
-    families.map((name) => ({ name, model: name.toLowerCase() as Model })),
-  );
+  let weekSeries = $derived(families.map((name) => ({ name, model: name.toLowerCase() as Model })));
   let weekBuckets = $derived(
     weeks.map(([key, w]) => ({
       key,
@@ -363,7 +391,9 @@
               {/each}
             </tbody>
           </table>
-          <p class="footnote">Model follows task difficulty. These are usage facts, not a controlled comparison</p>
+          <p class="footnote">
+            Model follows task difficulty. These are usage facts, not a controlled comparison
+          </p>
         {/if}
       </section>
 
@@ -479,7 +509,9 @@
                     <span class="dot" style="background: {workspaceColour(session.cwd)}"></span>
                     {session.cwd ? basename(session.cwd) : "None"}
                   </td>
-                  <td style="color: {modelColour(session.model ?? '')}">{session.model ?? "None"}</td>
+                  <td style="color: {modelColour(session.model ?? '')}"
+                    >{session.model ?? "None"}</td
+                  >
                   <td class="num">{fmtDuration(session.durationSecs)}</td>
                   <td class="num">{fmtTokens(session.outputTokens)}</td>
                   <td class="num">{fmtCost(session.costEstimate)}</td>

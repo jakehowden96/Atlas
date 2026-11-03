@@ -27,7 +27,11 @@
   let pickError = $state("");
 
   async function choose() {
-    const picked = await open({ multiple: false, directory: false, title: "Choose the claude binary" });
+    const picked = await open({
+      multiple: false,
+      directory: false,
+      title: "Choose the claude binary",
+    });
     if (typeof picked !== "string") return;
     try {
       await claudeCheck(picked);

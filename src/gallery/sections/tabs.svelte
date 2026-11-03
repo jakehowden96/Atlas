@@ -25,8 +25,20 @@
 
 <GallerySection title="Tabs" states={["3 tabs", "30 tabs", "vertical grouped", "unsaved"]}>
   <div class="col">
-    <Tabs tabs={few} value={fewV} onselect={(id) => (fewV = id)} onclose={() => {}} label="Few files" />
-    <Tabs tabs={many} value={manyV} onselect={(id) => (manyV = id)} onclose={() => {}} label="Many files" />
+    <Tabs
+      tabs={few}
+      value={fewV}
+      onselect={(id) => (fewV = id)}
+      onclose={() => {}}
+      label="Few files"
+    />
+    <Tabs
+      tabs={many}
+      value={manyV}
+      onselect={(id) => (manyV = id)}
+      onclose={() => {}}
+      label="Many files"
+    />
     <div class="side">
       <Tabs tabs={nav} value={navV} onselect={(id) => (navV = id)} vertical label="Settings" />
     </div>

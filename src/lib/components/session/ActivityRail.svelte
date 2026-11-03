@@ -89,12 +89,7 @@
   <aside class="rail" class:closing class:thin aria-label="Activity rail">
     {#if thin}
       <div class="fade thin-wrap">
-        <ThinRail
-          {marks}
-          waiting={tile?.state === "needsYou"}
-          ticketId=""
-          onexpand={expandTo}
-        />
+        <ThinRail {marks} waiting={tile?.state === "needsYou"} ticketId="" onexpand={expandTo} />
       </div>
     {:else}
       <div class="fade full">

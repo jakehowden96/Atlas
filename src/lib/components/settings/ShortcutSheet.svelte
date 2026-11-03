@@ -118,7 +118,12 @@
   }
 </script>
 
-<Modal title="Keyboard shortcuts" open={$shortcutsOpen} onClose={() => shortcutsOpen.set(false)} width="720px">
+<Modal
+  title="Keyboard shortcuts"
+  open={$shortcutsOpen}
+  onClose={() => shortcutsOpen.set(false)}
+  width="720px"
+>
   <div class="sheet">
     <div class="head">
       <span class="hint">Rebind the global ones in Settings › Keyboard</span>

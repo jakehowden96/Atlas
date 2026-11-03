@@ -77,7 +77,8 @@ export function pointText(p: Point, unit: Unit): string {
 }
 
 export function toCsv(rows: (string | number)[][]): string {
-  const q = (c: string | number) => (/[",\n]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : String(c));
+  const q = (c: string | number) =>
+    /[",\n]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : String(c);
   return rows.map((r) => r.map(q).join(",")).join("\n");
 }
 

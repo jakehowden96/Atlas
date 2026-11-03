@@ -26,7 +26,10 @@ import { cycleRail } from "../stores/view";
 const step = (text: string, status: string): PlanItem => ({ text, status });
 const fourteen = (): PlanItem[] =>
   Array.from({ length: 14 }, (_, i) =>
-    step(i === 10 ? "Parse Retry-After as an HTTP date" : `s${i + 1}`, i < 10 ? "completed" : i === 10 ? "in_progress" : "pending"),
+    step(
+      i === 10 ? "Parse Retry-After as an HTTP date" : `s${i + 1}`,
+      i < 10 ? "completed" : i === 10 ? "in_progress" : "pending",
+    ),
   );
 
 function agent(o: Partial<Subagent> = {}): Subagent {
@@ -45,7 +48,9 @@ function agent(o: Partial<Subagent> = {}): Subagent {
 
 describe("plan strings", () => {
   it("names the current step", () => {
-    expect(headlineText(planHeadline(fourteen()))).toBe("Step 11 of 14: Parse Retry-After as an HTTP date");
+    expect(headlineText(planHeadline(fourteen()))).toBe(
+      "Step 11 of 14: Parse Retry-After as an HTTP date",
+    );
     expect(planOpenHeadline(fourteen())).toBe("Step 11 of 14, 10 done");
     expect(planState(fourteen())).toBe("running");
   });
@@ -93,13 +98,20 @@ describe("agent strings", () => {
   it("builds running and done status lines", () => {
     const rows = agentRows(
       [
-        agent({ startedAt: start, toolCount: 14, currentAction: "Reading src/retry.rs", agentType: "Explore" }),
+        agent({
+          startedAt: start,
+          toolCount: 14,
+          currentAction: "Reading src/retry.rs",
+          agentType: "Explore",
+        }),
         agent({ startedAt: start, finishedAt: "2026-01-01T00:01:05Z", toolCount: 6, done: true }),
       ],
       now,
       false,
     );
-    expect(`${rows.running[0]!.word}${rows.running[0]!.rest}`).toBe("running 7m 28s, 14 tool calls");
+    expect(`${rows.running[0]!.word}${rows.running[0]!.rest}`).toBe(
+      "running 7m 28s, 14 tool calls",
+    );
     expect(rows.running[0]!.action).toBe("Reading src/retry.rs");
     expect(rows.running[0]!.meta).toBe("Explore");
     expect(`${rows.done[0]!.word}${rows.done[0]!.rest}`).toBe("done in 1m 05s, 6 tool calls");

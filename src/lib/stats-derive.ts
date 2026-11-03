@@ -49,7 +49,8 @@ export function fmtTokens(n: number): string {
 }
 
 export function fmtCost(n: number): string {
-  if (n >= 1000) return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (n >= 1000)
+    return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   if (n >= 1) return `$${n.toFixed(2)}`;
   return `$${n.toFixed(3)}`;
 }
@@ -334,5 +335,7 @@ export const TODAY_COST_TIP =
 /** "$8.10 today" under a session's own cost, or null when the session began today. */
 export function costTodayLine(live: { costEstimate: number; costToday?: number }): string | null {
   if (live.costToday == null) return null;
-  return Math.abs(live.costEstimate - live.costToday) < 0.005 ? null : `${fmtCost(live.costToday)} today`;
+  return Math.abs(live.costEstimate - live.costToday) < 0.005
+    ? null
+    : `${fmtCost(live.costToday)} today`;
 }

@@ -147,7 +147,13 @@
 {#if visible}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="overlay" class:closing class:top={align === "top"} class:right={align === "right"} onclick={onClose}>
+  <div
+    class="overlay"
+    class:closing
+    class:top={align === "top"}
+    class:right={align === "right"}
+    onclick={onClose}
+  >
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div

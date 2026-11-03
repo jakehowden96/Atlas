@@ -53,7 +53,12 @@ const linked = (kind: ConnectorState["status"] = { kind: "linked", account: "oct
   ] as ConnectorState[];
 
 describe("pr-view helpers", () => {
-  const a = pr({ number: 1, title: "Fix login", updatedAt: "2026-09-01T00:00:00Z", ciState: "passed" });
+  const a = pr({
+    number: 1,
+    title: "Fix login",
+    updatedAt: "2026-09-01T00:00:00Z",
+    ciState: "passed",
+  });
   const b = pr({
     number: 22,
     title: "Add cache",
@@ -132,9 +137,7 @@ describe("PrsView", () => {
   });
 
   it("keeps a failed repo's card with a Banner and no provider name hard-coded", () => {
-    prRepos.set([
-      { repo: "o/r", prs: [], error: { kind: "connectorError", message: "Boom" } },
-    ]);
+    prRepos.set([{ repo: "o/r", prs: [], error: { kind: "connectorError", message: "Boom" } }]);
     const { container } = render(PrsView);
     expect(screen.getByText("Boom")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();

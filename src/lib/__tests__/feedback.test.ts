@@ -31,7 +31,9 @@ describe("Spinner", () => {
     expect(screen.getByRole("status")).toBeTruthy();
   });
   it("stops spinning under reduced motion", () => {
-    expect(spinnerSrc).toMatch(/prefers-reduced-motion: reduce\)\s*{\s*\.spin\s*{\s*animation: none/);
+    expect(spinnerSrc).toMatch(
+      /prefers-reduced-motion: reduce\)\s*{\s*\.spin\s*{\s*animation: none/,
+    );
   });
 });
 

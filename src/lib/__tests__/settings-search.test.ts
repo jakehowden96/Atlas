@@ -102,7 +102,9 @@ describe("SettingsModal", () => {
     const general = await screen.findByRole("tab", { name: "General" });
     general.focus();
     await fireEvent.keyDown(general, { key: "ArrowDown" });
-    expect(screen.getByRole("tab", { name: "Keyboard" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Keyboard" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
   });
 
   it("jumps from a search result to its section", async () => {

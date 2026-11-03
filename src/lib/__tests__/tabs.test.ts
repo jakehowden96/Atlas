@@ -15,7 +15,10 @@ describe("partitionTabs", () => {
     expect(partitionTabs([50, 50], 0, 100, 40)).toEqual({ visible: [0, 1], hidden: [] });
   });
   it("hides what does not fit and reserves room for the menu", () => {
-    expect(partitionTabs([50, 50, 50, 50], 0, 200 - 1, 40)).toEqual({ visible: [0, 1, 2], hidden: [3] });
+    expect(partitionTabs([50, 50, 50, 50], 0, 200 - 1, 40)).toEqual({
+      visible: [0, 1, 2],
+      hidden: [3],
+    });
   });
   it("always keeps the selected tab visible, in order", () => {
     const r = partitionTabs([50, 50, 50, 50, 50], 4, 150, 40);
@@ -56,14 +59,23 @@ describe("Tabs", () => {
     const one = screen.getByRole("tab", { name: "One" });
     await fireEvent.keyDown(one, { key: "w", ctrlKey: true });
     expect(onclose).toHaveBeenLastCalledWith("a");
-    await fireEvent(screen.getByRole("tab", { name: "Two" }), new MouseEvent("auxclick", { button: 1, bubbles: true }));
+    await fireEvent(
+      screen.getByRole("tab", { name: "Two" }),
+      new MouseEvent("auxclick", { button: 1, bubbles: true }),
+    );
     expect(onclose).toHaveBeenLastCalledWith("b");
     await userEvent.setup().click(screen.getByRole("button", { name: "Close Three" }));
     expect(onclose).toHaveBeenLastCalledWith("c");
   });
 
   it("unsaved tab has a dot beside its close button", () => {
-    const { container } = render(Tabs, { tabs, value: "a", onselect: () => {}, onclose: () => {}, label: "Files" });
+    const { container } = render(Tabs, {
+      tabs,
+      value: "a",
+      onselect: () => {},
+      onclose: () => {},
+      label: "Files",
+    });
     expect(container.querySelectorAll(".dot").length).toBe(1);
     expect(screen.getByRole("button", { name: "Close Two" })).toBeTruthy();
   });

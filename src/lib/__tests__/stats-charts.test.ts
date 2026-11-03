@@ -46,7 +46,14 @@ describe("stats charts", () => {
   });
 
   it("table mode shows the same data", async () => {
-    render(ChartCard, { id: "t", title: "Spend", summary: "s", rows: pts, unit: "usd", children: (() => {}) as never });
+    render(ChartCard, {
+      id: "t",
+      title: "Spend",
+      summary: "s",
+      rows: pts,
+      unit: "usd",
+      children: (() => {}) as never,
+    });
     await fireEvent.click(screen.getByRole("radio", { name: "Table" }));
     expect(screen.getByRole("cell", { name: "$18.40" })).toBeTruthy();
     expect(screen.getAllByRole("row")).toHaveLength(4);

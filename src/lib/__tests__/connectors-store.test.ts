@@ -45,7 +45,13 @@ const state = (
   kind: "tickets" | "pullRequests",
   status: ConnectorState["status"],
 ): ConnectorState => ({
-  info: { id, name: id === "github" ? "GitHub" : "Linear", kind, flow: "browser", configured: true },
+  info: {
+    id,
+    name: id === "github" ? "GitHub" : "Linear",
+    kind,
+    flow: "browser",
+    configured: true,
+  },
   status,
 });
 const linear = state("linear", "tickets", { kind: "linked", account: "a" });

@@ -13,7 +13,14 @@
     children: Snippet;
   }
 
-  let { open = $bindable(false), trigger, side = "bottom", align = "start", label, children }: Props = $props();
+  let {
+    open = $bindable(false),
+    trigger,
+    side = "bottom",
+    align = "start",
+    label,
+    children,
+  }: Props = $props();
 
   let el = $state<HTMLElement>();
   let hasControls = $state(false);

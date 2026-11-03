@@ -26,9 +26,33 @@ describe("ListRow", () => {
 });
 
 const items: TreeItem[] = [
-  { id: "src", level: 1, expandable: true, expanded: false, parentId: null, label: "src", kind: "folder" },
-  { id: "a", level: 2, expandable: false, expanded: false, parentId: "src", label: "a.ts", kind: "source" },
-  { id: "r", level: 1, expandable: false, expanded: false, parentId: null, label: "README.md", kind: "md" },
+  {
+    id: "src",
+    level: 1,
+    expandable: true,
+    expanded: false,
+    parentId: null,
+    label: "src",
+    kind: "folder",
+  },
+  {
+    id: "a",
+    level: 2,
+    expandable: false,
+    expanded: false,
+    parentId: "src",
+    label: "a.ts",
+    kind: "source",
+  },
+  {
+    id: "r",
+    level: 1,
+    expandable: false,
+    expanded: false,
+    parentId: null,
+    label: "README.md",
+    kind: "md",
+  },
 ];
 
 describe("Tree", () => {

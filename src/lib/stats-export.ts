@@ -95,7 +95,8 @@ export function exportCsv(data: ExportData): string {
 
 // ── Recent sessions: sorting and bucket filter ───────────────────────────────
 
-export type RecentSortKey = "title" | "cwd" | "model" | "durationSecs" | "outputTokens" | "costEstimate";
+export type RecentSortKey =
+  "title" | "cwd" | "model" | "durationSecs" | "outputTokens" | "costEstimate";
 
 export function sortRecent(
   list: RecentSession[],
@@ -106,13 +107,13 @@ export function sortRecent(
   return [...list].sort((a, b) => {
     const x = a[key] ?? (typeof b[key] === "number" ? 0 : "");
     const y = b[key] ?? (typeof a[key] === "number" ? 0 : "");
-    const c = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y));
+    const c =
+      typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y));
     return c * dir || a.sessionId.localeCompare(b.sessionId);
   });
 }
 
-export type Bucket =
-  | { kind: "day" | "week" | "workspace" | "model"; key: string; label: string };
+export type Bucket = { kind: "day" | "week" | "workspace" | "model"; key: string; label: string };
 
 /** ISO week key ("2026-W22") of a local date, as `byWeek` is keyed. */
 export function isoWeekKey(d: Date): string {
@@ -141,4 +142,3 @@ export function filterByBucket(list: RecentSession[], b: Bucket | null): RecentS
     return b.kind === "day" ? localDayKey(d) === b.key : isoWeekKey(d) === b.key;
   });
 }
-

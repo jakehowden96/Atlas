@@ -23,7 +23,12 @@
   let bodyId = $derived(`rail-tile-${key}`);
 </script>
 
-<section class="tile" class:failing={state === "failing"} class:attention={state === "attention"} data-tile={key}>
+<section
+  class="tile"
+  class:failing={state === "failing"}
+  class:attention={state === "attention"}
+  data-tile={key}
+>
   <button
     type="button"
     class="head"

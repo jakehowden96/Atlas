@@ -249,71 +249,71 @@
   {#if $claudeMissing && allTiles.length === 0}
     <ClaudeMissing />
   {:else}
-  {#if $claudeMissing}<ClaudeMissing variant="banner" />{/if}
-  <SetupBanners />
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="chips" bind:this={chipsEl} onkeydown={onChipsKeydown}>
-    <Chip
-      label="All"
-      count={allTiles.length}
-      selected={$wsFilter === "all"}
-      onClick={() => wsFilter.set("all")}
-    />
-    {#each activeWorkspaces as ws (ws.path)}
-      <Chip
-        label={ws.name}
-        count={tilesPerWorkspace.get(ws.path) ?? 0}
-        colour={ws.color ?? "var(--surface3)"}
-        selected={$wsFilter === ws.path}
-        onClick={() => wsFilter.set(ws.path)}
-      />
-    {/each}
-    <div class="chip-spacer"></div>
-    <span class="sorted">{ORDER_LABEL[$overviewOrdering]}</span>
-  </div>
-
-  {#if tiles.length > 0}
+    {#if $claudeMissing}<ClaudeMissing variant="banner" />{/if}
+    <SetupBanners />
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="grid"
-      bind:this={gridEl}
-      onkeydown={onGridKeydown}
-      onfocusin={onGridFocusIn}
-      onfocusout={onGridFocusOut}
-    >
-      {#each tiles as tile, i (tile.sessionUuid)}
-        <SessionTile
-          {tile}
-          {now}
-          tailing={$tailTranscripts}
-          pinned={pinned.has(pinKey(tile))}
-          focused={i === focusIndex}
-          focusVisible={gridFocused && i === focusIndex}
+    <div class="chips" bind:this={chipsEl} onkeydown={onChipsKeydown}>
+      <Chip
+        label="All"
+        count={allTiles.length}
+        selected={$wsFilter === "all"}
+        onClick={() => wsFilter.set("all")}
+      />
+      {#each activeWorkspaces as ws (ws.path)}
+        <Chip
+          label={ws.name}
+          count={tilesPerWorkspace.get(ws.path) ?? 0}
+          colour={ws.color ?? "var(--surface3)"}
+          selected={$wsFilter === ws.path}
+          onClick={() => wsFilter.set(ws.path)}
         />
       {/each}
+      <div class="chip-spacer"></div>
+      <span class="sorted">{ORDER_LABEL[$overviewOrdering]}</span>
     </div>
-  {:else}
-    <div class="empty">
-      <div class="empty-col">
-        <AtlasMark size={40} />
-        <div class="empty-title">Nothing running</div>
-        <p class="empty-copy">
-          Start a Claude session in one of your {$visibleWorkspaces.length}
-          workspace{$visibleWorkspaces.length === 1 ? "" : "s"}. Sessions you've run before stay
-          listed here and can be resumed.
-        </p>
-        <div class="empty-actions">
-          <Button variant="primary" onclick={() => newSessionOpen.set(true)}>New session</Button>
-          <Button variant="secondary" onclick={addWorkspace}>Add workspace folder</Button>
-        </div>
-        <div class="hints">
-          <span><Kbd>{$chords.newSession}</Kbd> new</span>
-          <span><Kbd>{$chords.jump}</Kbd> jump</span>
-          <span><Kbd>{$chords.settings}</Kbd> settings</span>
+
+    {#if tiles.length > 0}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="grid"
+        bind:this={gridEl}
+        onkeydown={onGridKeydown}
+        onfocusin={onGridFocusIn}
+        onfocusout={onGridFocusOut}
+      >
+        {#each tiles as tile, i (tile.sessionUuid)}
+          <SessionTile
+            {tile}
+            {now}
+            tailing={$tailTranscripts}
+            pinned={pinned.has(pinKey(tile))}
+            focused={i === focusIndex}
+            focusVisible={gridFocused && i === focusIndex}
+          />
+        {/each}
+      </div>
+    {:else}
+      <div class="empty">
+        <div class="empty-col">
+          <AtlasMark size={40} />
+          <div class="empty-title">Nothing running</div>
+          <p class="empty-copy">
+            Start a Claude session in one of your {$visibleWorkspaces.length}
+            workspace{$visibleWorkspaces.length === 1 ? "" : "s"}. Sessions you've run before stay
+            listed here and can be resumed.
+          </p>
+          <div class="empty-actions">
+            <Button variant="primary" onclick={() => newSessionOpen.set(true)}>New session</Button>
+            <Button variant="secondary" onclick={addWorkspace}>Add workspace folder</Button>
+          </div>
+          <div class="hints">
+            <span><Kbd>{$chords.newSession}</Kbd> new</span>
+            <span><Kbd>{$chords.jump}</Kbd> jump</span>
+            <span><Kbd>{$chords.settings}</Kbd> settings</span>
+          </div>
         </div>
       </div>
-    </div>
-  {/if}
+    {/if}
   {/if}
 </div>
 

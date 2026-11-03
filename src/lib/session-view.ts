@@ -341,7 +341,12 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 function checkCounts(pr: RailPr) {
   const count = (s: Check["status"]) => pr.checks.filter((c) => c.status === s).length;
-  return { total: pr.checks.length, fail: count("fail"), pending: count("pending"), pass: count("pass") };
+  return {
+    total: pr.checks.length,
+    fail: count("fail"),
+    pending: count("pending"),
+    pass: count("pass"),
+  };
 }
 
 /** `#482 open`, `#482 draft` (muted) or `#482 merged`. */
@@ -359,11 +364,13 @@ export function prHeadline(pr: RailPr): PrPhrase[] {
   if (pr.state === "merged") return out;
   const { total, fail, pending } = checkCounts(pr);
   if (fail > 0) out.push({ text: `${fail} of ${plural(total, "check")} failing`, tone: "danger" });
-  else if (pending > 0) out.push({ text: `${pending} of ${plural(total, "check")} running`, tone: "accent" });
+  else if (pending > 0)
+    out.push({ text: `${pending} of ${plural(total, "check")} running`, tone: "accent" });
   else if (total > 0) out.push({ text: `${plural(total, "check")} passed`, tone: "muted" });
   const r = pr.review;
   if (r.kind === "awaiting") out.push({ text: "awaiting review", tone: "muted" });
-  else if (r.kind === "comments") out.push({ text: plural(r.count, "review comment"), tone: "warn" });
+  else if (r.kind === "comments")
+    out.push({ text: plural(r.count, "review comment"), tone: "warn" });
   else if (r.kind === "changes") out.push({ text: "changes requested", tone: "warn" });
   else out.push({ text: "approved", tone: "accent" });
   return out;
@@ -381,7 +388,8 @@ export function prState(pr: RailPr | null, pollFailed: boolean): TileState {
   if (!pr) return "idle";
   const { fail, pending } = checkCounts(pr);
   if (fail > 0) return "failing";
-  if (pr.review.kind === "comments" || pr.review.kind === "changes" || pollFailed) return "attention";
+  if (pr.review.kind === "comments" || pr.review.kind === "changes" || pollFailed)
+    return "attention";
   if (pending > 0) return "running";
   return pr.state === "merged" ? "done" : "idle";
 }
