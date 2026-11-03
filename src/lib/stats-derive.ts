@@ -49,7 +49,7 @@ export function fmtTokens(n: number): string {
 }
 
 export function fmtCost(n: number): string {
-  if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`;
+  if (n >= 1000) return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   if (n >= 1) return `$${n.toFixed(2)}`;
   return `$${n.toFixed(3)}`;
 }
@@ -318,11 +318,20 @@ export function weekFamilies(weeks: [string, WeekStats][]): string[] {
 // ── Today's spend ─────────────────────────────────────────────────────────────
 
 /**
- * What today has cost, across every session on disk rather than only the ones
- * Atlas happens to be tailing. The backend books spend on the local day it was
+ * Σ spend booked on the local day across every session on disk, not only the
+ * ones Atlas is tailing. The backend books spend on the local day it was
  * incurred, so a conversation resumed today contributes today's turns only, not
- * its lifetime cost.
+ * its lifetime cost. Session totals can therefore be higher than this.
  */
 export function todayCost(summary: StatsSummary | null, now: Date): number {
   return summary?.byDay?.[localDayKey(now)]?.cost ?? 0;
+}
+
+/** Tooltip on the top bar's spend figure. */
+export const TODAY_COST_TIP =
+  "All sessions, since midnight. Session totals can be higher because they include earlier days.";
+
+/** "$8.10 today" under a session's own cost, or null when the session began today. */
+export function costTodayLine(live: { costEstimate: number; costToday: number }): string | null {
+  return Math.abs(live.costEstimate - live.costToday) < 0.005 ? null : `${fmtCost(live.costToday)} today`;
 }

@@ -1,4 +1,6 @@
-﻿export type TopBarTier = "full" | "mid" | "compact";
+﻿import { fmtCost } from "./stats-derive";
+
+export type TopBarTier = "full" | "mid" | "compact";
 
 export interface StatusCounts {
   running: number;
@@ -27,7 +29,7 @@ export function statusParts(tier: TopBarTier, c: StatusCounts): StatusPart[] {
   ];
   if (tier === "full") {
     parts.push({ kind: "idle", text: `${c.idle} idle` });
-    parts.push({ kind: "spend", text: `$${c.spend.toFixed(2)} today` });
+    parts.push({ kind: "spend", text: `${fmtCost(c.spend)} today` });
   }
   return parts;
 }

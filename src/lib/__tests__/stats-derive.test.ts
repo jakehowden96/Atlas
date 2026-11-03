@@ -7,7 +7,9 @@ import {
   daySeries,
   delta,
   deltaLabel,
+  costTodayLine,
   deltaTone,
+  fmtCost,
   fmtTokens,
   modelRows,
   peakDay,
@@ -365,6 +367,19 @@ describe("todayCost", () => {
   it("is zero on a day with no activity, and with no stats loaded", () => {
     expect(todayCost(summary({ byDay: { "2026-09-08": day({ cost: 9 }) } }), now)).toBe(0);
     expect(todayCost(null, now)).toBe(0);
+  });
+});
+
+describe("fmtCost / costTodayLine", () => {
+  it("formats consistently", () => {
+    expect(fmtCost(18.76)).toBe("$18.76");
+    expect(fmtCost(1234.5)).toBe("$1,234.50");
+    expect(fmtCost(0.5)).toBe("$0.500");
+  });
+
+  it("shows a today line only when the session spans days", () => {
+    expect(costTodayLine({ costEstimate: 18.76, costToday: 8.1 })).toBe("$8.10 today");
+    expect(costTodayLine({ costEstimate: 3, costToday: 3 })).toBeNull();
   });
 });
 

@@ -9,7 +9,7 @@
   import StatusMark from "../ui/StatusMark.svelte";
   import Tooltip from "../ui/Tooltip.svelte";
   import { isMacPlatform } from "../../platform";
-  import { todayCost } from "../../stats-derive";
+  import { TODAY_COST_TIP, todayCost } from "../../stats-derive";
   import { dirtyFiles } from "../../stores/files";
   import { liveTiles } from "../../stores/liveTiles";
   import { prsAttentionCount } from "../../stores/prs";
@@ -82,7 +82,11 @@
           <StatusMark state={markState(p)} />
         {/if}
       {/if}
-      {p.text}
+      {#if p.kind === "spend"}
+        <Tooltip text={TODAY_COST_TIP}>{p.text}</Tooltip>
+      {:else}
+        {p.text}
+      {/if}
     </span>
   {/each}
 {/snippet}

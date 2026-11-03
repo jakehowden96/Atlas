@@ -16,6 +16,7 @@
   } from "../../overview";
   import { allowPendingTool, closeSession, denyPendingTool } from "../../session-actions";
   import { subagentMeta } from "../../session-view";
+  import { costTodayLine, fmtCost } from "../../stats-derive";
   import { togglePinnedSession } from "../../stores/settings";
   import {
     activeTabId,
@@ -322,9 +323,8 @@
   <div class="foot">
     <span class="last-tool">{shortToolName(live.pendingTool?.name ?? live.lastTool)}</span>
     <span class="stats"
-      >{live.toolCalls} tools · {formatTokens(live.contextTokens)} ctx · ${live.costEstimate.toFixed(
-        2,
-      )}</span
+      >{live.toolCalls} tools · {formatTokens(live.contextTokens)} ctx · {fmtCost(live.costEstimate)}{#if costTodayLine(live)}
+        · {costTodayLine(live)}{/if}</span
     >
   </div>
 </article>
