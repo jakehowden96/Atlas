@@ -11,7 +11,7 @@ Mission control for [Claude Code](https://claude.com/claude-code). Run several s
 - **Session view** — the actual Claude Code terminal, so `/mcp`, `/resume`, `/model`, plan mode and Shift+Tab all keep working. Highlighting text copies it, whichever harness is running. Beside it, an activity rail with the plan checklist, subagents, turn stats and files touched. If the shell exits, the tab says so.
 - **Resumable sessions** — Atlas spawns `claude --session-id <uuid>` and remembers it, so quitting and relaunching lets you pick a prior conversation back up with its history intact. The New Session modal offers Fresh or Resume per workspace.
 - **Changes drawer** — the session's git diff as a slide-over: file tree, unified or split, viewed-state tracking, and inline review comments you can send back to the session as a prompt. Very large diffs are cut at a size cap and the drawer says how much was shown.
-- **Pull requests** — open PRs across your watched repos grouped into cards, with CI and review status, All / Mine / Needs-my-review filters, and "Work on it" to check the branch out and start a session on it. Backed by your GitHub connector.
+- **Pull requests** — open PRs across your watched repos grouped into cards, with CI and review status, All / Mine / Needs-my-review filters, and "Work on it" to check the branch out and start a session on it. Backed by your GitHub connector (no `gh` CLI needed); Linear tickets use the Linear connector. See [docs/connectors.md](docs/connectors.md).
 - **Files** — a three-column document workspace: Claude's plans (`~/.claude/plans`), your workspaces' documents and any folders you add, with a tabbed editor, Source / Split / Preview modes, an outline and links rail, and ⌘S to save. Saving refuses to overwrite a file that changed on disk since it was read, and unsaved edits are guarded on tab close and on quit. Source files get syntax highlighting; language servers (TypeScript/JavaScript, Svelte, Rust, Python, Go, when installed) are off by default and enabled per workspace in Settings > Workspaces, because a language server runs code from the workspace.
 - **Stats** — a dense dashboard over your whole Claude Code history: per-model tokens and cost, tools and error rates, weekly activity by local day, per-workspace spend, recent sessions.
 - **Live, not polled** — plan, subagents, tools, context and cost come from tailing `~/.claude/projects/**.jsonl`. Two Claude Code hooks tell Atlas when a session is waiting on you and when its session id changes (see [Hooks](#claude-code-hooks)).
@@ -27,6 +27,7 @@ Installers (macOS `.dmg` for Apple silicon and Intel, Windows `.exe`) are attach
 
 - [Claude Code](https://claude.com/claude-code) CLI (`claude`) — the thing Atlas manages
 - `git` — the Changes drawer and workspace discovery
+- Nothing else. Pull requests and tickets sign in through OAuth connectors, so the `gh` CLI is not needed.
 
 ### Build from source
 

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Polish pass
+
+- Component system: shared UI components with tokens from `src/app.css`, a gallery (`pnpm gallery`)
+  and a design-lint test.
+- Connectors: Linear tickets and GitHub pull requests through OAuth (PKCE browser flow for Linear,
+  device flow for GitHub). Refresh tokens live in the OS keychain. See `docs/connectors.md`.
+- The `gh` CLI is no longer needed. Pull requests come from the GitHub connector.
+- Session rail v6 and designed empty, loading and error states for every screen.
+- Fixed: session cost is consistent across the tile, the rail and Stats (#35).
+- Added `docs/manual-setup.md`: the owner-only steps (OAuth apps, updater key). Connect stays
+  disabled and updates stay off until they are done.
+
+### Production hardening
+
 Production-hardening pass. Behavior changes are listed under "Changed"; everything else fixes a
 defect found in the audit.
 

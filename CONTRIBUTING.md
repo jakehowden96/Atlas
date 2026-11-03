@@ -64,3 +64,8 @@ drive the keyboard with `@testing-library/user-event`.
 browser, with theme, width and reduced-motion switches. Add a section by adding one file; no
 registry to edit. `node scripts/gallery-shots.mjs [--section <id>] [--width 1100]` writes light and
 dark PNGs to `gallery-shots/` using your installed Chrome. The gallery is not part of `pnpm build`.
+
+`src/lib/__tests__/design-lint.test.ts` fails the test run on hex or rgba literals and other
+off-token values in component styles; use the custom properties from `src/app.css`.
+Connector setup is documented in [docs/connectors.md](docs/connectors.md) and
+[docs/manual-setup.md](docs/manual-setup.md).

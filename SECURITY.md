@@ -39,6 +39,23 @@ boundary, and the backend does not trust it:
   reputation is off inside the webview, which only ever loads the bundled app. `[UNVERIFIED on
   Windows]`: these flags have not been run on Windows by the author.
 
+## Connectors and tokens
+
+Linear and GitHub sign in with OAuth only; Atlas never asks for a password or a personal access
+token. See `docs/connectors.md`.
+
+- **Storage.** Only the refresh token and account name are stored, as JSON in the OS keychain
+  (service `atlas`, user `<connector-id>`). Access tokens are kept in memory. Nothing is written to
+  `~/.atlas/`.
+- **Scopes.** Linear: `read`. GitHub: `repo`, because GitHub OAuth apps have no read-only scope for
+  private repositories. Atlas only reads.
+- **Loopback listener (Linear).** The browser flow uses PKCE and a one-shot listener on
+  `127.0.0.1` (ports 53682, 53683, 53684, first free), which accepts a single callback and times out
+  after five minutes. GitHub uses the device flow and opens no listener.
+- **Client ids are public.** Both apps are public clients with no secret in the repository.
+- **Updater key.** Updates are verified against the public key in `plugins.updater.pubkey`
+  (`src-tauri/tauri.conf.json`). The private key exists only as a repository secret.
+
 ## Secrets
 
 Never commit credentials. `.vscode/mcp.json` is gitignored; copy `.vscode/mcp.json.example` and put
