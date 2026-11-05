@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Stats on codeburn
+
+- The Stats screen is rebuilt on the `codeburn` CLI and now needs `npm i -g codeburn`. Tabs: Overview,
+  Spend, Models, Sessions, Compare, Pull requests, Yield, Plans, Optimize.
+- Removed the old Stats dashboard code and CSV/JSON export helpers it orphaned.
+
 ### Polish pass
 
 - Component system: shared UI components with tokens from `src/app.css`, a gallery (`pnpm gallery`)
