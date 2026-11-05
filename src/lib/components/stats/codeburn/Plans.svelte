@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { BudgetStatus, Quota } from "../../../../types/codeburn-plans";
-  import type { Period } from "../../../../types/codeburn";
+  import { filterArgs, type Filters } from "../../../../types/codeburn";
   import { codeburnAction } from "../../../ipc";
   import { errorMessage } from "../../../ipc-error";
   import { fmtCost, fmtCount } from "../../../stats-derive";
@@ -12,8 +12,7 @@
   import Loader from "./Loader.svelte";
   import { PLAN_PRESETS, resetCountdown } from "./plans";
 
-  // The CLI's `status --format json` ignores --period, so it is passed through only to match the other tabs.
-  let { period, refresh }: { period: Period; refresh: number } = $props();
+    let { filters, refresh }: { filters: Filters; refresh: number } = $props();
 
   const options = PLAN_PRESETS.map((id) => ({ id, label: id }));
   let preset = $state<string | undefined>(undefined);
@@ -40,7 +39,7 @@
   }
 </script>
 
-<Loader args={["status", "--format", "json", "--period", period]} refresh={refresh + localRefresh}>
+<Loader args={["status", "--format", "json", ...filterArgs(filters, "status")]} refresh={refresh + localRefresh}>
   {#snippet children(s: BudgetStatus)}
     <div class="kpis">
       <div class="card"><Kpi label="Today" value={fmtCost(s.today.cost)} /></div>

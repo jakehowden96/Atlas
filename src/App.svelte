@@ -1,4 +1,4 @@
-﻿<script lang="ts">
+<script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import Overlays from "./lib/components/shell/Overlays.svelte";
   import TopBar from "./lib/components/shell/TopBar.svelte";
@@ -7,7 +7,8 @@
   import { log } from "./lib/logger";
   import { shouldClearNeedsInput } from "./lib/overview";
   import { handleGlobalKeydown } from "./lib/shortcuts";
-  import { activeTabId, setTabNeedsInput } from "./lib/stores/terminal";
+  import { startCostRefresh } from "./lib/stores/cost";
+import { activeTabId, setTabNeedsInput } from "./lib/stores/terminal";
   import { activeView } from "./lib/stores/view";
 
   // Clear needsInput once the user is actually looking at the session — see
@@ -24,7 +25,9 @@
   // `bootApp` is async and the component can be torn down before it settles.
   let stopBoot: (() => void) | null = null;
   let destroyed = false;
+  let stopCosts: (() => void) | null = null;
   onMount(() => {
+    stopCosts = startCostRefresh();
     bootApp()
       .then((stop) => {
         if (destroyed) stop();
@@ -35,6 +38,7 @@
 
   onDestroy(() => {
     destroyed = true;
+    stopCosts?.();
     stopBoot?.();
   });
 </script>

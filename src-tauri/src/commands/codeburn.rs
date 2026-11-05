@@ -20,6 +20,8 @@ const INSTALL_HINT: &str = "codeburn is not installed. Install it with: npm i -g
 /// Subcommands the read path may run. Each must be asked for JSON.
 const READ_COMMANDS: &[&str] = &[
     "status",
+    "report",
+    "plan",
     "quota",
     "models",
     "sessions",
@@ -80,6 +82,9 @@ fn validate_read(args: &[String]) -> Result<(), AtlasError> {
             "codeburn {} is not allowed here",
             args[0]
         )));
+    }
+    if args[0] == "plan" && args.iter().any(|a| a == "set") {
+        return Err(AtlasError::invalid_input("plan set is an action, not a read"));
     }
     if args.iter().any(|a| a == "--apply") {
         return Err(AtlasError::invalid_input("--apply is not allowed here"));
@@ -279,6 +284,7 @@ mod tests {
         assert!(validate_read(&v(&["optimize", "--apply", "--format", "json"])).is_err());
         assert!(validate_read(&v(&["status", "--format", "json&calc"])).is_err());
         assert!(validate_read(&v(&["status", "--format", "json", "a b"])).is_err());
+        assert!(validate_read(&v(&["plan", "set", "claude-max", "--format", "json"])).is_err());
         assert!(validate_read(&v(&["status", "--format", ""])).is_err());
     }
 

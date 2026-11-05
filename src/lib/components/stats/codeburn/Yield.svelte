@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Period } from "../../../../types/codeburn";
+  import { filterArgs, type Filters } from "../../../../types/codeburn";
   import type { Yield, YieldCategory } from "../../../../types/codeburn-yield";
   import type { Point } from "../../../stats-chart";
   import { fmtCost, fmtCount } from "../../../stats-derive";
@@ -9,7 +9,7 @@
   import Loader from "./Loader.svelte";
   import { yieldCosts } from "./yield-derive";
 
-  let { period, refresh }: { period: Period; refresh: number } = $props();
+  let { filters, refresh }: { filters: Filters; refresh: number } = $props();
 
   const CATS: YieldCategory[] = ["productive", "reverted", "abandoned", "ambiguous"];
 
@@ -25,7 +25,7 @@
   const money = (v: number | null) => (v === null ? "n/a" : fmtCost(v));
 </script>
 
-<Loader args={["yield", "--format", "json", "--period", period]} {refresh}>
+<Loader args={["yield", "--format", "json", ...filterArgs(filters, "yield")]} {refresh}>
   {#snippet children(y: Yield)}
     {@const costs = yieldCosts(y)}
     {@const rows = points(y)}

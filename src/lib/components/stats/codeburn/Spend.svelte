@@ -1,12 +1,12 @@
 <script lang="ts">
-  import type { Period } from "../../../../types/codeburn";
+  import { filterArgs, type Filters } from "../../../../types/codeburn";
   import type { SpendBranches, SpendFlow } from "../../../../types/codeburn-spend";
   import type { Point } from "../../../stats-chart";
   import ChartCard from "../charts/ChartCard.svelte";
   import HBarList from "../charts/HBarList.svelte";
   import Loader from "./Loader.svelte";
 
-  let { period, refresh }: { period: Period; refresh: number } = $props();
+  let { filters, refresh }: { filters: Filters; refresh: number } = $props();
 
   const BRANCHES = 15;
 
@@ -28,7 +28,7 @@
   }
 </script>
 
-<Loader args={["spend", "--format", "flow-json", "--period", period]} {refresh}>
+<Loader args={["spend", "--format", "flow-json", ...filterArgs(filters, "spend")]} {refresh}>
   {#snippet children(flow: SpendFlow)}
     {@const model = pts(flow.models)}
     {@const project = pts(flow.projects)}
@@ -55,7 +55,7 @@
   {/snippet}
 </Loader>
 
-<Loader args={["spend", "--format", "branch-json", "--period", period]} {refresh}>
+<Loader args={["spend", "--format", "branch-json", ...filterArgs(filters, "spend")]} {refresh}>
   {#snippet children(branches: SpendBranches)}
     {@const b = branchPoints(branches)}
     <div class="row">

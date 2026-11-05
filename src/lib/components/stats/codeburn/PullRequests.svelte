@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Period } from "../../../../types/codeburn";
+  import { filterArgs, type Filters } from "../../../../types/codeburn";
   import type { PullRequests } from "../../../../types/codeburn-prs";
   import type { Point } from "../../../stats-chart";
   import { fmtCost, fmtCount } from "../../../stats-derive";
@@ -8,7 +8,7 @@
   import Kpi from "../charts/Kpi.svelte";
   import Loader from "./Loader.svelte";
 
-  let { period, refresh }: { period: Period; refresh: number } = $props();
+  let { filters, refresh }: { filters: Filters; refresh: number } = $props();
 
   function points(d: PullRequests): Point[] {
     return d.prs.map((p) => ({
@@ -20,7 +20,7 @@
   }
 </script>
 
-<Loader args={["sessions", "--by-pr", "--format", "json", "--period", period]} {refresh}>
+<Loader args={["sessions", "--by-pr", "--format", "json", ...filterArgs(filters, "sessions")]} {refresh}>
   {#snippet children(d: PullRequests)}
     {@const rows = points(d)}
     <div class="kpis">

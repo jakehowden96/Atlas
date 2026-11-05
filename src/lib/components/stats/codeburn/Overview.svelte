@@ -1,7 +1,8 @@
 <script lang="ts">
-  import type { Overview, Period } from "../../../../types/codeburn";
+  import { filterArgs, type Filters, type Overview } from "../../../../types/codeburn";
   import type { OptimizeReport } from "../../../../types/codeburn-optimize";
-  import type { Point } from "../../../stats-chart";
+  import { statsFilters } from "../../../stores/statsFilters";
+import type { Point } from "../../../stats-chart";
   import { fmtCost, fmtCount, fmtTokens } from "../../../stats-derive";
   import Button from "../../ui/Button.svelte";
   import Progress from "../../ui/Progress.svelte";
@@ -13,7 +14,7 @@
   import Trend from "./Trend.svelte";
   import { activityCells, efficiencyRows, fmtMs, trend, type Metric } from "./overview-derive";
 
-  let { period, refresh }: { period: Period; refresh: number } = $props();
+  let { filters, refresh }: { filters: Filters; refresh: number } = $props();
 
   const metrics: Segment<Metric>[] = [
     { id: "cost", label: "Cost" },
@@ -21,17 +22,17 @@
   ];
 
   let metric = $state<Metric>("cost");
-  /** "all", or a provider id picked from the By tool panel. */
-  let provider = $state("all");
+  /** "all", or a provider id: the Stats provider filter, also set from the By tool panel. */
+  const provider = $derived(filters.provider ?? "all");
+  const setProvider = (id: string) =>
+    statsFilters.update((f) => ({ ...f, provider: id === "all" ? undefined : id }));
 
   const args = $derived([
     "status",
     "--format",
     "menubar-json",
-    "--period",
-    period,
+    ...filterArgs(filters, "status"),
     "--no-optimize",
-    ...(provider === "all" ? [] : ["--provider", provider]),
   ]);
 
   function pts<T>(xs: T[], f: (x: T) => Point): Point[] {
@@ -98,7 +99,7 @@
         </div>
         <div class="tools">
           {#if provider !== "all"}
-            <Button size="sm" onclick={() => (provider = "all")}>Showing {provider}. Clear</Button>
+            <Button size="sm" onclick={() => setProvider("all")}>Showing {provider}. Clear</Button>
           {/if}
           <SegmentedControl
             role="radiogroup"
@@ -162,9 +163,7 @@
             "optimize",
             "--format",
             "json",
-            "--period",
-            period,
-            ...(provider === "all" ? [] : ["--provider", provider]),
+            ...filterArgs(filters, "optimize"),
           ]}
           {refresh}
         >
@@ -233,7 +232,7 @@
           unit="usd"
           label="Cost by tool"
           emptyText="No activity"
-          onselect={(id) => (provider = id)}
+          onselect={(id) => setProvider(id)}
         />
       </Panel>
       <Panel title="Top models" empty={c.topModels.length === 0}>

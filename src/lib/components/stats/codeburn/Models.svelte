@@ -1,14 +1,14 @@
 <script lang="ts">
-  import type { Period } from "../../../../types/codeburn";
+  import { filterArgs, type Filters } from "../../../../types/codeburn";
   import type { ModelRow } from "../../../../types/codeburn-models";
   import { fmtCost, fmtCount, fmtTokens } from "../../../stats-derive";
   import Loader from "./Loader.svelte";
   import { byCostDesc, cacheHit, isUnpriced } from "./models-derive";
 
-  let { period, refresh }: { period: Period; refresh: number } = $props();
+  let { filters, refresh }: { filters: Filters; refresh: number } = $props();
 </script>
 
-<Loader args={["models", "--format", "json", "--period", period, "--min-cost", "0"]} {refresh}>
+<Loader args={["models", "--format", "json", ...filterArgs(filters, "models"), "--min-cost", "0"]} {refresh}>
   {#snippet children(rows: ModelRow[])}
     {#if rows.length === 0}
       <p class="note">No model usage in this period.</p>

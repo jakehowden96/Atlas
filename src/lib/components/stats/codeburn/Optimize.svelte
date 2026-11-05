@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Period } from "../../../../types/codeburn";
+  import { filterArgs, type Filters } from "../../../../types/codeburn";
   import type { OptimizeReport } from "../../../../types/codeburn-optimize";
   import { errorMessage } from "../../../ipc-error";
   import { codeburnAction } from "../../../ipc";
@@ -11,7 +11,7 @@
   import Loader from "./Loader.svelte";
   import { groupFindings } from "./optimize-groups";
 
-  let { period, refresh }: { period: Period; refresh: number } = $props();
+  let { filters, refresh }: { filters: Filters; refresh: number } = $props();
 
   let busy = $state(false);
   let notice = $state<{ tone: "success" | "error"; text: string } | null>(null);
@@ -42,7 +42,7 @@
   }
 </script>
 
-<Loader args={["optimize", "--format", "json", "--period", period]} refresh={refresh + local}>
+<Loader args={["optimize", "--format", "json", ...filterArgs(filters, "optimize")]} refresh={refresh + local}>
   {#snippet children(r: OptimizeReport)}
     <div class="kpis">
       <div class="card"><Kpi label="Grade" value={`${r.summary.healthGrade} (${r.summary.healthScore})`} /></div>

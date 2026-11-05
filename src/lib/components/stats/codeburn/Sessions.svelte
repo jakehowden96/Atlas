@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Period } from "../../../../types/codeburn";
+  import { filterArgs, type Filters } from "../../../../types/codeburn";
   import type { SessionRow, SessionWhy } from "../../../../types/codeburn-sessions";
   import { fmtCost, fmtCount } from "../../../stats-derive";
   import { openNewSession } from "../../../stores/view";
@@ -9,7 +9,7 @@
   import Loader from "./Loader.svelte";
   import { type SortKey, sortSessions, topCategory } from "./sessions-sort";
 
-  let { period, refresh }: { period: Period; refresh: number } = $props();
+  let { filters, refresh }: { filters: Filters; refresh: number } = $props();
 
   let key = $state<SortKey>("startedAt");
   let desc = $state(true);
@@ -30,7 +30,7 @@
   }
 </script>
 
-<Loader args={["sessions", "--format", "json", "--period", period, "--contributions"]} {refresh}>
+<Loader args={["sessions", "--format", "json", ...filterArgs(filters, "sessions"), "--contributions"]} {refresh}>
   {#snippet children(rows: SessionRow[])}
     {#if rows.length === 0}
       <EmptyState icon="folder" title="No sessions in this period" />

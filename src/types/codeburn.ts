@@ -89,3 +89,43 @@ export interface Overview {
     }[];
   };
 }
+
+/** Stats screen filters: one preset period or a custom date range (YYYY-MM-DD). */
+export interface Filters {
+  period: Period | { from: string; to: string };
+  project?: string;
+  provider?: string;
+}
+
+interface Support {
+  period: boolean;
+  range: boolean;
+  project: boolean;
+  provider: boolean;
+}
+
+/** What each command accepts (phase 01 map); anything unlisted takes all of it. */
+const FILTER_SUPPORT: Record<string, Support> = {
+  yield: { period: true, range: false, project: true, provider: true }, // custom range dropped
+  "compare-periods": { period: false, range: false, project: true, provider: true }, // caller adds --from-a/--to-a/--from-b/--to-b
+  plan: { period: false, range: false, project: false, provider: true },
+  quota: { period: false, range: false, project: false, provider: false },
+};
+
+/**
+ * argv flags for `f`, limited to what `command` supports. Project names with
+ * spaces cannot pass the runner's `arg_ok`; codeburn lists projects as
+ * dash-joined paths (`E--Projects-app`), so none are expected.
+ */
+export function filterArgs(f: Filters, command = ""): string[] {
+  const s = FILTER_SUPPORT[command] ?? { period: true, range: true, project: true, provider: true };
+  const out: string[] = [];
+  if (typeof f.period === "string") {
+    if (s.period) out.push("--period", f.period);
+  } else if (s.range) {
+    out.push("--from", f.period.from, "--to", f.period.to);
+  }
+  if (s.project && f.project) out.push("--project", f.project);
+  if (s.provider && f.provider) out.push("--provider", f.provider);
+  return out;
+}

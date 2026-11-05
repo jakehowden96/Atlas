@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import type { Period } from "../../../types/codeburn";
   import { checkCodeburn, codeburnStatus } from "../../stores/codeburn";
+  import { refreshCosts } from "../../stores/cost";
+  import { statsFilters } from "../../stores/statsFilters";
   import Button from "../ui/Button.svelte";
   import CopyButton from "../ui/CopyButton.svelte";
   import EmptyState from "../ui/EmptyState.svelte";
@@ -50,10 +52,11 @@
     { id: "optimize", label: "Optimize" },
   ];
 
-  let period = $state<Period>("30days");
   let tab = $state<TabId>("overview");
   /** Bumped by Refresh; every tab skips the shared cache when it changes. */
   let refresh = $state(0);
+
+  const filters = $derived($statsFilters);
 
   onMount(() => void checkCodeburn());
 </script>
@@ -77,15 +80,18 @@
         role="radiogroup"
         label="Period"
         options={periods}
-        value={period}
-        onChange={(id) => (period = id)}
+        value={typeof filters.period === "string" ? filters.period : "30days"}
+        onChange={(id) => statsFilters.update((f) => ({ ...f, period: id }))}
         size="sm"
       />
       <div class="spacer"></div>
       {#if $codeburnStatus?.version}
         <span class="live">codeburn {$codeburnStatus.version}</span>
       {/if}
-      <Button size="sm" onclick={() => refresh++}>Refresh</Button>
+      <Button size="sm" onclick={() => {
+          refresh++;
+          void refreshCosts(true);
+        }}>Refresh</Button>
     </div>
 
     <div class="tab-bar">
@@ -100,23 +106,23 @@
     </div>
 
     {#if tab === "overview"}
-      <Overview {period} {refresh} />
+      <Overview {filters} {refresh} />
     {:else if tab === "spend"}
-      <Spend {period} {refresh} />
+      <Spend {filters} {refresh} />
     {:else if tab === "models"}
-      <Models {period} {refresh} />
+      <Models {filters} {refresh} />
     {:else if tab === "sessions"}
-      <Sessions {period} {refresh} />
+      <Sessions {filters} {refresh} />
     {:else if tab === "compare"}
-      <Compare {period} {refresh} />
+      <Compare {filters} {refresh} />
     {:else if tab === "prs"}
-      <PullRequests {period} {refresh} />
+      <PullRequests {filters} {refresh} />
     {:else if tab === "yield"}
-      <Yield {period} {refresh} />
+      <Yield {filters} {refresh} />
     {:else if tab === "plans"}
-      <Plans {period} {refresh} />
+      <Plans {filters} {refresh} />
     {:else if tab === "optimize"}
-      <Optimize {period} {refresh} />
+      <Optimize {filters} {refresh} />
     {/if}
   {/if}
 </div>

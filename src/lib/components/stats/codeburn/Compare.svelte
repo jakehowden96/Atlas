@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Period } from "../../../../types/codeburn";
+  import { filterArgs, type Filters } from "../../../../types/codeburn";
   import type {
     CohortComparison,
     ModelCompareRow,
@@ -15,7 +15,7 @@
   import { modelStats, shortKey } from "./compare-derive";
   import Loader from "./Loader.svelte";
 
-  let { period, refresh }: { period: Period; refresh: number } = $props();
+  let { filters, refresh }: { filters: Filters; refresh: number } = $props();
 
   let a = $state("");
   let b = $state("");
@@ -32,7 +32,7 @@
     }));
 </script>
 
-<Loader args={["compare", "--format", "json", "--period", period]} {refresh}>
+<Loader args={["compare", "--format", "json", ...filterArgs(filters, "compare")]} {refresh}>
   {#snippet children(models: ModelCompareRow[])}
     {@const stats = modelStats(models)}
     {@const opts = stats.map((s) => ({ id: s.model, label: s.model }))}
@@ -93,7 +93,7 @@
 </Loader>
 
 <h3>Last 7 days vs the 7 before</h3>
-<Loader args={["compare-periods", "--format", "json"]} {refresh}>
+<Loader args={["compare-periods", "--format", "json", ...filterArgs(filters, "compare-periods")]} {refresh}>
   {#snippet children(p: PeriodCompare)}
     <div class="kpis">
       <div class="card">
