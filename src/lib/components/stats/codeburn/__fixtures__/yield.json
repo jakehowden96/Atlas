@@ -1,0 +1,76 @@
+{
+ "period": {
+  "label": "Last 30 Days",
+  "start": "2026-10-05T23:00:00.000Z",
+  "end": "2026-11-05T23:59:59.999Z"
+ },
+ "summary": {
+  "productive": {
+   "costUSD": 51.82022009999999,
+   "sessions": 27,
+   "costPercent": 16.4,
+   "sessionPercent": 8.3
+  },
+  "reverted": {
+   "costUSD": 0,
+   "sessions": 0,
+   "costPercent": 0,
+   "sessionPercent": 0
+  },
+  "abandoned": {
+   "costUSD": 183.11614610000004,
+   "sessions": 212,
+   "costPercent": 58.1,
+   "sessionPercent": 65.4
+  },
+  "ambiguous": {
+   "costUSD": 80.37251370000001,
+   "sessions": 85,
+   "costPercent": 25.5,
+   "sessionPercent": 26.2
+  },
+  "total": {
+   "costUSD": 315.30887990000014,
+   "sessions": 324
+  },
+  "productiveToRevertedCostRatio": null
+ },
+ "methodology": "timestamp-window",
+ "details": [
+  {
+   "sessionId": "00f757a6-994a-4273-b496-24426239532e",
+   "project": "E--Projects-fashion-app",
+   "costUSD": 0.13567160000000003,
+   "category": "abandoned",
+   "commitCount": 0
+  },
+  {
+   "sessionId": "0129a0dd-c978-4a9d-bc09-89ffa3912bcc",
+   "project": "E--Projects-fashion-app",
+   "costUSD": 0.17406020000000005,
+   "category": "abandoned",
+   "commitCount": 0
+  },
+  {
+   "sessionId": "023f9772-ec2d-42fb-85cb-bdbcb97215ee",
+   "project": "E--Projects-fashion-app",
+   "costUSD": 0,
+   "category": "abandoned",
+   "commitCount": 0
+  },
+  {
+   "sessionId": "026ec1a7-b565-487b-8846-b997e74c283f",
+   "project": "E--Projects-fashion-app",
+   "costUSD": 0.1962258,
+   "category": "abandoned",
+   "commitCount": 0
+  },
+  {
+   "sessionId": "06fa5a89-6948-4a54-ab6b-a08b0c890cfa",
+   "project": "E--Projects-fashion-app",
+   "costUSD": 0.23611120000000005,
+   "category": "abandoned",
+   "commitCount": 0
+  }
+ ]
+}

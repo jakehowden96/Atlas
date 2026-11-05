@@ -1,0 +1,449 @@
+{
+ "schema": 1,
+ "provider": "all",
+ "rangeA": {
+  "from": "2026-09-06",
+  "to": "2026-10-05",
+  "days": 30
+ },
+ "rangeB": {
+  "from": "2026-10-06",
+  "to": "2026-11-05",
+  "days": 31
+ },
+ "overlapDays": 0,
+ "durationDeltaDays": 1,
+ "totals": {
+  "A": {
+   "cost": 1.6453625,
+   "calls": 19,
+   "sessions": 1,
+   "inputTokens": 38,
+   "outputTokens": 24348,
+   "cacheReadTokens": 1093505,
+   "cacheWriteTokens": 48972,
+   "savingsUSD": 0,
+   "estimatedCostUSD": 0
+  },
+  "B": {
+   "cost": 315.3088799000001,
+   "calls": 8640,
+   "sessions": 313,
+   "inputTokens": 18529,
+   "outputTokens": 4723270,
+   "cacheReadTokens": 913905599,
+   "cacheWriteTokens": 29144195,
+   "savingsUSD": 0,
+   "estimatedCostUSD": 0
+  },
+  "diff": {
+   "cost": 313.6635174000001,
+   "calls": 8621,
+   "sessions": 312,
+   "inputTokens": 18491,
+   "outputTokens": 4698922,
+   "cacheReadTokens": 912812094,
+   "cacheWriteTokens": 29095223,
+   "savingsUSD": 0,
+   "estimatedCostUSD": 0
+  },
+  "pct": {
+   "cost": 19063.490106283574,
+   "calls": 45373.68421052632,
+   "sessions": 31200,
+   "inputTokens": 48660.52631578947,
+   "outputTokens": 19299.006078528007,
+   "cacheReadTokens": 83475.80431730994,
+   "cacheWriteTokens": 59411.955811484106,
+   "savingsUSD": null,
+   "estimatedCostUSD": null
+  }
+ },
+ "projects": [
+  {
+   "key": "e:/projects/fashion-app",
+   "costA": 0,
+   "costB": 68.49346299999998,
+   "diff": 68.49346299999998,
+   "pct": null,
+   "status": "new",
+   "callsA": 0,
+   "callsB": 1076
+  },
+  {
+   "key": "e:/github/atlas",
+   "costA": 0,
+   "costB": 41.43978799999999,
+   "diff": 41.43978799999999,
+   "pct": null,
+   "status": "new",
+   "callsA": 0,
+   "callsB": 966
+  },
+  {
+   "key": "c:/users/jakeh",
+   "costA": 1.6453625,
+   "costB": 31.0803853,
+   "diff": 29.4350228,
+   "pct": 1788.9688624847106,
+   "status": "up",
+   "callsA": 19,
+   "callsB": 559
+  },
+  {
+   "key": "c:/users/jakeh/source/wholesomenfl.com",
+   "costA": 0,
+   "costB": 19.9708295,
+   "diff": 19.9708295,
+   "pct": null,
+   "status": "new",
+   "callsA": 0,
+   "callsB": 79
+  },
+  {
+   "key": "e:/github/wholesomenfl.com",
+   "costA": 0,
+   "costB": 13.136621000000002,
+   "diff": 13.136621000000002,
+   "pct": null,
+   "status": "new",
+   "callsA": 0,
+   "callsB": 214
+  }
+ ],
+ "models": [
+  {
+   "key": "Sonnet 5.5",
+   "costA": 0,
+   "costB": 158.61078550000005,
+   "diff": 158.61078550000005,
+   "pct": null,
+   "status": "new",
+   "callsA": 0,
+   "callsB": 6351
+  },
+  {
+   "key": "Opus 5.5",
+   "costA": 0,
+   "costB": 120.20088879999987,
+   "diff": 120.20088879999987,
+   "pct": null,
+   "status": "new",
+   "callsA": 0,
+   "callsB": 2046
+  },
+  {
+   "key": "Opus 5",
+   "costA": 1.6453625,
+   "costB": 36.49435999999999,
+   "diff": 34.848997499999996,
+   "pct": 2118.013355719484,
+   "status": "up",
+   "callsA": 19,
+   "callsB": 170
+  },
+  {
+   "key": "Haiku 5.5",
+   "costA": 0,
+   "costB": 0.0028455999999999998,
+   "diff": 0.0028455999999999998,
+   "pct": null,
+   "status": "new",
+   "callsA": 0,
+   "callsB": 6
+  }
+ ],
+ "normalized": {
+  "perDay": {
+   "a": 0.05484541666666667,
+   "b": 10.171254190322584,
+   "diff": 10.116408773655918,
+   "pct": 18445.31300608088
+  },
+  "per100Calls": {
+   "a": 8.659802631578946,
+   "b": 3.6494083321759265,
+   "diff": -5.0103942994030195,
+   "pct": -57.85806573849677
+  },
+  "denominators": {
+   "perDay": "calendar days in the range (A: 30, B: 31)",
+   "per100Calls": "API calls × 100 (A: 19, B: 8,640)"
+  }
+ },
+ "daily": {
+  "A": [
+   {
+    "date": "2026-09-06",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-07",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-08",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-09",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-10",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-11",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-12",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-13",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-14",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-15",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-16",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-17",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-18",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-19",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-20",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-21",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-22",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-23",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-24",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-25",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-26",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-27",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-28",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-29",
+    "cost": 0
+   },
+   {
+    "date": "2026-09-30",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-01",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-02",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-03",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-04",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-05",
+    "cost": 1.6453625
+   }
+  ],
+  "B": [
+   {
+    "date": "2026-10-06",
+    "cost": 52.88114800000003
+   },
+   {
+    "date": "2026-10-07",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-08",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-09",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-10",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-11",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-12",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-13",
+    "cost": 6.0639026000000005
+   },
+   {
+    "date": "2026-10-14",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-15",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-16",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-17",
+    "cost": 82.18915339999981
+   },
+   {
+    "date": "2026-10-18",
+    "cost": 19.785026200000022
+   },
+   {
+    "date": "2026-10-19",
+    "cost": 5.3951043
+   },
+   {
+    "date": "2026-10-20",
+    "cost": 1.0340904999999998
+   },
+   {
+    "date": "2026-10-21",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-22",
+    "cost": 4.023301199999999
+   },
+   {
+    "date": "2026-10-23",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-24",
+    "cost": 0.788403
+   },
+   {
+    "date": "2026-10-25",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-26",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-27",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-28",
+    "cost": 1.9104038000000003
+   },
+   {
+    "date": "2026-10-29",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-30",
+    "cost": 0
+   },
+   {
+    "date": "2026-10-31",
+    "cost": 3.9494524999999987
+   },
+   {
+    "date": "2026-11-01",
+    "cost": 12.973047799999998
+   },
+   {
+    "date": "2026-11-02",
+    "cost": 72.79709850000002
+   },
+   {
+    "date": "2026-11-03",
+    "cost": 30.558351799999997
+   },
+   {
+    "date": "2026-11-04",
+    "cost": 2.9010475
+   },
+   {
+    "date": "2026-11-05",
+    "cost": 18.05934880000001
+   }
+  ]
+ },
+ "coverage": {
+  "unpricedModelsA": [],
+  "unpricedModelsB": [],
+  "pricingCoverageA": 1,
+  "pricingCoverageB": 1
+ },
+ "history": {
+  "historyCost": {
+   "A": 1.6453625,
+   "B": 297.2495310999999
+  },
+  "detailCost": {
+   "A": 1.6453625,
+   "B": 297.2495310999999
+  },
+  "days": {
+   "A": [],
+   "B": []
+  },
+  "aggregateOnly": {
+   "A": 0,
+   "B": 0
+  },
+  "basis": "Totals come from parsed session transcripts. Days whose sources no longer exist survive only as aggregate daily history; their unexplained cost is listed here, not folded into the totals."
+ }
+}

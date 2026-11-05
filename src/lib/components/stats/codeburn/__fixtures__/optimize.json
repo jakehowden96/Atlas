@@ -1,0 +1,273 @@
+{
+  "period": {
+    "label": "Last 30 Days",
+    "start": "2026-10-05T23:00:00.000Z",
+    "end": "2026-11-05T23:59:59.999Z"
+  },
+  "summary": {
+    "healthScore": 20,
+    "healthGrade": "F",
+    "findingCount": 9,
+    "periodCostUSD": 315.3088799000001,
+    "sessions": 190,
+    "calls": 8640,
+    "potentialSavingsTokens": 98271623,
+    "potentialSavingsCostUSD": 22.999543334104285,
+    "potentialSavingsPercent": 7.3,
+    "costRateUSD": 2.3404053613833452e-7,
+    "measuredSavingsUSD": 21.629885925583196,
+    "byClass": {
+      "fix": {
+        "tokensSaved": 2373536,
+        "savingsUSD": 0.5555036379836379,
+        "count": 4
+      },
+      "nudge": {
+        "tokensSaved": 75363220,
+        "savingsUSD": 17.638048413911257,
+        "count": 4
+      },
+      "keep": {
+        "tokensSaved": 20534867,
+        "savingsUSD": 4.805991282209393,
+        "count": 1
+      }
+    }
+  },
+  "findings": [
+    {
+      "id": "read-edit-ratio",
+      "title": "Claude edits more than it reads",
+      "explanation": "Claude made 2210 reads and 1519 edits (ratio 1.5:1). A healthy ratio is 4+ reads per edit. Editing without reading leads to retries and wasted tokens.",
+      "severity": "high",
+      "trend": "active",
+      "tokensSaved": 2319600,
+      "estimatedSavingsUSD": 0.5428804276264807,
+      "class": "fix",
+      "basis": "estimated",
+      "fix": {
+        "type": "paste",
+        "destination": "claude-md",
+        "label": "Add to your CLAUDE.md:",
+        "text": "Before editing any file, read it first. Before modifying a function, grep for all callers. Research before you edit."
+      }
+    },
+    {
+      "id": "mcp-project-scope",
+      "title": "1 MCP server should be project-scoped",
+      "explanation": "These MCP servers look useful in a small set of projects but are loaded into other projects where they are not invoked. Project-scoping them keeps the hot-project workflow while avoiding their tool lines elsewhere. claude_ai_Claude_Docs: 90% of 10 calls in E:\\GitHub\\Atlas (8 calls), E:\\Projects\\fashion-app (1 call); loaded but unused in C:\\Users\\jakeh (24 loaded sessions), E:\\GitHub\\wholesomenfl.com (6 loaded sessions), E:\\GitHub\\Atlas\\.claude\\worktrees\\agent-a04e9f05b8b583c3c (2 loaded sessions), +115 more.",
+      "severity": "medium",
+      "trend": null,
+      "tokensSaved": 50026,
+      "estimatedSavingsUSD": 0.011708111860856322,
+      "class": "fix",
+      "basis": "estimated",
+      "fix": {
+        "type": "paste",
+        "destination": "prompt",
+        "label": "Ask Claude to turn this into a project-scoped MCP profile:",
+        "text": "Review these MCP profile recommendations before changing config (1 of 1 shown):\n- Keep claude_ai_Claude_Docs available for E:\\GitHub\\Atlas, E:\\Projects\\fashion-app; remove or project-scope it away from C:\\Users\\jakeh, E:\\GitHub\\wholesomenfl.com, E:\\GitHub\\Atlas\\.claude\\worktrees\\agent-a04e9f05b8b583c3c. Re-add it only in projects that actually need it."
+      }
+    },
+    {
+      "id": "bash-output-cap",
+      "title": "Shrink bash output limit",
+      "explanation": "Your bash output cap is 30K chars (default). Most output fits in 15K. The extra ~3.8K tokens per bash call is trailing noise.",
+      "severity": "medium",
+      "trend": null,
+      "tokensSaved": 3750,
+      "estimatedSavingsUSD": 0.0008776520105187544,
+      "class": "fix",
+      "basis": "estimated",
+      "fix": {
+        "type": "paste",
+        "destination": "shell-config",
+        "label": "Add to ~/.zshrc or ~/.bashrc:",
+        "text": "export BASH_MAX_OUTPUT_LENGTH=15000"
+      }
+    },
+    {
+      "id": "unused-skills",
+      "title": "2 skills you never use",
+      "explanation": "In ~/.claude/skills/ but not invoked this period: phase-dispatch, unslop. Each adds ~80 tokens of metadata to every session.",
+      "severity": "low",
+      "trend": null,
+      "tokensSaved": 160,
+      "estimatedSavingsUSD": 0.00003744648578213352,
+      "class": "fix",
+      "basis": "estimated",
+      "fix": {
+        "type": "command",
+        "label": "Archive unused skills:",
+        "text": "mv ~/.claude/skills/phase-dispatch ~/.claude/skills/.archived/\nmv ~/.claude/skills/unslop ~/.claude/skills/.archived/"
+      }
+    },
+    {
+      "id": "cost-outliers",
+      "title": "3 high-cost session outliers",
+      "explanation": "Sessions costing more than 2x their peer-session average in the same project: E--Projects-fashion-app/9942e45b-5bbe-4cd5-a715-8ba5b8e3c7bd on 2026-10-18: $7.59 (11.6x avg); E--Projects-fashion-app/97a6180d-2164-49f4-8bc6-7e59083468b4 on 2026-10-19: $5.03 (7.4x avg); E--Projects-fashion-app/70cd088f-e868-4f31-a3c2-ca485e3eee90 on 2026-10-18: $4.97 (7.3x avg). These usually come from broad prompts, runaway loops, or context-heavy work that should be split into smaller sessions.",
+      "severity": "high",
+      "trend": null,
+      "tokensSaved": 71884533,
+      "estimatedSavingsUSD": 16.8238946433738,
+      "class": "nudge",
+      "basis": "measured",
+      "fix": {
+        "type": "paste",
+        "destination": "session-opener",
+        "label": "Paste at the start of your NEXT expensive thread (one-time, do not add to CLAUDE.md):",
+        "text": "Before making changes, summarize the smallest viable plan. Keep context narrow, avoid broad searches, and stop after the first working patch so I can review before continuing."
+      }
+    },
+    {
+      "id": "retry-heavy-capabilities",
+      "title": "1 MCP server correlates with retry-heavy edits",
+      "explanation": "Edit turns using these capabilities are retry-heavy: MCP server claude-in-chrome: 6/11 edit turns retried (55%), 6 retries across 4 projects. This is a correlation report, not proof of causation; compare the retry-heavy turns with one-shot turns before changing MCP scope or skill instructions.",
+      "severity": "high",
+      "trend": null,
+      "tokensSaved": 3444008,
+      "estimatedSavingsUSD": 0.8060374787847132,
+      "class": "nudge",
+      "basis": "estimated",
+      "fix": {
+        "type": "paste",
+        "destination": "prompt",
+        "label": "Ask Claude to audit the retry-heavy capability before changing config:",
+        "text": "Investigate these retry-correlated capabilities: MCP server claude-in-chrome. Compare edit turns with retries against one-shot edit turns, identify whether the MCP server or skill actually caused rework, then propose a scoped MCP config or skill-instruction change with session evidence. Do not remove a capability solely because it appears in this report."
+      }
+    },
+    {
+      "id": "redundant-rereads",
+      "title": "Claude is re-reading the same files",
+      "explanation": "44 redundant re-reads across sessions. Top repeats: n.html (9x), app.js (5x), session.rs (3x). Each re-read loads the same content into context again.",
+      "severity": "high",
+      "trend": "active",
+      "tokensSaved": 26400,
+      "estimatedSavingsUSD": 0.006178670154052031,
+      "class": "nudge",
+      "basis": "estimated",
+      "fix": {
+        "type": "paste",
+        "destination": "prompt",
+        "label": "Point Claude at exact locations in your prompt, for example:",
+        "text": "In <file> lines <start>-<end>, look at the <function> function."
+      }
+    },
+    {
+      "id": "low-cache-hit-sessions",
+      "title": "2 sessions with a low cache hit rate",
+      "explanation": "These sessions read less than 80% of their input from the prompt cache: E--Projects-fashion-app/4f88f0bd-ce65-459b-bf39-3dde68f4e989 (Claude): 75.2% of 108.9K input; E--Projects-fashion-app/e81f01ba-b7f6-4821-b243-86ff980a8548 (Claude): 76.0% of 99.4K input. Healthy agent sessions usually sit above 80%. Low rates come from switching models or tools mid-session, editing instruction files mid-session, or long pauses that let the cache expire, so the full prompt is paid again.",
+      "severity": "medium",
+      "trend": null,
+      "tokensSaved": 8279,
+      "estimatedSavingsUSD": 0.0019376215986892714,
+      "class": "nudge",
+      "basis": "estimated",
+      "fix": {
+        "type": "paste",
+        "destination": "manual",
+        "label": "Keep the prompt cache valid:",
+        "text": "Stay on one model per session, and start a new session after editing instruction files or MCP config instead of continuing the old one."
+      }
+    },
+    {
+      "id": "context-heavy-sessions",
+      "title": "12 context-heavy sessions",
+      "explanation": "Effective input/cache tokens swamp output in these sessions: E--GitHub-Atlas/ffe704e0-5958-453b-9860-484a01d6e47d on 2026-11-01: 12.8M effective input/cache vs 191.2K output (67.2:1, 7.2x previous session input); E--Projects-fashion-app/0ed4a733-c810-4470-a0bd-d128efaae0be on 2026-10-17: 6.7M effective input/cache vs 199.6K output (33.5:1); C--Users-jakeh-source-wholesomenfl-com/5dd443a2-dda3-45cf-ba6b-f85d01c418f7 on 2026-10-05: 3.3M effective input/cache vs 76.5K output (43.6:1); E--GitHub-Atlas/0400e6e0-f304-4c1e-9dc4-6b4f145ddde1 on 2026-10-22: 2.2M effective input/cache vs 45.5K output (47.5:1); C--Users-jakeh/2ca088b1-5ec3-4fe4-a1db-c3658b541280 on 2026-11-04: 2.5M effective input/cache vs 82.1K output (30.0:1, 67.6x previous session input); +7 more. This can come from stale context carryover, inherently context-heavy work, or abandoned runs that loaded too much context; starting fresh with only the current goal and relevant files can cut repeated prompt overhead.",
+      "severity": "high",
+      "trend": null,
+      "tokensSaved": 20534867,
+      "estimatedSavingsUSD": 4.805991282209393,
+      "class": "keep",
+      "basis": "measured",
+      "fix": {
+        "type": "paste",
+        "destination": "session-opener",
+        "label": "Paste at the start of your NEXT expensive thread (one-time, do not add to CLAUDE.md):",
+        "text": "Start fresh before continuing. Use only the current goal, the relevant files, the failing command/output, and the constraints below. Restate the working context in under 10 bullets before editing."
+      }
+    }
+  ],
+  "topReworkedFiles": [
+    {
+      "path": "pipeline/report.py",
+      "sessions": 2,
+      "edits": 3
+    },
+    {
+      "path": "source/wholesomenfl.com/app.js",
+      "sessions": 1,
+      "edits": 49
+    },
+    {
+      "path": "AppData/Local/Temp/claude/C--Users-jakeh/5dd443a2-dda3-45cf-ba6b-f85d01c418f7/scratchpad/gm-canvas/project/Main.dc.html",
+      "sessions": 1,
+      "edits": 5
+    },
+    {
+      "path": "src/worker/handlers/inspiration.ts",
+      "sessions": 1,
+      "edits": 5
+    },
+    {
+      "path": "app.css",
+      "sessions": 1,
+      "edits": 4
+    },
+    {
+      "path": "pipeline/trade_plan.py",
+      "sessions": 1,
+      "edits": 3
+    },
+    {
+      "path": "~/.claude/plans/this-program-i-use-indexed-otter.md",
+      "sessions": 1,
+      "edits": 3
+    },
+    {
+      "path": ".claude/plans/Atlas/_source/build.py",
+      "sessions": 1,
+      "edits": 2
+    },
+    {
+      "path": ".claude/plans/Atlas/claude-design-prompt.md",
+      "sessions": 1,
+      "edits": 2
+    },
+    {
+      "path": ".claude/plans/fashion-app/00-overview.md",
+      "sessions": 1,
+      "edits": 2
+    },
+    {
+      "path": "AppData/Local/Temp/claude/b834ea3a87fd6088/0d478f1c-5e86-4f89-9ec0-38a7da2dc63b/scratchpad/atlas-stats-overview.html",
+      "sessions": 1,
+      "edits": 2
+    },
+    {
+      "path": "E:/GitHub/Atlas/src/lib/components/stats/StatsView.svelte",
+      "sessions": 1,
+      "edits": 2
+    },
+    {
+      "path": "E:/GitHub/Atlas/src/types/codeburn.ts",
+      "sessions": 1,
+      "edits": 2
+    },
+    {
+      "path": "src-tauri/src/connectors/clients.rs",
+      "sessions": 1,
+      "edits": 2
+    },
+    {
+      "path": "src/components/style/knowledge-panel.tsx",
+      "sessions": 1,
+      "edits": 2
+    }
+  ],
+  "coachingNotes": [
+    "Median time to first edit is 5m. Point the assistant at the target file to cut the exploration before it starts editing."
+  ],
+  "modelRecommendations": [],
+  "appliedFixes": []
+}

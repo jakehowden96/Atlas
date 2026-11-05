@@ -1,0 +1,83 @@
+[
+  {
+    "provider": "claude",
+    "providerDisplayName": "Claude",
+    "model": "claude-sonnet-5-5",
+    "modelDisplayName": "Sonnet 5.5",
+    "rawModels": [
+      "claude-sonnet-5-5"
+    ],
+    "route": null,
+    "category": "coding",
+    "agentType": null,
+    "topCategory": "coding",
+    "topCategoryShare": 0.5248327264604592,
+    "inputTokens": 13988,
+    "outputTokens": 3219871,
+    "cacheWriteTokens": 20764645,
+    "cacheReadTokens": 654451180,
+    "totalTokens": 678449684,
+    "calls": 6351,
+    "costUSD": 158.6107855,
+    "savingsUSD": 0,
+    "savingsBaselineModel": "",
+    "credits": null,
+    "creditsIncomplete": false,
+    "estimatedCostUSD": 0,
+    "isEstimated": false
+  },
+  {
+    "provider": "claude",
+    "providerDisplayName": "Claude",
+    "model": "claude-opus-5-5",
+    "modelDisplayName": "Opus 5.5",
+    "rawModels": [
+      "claude-opus-5-5"
+    ],
+    "route": null,
+    "category": "coding",
+    "agentType": null,
+    "topCategory": "coding",
+    "topCategoryShare": 0.5010782116612766,
+    "inputTokens": 4189,
+    "outputTokens": 1287008,
+    "cacheWriteTokens": 7784703,
+    "cacheReadTokens": 208901149,
+    "totalTokens": 217977049,
+    "calls": 2046,
+    "costUSD": 120.20088879999997,
+    "savingsUSD": 0,
+    "savingsBaselineModel": "",
+    "credits": null,
+    "creditsIncomplete": false,
+    "estimatedCostUSD": 0,
+    "isEstimated": false
+  },
+  {
+    "provider": "claude",
+    "providerDisplayName": "Claude",
+    "model": "claude-opus-5",
+    "modelDisplayName": "Opus 5",
+    "rawModels": [
+      "claude-opus-5"
+    ],
+    "route": null,
+    "category": "coding",
+    "agentType": null,
+    "topCategory": "coding",
+    "topCategoryShare": 0.5547125364028852,
+    "inputTokens": 340,
+    "outputTokens": 215019,
+    "cacheWriteTokens": 585303,
+    "cacheReadTokens": 50528310,
+    "totalTokens": 51328972,
+    "calls": 170,
+    "costUSD": 36.494359999999986,
+    "savingsUSD": 0,
+    "savingsBaselineModel": "",
+    "credits": null,
+    "creditsIncomplete": false,
+    "estimatedCostUSD": 0,
+    "isEstimated": false
+  }
+]

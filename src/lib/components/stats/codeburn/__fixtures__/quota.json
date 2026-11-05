@@ -1,0 +1,95 @@
+{
+  "providers": [
+    {
+      "id": "claude",
+      "name": "Claude",
+      "available": true,
+      "plan": "Pro",
+      "windows": [
+        {
+          "label": "5-hour",
+          "usedPct": 5,
+          "resetsAt": "2026-11-05T20:50:00.749Z"
+        },
+        {
+          "label": "Weekly",
+          "usedPct": 94,
+          "resetsAt": "2026-11-07T00:00:00.749Z"
+        }
+      ]
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "available": false,
+      "windows": []
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini",
+      "available": false,
+      "windows": []
+    },
+    {
+      "id": "copilot",
+      "name": "GitHub Copilot",
+      "available": true,
+      "plan": "Individual",
+      "windows": []
+    },
+    {
+      "id": "antigravity",
+      "name": "Antigravity",
+      "available": false,
+      "windows": []
+    },
+    {
+      "id": "kimi",
+      "name": "Kimi",
+      "available": false,
+      "windows": []
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor",
+      "available": false,
+      "windows": []
+    },
+    {
+      "id": "zai",
+      "name": "Z.ai",
+      "available": false,
+      "windows": []
+    },
+    {
+      "id": "zcode",
+      "name": "ZCode",
+      "available": false,
+      "windows": []
+    },
+    {
+      "id": "grok",
+      "name": "Grok",
+      "available": false,
+      "windows": []
+    },
+    {
+      "id": "clinepass",
+      "name": "ClinePass",
+      "available": false,
+      "windows": []
+    },
+    {
+      "id": "devin",
+      "name": "Devin",
+      "available": false,
+      "windows": []
+    },
+    {
+      "id": "commandcode",
+      "name": "Command Code",
+      "available": false,
+      "windows": []
+    }
+  ]
+}
