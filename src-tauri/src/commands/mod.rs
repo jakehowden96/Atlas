@@ -1,3 +1,4 @@
+pub mod codeburn;
 mod diff;
 pub mod files;
 pub mod files_scope;

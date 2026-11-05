@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ClaudeInfo } from "../types/generated/ClaudeInfo";
 import type { ClaudeNotificationEvent } from "../types/generated/ClaudeNotificationEvent";
 import type { ClaudeSessionStartEvent } from "../types/generated/ClaudeSessionStartEvent";
+import type { CodeburnInfo } from "../types/generated/CodeburnInfo";
 import type { ConnectorState } from "../types/generated/ConnectorState";
 import type { DeviceCode } from "../types/generated/DeviceCode";
 import type { DirList } from "../types/generated/DirList";
@@ -269,6 +270,21 @@ export async function onSessionUpdate(
 
 export async function getClaudeStats(): Promise<StatsSummary> {
   return call("get_claude_stats");
+}
+
+/** Never rejects for a missing `codeburn`: `binary` is null instead. */
+export async function codeburnInfo(): Promise<CodeburnInfo> {
+  return call("codeburn_info");
+}
+
+/** Run a read-only `codeburn <args>` (must include `--format json`) and return its JSON. */
+export async function codeburnRun<T>(args: string[]): Promise<T> {
+  return call("codeburn_run", { args });
+}
+
+/** Run an allowed codeburn command that changes something; resolves to its output. */
+export async function codeburnAction(args: string[]): Promise<string> {
+  return call("codeburn_action", { args });
 }
 
 /**

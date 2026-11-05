@@ -89,7 +89,7 @@ pub struct ClaudeInfo {
 /// A command for a diagnostic probe. On Windows a GUI-subsystem app that spawns
 /// a console program would flash a console window each time, so it is created
 /// without one. [UNVERIFIED on Windows]
-fn probe(program: impl AsRef<OsStr>) -> Command {
+pub(crate) fn probe(program: impl AsRef<OsStr>) -> Command {
     // `mut` is only needed on Windows, where the creation flag is set.
     #[allow(unused_mut)]
     let mut command = Command::new(program);
@@ -103,7 +103,7 @@ fn probe(program: impl AsRef<OsStr>) -> Command {
 }
 
 /// First non-empty line a probe printed, when it succeeded.
-fn first_line(mut command: Command) -> Option<String> {
+pub(crate) fn first_line(mut command: Command) -> Option<String> {
     let output = command.output().ok()?;
     if !output.status.success() {
         return None;
