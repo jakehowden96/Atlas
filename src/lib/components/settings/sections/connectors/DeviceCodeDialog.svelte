@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { ConnectorInfo } from "../../../../../types/generated/ConnectorInfo";
+  import { errorMessage } from "../../../../ipc-error";
+  import { openUrl } from "../../../../ipc";
   import type { SignInState } from "../../../../stores/connectors";
+  import { showToast } from "../../../../stores/toast";
   import Button from "../../../ui/Button.svelte";
   import ConnectorLogoTile from "../../../ui/ConnectorLogoTile.svelte";
   import CopyButton from "../../../ui/CopyButton.svelte";
@@ -30,6 +33,11 @@
     `${Math.floor(left / 60000)}:${String(Math.floor((left % 60000) / 1000)).padStart(2, "0")}`,
   );
   const titleId = $derived(`dcd-${connector.id}`);
+
+  /** The webview cannot open a browser itself (`window.open` and `target=_blank` do nothing), so ask the backend. */
+  function openSignIn(url: string) {
+    openUrl(url).catch((e) => showToast("Couldn't open the browser", { body: errorMessage(e) }));
+  }
 </script>
 
 <Modal open onClose={onCancel} width="420px" labelledBy={titleId}>
@@ -44,10 +52,16 @@
         <span class="code" data-testid="user-code">{progress.userCode}</span>
         <CopyButton value={progress.userCode} label="Copy code" />
       </div>
-      <a class="link" href={progress.verificationUri} target="_blank" rel="noreferrer"
-        >{progress.verificationUri}</a
+      <a
+        class="link"
+        href={progress.verificationUri}
+        rel="noreferrer"
+        onclick={(e) => {
+          e.preventDefault();
+          openSignIn(progress.verificationUri);
+        }}>{progress.verificationUri}</a
       >
-      <Button variant="primary" onclick={() => window.open(progress.verificationUri, "_blank")}>
+      <Button variant="primary" onclick={() => openSignIn(progress.verificationUri)}>
         Open sign-in page
       </Button>
       <div class="wait">

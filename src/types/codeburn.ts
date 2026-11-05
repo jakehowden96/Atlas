@@ -1,9 +1,21 @@
 /**
  * The parts of `codeburn status --format menubar-json` that Atlas reads.
  * Hand-written from real CLI output (codeburn 0.9.27): the CLI has no schema,
- * so a field it drops shows up here as `undefined`, not a type error.
+ * so a field it drops shows up here as `undefined`, not a type error. Fields
+ * added after the first Atlas release are optional for that reason.
  */
 export type Period = "today" | "week" | "30days" | "month" | "all";
+
+export interface Timeline {
+  bucketMinutes: number;
+  modelSeries: { id: string; label: string }[];
+  points: {
+    timestamp: string;
+    cost: number;
+    tokens: number;
+    models: { seriesId: string; cost: number; tokens: number }[];
+  }[];
+}
 
 export interface Overview {
   generated: string;
@@ -16,14 +28,64 @@ export interface Overview {
     sessionCountBasis: string;
     /** 0..1 */
     oneShotRate: number;
+    inputTokens?: number;
     outputTokens: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
     /** 0..100 */
     cacheHitPercent: number;
     topActivities: { name: string; cost: number; turns: number; oneShotRate: number }[];
-    topModels: { name: string; cost: number; calls: number }[];
-    topProjects: { id: string; name: string; cost: number; sessions: number }[];
+    topModels: { name: string; cost: number; calls: number; savingsUSD?: number }[];
+    topProjects: {
+      id: string;
+      name: string;
+      cost: number;
+      sessions: number;
+      avgCostPerSession?: number;
+    }[];
     byBranch: { branch: string; cost: number; sessions: number }[];
     tools: { name: string; calls: number }[];
+    providerDetails?: {
+      id: string;
+      label: string;
+      cost: number;
+      calls: number;
+      hasUsage: boolean;
+    }[];
+    modelEfficiency?: { name: string; costPerEdit: number; oneShotRate: number }[];
+    workflow?: { corrections: number; correctionRate: number; medianTimeToFirstEditMs: number };
+    topReworkedFiles?: { path: string; sessions: number; edits: number }[];
+    /** 0..1 */
+    pricingCoverage?: number;
+    retryTax?: { totalUSD: number; retries: number; editTurns: number };
+    routingWaste?: { totalSavingsUSD: number; baselineModel: string };
+    localModelSavings?: { totalUSD: number };
+    skills?: { name: string; turns: number; cost: number }[];
+    subagents?: { name: string; calls: number; cost: number }[];
+    mcpServers?: { name: string; calls: number }[];
+    topSessions?: {
+      project: string;
+      cost: number;
+      calls: number;
+      date: string;
+      sessionId: string;
+      provider: string;
+    }[];
   };
-  history: { daily: { date: string; cost: number }[] };
+  history: {
+    daily: { date: string; cost: number; calls?: number }[];
+    timeline?: Timeline;
+  };
+  /** Consecutive days with usage. */
+  streak?: number;
+  liveSessions?: {
+    sessions: {
+      id: string;
+      project: string;
+      model: string;
+      contextTokens: number;
+      contextWindow: number;
+      idleSeconds: number;
+    }[];
+  };
 }
