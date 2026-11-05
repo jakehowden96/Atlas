@@ -50,7 +50,6 @@ function tile(n: number, state: SessionTile["state"]): SessionTile {
       lastTool: "Edit",
       toolCalls: 9,
       contextTokens: 5000,
-      costEstimate: 1.5,
       startedAt: null,
     },
     diff: null,

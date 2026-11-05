@@ -17,7 +17,8 @@
   } from "../../overview";
   import { allowPendingTool, closeSession, denyPendingTool } from "../../session-actions";
   import { subagentMeta } from "../../session-view";
-  import { costTodayLine, fmtCost } from "../../stats-derive";
+  import { costTodayLine, fmtCost } from "../../format-cost";
+  import { sessionCosts } from "../../stores/cost";
   import { togglePinnedSession } from "../../stores/settings";
   import {
     activeTabId,
@@ -64,6 +65,7 @@
   };
 
   let live = $derived(tile.live);
+let cost = $derived($sessionCosts?.get(live.sessionUuid));
   let needsYou = $derived(tile.state === "needsYou");
   let elapsed = $derived(formatElapsed(live.startedAt, now));
   let staleMin = $derived(tailing ? tailStaleMinutes(tile.state, live.lastActivity, now) : null);
@@ -334,10 +336,8 @@
   <div class="foot">
     <span class="last-tool">{shortToolName(live.pendingTool?.name ?? live.lastTool)}</span>
     <span class="stats"
-      >{live.toolCalls} tools · {formatTokens(live.contextTokens)} ctx · {fmtCost(
-        live.costEstimate,
-      )}{#if costTodayLine(live)}
-        · {costTodayLine(live)}{/if}</span
+      >{live.toolCalls} tools · {formatTokens(live.contextTokens)} ctx · {cost ? fmtCost(cost.total) : "—"}{#if costTodayLine(cost)}
+        · {costTodayLine(cost)}{/if}</span
     >
   </div>
 </article>

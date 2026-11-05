@@ -47,8 +47,6 @@ function live(sessionUuid: string, overrides: Partial<LiveSession> = {}): LiveSe
     lastTool: null,
     pendingTool: null,
     outputTokens: 0,
-    costEstimate: 0,
-    costToday: 0,
     contextTokens: 0,
     peakContext: 0,
     contextPct: 0,
@@ -323,7 +321,6 @@ describe("buildTiles", () => {
       label: "Session row-a",
     });
     expect(tile?.live.lines).toEqual([]);
-    expect(tile?.live.costEstimate).toBe(0);
   });
 
   it("does not tile a persisted session that is not open", () => {

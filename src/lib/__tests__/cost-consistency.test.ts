@@ -1,48 +1,55 @@
-import { describe, expect, it } from "vitest";
-import { costTodayLine, localDayKey, todayCost } from "../stats-derive";
+// @vitest-environment happy-dom
+import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/svelte";
+import { get } from "svelte/store";
+import status from "../components/stats/codeburn/__fixtures__/status.json";
+import sessions from "../components/stats/codeburn/__fixtures__/sessions.json";
+import { costTodayLine, fmtCost } from "../format-cost";
 
-// Issue #35 scenario: a session at $18.76 lifetime, $8.10 of it booked today,
-// next to a second session begun today. Day totals come from the same records.
-const now = new Date(2026, 8, 9, 12, 0, 0);
-const today = localDayKey(now);
-const yesterday = localDayKey(new Date(2026, 8, 8, 12, 0, 0));
+const codeburn = vi.hoisted(() => vi.fn());
+vi.mock("../stores/codeburn", () => ({ codeburn }));
+vi.mock("../ipc", () => ({}));
+import MeterStrip from "../components/session/rail/MeterStrip.svelte";
+import { refreshCosts, sessionCosts, todayCost } from "../stores/cost";
+import type { LiveSession } from "../../types/generated/LiveSession";
 
-const sessions = [
-  { id: "multi-day", costEstimate: 18.76, costToday: 8.1 },
-  { id: "today-only", costEstimate: 0.52, costToday: 0.52 },
-];
-const byDay: Record<string, { cost: number }> = {
-  [yesterday]: { cost: 10.66 },
-  [today]: { cost: 8.62 },
-};
-// biome-ignore lint/suspicious/noExplicitAny: partial fixture
-const summary = { byDay, totalsAll: { cost: 19.28 } } as any;
+// One codeburn answer feeds the top bar, the tiles and the rail.
+codeburn.mockImplementation(async (args: string[]) =>
+  args[0] === "status" ? status : args.includes("today") ? sessions.slice(0, 1) : sessions,
+);
 
-describe("cost consistency", () => {
-  it("top bar today equals byDay[today].cost", () => {
-    expect(todayCost(summary, now)).toBe(byDay[today]?.cost);
+describe("one cost everywhere", () => {
+  it("top bar today equals status.today.cost", async () => {
+    await refreshCosts();
+    expect(get(todayCost)).toBe(status.today.cost);
   });
 
-  it("sum of session costs equals the all-time total", () => {
-    const sum = sessions.reduce((a, s) => a + s.costEstimate, 0);
-    expect(sum, `sessions ${sum} vs all-time ${summary.totalsAll.cost}`).toBeCloseTo(
-      summary.totalsAll.cost,
-      2,
-    );
+  it("session today values never exceed the top bar", async () => {
+    await refreshCosts();
+    const sum = [...get(sessionCosts)!.values()].reduce((a, c) => a + c.today, 0);
+    expect(sum).toBeLessThanOrEqual(get(todayCost)!);
   });
 
-  it("no session's cost_today exceeds the top bar today value", () => {
-    const top = todayCost(summary, now);
-    for (const s of sessions)
-      expect(s.costToday, `${s.id}: ${s.costToday} > ${top}`).toBeLessThanOrEqual(top);
+  it("rail shows the store's value for the session, and a dash without an entry", async () => {
+    await refreshCosts();
+    const s = sessions[0]!;
+    const entry = get(sessionCosts)!.get(s.sessionId)!;
+    const now = Date.parse("2026-01-01T00:48:12Z");
+    const base = { contextPct: 0.5, model: "claude-sonnet-4-5", startedAt: "2026-01-01T00:00:00Z" };
+    const { unmount } = render(MeterStrip, {
+      live: { ...base, sessionUuid: s.sessionId } as LiveSession,
+      now,
+    });
+    expect(screen.getByText(fmtCost(entry.total))).toBeTruthy();
+    expect(costTodayLine(entry)).toBeNull(); // all of it was today
+    unmount();
+    render(MeterStrip, { live: { ...base, sessionUuid: "nope" } as LiveSession, now });
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 
-  it("a session whose total exceeds today shows a today line", () => {
-    const top = todayCost(summary, now);
-    for (const s of sessions) {
-      if (s.costEstimate > top)
-        expect(costTodayLine(s), `${s.id}: ${s.costEstimate} > ${top}`).not.toBeNull();
-    }
-    expect(costTodayLine(sessions[0] as (typeof sessions)[number])).toBe("$8.10 today");
+  it("costTodayLine shows the sub-line only when part of the total was earlier", () => {
+    expect(costTodayLine({ total: 18.76, today: 8.1 })).toBe("$8.10 today");
+    expect(costTodayLine({ total: 3, today: 3 })).toBeNull();
+    expect(costTodayLine(undefined)).toBeNull();
   });
 });

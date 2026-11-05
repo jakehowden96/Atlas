@@ -2,6 +2,7 @@
  * Formatting and "today" cost helpers shared by the top bar, session tiles and
  * the Stats screen.
  */
+import { fmtCost } from "./format-cost";
 import type { StatsSummary } from "../types/generated/StatsSummary";
 
 // ── Formatting ────────────────────────────────────────────────────────────────
@@ -21,12 +22,7 @@ export function fmtTokens(n: number): string {
   return String(Math.round(n));
 }
 
-export function fmtCost(n: number): string {
-  if (n >= 1000)
-    return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  if (n >= 1) return `$${n.toFixed(2)}`;
-  return `$${n.toFixed(3)}`;
-}
+export { fmtCost };
 export function fmtCount(n: number): string {
   return n >= 10_000 ? fmtTokens(n) : String(Math.round(n));
 }
@@ -54,7 +50,7 @@ export function todayCost(summary: StatsSummary | null, now: Date): number {
 
 /** Tooltip on the top bar's spend figure. */
 export const TODAY_COST_TIP =
-  "All sessions, since midnight. Session totals can be higher because they include earlier days.";
+  "All sessions, since midnight, as reported by codeburn. Session totals can be higher because they include earlier days.";
 
 /** "$8.10 today" under a session's own cost, or null when the session began today. */
 export function costTodayLine(live: { costEstimate: number; costToday?: number }): string | null {

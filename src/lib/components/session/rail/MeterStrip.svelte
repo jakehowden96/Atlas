@@ -2,7 +2,8 @@
   import type { LiveSession } from "../../../../types/generated/LiveSession";
   import { formatElapsed } from "../../../overview";
   import { contextPercent, modelInfo } from "../../../session-view";
-  import { costTodayLine, fmtCost } from "../../../stats-derive";
+  import { costTodayLine, fmtCost } from "../../../format-cost";
+  import { sessionCosts } from "../../../stores/cost";
 
   interface Props {
     live: LiveSession | null;
@@ -10,7 +11,8 @@
   }
 
   let { live, now }: Props = $props();
-  let costSub = $derived(live ? costTodayLine(live) : null);
+  let entry = $derived(live ? $sessionCosts?.get(live.sessionUuid) : undefined);
+  let costSub = $derived(costTodayLine(entry));
 
   let pct = $derived(contextPercent(live?.contextPct ?? 0));
   let model = $derived(modelInfo(live?.model ?? null));
@@ -30,7 +32,7 @@
         {#if model.family}<span class="dot" style="background: var(--model-{model.family})"
           ></span>{/if}{model.name}
       </span>
-      <span class="val">{live ? fmtCost(live.costEstimate) : "—"}</span>
+      <span class="val">{entry ? fmtCost(entry.total) : "—"}</span>
       {#if costSub}<span class="lbl">{costSub}</span>{/if}
     </div>
     <div class="cell">

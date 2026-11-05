@@ -51,8 +51,6 @@ function makeTile(over: Partial<Tile> = {}, live: Partial<LiveSession> = {}): Ti
       lastTool: null,
       pendingTool: { name: "Bash", inputSummary: "ls" },
       outputTokens: 0,
-      costEstimate: 0,
-      costToday: 0,
       contextTokens: 0,
       peakContext: 0,
       contextPct: 0,

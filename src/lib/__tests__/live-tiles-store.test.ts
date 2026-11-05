@@ -35,8 +35,6 @@ function live(sessionUuid: string): LiveSession {
     lastTool: null,
     pendingTool: null,
     outputTokens: 0,
-    costEstimate: 0,
-    costToday: 0,
     contextTokens: 0,
     peakContext: 0,
     contextPct: 0,

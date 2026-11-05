@@ -14,6 +14,7 @@ vi.mock("../ipc", () => ({
 import ThinRail from "../components/session/rail/ThinRail.svelte";
 import MeterStrip from "../components/session/rail/MeterStrip.svelte";
 import PlanTile from "../components/session/rail/PlanTile.svelte";
+import { sessionCosts } from "../stores/cost";
 import { railTiles } from "../stores/settings";
 import type { LiveSession } from "../../types/generated/LiveSession";
 
@@ -63,9 +64,10 @@ describe("MeterStrip", () => {
     const live = {
       contextPct: 0.64,
       model: "claude-sonnet-4-5",
-      costEstimate: 4.18,
+      sessionUuid: "s1",
       startedAt: "2026-01-01T00:00:00Z",
     } as LiveSession;
+    sessionCosts.set(new Map([["s1", { total: 4.18, today: 4.18 }]]));
     render(MeterStrip, { live, now: Date.parse("2026-01-01T00:48:12Z") });
     expect(screen.getByText("64%")).toBeTruthy();
     expect(screen.getByText("Sonnet")).toBeTruthy();

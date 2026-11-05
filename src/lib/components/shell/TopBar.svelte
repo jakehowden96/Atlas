@@ -1,5 +1,4 @@
 ﻿<script lang="ts">
-  import { onDestroy } from "svelte";
   import AtlasMark from "../ui/AtlasMark.svelte";
   import Button from "../ui/Button.svelte";
   import IconButton from "../ui/IconButton.svelte";
@@ -12,12 +11,12 @@
   import NotificationsPanel, { unreadNotificationCount } from "../ui/NotificationsPanel.svelte";
   import StatusChips, { statusChipCount } from "./StatusChips.svelte";
   import { isMacPlatform } from "../../platform";
-  import { TODAY_COST_TIP, todayCost } from "../../stats-derive";
+  import { TODAY_COST_TIP } from "../../stats-derive";
+  import { todayCost } from "../../stores/cost";
   import { dirtyFiles } from "../../stores/files";
   import { liveTiles } from "../../stores/liveTiles";
   import { prsAttentionCount } from "../../stores/prs";
   import { chords, settingsOpen } from "../../stores/settings";
-  import { statsSummary } from "../../stores/stats";
   import { activeView, jumpOpen, openNewSession, showView, type View } from "../../stores/view";
   import { statusParts, topBarTier, type StatusPart } from "../../topbar";
 
@@ -32,15 +31,8 @@
   let needsYou = $derived($liveTiles.filter((t) => t.state === "needsYou").length);
   let running = $derived($liveTiles.filter((t) => t.state === "running").length);
   let idle = $derived($liveTiles.filter((t) => t.state === "idle").length);
-  /* Today's spend comes off the persisted stats, not off `liveSessionList`:
-     that list holds only the sessions Atlas is tailing, so a day's work done
-     in Claude Code outside Atlas read as $0. The midnight rollover needs a clock. */
-  let costClock = $state(Date.now());
-  const costTicker = setInterval(() => {
-    costClock = Date.now();
-  }, 60_000);
-  onDestroy(() => clearInterval(costTicker));
-  let spend = $derived(todayCost($statsSummary, new Date(costClock)));
+  // Today's spend is codeburn's figure; the cost store refreshes itself.
+  let spend = $derived($todayCost);
 
   // The Pull requests badge counts PRs asking for action; at zero it is left off.
   let viewOptions = $derived<Segment<View>[]>([

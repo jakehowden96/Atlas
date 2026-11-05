@@ -25,13 +25,7 @@ plan: Array<PlanItem>, subagents: Array<Subagent>, toolCalls: number, lastTool: 
 /**
  * A `tool_use` with no matching `tool_result` — what the permission bar names.
  */
-pendingTool: PendingTool | null, outputTokens: number, costEstimate: number, 
-/**
- * The part of `cost_estimate` incurred on today's local calendar day, bucketed
- * like Stats' `by_day`. Equals `cost_estimate` for a session begun today.
- */
-costToday: number, 
-/**
+pendingTool: PendingTool | null, outputTokens: number, /**
  * Context the newest request carried, plus the reply it produced — the
  * number Claude Code's own status line shows, which is read off the newest
  * assistant message the same way (`context_window.total_input_tokens` plus
