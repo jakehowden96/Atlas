@@ -1,0 +1,1290 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Atlas Stats — Atlas navigation</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@400..600&display=swap">
+<style>
+/* Layout: CodeBurn's dashboard pages rebuilt inside Atlas's Stats view with Atlas's own tokens (src/app.css). */
+:root {
+  color-scheme: light;
+  --bg: #f5f5f7; --surface: #ffffff; --surface2: #f0f0f3; --surface3: #e5e5ea;
+  --border: rgba(0,0,0,.08); --border2: rgba(0,0,0,.14);
+  --text: #17181b; --muted: #474a50;
+  --accent: #217457; --accent-ink: #ffffff; --warn: #846122; --danger: #b1403a;
+  --model-opus: #8b7cf6; --model-sonnet: #4aa3df; --model-haiku: #e089b8;
+  --r-xs: 3px; --r-sm: 4px; --r-md: 6px; --r-card: 8px; --r-pill: 999px;
+  --font-ui: "Geist", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+  --fs-2xs: 12px; --fs-xs: 13px; --fs-sm: 14px; --fs-xl: 19px; --fs-2xl: 24px;
+  --fw-body: 450; --fw-medium: 500; --fw-semi: 600; --fw-bold: 700;
+  --sp-0: 2px; --sp-1: 4px; --sp-2: 6px; --sp-3: 8px; --sp-4: 12px; --sp-5: 16px; --sp-6: 20px; --sp-7: 24px;
+  --h-sm: 24px; --h-md: 28px;
+  --elev-1: 0 1px 2px rgba(0,0,0,.06), 0 6px 16px rgba(0,0,0,.08);
+  --overlay: rgba(23,24,27,.35);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0f1012; --surface: #16171a; --surface2: #1d1f23; --surface3: #25272c;
+    --border: rgba(255,255,255,.08); --border2: rgba(255,255,255,.16);
+    --text: #e6e7ea; --muted: #acb2bc; --accent: #2fa37a; --accent-ink: #0f1012;
+    --warn: #e0a53a; --danger: #f55950;
+    --elev-1: 0 1px 2px rgba(0,0,0,.3), 0 6px 16px rgba(0,0,0,.4); --overlay: rgba(0,0,0,.55);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1012; --surface: #16171a; --surface2: #1d1f23; --surface3: #25272c;
+  --border: rgba(255,255,255,.08); --border2: rgba(255,255,255,.16);
+  --text: #e6e7ea; --muted: #acb2bc; --accent: #2fa37a; --accent-ink: #0f1012;
+  --warn: #e0a53a; --danger: #f55950;
+  --elev-1: 0 1px 2px rgba(0,0,0,.3), 0 6px 16px rgba(0,0,0,.4); --overlay: rgba(0,0,0,.55);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: var(--font-ui); font-size: var(--fs-sm); font-weight: var(--fw-body);
+  padding-block: var(--sp-5);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.stats { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--sp-4); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+button { font: inherit; }
+
+/* controls */
+.bar { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+.spacer { flex: 1; }
+.seg { display: inline-flex; gap: 2px; padding: 2px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r-md); max-width: 100%; overflow-x: auto; }
+.seg button { height: var(--h-sm); padding: 0 var(--sp-4); border: 1px solid transparent; border-radius: var(--r-sm); background: none; color: var(--muted); font-size: var(--fs-xs); font-weight: var(--fw-medium); white-space: nowrap; cursor: pointer; }
+.seg button:hover { color: var(--text); }
+.seg button[aria-checked="true"], .seg button[aria-selected="true"] { background: var(--surface); border-color: var(--border2); color: var(--text); }
+button:focus-visible, select:focus-visible, tr[tabindex]:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.btn { height: var(--h-sm); padding: 0 var(--sp-4); border: 1px solid var(--border2); border-radius: var(--r-md); background: var(--surface); color: var(--text); font-size: var(--fs-xs); font-weight: var(--fw-medium); cursor: pointer; white-space: nowrap; }
+.btn:hover { background: var(--surface2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, var(--text)); }
+select { height: var(--h-sm); padding: 0 var(--sp-3); border: 1px solid var(--border2); border-radius: var(--r-md); background: var(--surface); color: var(--text); font-size: var(--fs-xs); max-width: 100%; }
+.live { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+
+/* cards + layout */
+.card { min-width: 0; padding: var(--sp-5); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); }
+.label { margin: 0 0 var(--sp-3); font-size: var(--fs-2xs); font-weight: var(--fw-semi); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); display: flex; justify-content: space-between; gap: var(--sp-3); align-items: baseline; }
+.label small { font-size: var(--fs-2xs); font-weight: var(--fw-body); letter-spacing: 0; text-transform: none; color: var(--muted); }
+.sub { color: var(--muted); font-size: var(--fs-xs); margin: 0; }
+.grid { display: grid; gap: var(--sp-4); }
+.g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.start { align-items: start; }
+@media (max-width: 860px) { .g4, .g3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .g2 { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 520px) { .g3 { grid-template-columns: minmax(0, 1fr); } }
+
+.hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-4); flex-wrap: wrap; margin-bottom: var(--sp-4); }
+.big { margin: var(--sp-1) 0; font-family: var(--font-mono); font-size: calc(var(--fs-2xl) * 1.6); line-height: 1.1; font-weight: var(--fw-semi); letter-spacing: -.02em; color: var(--accent); }
+.chart { position: relative; width: 100%; min-height: 190px; }
+.chart svg { display: block; overflow: visible; }
+.chart text, .flow text { font-family: var(--font-mono); font-size: var(--fs-2xs); fill: var(--muted); }
+.tip { position: absolute; top: 0; transform: translateX(-50%); pointer-events: none; display: none; gap: var(--sp-3); padding: var(--sp-1) var(--sp-3); background: var(--surface); border: 1px solid var(--border2); border-radius: var(--r-md); box-shadow: var(--elev-1); font-size: var(--fs-xs); white-space: nowrap; }
+.tip b { font-family: var(--font-mono); font-weight: var(--fw-semi); }
+.legend { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-5); margin: var(--sp-3) 0 0; padding: 0; list-style: none; color: var(--muted); font-size: var(--fs-2xs); }
+.legend li { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.dot { display: inline-block; width: 8px; height: 8px; margin-right: var(--sp-3); border-radius: 50%; flex-shrink: 0; }
+.legend .dot { margin: 0; }
+
+.kpi .k { font-size: var(--fs-2xs); font-weight: var(--fw-semi); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.kpi .v { margin-top: var(--sp-1); font-family: var(--font-mono); font-size: var(--fs-2xl); font-weight: var(--fw-semi); font-variant-numeric: tabular-nums; }
+.kpi .v.accent { color: var(--accent); }
+.kpi .v.warn { color: var(--warn); }
+.kpi .n { margin-top: var(--sp-1); font-size: var(--fs-xs); color: var(--muted); }
+
+/* tables */
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: var(--fs-xs); }
+th { padding: var(--sp-2) var(--sp-3); text-align: left; font-size: var(--fs-2xs); font-weight: var(--fw-semi); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border2); white-space: nowrap; }
+th button { all: unset; cursor: pointer; text-transform: inherit; letter-spacing: inherit; }
+th button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+th[aria-sort] { color: var(--text); }
+td { padding: var(--sp-3); border-bottom: 1px solid var(--border); white-space: nowrap; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: var(--surface2); }
+tr.click { cursor: pointer; }
+th:first-child, td:first-child { padding-left: 0; }
+th:last-child, td:last-child { padding-right: 0; }
+.r { text-align: right; }
+td.r { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+td.wrap { white-space: normal; min-width: 180px; }
+.empty { padding: var(--sp-7) 0; text-align: center; color: var(--muted); font-size: var(--fs-xs); }
+.pill { display: inline-flex; align-items: center; height: 20px; padding: 0 var(--sp-3); border-radius: var(--r-pill); font-size: var(--fs-2xs); font-weight: var(--fw-medium); background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-family: var(--font-mono); white-space: nowrap; }
+.pill.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+.pill.bad { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+.pill.neutral { background: var(--surface3); color: var(--muted); }
+
+/* hbar */
+.hb { display: grid; grid-template-columns: minmax(70px, 1fr) minmax(0, 2fr) auto; align-items: center; gap: var(--sp-3); padding: var(--sp-1) 0; font-size: var(--fs-xs); width: 100%; border: 0; background: none; color: var(--text); text-align: left; }
+button.hb { cursor: pointer; }
+button.hb:hover .name { text-decoration: underline; }
+.hb .t { height: 8px; border-bottom: 1px solid var(--border2); }
+.hb .f { display: block; height: 100%; background: var(--accent); border-radius: 0 var(--r-xs) var(--r-xs) 0; }
+.hb .f.warn { background: var(--warn); }
+.hb .val { font-family: var(--font-mono); font-size: var(--fs-2xs); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hb .val i { font-style: normal; color: var(--muted); margin-left: var(--sp-2); }
+.hb .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kv { display: flex; justify-content: space-between; gap: var(--sp-4); padding: var(--sp-2) 0; font-size: var(--fs-xs); }
+.kv > :first-child { color: var(--muted); }
+.kv > :last-child { font-family: var(--font-mono); font-weight: var(--fw-medium); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kv .path { color: var(--text); font-family: var(--font-mono); font-weight: var(--fw-body); overflow: hidden; text-overflow: ellipsis; }
+h4 { margin: var(--sp-4) 0 var(--sp-1); color: var(--muted); font-size: var(--fs-2xs); font-weight: var(--fw-semi); letter-spacing: .06em; text-transform: uppercase; }
+
+/* grade + efficiency */
+.grade-row { display: flex; align-items: center; gap: var(--sp-5); margin-bottom: var(--sp-4); }
+.grade { display: grid; place-items: center; flex-shrink: 0; width: 56px; height: 56px; border-radius: var(--r-card); font-family: var(--font-mono); font-size: var(--fs-2xl); font-weight: var(--fw-bold); background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.grade.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+.grade.bad { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+.score { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-semi); }
+.hint { margin: var(--sp-3) 0 0; color: var(--muted); font-size: var(--fs-2xs); }
+.prog { display: flex; align-items: center; gap: var(--sp-3); }
+.prog .t { flex: 1; height: 8px; border-radius: var(--r-pill); background: var(--surface3); overflow: hidden; }
+.prog .f { display: block; height: 100%; background: var(--accent); }
+.prog .f.warn { background: var(--warn); } .prog .f.bad { background: var(--danger); }
+.prog .c { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--muted); white-space: nowrap; }
+.live-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 2fr); align-items: center; gap: var(--sp-4); font-size: var(--fs-xs); padding: var(--sp-1) 0; }
+.stack { display: flex; height: 12px; border-radius: var(--r-pill); overflow: hidden; background: var(--surface3); gap: 1px; }
+.stack i { display: block; height: 100%; }
+.heat { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 16px); grid-auto-columns: 16px; gap: 3px; }
+.heat i { border-radius: var(--r-xs); background: var(--surface3); }
+.row-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
+.vs { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: var(--sp-3) var(--sp-4); align-items: center; font-size: var(--fs-xs); }
+.vs .m { font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: var(--fw-semi); }
+.vs .m.win { color: var(--accent); }
+.vs .c { text-align: center; color: var(--muted); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .06em; }
+.vs .a { text-align: right; }
+.finding { padding: var(--sp-4) 0; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--sp-2); }
+.finding:last-child { border-bottom: 0; }
+.finding h5 { margin: 0; font-size: var(--fs-sm); font-weight: var(--fw-semi); }
+.finding p { margin: 0; color: var(--muted); font-size: var(--fs-xs); max-width: 70ch; }
+.fix { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.fix code { font-family: var(--font-mono); font-size: var(--fs-2xs); background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r-sm); padding: var(--sp-1) var(--sp-3); overflow-wrap: anywhere; }
+.drawer-wrap { position: fixed; inset: 0; z-index: 30; display: none; }
+.drawer-wrap.open { display: block; }
+.scrim { position: absolute; inset: 0; background: var(--overlay); }
+.drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(520px, 100%); overflow-y: auto; padding: var(--sp-5); padding-top: max(var(--sp-5), env(safe-area-inset-top, 0px)); background: var(--surface); border-left: 1px solid var(--border2); box-shadow: var(--elev-1); }
+.drawer h2 { margin: 0 var(--sp-7) var(--sp-1) 0; font-size: var(--fs-md, 15px); font-weight: var(--fw-semi); }
+.close { position: absolute; top: var(--sp-4); right: var(--sp-4); }
+.note { margin: 0; font-size: var(--fs-xs); color: var(--muted); }
+.flow svg { display: block; width: 100%; height: auto; overflow: visible; }
+/* app shell, modelled on the CodeBurn desktop app */
+body { padding: 0; }
+.app { display: grid; grid-template-columns: 208px minmax(0, 1fr); min-height: 100vh; }
+.side { position: sticky; top: 0; align-self: start; height: 100vh; display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-5) var(--sp-4); background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; }
+.brand { margin: 0 var(--sp-3) var(--sp-4); font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--accent); letter-spacing: -.01em; }
+.side h6 { margin: var(--sp-5) var(--sp-3) var(--sp-1); font-size: var(--fs-2xs); font-weight: var(--fw-semi); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.nav { display: flex; align-items: center; gap: var(--sp-3); height: var(--h-md); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-md); background: none; color: var(--muted); font-size: var(--fs-sm); font-weight: var(--fw-medium); text-align: left; cursor: pointer; }
+.nav:hover { color: var(--text); background: var(--surface2); }
+.nav[aria-current="page"] { color: var(--text); background: var(--surface3); }
+.nav svg { width: 15px; height: 15px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.side .grow { flex: 1; }
+.ver { margin: var(--sp-4) var(--sp-3) 0; font-size: var(--fs-2xs); color: var(--muted); font-family: var(--font-mono); }
+.main { min-width: 0; display: flex; flex-direction: column; }
+.top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; padding: var(--sp-4) var(--sp-6); background: var(--bg); border-bottom: 1px solid var(--border); }
+.top h1 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-semi); letter-spacing: -.01em; }
+.top .ctx { color: var(--muted); font-size: var(--fs-xs); }
+.page { width: 100%; max-width: 1020px; margin: 0 auto; padding: var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-4); }
+@media (max-width: 760px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { position: static; height: auto; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; padding: var(--sp-3) max(16px, env(safe-area-inset-left, 0px)); border-right: 0; border-bottom: 1px solid var(--border); }
+  .side h6, .side .grow, .ver, .brand { display: none; }
+  .nav { white-space: nowrap; }
+  .top { padding-inline: max(16px, env(safe-area-inset-left, 0px)); }
+  .page { padding: var(--sp-5) max(16px, env(safe-area-inset-left, 0px)); }
+}
+.card > .label:first-child { color: var(--text); letter-spacing: 0; text-transform: none; font-size: var(--fs-sm); font-weight: var(--fw-semi); }
+.card.flush { padding: 0; overflow: hidden; }
+.card.flush > .label { padding: var(--sp-4) var(--sp-5); margin: 0; border-bottom: 1px solid var(--border); }
+.card.flush > .inner { padding: var(--sp-4) var(--sp-5); }
+.hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.2fr); gap: var(--sp-6); align-items: start; }
+@media (max-width: 860px) { .hero { grid-template-columns: minmax(0, 1fr); } }
+.hero .big { color: var(--text); }
+.stat3 { display: grid; grid-template-columns: repeat(3, auto); justify-content: start; gap: var(--sp-5); margin-top: var(--sp-5); padding-top: var(--sp-4); border-top: 1px solid var(--border); }
+.stat3 span { display: block; font-size: var(--fs-2xs); color: var(--muted); }
+.stat3 b { font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: var(--fw-medium); }
+.up { color: var(--danger); } .down { color: var(--accent); }
+.ring-wrap { display: flex; gap: var(--sp-5); align-items: center; }
+.ring { position: relative; width: 84px; height: 84px; flex-shrink: 0; }
+.ring svg { transform: rotate(-90deg); }
+.ring .n { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; font-family: var(--font-mono); font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: 1; }
+.ring .n small { font-size: var(--fs-2xs); font-weight: var(--fw-body); color: var(--muted); }
+.ring .g { position: absolute; left: 50%; bottom: -11px; transform: translateX(-50%); background: color-mix(in srgb, var(--accent) 16%, var(--surface)); border: 2px solid var(--surface); }
+.ring { margin-bottom: var(--sp-3); }
+.sp { display: block; width: 100%; height: 72px; }
+.chips { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.banner { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; font-size: var(--fs-sm); }
+.banner .spacer { flex: 1; }
+.link { border: 0; background: none; padding: 0; color: var(--accent); font-weight: var(--fw-semi); font-size: var(--fs-xs); cursor: pointer; }
+.link:hover { text-decoration: underline; }
+.wir { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-5); }
+@media (max-width: 760px) { .wir { grid-template-columns: minmax(0, 1fr); } }
+.wir h5 { margin: 0 0 var(--sp-3); font-size: var(--fs-2xs); font-weight: var(--fw-semi); letter-spacing: .08em; text-transform: uppercase; }
+.wir ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); font-size: var(--fs-xs); color: var(--muted); }
+.wins h5 { color: var(--accent); } .imps h5 { color: var(--warn); } .risks h5 { color: var(--danger); }
+.lrow { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-3) 0; border-bottom: 1px solid var(--border); font-size: var(--fs-xs); }
+.lrow:last-child { border-bottom: 0; }
+.lrow .i { color: var(--muted); font-family: var(--font-mono); width: 22px; flex-shrink: 0; }
+.lrow .b { flex: 1; min-width: 0; }
+.lrow .b b { display: block; font-size: var(--fs-sm); font-weight: var(--fw-semi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lrow .b span { color: var(--muted); }
+.lrow .v { font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: var(--fw-medium); white-space: nowrap; }
+button.lrow { width: 100%; border: 0; border-bottom: 1px solid var(--border); background: none; color: var(--text); text-align: left; cursor: pointer; }
+button.lrow:hover { background: var(--surface2); }
+.sess { border-bottom: 1px solid var(--border); }
+.sess:last-child { border-bottom: 0; }
+.sess > button { width: 100%; display: grid; grid-template-columns: 16px minmax(0, 1fr) 70px 110px 40px 72px 70px; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; font-size: var(--fs-xs); }
+.sess > button:hover { background: var(--surface2); }
+.sess .t b { display: block; font-size: var(--fs-sm); font-weight: var(--fw-semi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sess .t span { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-2xs); }
+.sess .n { font-family: var(--font-mono); text-align: right; }
+.sess .why { padding: 0 var(--sp-5) var(--sp-4) 40px; }
+@media (max-width: 760px) { .sess > button { grid-template-columns: 16px minmax(0, 1fr) 72px; } .sess > button .hide { display: none; } }
+.ghead { display: flex; justify-content: space-between; padding: var(--sp-3) var(--sp-4); background: var(--surface2); font-size: var(--fs-2xs); font-weight: var(--fw-semi); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.search { height: var(--h-md); width: 240px; max-width: 100%; padding: 0 var(--sp-4); border: 1px solid var(--border2); border-radius: var(--r-md); background: var(--surface); color: var(--text); font: inherit; font-size: var(--fs-xs); }
+.search:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.punch { display: grid; grid-template-columns: 36px repeat(24, minmax(0, 1fr)); gap: 2px; align-items: center; font-size: var(--fs-2xs); color: var(--muted); }
+.punch i { aspect-ratio: 1; border-radius: var(--r-xs); background: var(--surface3); }
+.pr-w { border: 1px solid var(--border); border-radius: var(--r-card); background: var(--surface2); }
+.pr-w + .pr-w { margin-top: var(--sp-3); }
+.pr-w.open { border-color: var(--accent); }
+.pr { width: 100%; display: grid; grid-template-columns: 36px minmax(0, 1fr) 150px 90px 28px; gap: var(--sp-4); align-items: center; padding: var(--sp-4); border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; font: inherit; border-radius: var(--r-card); }
+.pr:hover { background: var(--surface3); }
+.pr:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.pr h5 { margin: 0 0 var(--sp-1); font-size: var(--fs-sm); font-weight: var(--fw-semi); overflow-wrap: anywhere; }
+.pr .sub { display: block; margin: 0; font-size: var(--fs-2xs); }
+.pr-ic { display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--r-md); background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.pr-ic svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.pr-sep { display: inline-block; width: 3px; height: 3px; margin: 0 var(--sp-2) 2px; border-radius: 50%; background: var(--muted); }
+.pr-in { padding-left: var(--sp-4); }
+.pr-m, .pr-s { display: flex; flex-direction: column; gap: var(--sp-1); align-items: flex-start; }
+.pr-s { align-items: flex-end; }
+.pr-s b { font-size: var(--fs-xl); }
+.pr-chev { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--border2); border-radius: var(--r-md); color: var(--muted); }
+.pr-detail { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-5); padding: var(--sp-4) var(--sp-5) var(--sp-5); border-top: 1px solid var(--border); }
+@media (max-width: 760px) { .pr { grid-template-columns: 36px minmax(0, 1fr) 28px; } .pr-m, .pr-s { grid-column: 2; flex-direction: row; align-items: center; justify-content: space-between; } .pr-detail { grid-template-columns: minmax(0, 1fr); } }
+.cmp { display: grid; grid-template-columns: 88px minmax(0, 1fr) 80px; gap: var(--sp-3); align-items: center; font-size: var(--fs-xs); margin-bottom: var(--sp-3); }
+.cmp .t { height: 6px; background: var(--surface3); border-radius: var(--r-pill); overflow: hidden; }
+.cmp .f { display: block; height: 100%; background: var(--accent); }
+.cmp .f.b { background: var(--muted); }
+.cm-id { display: block; font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: var(--fw-body); color: var(--muted); }
+.cm-lg { justify-content: flex-end; margin: 0 0 var(--sp-4); }
+.cm-cat { margin-bottom: var(--sp-4); }
+.cm-cat .cmp { margin-bottom: var(--sp-1); }
+.cm-low { opacity: .55; }
+.cm-sel select { min-width: 0; max-width: 100%; }
+.pp-win { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3) var(--sp-4); margin-top: var(--sp-4); }
+.pp-k { display: inline-flex; align-items: center; font-size: var(--fs-2xs); font-weight: var(--fw-semi); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.pp-win input { height: var(--h-sm); padding: 0 var(--sp-3); border: 1px solid var(--border2); border-radius: var(--r-md); background: var(--surface); color: var(--text); font: inherit; font-size: var(--fs-xs); max-width: 100%; }
+.pp-tw { position: relative; display: inline-block; cursor: help; }
+.pp-tt { display: none; position: absolute; left: 0; top: 100%; z-index: 4; min-width: 170px; padding: var(--sp-3) var(--sp-4); background: var(--surface); border: 1px solid var(--border2); border-radius: var(--r-md); box-shadow: var(--elev-1); font-size: var(--fs-xs); font-weight: var(--fw-body); }
+.pp-tw:hover .pp-tt, .pp-tw:focus .pp-tt { display: block; }
+.pp-dis { display: flex; align-items: center; gap: var(--sp-3); width: 100%; padding: var(--sp-4) var(--sp-5); border: 0; background: none; color: var(--text); font-size: var(--fs-sm); font-weight: var(--fw-medium); text-align: left; cursor: pointer; }
+.pp-dis:hover { background: var(--surface2); }
+.good { color: var(--accent); font-weight: var(--fw-semi); }
+@media (min-width: 761px) { .top { flex-wrap: nowrap; gap: var(--sp-3); } .top .ctx { display: none; } .top h1 { white-space: nowrap; } .top select { min-width: 0; } }
+/* overview + shell additions (ov-) */
+.ov-hm { display: grid; grid-template-columns: 26px repeat(20, 10px); grid-template-rows: 14px repeat(7, 10px); gap: 2px; width: max-content; font-size: var(--fs-2xs); line-height: 10px; color: var(--muted); }
+.ov-hm span { white-space: nowrap; }
+.ov-hm i { border-radius: 2px; background: var(--surface3); }
+.ov-hm i.ov-now { outline: 1.5px solid var(--text); outline-offset: 1px; }
+.ov-i { color: var(--muted); cursor: help; }
+.ov-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: var(--r-md); }
+.ov-pair > div { padding: var(--sp-4); }
+.ov-pair > div + div { border-left: 1px solid var(--border); }
+.ov-big { font-size: var(--fs-xl); font-weight: var(--fw-semi); }
+.ov-mp { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: var(--sp-4); align-items: end; margin-bottom: var(--sp-3); }
+@media (max-width: 520px) { .ov-mp { grid-template-columns: minmax(0, 1fr); } }
+.ov-wi { display: flex; align-items: baseline; gap: var(--sp-3); width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }
+.ov-wi:hover > span:first-child { text-decoration: underline; }
+.ov-wi > span:first-child { flex: 1; min-width: 0; }
+.ov-wi b { color: var(--text); font-weight: var(--fw-semi); }
+.ov-asof { color: var(--muted); font-size: var(--fs-2xs); white-space: nowrap; }
+.ov-act { padding: var(--sp-3) 0; border-bottom: 1px solid var(--border); }
+.ov-act > .t { height: 3px; background: var(--surface3); margin-bottom: var(--sp-2); }
+.ov-act > .t .f { height: 100%; background: var(--accent); }
+.ov-act .kv { padding: 0; }
+.ov-act .kv > b { color: var(--text); font-family: var(--font-ui); font-weight: var(--fw-semi); }
+/* shell */
+.ov-ib { display: inline-grid; place-items: center; width: var(--h-sm); height: var(--h-sm); padding: 0; border: 1px solid transparent; border-radius: var(--r-md); background: none; color: var(--muted); cursor: pointer; }
+.ov-ib:hover { color: var(--text); background: var(--surface2); }
+.ov-ib svg, .ov-about svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.ov-brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-4); }
+.ov-brand .brand { margin: 0 var(--sp-3); }
+.ov-date { position: relative; display: inline-flex; }
+.ov-date input { position: absolute; left: 0; bottom: 0; width: 100%; opacity: 0; pointer-events: none; }
+.ov-about b { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: var(--fw-body); }
+.ov-q { position: relative; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: conic-gradient(var(--qc) calc(var(--qp) * 1%), var(--surface3) 0); color: var(--text); font-family: var(--font-mono); font-size: var(--fs-2xs); cursor: pointer; }
+.ov-q::before { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--bg); }
+.ov-q span { position: relative; }
+.ov-foot { position: sticky; bottom: 0; z-index: 4; display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-3) var(--sp-6); background: var(--bg); border-top: 1px solid var(--border); font-size: var(--fs-2xs); color: var(--muted); }
+.ov-foot kbd { font-family: var(--font-mono); margin-right: var(--sp-2); }
+.ov-foot .ov-keys { display: flex; gap: var(--sp-5); flex-wrap: wrap; }
+.ov-foot .link { color: var(--muted); font-weight: var(--fw-body); font-size: var(--fs-2xs); }
+@media (min-width: 761px) {
+  .app.ov-col { grid-template-columns: 56px minmax(0, 1fr); }
+  .ov-col .nav { font-size: 0; justify-content: center; }
+  .ov-col .side h6, .ov-col .brand, .ov-col .ov-about b { display: none; }
+  .ov-col .ov-brand { justify-content: center; }
+}
+@media (max-width: 760px) {
+  .ov-brand, .ov-about, .ov-foot .ov-keys { display: none; }
+  .ov-foot { padding-inline: max(16px, env(safe-area-inset-left, 0px)); }
+}
+/* sessions (se-) */
+.se-list { --se-g: 16px minmax(0, 1fr) 70px 110px 40px 72px 70px; display: flex; flex-direction: column; gap: var(--sp-3); }
+.se-list .sess > button, .se-cols { grid-template-columns: var(--se-g); }
+.se-ic { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; vertical-align: -2px; margin-right: var(--sp-2); }
+.se-n { margin-left: var(--sp-2); font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--muted); }
+.se-sort { display: inline-flex; gap: var(--sp-4); }
+.se-sort button { height: var(--h-md); padding: 0 var(--sp-1); border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font-size: var(--fs-xs); font-weight: var(--fw-medium); cursor: pointer; }
+.se-sort button:hover { color: var(--text); }
+.se-sort button[aria-pressed="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.se-pill { border-radius: var(--r-pill); }
+.se-cols { display: grid; align-items: center; gap: var(--sp-3); padding: 0 calc(var(--sp-4) + 1px); font-size: var(--fs-2xs); font-weight: var(--fw-semi); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.se-cols button { all: unset; cursor: pointer; }
+.se-cols button:hover, .se-cols button[aria-pressed="true"] { color: var(--text); }
+.se-cols button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.se-cols .r { text-align: right; }
+.se-chev { display: inline-block; color: var(--muted); transition: transform .12s; }
+.sess > button[aria-expanded="true"] .se-chev { transform: rotate(90deg); }
+.se-list .ghead { align-items: center; }
+.se-list .ghead span:last-child { font-family: var(--font-mono); }
+.se-list .empty { padding: var(--sp-6) 0; }
+@media (max-width: 760px) { .se-list { --se-g: 16px minmax(0, 1fr) 72px; } .se-cols { display: none; } }
+.sp-on { background: var(--surface2); }
+button.lrow.sp-on .b b { color: var(--accent); }
+.sp-chev { margin-left: var(--sp-3); font-style: normal; color: var(--muted); }
+.sp-x { padding: var(--sp-2) 0 var(--sp-3) 34px; border-bottom: 1px solid var(--border); }
+.sp-scroll { max-height: 264px; overflow-y: auto; }
+.sp-scroll:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.sp-fl path { transition: opacity .15s; }
+.chart text.sp-pk { fill: var(--warn); font-weight: var(--fw-semi); }
+.sp-lg { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-1); margin-top: var(--sp-3); }
+.sp-lg i { width: 12px; height: 12px; border-radius: var(--r-xs); }
+/* Models page */
+.mo-link { color: var(--text); text-decoration: underline; text-decoration-color: var(--border2); text-underline-offset: 2px; font-weight: var(--fw-medium); }
+.mo-link:hover { color: var(--accent); text-decoration-color: var(--accent); }
+.mo-prov { font-size: var(--fs-2xs); }
+.mo-pick { margin-top: var(--sp-2); }
+
+/* ── Atlas shell: TopBar.svelte + Tabs.svelte, replacing the CodeBurn sidebar ── */
+@font-face { font-family: "Material Symbols Outlined"; font-style: normal; font-weight: 100 700; font-display: block; src: url("src/assets/fonts/material-symbols-subset.woff2") format("woff2"); }
+.material-symbols-outlined { font-family: "Material Symbols Outlined", sans-serif; font-weight: normal; font-style: normal; font-size: 16px; line-height: 1; letter-spacing: normal; text-transform: none; display: inline-block; white-space: nowrap; direction: ltr; font-feature-settings: "liga"; font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 20; -webkit-font-smoothing: antialiased; }
+:root { --ink: #17181b; --ink-text: #ffffff; --h-xs: 20px; --h-2xs: 18px; --h-lg: 32px; --sp-8: 32px; --r-lg: 7px; --ink-hover-bg: color-mix(in srgb, var(--ink) 88%, var(--bg)); }
+:root[data-theme="dark"] { --ink: #e6e7ea; --ink-text: #0f1012; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ink: #e6e7ea; --ink-text: #0f1012; } }
+@keyframes atlasPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+.app { display: flex; flex-direction: column; min-height: 100vh; }
+.tb { position: sticky; top: 0; z-index: 7; display: flex; align-items: center; flex-shrink: 0; gap: var(--sp-3); height: 46px; padding: 0 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.tb-brand { display: inline-flex; align-items: center; gap: var(--sp-2); margin-right: var(--sp-3); }
+.tb-brand svg { flex: none; display: block; }
+.tb-word { font-size: var(--fs-sm); font-weight: 600; }
+.seg-group { display: flex; gap: 1px; padding: 2px; border-radius: var(--r-lg); background: var(--surface2); }
+.seg-group .seg { position: relative; display: flex; align-items: center; justify-content: center; gap: var(--sp-2); min-height: var(--h-md); padding: 0 var(--sp-4); border: none; border-radius: var(--r-md); background: transparent; color: var(--muted); font-family: var(--font-ui); font-size: var(--fs-sm); font-weight: 500; white-space: nowrap; cursor: pointer; }
+.seg-group .seg:hover { color: var(--text); }
+.seg-group .seg.active { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--border2); }
+.seg-group .count { font-family: var(--font-mono); font-size: var(--fs-xs); }
+.seg-group .badge { display: grid; place-items: center; min-width: var(--h-2xs); height: var(--h-2xs); padding: 0 var(--sp-1); border-radius: var(--r-pill); box-shadow: inset 0 0 0 1px var(--warn); color: var(--text); font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: 600; }
+.tb-sp { flex: 1; min-width: 0; }
+.tb-status { display: flex; align-items: center; gap: var(--sp-2); color: var(--text); font-family: var(--font-mono); font-size: var(--fs-sm); white-space: nowrap; }
+.tb-status .part { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.tb-status .part.needs { color: var(--warn); }
+.tb-status .sep { color: var(--muted); }
+.mk { display: inline-block; flex: none; }
+.mk.run { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: atlasPulse 1.6s ease-in-out infinite; }
+.mk.att { width: 10px; height: 9px; background: var(--warn); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.mk.idle { width: 4px; height: 4px; border-radius: 50%; background: var(--muted); }
+.ib { display: inline-flex; align-items: center; justify-content: center; width: var(--h-md); height: var(--h-md); padding: 0; border: 1px solid transparent; border-radius: var(--r-lg); background: transparent; color: var(--muted); cursor: pointer; }
+.ib:hover { background: var(--surface2); color: var(--text); }
+.ib[aria-current="page"] { background: var(--surface3); color: var(--text); }
+.bell { position: relative; display: inline-flex; }
+.tbtn { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2); height: var(--h-sm); padding: 0 var(--sp-3); border: 1px solid transparent; border-radius: var(--r-md); font-family: inherit; font-size: var(--fs-xs); font-weight: var(--fw-medium); white-space: nowrap; cursor: pointer; }
+.tbtn.ghost { background: transparent; color: var(--muted); }
+.tbtn.ghost:hover { background: var(--surface2); color: var(--text); }
+.tbtn.primary { background: var(--ink); color: var(--ink-text); }
+.tbtn.primary:hover { background: var(--ink-hover-bg); }
+.kbd { display: inline-flex; align-items: center; height: var(--h-xs); padding: 0 var(--sp-2); border: 1px solid var(--border2); border-bottom-width: 2px; border-radius: var(--r-xs); background: var(--surface); color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1; }
+.kbd.on-ink { background: transparent; border-color: color-mix(in srgb, var(--ink-text) 70%, transparent); color: color-mix(in srgb, var(--ink-text) 70%, transparent); }
+/* Stats sub-pages: Atlas's horizontal Tabs (32px, 2px --ink underline) */
+.st-tabs { position: sticky; top: 46px; z-index: 6; display: flex; align-items: flex-end; gap: 0; padding: var(--sp-1) 16px 0; background: var(--bg); border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+.st-tab { flex: none; height: var(--h-lg); margin-bottom: -1px; padding: 0 var(--sp-3); border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font: inherit; font-size: var(--fs-sm); white-space: nowrap; cursor: pointer; }
+.st-tab:hover { color: var(--text); }
+.st-tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--ink); }
+.st-tab:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; }
+.st-div { flex: none; align-self: center; width: 1px; height: 16px; margin: 0 var(--sp-2); background: var(--border2); }
+.top { top: 86px; padding: var(--sp-3) 16px; border-bottom: 0; }
+.top h1, .top .ctx { display: none; }
+.st-live { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: var(--fw-body); white-space: nowrap; }
+.st-live:hover { color: var(--text); text-decoration: none; }
+@media (max-width: 1399px) { .tb-status .p-full { display: none; } }
+.ib.jump { display: none; }
+@media (max-width: 1099px) { .tbtn.ghost { display: none; } .ib.jump { display: inline-flex; } .tb-status { height: var(--h-md); padding: 0 var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface2); cursor: pointer; } }
+@media (max-width: 799px) { .tb-status { display: none; } }
+@media (max-width: 760px) { .tb-word, .st-live { display: none; } .seg-group .seg { padding: 0 var(--sp-3); } .top { position: static; } }
+
+/* ── Hover layer: one Atlas tooltip + hover states across every section ── */
+#htip { position: fixed; z-index: 80; pointer-events: none; display: none; max-width: 300px; padding: var(--sp-1) var(--sp-3); background: var(--surface); border: 1px solid var(--border2); border-radius: var(--r-md); box-shadow: var(--elev-1); font-size: var(--fs-xs); color: var(--text); line-height: 1.45; }
+#htip b { font-family: var(--font-mono); font-weight: var(--fw-semi); font-variant-numeric: tabular-nums; }
+#htip .m { color: var(--muted); }
+.card { transition: border-color .12s; }
+.card:hover { border-color: var(--border2); }
+.hb { border-radius: var(--r-sm); transition: opacity .12s, background .12s; }
+.hb:hover { background: var(--surface2); box-shadow: 0 0 0 4px var(--surface2); }
+.hv-dim > .hb:not(:hover) { opacity: .45; }
+.kv { border-radius: var(--r-xs); transition: background .12s; }
+.kv:hover { background: var(--surface2); box-shadow: 0 0 0 4px var(--surface2); }
+div.lrow:hover { background: var(--surface2); }
+.stack i { transition: opacity .12s; cursor: default; }
+.stack:hover i:not(:hover) { opacity: .45; }
+.heat i, .punch i, .ov-hm i { cursor: default; }
+.heat i:hover, .punch i:hover, .ov-hm i:hover { outline: 1.5px solid var(--text); outline-offset: 1px; }
+.legend li { cursor: default; transition: color .12s; }
+.legend li:hover { color: var(--text); }
+.prog, .cmp, .ring, .live-row { cursor: default; }
+.prog:hover .c, .cmp:hover { color: var(--text); }
+.prog .f, .cmp .f { transition: filter .12s; }
+.prog:hover .f, .cmp:hover .f { filter: brightness(1.12); }
+.chart svg rect, .chart svg path, .chart svg circle { transition: opacity .12s; }
+.hv-fade { opacity: .18 !important; }
+svg.sp { cursor: crosshair; }
+svg .hv-x { stroke: var(--text); stroke-width: 1; vector-effect: non-scaling-stroke; stroke-dasharray: 2 2; display: none; }
+.kpi { cursor: default; }
+
+/* ── Reference parity pass ── */
+.label { color: var(--text); letter-spacing: 0; text-transform: none; font-size: var(--fs-sm); font-weight: var(--fw-semi); flex-wrap: wrap; align-items: center; }
+.label small .chips { display: inline-flex; gap: var(--sp-2); flex-wrap: wrap; }
+.btn.primary { background: var(--ink); border-color: var(--ink); color: var(--ink-text); }
+.btn.primary:hover { background: var(--ink-hover-bg); }
+.top { flex-wrap: wrap; row-gap: var(--sp-2); }
+.top .seg { overflow: visible; }
+.top select { width: auto; max-width: 150px; }
+th { text-transform: none; letter-spacing: 0; font-weight: var(--fw-medium); }
+table[data-t="pm"] th { text-transform: uppercase; letter-spacing: .06em; font-weight: var(--fw-semi); }
+.card .scroll th, .card .scroll td { padding-left: var(--sp-2); padding-right: var(--sp-2); }
+.card .scroll th:first-child, .card .scroll td:first-child { padding-left: 0; }
+.card .scroll th:last-child, .card .scroll td:last-child { padding-right: 0; }
+.chart { padding-top: var(--sp-2); }
+.sp-w { position: relative; min-width: 0; padding: var(--sp-1) 0; }
+.sp-dot { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--surface); transform: translate(-50%, -50%); pointer-events: none; }
+.ov-hm { grid-template-columns: 26px repeat(20, minmax(0, 1fr)); grid-template-rows: 14px repeat(7, auto); width: 100%; max-width: 320px; }
+.ov-hm i { aspect-ratio: 1; }
+.ov-hm span { overflow: visible; }
+.ring-wrap { align-items: center; gap: var(--sp-5); }
+.ring-wrap > div:last-child { display: flex; flex-direction: column; gap: var(--sp-3); }
+.ef { display: grid; gap: var(--sp-1); cursor: default; }
+.ef-h { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-3); font-size: var(--fs-xs); }
+.ef-h b { font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: var(--fw-semi); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ef .t { height: 6px; border-radius: var(--r-pill); background: var(--surface3); overflow: hidden; }
+.ef .f { display: block; height: 100%; border-radius: var(--r-pill); background: var(--accent); transition: filter .12s; }
+.ef .f.bad { background: var(--danger); }
+.ef:hover .f { filter: brightness(1.12); }
+.stat3 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; }
+.stat3 > div { padding: 0 var(--sp-4); }
+.stat3 > div:first-child { padding-left: 0; }
+.stat3 > div + div { border-left: 1px solid var(--border); }
+.wir { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr); }
+.wir ul { font-size: var(--fs-2xs); }
+.wir .imps, .wir .risks { padding-left: var(--sp-5); border-left: 1px solid var(--border); }
+@media (max-width: 760px) { .wir .imps, .wir .risks { padding-left: 0; border-left: 0; } }
+.cm-cat { display: grid; grid-template-columns: 88px minmax(0, 1fr); align-items: center; row-gap: var(--sp-1); }
+.cm-cat > b { grid-row: 1 / span 2; grid-column: 1; font-size: var(--fs-xs); font-weight: var(--fw-semi); }
+.cm-cat .cmp { grid-column: 2; grid-template-columns: minmax(0, 1fr) 80px; margin: 0; }
+.cm-cat .cmp > span:first-child { display: none; }
+.op-sum { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-3) 0 var(--sp-2); }
+.op-gh { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-top: var(--sp-4); }
+.op-gh h4 { margin: 0; }
+.sess > button.op-r, .op-r { width: 100%; display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; align-items: center; gap: var(--sp-4); padding: var(--sp-3) var(--sp-2); border: 0; background: none; color: var(--text); font: inherit; font-size: var(--fs-xs); text-align: left; cursor: pointer; }
+.op-r:hover { background: var(--surface2); }
+.op-r .pill { justify-self: start; }
+.op-r b { min-width: 0; font-size: var(--fs-sm); font-weight: var(--fw-semi); }
+.op-v { display: inline-flex; align-items: center; gap: var(--sp-3); white-space: nowrap; font-size: var(--fs-2xs); }
+.op-ch { color: var(--muted); display: inline-block; transition: transform .12s; }
+.op-r[aria-expanded="true"] .op-ch { transform: rotate(90deg); }
+.op-why { padding: 0 var(--sp-2) var(--sp-4) 112px; }
+@media (max-width: 760px) { .sess > button.op-r { grid-template-columns: 80px minmax(0, 1fr); } .op-v { grid-column: 2; } .op-why { padding-left: var(--sp-2); } }
+
+.hero { grid-template-columns: minmax(0, 1fr) minmax(0, .9fr) minmax(0, 1.35fr); }
+@media (max-width: 860px) { .hero { grid-template-columns: minmax(0, 1fr); } }
+.stat3 > div { padding: 0 var(--sp-3); }
+.stat3 span { white-space: nowrap; }
+.ef-h span { white-space: nowrap; }
+@media (max-width: 1099px) { .st-live { font-size: 0; } .st-live::after { content: "↻"; font-size: var(--fs-sm); } .top select { max-width: 130px; } }
+
+@media (max-width: 1099px) { .tbtn.primary .kbd { display: none; } }
+.tb { min-width: 0; }
+html, body { overflow-x: hidden; }
+</style>
+
+<div class="app" id="app">
+  <header class="tb">
+    <span class="tb-brand"><svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><rect width="20" height="20" rx="5" fill="var(--ink)"/><g fill="var(--ink-text)"><rect x="4" y="4" width="5" height="5" rx="1"/><rect x="11" y="4" width="5" height="5" rx="1"/><rect x="4" y="11" width="5" height="5" rx="1"/></g></svg><span class="tb-word">Atlas</span></span>
+    <div class="seg-group" role="tablist" aria-label="Views"><button type="button" class="seg" role="tab" aria-selected="false" tabindex="-1">Sessions<span class="count">7</span></button><button type="button" class="seg" role="tab" aria-selected="false" tabindex="-1">Files</button><button type="button" class="seg" role="tab" aria-selected="false" tabindex="-1">Pull requests<span class="badge">2</span></button><button type="button" class="seg active" role="tab" aria-selected="true" data-tab="overview">Stats</button></div>
+    <div class="tb-sp"></div>
+    <span class="tb-status"><span class="part"><span class="mk run"></span>4 running</span><span class="sep">·</span><span class="part needs"><span class="mk att"></span>1 needs you</span><span class="sep p-full">·</span><span class="part p-full"><span class="mk idle"></span>2 idle</span><span class="sep p-full">·</span><span class="part p-full">$12.40 today</span></span>
+    <span class="bell"><button type="button" class="ib" aria-label="Notifications" title="Notifications"><span class="material-symbols-outlined" style="font-size:18px" aria-hidden="true">notifications</span></button></span>
+    <button type="button" class="tbtn ghost">Jump to…<kbd class="kbd">⌘K</kbd></button>
+    <button type="button" class="ib jump" aria-label="Jump to" title="Jump to ⌘K"><span class="material-symbols-outlined" style="font-size:18px" aria-hidden="true">search</span></button>
+    <button type="button" class="tbtn primary">+ Session<kbd class="kbd on-ink">⌘N</kbd></button>
+    <button type="button" class="ib" id="gear" data-tab="settings" aria-label="Settings" title="Settings"><span class="material-symbols-outlined" style="font-size:18px" aria-hidden="true">settings</span></button>
+  </header>
+  <div class="main">
+    <nav class="st-tabs" id="tabs" role="tablist" aria-label="Stats pages"></nav>
+    <header class="top">
+      <button type="button" class="ov-ib" data-ov-nav="-1" aria-label="Back"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg></button>
+      <button type="button" class="ov-ib" data-ov-nav="1" aria-label="Forward"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+      <h1 id="ttl">Overview</h1><span class="ctx" id="ctx"></span>
+      <span style="flex:1"></span>
+      <button type="button" class="link st-live" id="ovref" data-ov-refresh="1"></button>
+      <select id="proj" aria-label="Project"></select>
+      <div class="seg" role="radiogroup" aria-label="Range" id="ranges"></div>
+      <span class="ov-date"><button type="button" class="ov-ib" data-ov-cal="1" aria-label="Pick a start date" title="Pick a start date"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12v10H2zM2 7h12M5 2v3M11 2v3"/></svg></button><input type="date" id="ovdate" min="2026-10-07" max="2026-11-05" tabindex="-1" aria-hidden="true"></span>
+      <select id="prov" aria-label="Provider"></select>
+      <button type="button" class="ov-q" id="ovq" data-go="plans"></button>
+    </header>
+    <main class="page" id="view"></main>
+    <p class="note" style="padding:0 var(--sp-6) var(--sp-6);max-width:1020px;margin:0 auto">Dollar figures are API-equivalent estimates, not what a subscription bills. Mockup with sample figures modelled on a real run; every control on this page works.</p>
+    
+  </div>
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var money = function (n) { return n >= 1000 ? "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : n >= 1 ? "$" + n.toFixed(2) : "$" + n.toFixed(2); };
+  var tok = function (n) { return Math.round(n / 1e3) >= 1e3 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "K" : String(Math.round(n)); };
+  var cnt = function (n) { n = Math.round(n); return n >= 10000 ? tok(n) : n.toLocaleString("en-US"); };
+  var pct = function (n, d) { return n.toFixed(d == null ? 0 : d) + "%"; };
+  var sum = function (a) { return a.reduce(function (x, y) { return x + y; }, 0); };
+  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+
+  /* ---------- sample data (30 days ending 2026-11-05, modelled on a real run) ---------- */
+  var DAYS = 30, dayDate = function (i) { return new Date(2026, 9, 7 + i); };
+  var dlabel = function (i) { return dayDate(i).toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
+  var MODELS = [
+    { id: "sonnet", name: "Sonnet 5.5", prov: "Claude", color: "var(--model-sonnet)", cost: 148.93, calls: 6134, tokens: 3485115, input: 13500, output: 2900000, cr: 631e6, edits: 114, oneShot: 94, retry: .07, cpc: .02, cpe: .62, otpc: 473, selfc: 1, deleg: 5, plan: 0, tpt: 7.03 },
+    { id: "opus55", name: "Opus 5.5", prov: "Claude", color: "var(--model-opus)", cost: 119.4, calls: 2035, tokens: 1500000, input: 4200, output: 1300000, cr: 288.4e6, edits: 44, oneShot: 75, retry: .30, cpc: .06, cpe: 1.81, otpc: 630, selfc: 0, deleg: 7, plan: 4, tpt: 7.09 },
+    { id: "opus5", name: "Opus 5", prov: "Claude", color: "color-mix(in srgb, var(--model-opus) 55%, var(--surface))", cost: 38.14, calls: 189, tokens: 330000, input: 378, output: 239400, cr: 51.6e6, edits: 9, oneShot: 67, retry: .2, cpc: .2, cpe: 4.2, otpc: 1266, selfc: 0, deleg: 3, plan: 1, tpt: 6.2 },
+    { id: "haiku", name: "Haiku 5.5", prov: "Claude", color: "var(--model-haiku)", cost: 8.29, calls: 233, tokens: 174315, input: 429, output: 173886, cr: 14971453, edits: 22, oneShot: 82, retry: .1, cpc: .04, cpe: .14, otpc: 746, selfc: 0, deleg: 1, plan: 0, tpt: 5.4 }
+  ];
+  /* Models page: full 12-row table from the CodeBurn screenshot (lifetime figures). cost null = unpriced; est = estimated (~). rt = pricing family key into MO_RATES. */
+  var MODEL_ROWS = [
+    { id: "sonnet", n: "Sonnet 5.5", prov: "Claude", pid: "claude", color: "var(--model-sonnet)", calls: 6134, input: 13500, output: 2.9e6, cr: 631e6, cost: 148.93, rt: "sonnet" },
+    { id: "opus55", n: "Opus 5.5", prov: "Claude", pid: "claude", color: "var(--model-opus)", calls: 2040, input: 4200, output: 1.3e6, cr: 288.4e6, cost: 119.4, rt: "opus55" },
+    { id: "opus5", n: "Opus 5", prov: "Claude", pid: "claude", color: "color-mix(in srgb, var(--model-opus) 55%, var(--surface))", calls: 189, input: 378, output: 239400, cr: 51.6e6, cost: 38.14, rt: "opus55" },
+    { id: "cop-auto", n: "Copilot (OpenAI auto)", prov: "Copilot", pid: "copilot", color: "var(--muted)", calls: 72, input: 114000, output: 155400, cr: 229, cost: 2.41, est: 1, rt: "gpt5" },
+    { id: "gemini", n: "gemini-3-pro-preview", prov: "Copilot", pid: "copilot", color: "var(--muted)", calls: 119, input: 149100, output: 147600, cr: 9900, cost: 2.14, est: 1, rt: "gpt5" },
+    { id: "cop-s45", n: "Sonnet 4.5", prov: "Copilot", pid: "copilot", color: "var(--model-sonnet)", calls: 67, input: 65400, output: 57700, cr: 1600, cost: 1.17, est: 1, rt: "sonnet" },
+    { id: "codex", n: "GPT-5.1 Codex", prov: "Copilot", pid: "copilot", color: "var(--muted)", calls: 30, input: 23700, output: 38000, cr: 2700, cost: .44, est: 1, rt: "gpt5" },
+    { id: "gpt5", n: "GPT-5", prov: "Copilot", pid: "copilot", color: "var(--muted)", calls: 36, input: 48100, output: 23600, cr: 1300, cost: .31, est: 1, rt: "gpt5" },
+    { id: "cop-o45", n: "Opus 4.5", prov: "Copilot", pid: "copilot", color: "var(--model-opus)", calls: 7, input: 2900, output: 7500, cr: 1100, cost: .21, est: 1, rt: "opus55" },
+    { id: "haiku", n: "Haiku 5.5", prov: "Claude", pid: "claude", color: "var(--model-haiku)", calls: 6, input: 12, output: 1400, cr: 25000, cost: 0, rt: "haiku" },
+    { id: "synthetic", n: "<synthetic>", prov: "Claude", pid: "claude", color: "var(--muted)", calls: 67, input: 0, output: 0, cr: 0, cost: null },
+    { id: "unknown", n: "unknown", prov: "Copilot", pid: "copilot", color: "var(--muted)", calls: 1, input: 17, output: 367, cr: 452, cost: null }
+  ];
+  var MO_ALIAS = [["sonnet", "Sonnet 5.5"], ["opus55", "Opus 5.5"], ["haiku", "Haiku 5.5"], ["gpt5", "GPT-5"]];
+  var MO_RATES = { sonnet: [3, 15, .3], opus55: [15, 75, 1.5], haiku: [1, 5, .1], gpt5: [1.25, 10, .125] }; /* $ per 1M tokens: input, output, cache read */
+  var TOTAL = sum(MODELS.map(function (m) { return m.cost; })), CALLS = sum(MODELS.map(function (m) { return m.calls; }));
+  var rnd = (function (s) { return function () { s = (s * 9301 + 49297) % 233280; return s / 233280; }; })(11);
+  /* daily $ shaped like the real run: Oct 17 peak $82.19, Oct 22-28 = $6.72, Oct 29-Nov 4 = $123.18 (Nov 2 = $72.80), today $7.58; Oct 7-16 scaled so the 30 days sum to TOTAL */
+  var base = [5, 6, 3, 1, .8, 7, 9, 6, 8, 10, 82.19, 24, 8, 6, 3, 1.4, 1.1, .6, .5, .9, 1.2, 1.02, .68, .8, 3, 13, 72.8, 30, 2.9, 7.58];
+  (function () { var k = (TOTAL - sum(base.slice(10))) / sum(base.slice(0, 10)); for (var i = 0; i < 10; i++) base[i] *= k; })();
+  var W = MODELS.map(function (m, mi) { return base.map(function (b) { return b * (0.3 + rnd() * (mi === 0 ? 1.1 : mi === 1 ? .9 : .3)); }); });
+  var dayCost = MODELS.map(function (m, mi) { var cs = sum(W[mi]); return W[mi].map(function (w) { return w / cs * m.cost; }); });
+  var dayTotal = base.map(function (_, i) { return sum(dayCost.map(function (c) { return c[i]; })); });
+  var dayCalls = dayTotal.map(function (c) { return Math.round(c / TOTAL * CALLS); });
+  /* pin every day to the real-shaped dollar figure above (the per-model split stays pseudo-random) */
+  base.forEach(function (v, i) { var f = v / dayTotal[i]; dayCost.forEach(function (c) { c[i] *= f; }); dayTotal[i] = v; });
+  dayCalls[29] = 214;
+  var PROVIDERS = [{ id: "claude", name: "Claude", cost: 314.76 }, { id: "copilot", name: "Copilot", cost: 6.52 }, { id: "cursor", name: "Cursor", cost: 4.2 }];
+  var PROJECTS = [{ n: "fashion-app", c: 68.49, s: 112 }, { n: "atlas", c: 48.47, s: 20 }, { n: "jakeh", c: 22.77, s: 14 }, { n: "source/wholesomenfl.com", c: 19.97, s: 1 }, { n: "wholesomenfl.com", c: 15.47, s: 7 }, { n: "Other", c: 131.21, s: 40 }];
+  var ACTIVITY = [["Coding", 159.99, 256, 80], ["Exploration", 60.82, 394, 0], ["Feature Dev", 35.95, 103, 100], ["Debugging", 16.81, 112, 78], ["Delegation", 12.71, 45, 100], ["Conversation", 12.18, 376, 0]];
+  var TOOLS = [["Bash", 3617], ["PowerShell", 975], ["Read", 868], ["Monitor", 715], ["Write", 326], ["Edit", 254]];
+  var MCP = [["claude-in-chrome", 67], ["claude_ai_Claude_Docs", 10]];
+  var SUBAG = [["general-purpose", 51, 2.69], ["Explore", 2, .22], ["fork", 1, .04]];
+  var BRANCH = { "fashion-app": [["main", 41.98, "111 sessions · 699 calls · Oct 17 - Oct 20"], ["HEAD", 23.66, "1 session · 293 calls · Oct 17"], ["postgres-docker", 2.85, "1 session · 84 calls · Oct 18"]], atlas: [["main", 31.2, "11 sessions · 940 calls · Oct 22 - Nov 5"], ["phase-09-stats", 11.4, "6 sessions · 410 calls"], ["codeburn-stats-window", 5.87, "3 sessions · 180 calls"]], jakeh: [["(no branch)", 22.77, "14 sessions · 1,210 calls"]] };
+  /* sessions: d = day index (0 = Oct 7, 29 = Nov 5) so the range filter can apply */
+  var TIERS = [["Flagship", "var(--model-opus)", ["opus55", "opus5"]], ["Balanced", "var(--model-sonnet)", ["sonnet"]], ["Light", "var(--model-haiku)", ["haiku"]]];
+  var FLOW_X = [["Copilot (OpenAI auto)", 2.41], ["gemini-3-pro-preview", 2.14], ["Sonnet 4.5", .98], ["GPT-5.1 Codex", .44], ["GPT-5", .31], ["Other", .4]];
+  var FLOW_R = [["fashion-app", 68.49], ["atlas", 48.47], ["jakeh", 22.77], ["source/wholesomenfl.com", 19.97], ["github/wholesomenfl.com", 15.47], ["agent-a4abd5557b2a98db", 4.9], ["agent-a50d5345e23e332e", 4.68], ["scratchpad", 5.48], ["Other", 131.21]];
+  var SESSIONS = [
+    { id: "2ca088b1-5ec3-4fe4", t: "Code burn in Atlas stats window", p: "atlas", prov: "claude", m: "Sonnet 5.5", turns: 24, c: 4.92, tk: 186300, at: "Nov 5", d: 29, sub: 7, calls: 162 },
+    { id: "0d478f1c-5e86-4f89", t: "Code burn stats Atlas styling", p: "atlas", prov: "claude", m: "Sonnet 5.5", turns: 6, c: 2.66, tk: 99000, at: "Nov 5", d: 29, sub: 0, calls: 52 },
+    { id: "ffe704e0-91b2-4c3d", t: "Finish Atlas leftovers cleanup", p: "atlas", prov: "claude", m: "Opus 5.5", turns: 214, c: 106.04, tk: 912000, at: "Nov 1", d: 25, sub: 12, calls: 4968 },
+    { id: "5dd443a2-7a10-4d9e", t: "Fantasy trade and waiver UI", p: "wholesomenfl.com", prov: "claude", m: "Sonnet 5.5", turns: 97, c: 33.12, tk: 402000, at: "Oct 26", d: 19, sub: 3, calls: 1380 },
+    { id: "0ed4a733-3b8f-41aa", t: "Next.js clothing shopping app", p: "fashion-app", prov: "claude", m: "Opus 5.5", turns: 41, c: 23.66, tk: 199581, at: "Oct 17", d: 10, sub: 0, calls: 293 },
+    { id: "a91c0be2-4410-4f7c", t: "Inline completions refactor", p: "jakeh", prov: "copilot", m: "Copilot (OpenAI auto)", turns: 18, c: 2.41, tk: 270000, at: "Oct 30", d: 23, sub: 0, calls: 72 },
+    { id: "c3d77e10-88ab-4e21", t: "Tab edit rules", p: "jakeh", prov: "cursor", m: "Cursor auto", turns: 9, c: 1.2, tk: 61000, at: "Oct 12", d: 5, sub: 0, calls: 30 }
+  ];
+  var SPROV = [["claude", "Claude"], ["antigravity", "Antigravity"], ["copilot", "Copilot"], ["cursor", "Cursor"]];
+  var SEIC = { claude: "M8 2v12M2.8 5l10.4 6M2.8 11l10.4-6", antigravity: "M3 13L8 3l5 10M5.5 9.5h5", copilot: "M4 6a4 4 0 0 1 8 0v4a4 4 0 0 1-8 0zM6.5 8v1.5M9.5 8v1.5", cursor: "M8 2l5 3v6l-5 3-5-3V5zM3 5l5 3 5-3M8 8v6" };
+  var WHY = [["Fix flaky terminal-registry test", 14.2, 388], ["Retry: same test, three edits after a shell step", 9.7, 244], ["Remove dead stats export code", 4.8, 91], ["Audit leftover TODOs", 3.1, 62]];
+  var UNTIED = 1.63, PRDAYS = { today: 0, "7d": 7, "30d": 30, month: 4, "6m": 183, life: 1e9 };
+  var PRS = [
+    { n: "jakehowden96/Atlas#7", at: "Oct 22", d: 14, runs: 1, calls: 27, st: "Merged Oct 22", c: 1.35, other: 0.81, ses: "3f2a91c0", m: [["Sonnet 5.5", 1.35]], rev: "No review run found", link: "" },
+    { n: "jakehowden96/Atlas#23", at: "Oct 22", d: 14, runs: 1, calls: 15, st: "Merged Oct 22", c: 1.05, other: 0.92, ses: "7be41d58", m: [["Sonnet 5.5", 1.05]], rev: "No review run found", link: "" },
+    { n: "jakehowden96/Atlas#16", at: "Oct 28", d: 8, runs: 1, calls: 14, st: "", c: .18, other: 0, ses: "3f2a91c0", m: [["Sonnet 5.5", .18]], rev: "No review run found", link: "Linked by pr-link only" },
+    { n: "jakehowden96/Atlas#11", at: "Oct 28", d: 8, runs: 1, calls: 12, st: "", c: .15, other: 0, ses: "3f2a91c0", m: [["Sonnet 5.5", .15]], rev: "No review run found", link: "Linked by pr-link only" },
+    { n: "jakehowden96/Atlas#21", at: "Oct 28", d: 8, runs: 1, calls: 11, st: "", c: .15, other: 0, ses: "7be41d58", m: [["Sonnet 5.5", .15]], rev: "No review run found", link: "" }
+  ];
+  var FINDINGS = [
+    { t: "Claude edits more than it reads", sev: "High", cl: "fix", usd: .544, tk: 2.3e6, b: "estimated", x: "Edit calls outnumber Read calls 3 to 1, which usually means edits made without context.", fix: "codeburn act apply read-before-edit", ev: [["StatsView.svelte", "41 edits, 9 reads · 6 sessions", 910000], ["terminal-registry.ts", "33 edits, 11 reads · 4 sessions", 760000], ["app.css", "27 edits, 8 reads · 5 sessions", 630000]] },
+    { t: "1 MCP server should be project-scoped", sev: "Medium", cl: "fix", usd: .01, tk: 48100, b: "estimated", x: "claude-in-chrome loads its tool list into every project.", fix: "codeburn act apply scope-mcp claude-in-chrome", ev: [["claude-in-chrome", "Used in 2 of 14 projects, loaded in all 14", 48100]] },
+    { t: "Shrink bash output limit", sev: "Medium", cl: "fix", usd: .004, tk: 3800, b: "estimated", x: "Bash results above 30K characters were returned in full 9 times.", fix: "codeburn act apply bash-limit", ev: [["npm test (atlas)", "4 results over 30K characters", 2100], ["git log (fashion-app)", "3 results over 30K characters", 1100], ["docker logs", "2 results over 30K characters", 600]] },
+    { t: "2 skills you never use", sev: "Low", cl: "fix", usd: .003, tk: 160, b: "estimated", x: "Their descriptions are loaded each session.", fix: "codeburn act apply prune-skills", ev: [["pdf-forms", "0 invocations in 299 sessions", 90], ["slack-digest", "0 invocations in 299 sessions", 70]] },
+    { t: "3 high-cost session outliers", sev: "High", cl: "nudge", usd: 17.14, tk: 71.9e6, b: "measured", x: "Three sessions cost more than 5x your median. All ran past 150 turns.", fix: "", ev: [["ffe704e0 · Finish Atlas leftovers cleanup", "214 turns · $106.04 total", 38.2e6], ["5dd443a2 · Fantasy trade and waiver UI", "97 turns · $33.12 total", 21.4e6], ["9f6f0efd · Terminal resize regression", "58 turns · $31.40 total", 12.3e6]] },
+    { t: "1 MCP server correlates with retry-heavy edits", sev: "High", cl: "nudge", usd: .82, tk: 3.4e6, b: "estimated", x: "Sessions using it retried 2.4x as often.", fix: "", ev: [["claude-in-chrome", "Retry rate 21% with it, 9% without", 3.4e6]] },
+    { t: "3 sessions with a low cache hit rate", sev: "High", cl: "nudge", usd: .024, tk: 103300, b: "estimated", x: "Cache expired between turns after long idle gaps.", fix: "", ev: [["a91c0be2 · Inline completions refactor", "Hit rate 41%, idle gaps over 5 min", 52000], ["c3d77e10 · Tab edit rules", "Hit rate 38%, idle gaps over 5 min", 31300], ["0d478f1c · Code burn stats Atlas styling", "Hit rate 52%", 20000]] },
+    { t: "Claude is re-reading the same files", sev: "High", cl: "nudge", usd: .004, tk: 19800, b: "estimated", x: "StatsView.svelte was read 31 times across 6 sessions.", fix: "", ev: [["StatsView.svelte", "31 reads across 6 sessions", 12400], ["terminal-registry.ts", "18 reads across 4 sessions", 7400]] },
+    { t: "10 context-heavy sessions", sev: "High", cl: "keep", usd: 4.69, tk: 19.7e6, b: "measured", x: "These ran above 60% of the window for most turns. Often just big tasks.", fix: "", ev: [["ffe704e0 · Finish Atlas leftovers cleanup", "Above 60% of window for 71% of turns", 6.1e6], ["5dd443a2 · Fantasy trade and waiver UI", "Above 60% of window for 64% of turns", 4.2e6], ["+ 8 more sessions", "", 9.4e6]] }
+  ];
+  var OPSEV = { High: ["bad", "↑"], Medium: ["warn", "→"], Low: ["neutral", "↓"] };
+  var OPSAVED = .4; /* shortcut: sample data, share of the projected saving already realised for an applied fix */
+  var ABANDONED = [
+    { s: "ffe704e0 · Finish Atlas leftovers cleanup", p: "atlas", turns: 214, c: 106.04, at: "Nov 1", why: "No commit or PR after the last 40 turns" },
+    { s: "5dd443a2 · Fantasy trade and waiver UI", p: "wholesomenfl.com", turns: 97, c: 33.12, at: "Oct 26", why: "Ended on a failing build, never resumed" },
+    { s: "9f6f0efd · Terminal resize regression", p: "atlas", turns: 58, c: 31.4, at: "Oct 24", why: "Branch deleted without a merge" },
+    { s: "37e9863c · Roguelike prototype", p: "RogueMagic", turns: 63, c: 24.6, at: "Oct 14", why: "Idle 22 days, no passing check" },
+    { s: "0ed4a733 · Next.js clothing shopping app", p: "fashion-app", turns: 41, c: 23.66, at: "Oct 17", why: "Idle 19 days after an error" },
+    { s: "b27a41d9 · Terminal-registry tests", p: "atlas", turns: 71, c: 50.59, at: "Oct 29", why: "Test still failing on the last turn" },
+    { s: "1c88f0aa · Postgres docker setup", p: "fashion-app", turns: 19, c: 2.85, at: "Oct 18", why: "No edits kept, no follow-up session" }
+  ];
+  var QUOTA = [
+    { n: "Claude", plan: "Max 5x", w: [["5-hour window", 62, "in 2h 14m"], ["7-day window", 41, "Fri 09:00"], ["7-day Opus", 78, "Fri 09:00"]] },
+    { n: "Copilot", plan: "Pro", w: [["Monthly requests", 31, "Dec 1"]] },
+    { n: "Cursor", plan: "Pro", w: [["Monthly requests", 93, "Dec 1"]] }
+  ];
+  var CMCAT = ["coding", "debugging", "delegation", "feature"];
+  var CMX = { // per-model extras for Compare: raw id, days of data, fast-mode %, cache hit %, one-shot [%, edit turns] per category
+    sonnet: { raw: "claude-sonnet-5-5", days: 19, fast: 0, cache: 100, cats: [[93, 100], [100, 3], [100, 3], [100, 8]] },
+    opus55: { raw: "claude-opus-5-5", days: 30, fast: 0, cache: 100, cats: [[66, 29], [100, 2], [100, 2], [91, 11]] },
+    opus5: { raw: "claude-opus-5", days: 6, fast: 0, cache: 98, cats: [[60, 5], [100, 1], [50, 2], [75, 4]] },
+    haiku: { raw: "claude-haiku-5-5", days: 12, fast: 0, cache: 99, cats: [[80, 10], [100, 4], [100, 1], [82, 7]] }
+  };
+  var CMC = { // matched cohorts: [label, {modelId: [cost per edit, n]}]
+    task: [["coding", { sonnet: [.41, 31], opus55: [1.64, 29], opus5: [3.9, 4], haiku: [.18, 12] }], ["exploration", { sonnet: [.12, 22], opus55: [.33, 14], opus5: [.9, 3], haiku: [.05, 9] }], ["feature", { sonnet: [.66, 14], opus55: [1.2, 11], opus5: [2.8, 2], haiku: [.21, 8] }]],
+    project: [["atlas", { sonnet: [.5, 48], opus55: [1.9, 30], opus5: [4.1, 6], haiku: [.16, 15] }], ["fashion-app", { sonnet: [.7, 40], opus55: [1.5, 12], opus5: [3.2, 3], haiku: [.2, 7] }], ["wholesomenfl.com", { sonnet: [.6, 9], opus55: [1.7, 4], opus5: [3.6, 2], haiku: [.19, 5] }]]
+  };
+  var RANGES = [["today", "Today"], ["7d", "7D"], ["30d", "30D"], ["month", "Month"], ["6m", "6M"], ["life", "Life"]];
+  var RSLICE = { today: [29, 30], "7d": [23, 30], "30d": [0, 30], month: [25, 30], "6m": [0, 30], life: [0, 30] };
+  var RNAME = { today: "Today", "7d": "Last 7 days", "30d": "Last 30 days", month: "This month", "6m": "Last 6 months", life: "Lifetime" };
+  var ic = function (d) { return '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="' + d + '"/></svg>'; };
+  var NAV = [
+    ["", [["overview", "Overview", "M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z"]]],
+    ["Usage", [["sessions", "Sessions", "M3 4h10M3 8h10M3 12h10"], ["pull-requests", "Pull requests", "M4 3v10M4 13a1.5 1.5 0 1 0 0-.01M12 13V7a2 2 0 0 0-2-2H8"], ["spend", "Spend", "M2 12l4-4 3 3 5-6"], ["models", "Models", "M8 2l6 3v6l-6 3-6-3V5z"]]],
+    ["Insight", [["optimize", "Optimize", "M8 2v3M8 11v3M2 8h3M11 8h3M4 4l2 2M10 10l2 2M12 4l-2 2M6 10l-2 2"], ["compare", "Compare", "M8 2v12M3 5h10M5 5l-2 4h4zM11 5l-2 4h4z"], ["compare-periods", "Compare periods", "M3 3h10v10H3zM3 7h10M7 7v6"]]],
+    ["Account", [["plans", "Plans", "M2 4h12v8H2zM2 7h12"], ["plugins", "Plugins", "M6 2v3M10 2v3M4 5h8v3a4 4 0 0 1-8 0zM8 12v2"], ["settings", "Settings", "M2 4h8M12 4h2M2 12h2M6 12h8M10 2v4M4 10v4"]]]
+  ];
+  var S = { range: "today", proj: "all", prov: "all", tab: "overview", sub: {}, sort: {}, metric: "cost", provSel: null, q: "", sortBy: "c", group: true, sessTab: "all", open: null, cmpA: "sonnet", cmpB: "opus55", fixes: {}, periodBy: "project", basis: "raw", brProj: "fashion-app", openF: null };
+  Object.assign(S, { ovAct: "cost", ovTheme: "auto", ovCol: false, ovRef: Date.now(), prOpen: null, spBr: null, moAlias: {}, moPick: null, moOpen: null, opDis: {}, cmBy: "task", ppMode: "p7", ppWin: { a: [15, 21], b: [22, 28] }, ppRow: null, ppAll: false, ppDet: {} });
+
+  /* ---------- helpers ---------- */
+  var pk = function () { var p = PROVIDERS.filter(function (x) { return x.id === S.prov; })[0]; return p ? p.cost / TOTAL : 1; };
+  var jk = function () { var p = PROJECTS.filter(function (x) { return x.n === S.proj; })[0]; return p ? p.c / TOTAL : 1; };
+  function slice() {
+    var r = RSLICE[S.range], k = pk() * jk(), idx = []; for (var i = r[0]; i < r[1]; i++) idx.push(i);
+    var cost = MODELS.map(function (m, mi) { return sum(idx.map(function (i) { return dayCost[mi][i]; })) * k; });
+    return { idx: idx, cost: cost, total: sum(cost), k: k, f: sum(cost) / TOTAL };
+  }
+  function segc(items, active, attr, label) { return '<div class="seg" role="radiogroup" aria-label="' + label + '">' + items.map(function (it) { return '<button type="button" role="radio" aria-checked="' + (it[0] === active) + '" data-' + attr + '="' + it[0] + '">' + it[1] + "</button>"; }).join("") + "</div>"; }
+  function subtabs(page, items) { var a = S.sub[page] || items[0][0]; return '<div class="seg" role="tablist" style="align-self:flex-start">' + items.map(function (it) { return '<button type="button" role="tab" aria-selected="' + (it[0] === a) + '" data-sub="' + page + ":" + it[0] + '">' + it[1] + "</button>"; }).join("") + "</div>"; }
+  var sub = function (page, first) { return S.sub[page] || first; };
+  function card(title, note, body, cls) { return '<section class="card ' + (cls || "") + '"><h3 class="label">' + title + (note ? "<small>" + note + "</small>" : "") + "</h3>" + body + "</section>"; }
+  function kpi(k, v, n, c) { return '<div class="card kpi"><div class="k">' + k + '</div><div class="v ' + (c || "") + '">' + v + "</div>" + (n ? '<div class="n">' + n + "</div>" : "") + "</div>"; }
+  var dot = function (c) { return '<span class="dot" style="background:' + c + '"></span>'; };
+  function table(id, cols, rows, o) {
+    o = o || {}; if (!rows.length) return '<p class="empty">' + (o.empty || "No data") + "</p>";
+    var s = S.sort[id] || o.sort || null;
+    if (s) rows = rows.slice().sort(function (a, b) { var x = a[s.k], y = b[s.k]; return (typeof x === "string" ? x.localeCompare(y) : x - y) * s.dir; });
+    var head = cols.map(function (c) { var on = s && s.k === c.k; return '<th scope="col" class="' + (c.r ? "r" : "") + '"' + (on ? ' aria-sort="' + (s.dir > 0 ? "ascending" : "descending") + '"' : "") + '><button type="button" data-sort="' + id + ":" + c.k + '">' + c.h + (on ? (s.dir > 0 ? " ↑" : " ↓") : "") + "</button></th>"; }).join("");
+    var body = rows.map(function (r) { return "<tr" + (o.tr ? o.tr(r) : "") + ">" + cols.map(function (c) { return '<td class="' + (c.r ? "r " : "") + (c.wrap ? "wrap" : "") + '">' + (c.fmt ? c.fmt(r[c.k], r) : esc(r[c.k])) + "</td>"; }).join("") + "</tr>"; }).join("");
+    return '<div class="scroll"><table data-t="' + id + '"><thead><tr>' + head + "</tr></thead><tbody>" + body + "</tbody></table></div>";
+  }
+  function lrows(rows, valFmt, o) {
+    o = o || {};
+    return rows.map(function (r, i) {
+      return '<div class="lrow"><span class="i">' + String(i + 1).padStart(2, "0") + '</span><span class="b"><b>' + esc(r[0]) + "</b><span>" + esc(r[1]) + '</span></span><span class="v">' + (r[2] != null ? valFmt(r[2]) : "") + "</span></div>";
+    }).join("");
+  }
+  function prog(v, label) { return '<div class="prog"><span class="t"><span class="f ' + (v > 90 ? "bad" : v > 75 ? "warn" : "") + '" style="width:' + Math.min(100, v) + '%"></span></span><span class="c">' + label + "</span></div>"; }
+  function bar(label, v, right, warn) { return '<div class="hb" style="grid-template-columns:70px minmax(0,1fr) auto"><span class="name">' + label + '</span><span class="t"><span class="f ' + (warn ? "warn" : "") + '" style="width:' + Math.min(100, v) + '%"></span></span><span class="val">' + right + "</span></div>"; }
+  function ef(label, v, right, bad) { return '<div class="ef" data-tip="' + label + ' <b>' + right + '</b>"><div class="ef-h"><span>' + label + "</span><b>" + right + '</b></div><span class="t"><span class="f' + (bad ? " bad" : "") + '" style="width:' + Math.max(2, Math.min(100, v)) + '%"></span></span></div>'; }
+  function ring(score, grade) {
+    var r = 36, c = 2 * Math.PI * r;
+    return '<div class="ring"><svg width="84" height="84" viewBox="0 0 84 84" role="img" aria-label="Efficiency ' + score + ' of 100"><circle cx="42" cy="42" r="' + r + '" fill="none" stroke="var(--surface3)" stroke-width="7"/><circle cx="42" cy="42" r="' + r + '" fill="none" stroke="var(--accent)" stroke-width="7" stroke-linecap="round" stroke-dasharray="' + (c * score / 100) + " " + c + '"/></svg><div class="n">' + score + "<small>/100</small></div><span class=\"pill g\">" + grade + "</span></div>";
+  }
+  var stackedBars = function (el, sl, h, withLabels) {
+    var n = sl.idx.length, Wd = el.clientWidth || 640, H = h || 170, L = 8, R = 46, T = 8, B = 22;
+    var totals = sl.idx.map(function (di) { return dayTotal[di] * sl.k; }), mx = Math.max.apply(null, totals) || 1;
+    var step = [5, 10, 25, 50, 100, 200].filter(function (s) { return s * 3 >= mx; })[0] || 200, top = Math.ceil(mx / step) * step;
+    var y = function (v) { return T + (1 - v / top) * (H - T - B); }, slot = (Wd - L - R) / n, bw = Math.max(2, Math.min(28, slot * .7)), g = "";
+    for (var t = 0; t <= top; t += step) g += '<line x1="' + L + '" x2="' + (Wd - R) + '" y1="' + y(t) + '" y2="' + y(t) + '" stroke="var(--border)"/><text x="' + (Wd - R + 8) + '" y="' + (y(t) + 4) + '" text-anchor="start">$' + t + "</text>";
+    var every = Math.max(1, Math.ceil(n / Math.max(1, Math.floor((Wd - L) / 70))));
+    sl.idx.forEach(function (di, i) {
+      var x = L + i * slot + (slot - bw) / 2, lo = 0;
+      MODELS.forEach(function (m, mi) { var v = dayCost[mi][di] * sl.k; g += '<rect x="' + x + '" y="' + y(lo + v) + '" width="' + bw + '" height="' + Math.max(0, y(lo) - y(lo + v)) + '" style="fill:' + m.color + '"/>'; lo += v; });
+      if (i % every === 0) g += '<text x="' + (x + bw / 2) + '" y="' + (H - 6) + '" text-anchor="middle">' + dlabel(di) + "</text>";
+    });
+    el.innerHTML = '<svg width="' + Wd + '" height="' + H + '" viewBox="0 0 ' + Wd + " " + H + '" role="img" aria-label="Daily spend by model">' + g + '</svg><div class="tip" id="tip"></div>';
+    var svg = el.firstChild, tip = $("tip");
+    svg.onpointermove = function (e) {
+      var r = svg.getBoundingClientRect(), i = Math.max(0, Math.min(n - 1, Math.floor((e.clientX - r.left - L) / slot)));
+      tip.style.display = "flex"; tip.style.left = Math.max(70, Math.min(Wd - 70, L + (i + .5) * slot)) + "px";
+      tip.innerHTML = "<span class='muted'>" + dlabel(sl.idx[i]) + "</span><b>" + money(totals[i]) + "</b>";
+    };
+    svg.onpointerleave = function () { tip.style.display = "none"; };
+  };
+  var later = [];
+  var spark = function (vals, dash) {
+    var W2 = 300, H2 = 72, P = 8, mx = Math.max.apply(null, vals) || 1, pts = vals.map(function (v, i) { return [P + i / (vals.length - 1) * (W2 - 2 * P), H2 - 4 - v / mx * (H2 - 16)]; });
+    var d = "M" + pts.map(function (p) { return p.join(","); }).join("L"), last = pts[pts.length - 1];
+    return '<div class="sp-w"><svg class="sp" data-vals="' + vals.map(function (v) { return Math.round(v * 100) / 100; }).join(",") + '" viewBox="0 0 ' + W2 + " " + H2 + '" preserveAspectRatio="none" aria-hidden="true"><path d="' + d + "L" + last[0] + "," + H2 + "L" + P + "," + H2 + 'Z" style="fill:var(--accent);fill-opacity:.12"/><path d="' + d + '" fill="none" style="stroke:var(--accent)" stroke-width="2" ' + (dash ? 'stroke-dasharray="4 4"' : "") + ' vector-effect="non-scaling-stroke"/></svg><i class="sp-dot" style="left:' + (last[0] / W2 * 100) + "%;top:" + (last[1] / H2 * 100) + '%"></i></div>';
+  };
+
+  /* ---------- pages ---------- */
+  /* ---------- overview helpers (new) ---------- */
+  var OV_ASOF = "9:58 AM";
+  function ovPair(a, b) { return '<div class="ov-pair">' + [a, b].map(function (c) { return '<div><div class="sub">' + c[0] + '</div><div class="mono ov-big">' + c[1] + '</div><div class="sub">' + c[2] + "</div></div>"; }).join("") + "</div>"; }
+  /* 20-week activity grid ending today; days before the sample window are synthetic */
+  function ovHeat() {
+    var W = 20, td = dayDate(29), tr = (td.getDay() + 6) % 7, st = new Date(td.getFullYear(), td.getMonth(), td.getDate() - tr - 7 * (W - 1)), mx = Math.max.apply(null, dayCalls), cells = "", labs = "", act = 0, last = -1;
+    for (var c = 0; c < W; c++) for (var r = 0; r < 7; r++) {
+      var d = new Date(st.getFullYear(), st.getMonth(), st.getDate() + c * 7 + r), i = Math.round((d - dayDate(0)) / 864e5);
+      if (i > 29) continue;
+      var n = i >= 0 && dayTotal[i] >= 2 ? dayCalls[i] : 0, lv = n ? Math.min(4, Math.ceil(n / mx * 4)) : 0;
+      if (n) act++;
+      if (r === 0 && d.getMonth() !== last && d.getDate() <= 7) { last = d.getMonth(); labs += '<span style="grid-column:' + (c + 2) + ' / span 3;grid-row:1">' + d.toLocaleDateString("en-US", { month: "short" }) + "</span>"; }
+      cells += '<i' + (i === 29 ? ' class="ov-now"' : "") + ' title="' + d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + ", " + n + ' calls" style="grid-column:' + (c + 2) + ";grid-row:" + (r + 2) + ";" + (lv ? "background:color-mix(in srgb, var(--accent) " + lv * 25 + '%, var(--surface3))' : "") + '"></i>';
+    }
+    ["Mon", "Wed", "Fri"].forEach(function (n, j) { labs += '<span style="grid-column:1;grid-row:' + (2 + j * 2) + '">' + n + "</span>"; });
+    return { act: act, html: '<div class="ov-hm">' + labs + cells + "</div>" };
+  }
+  /* dashed peak line + label over the daily-spend svg; mirrors stackedBars' axis maths */
+  function ovPeak(el, tot, H) {
+    var mx = Math.max.apply(null, tot), step = [5, 10, 25, 50, 100, 200].filter(function (s) { return s * 3 >= mx; })[0] || 200, top = Math.ceil(mx / step) * step, y = 8 + (1 - mx / top) * (H - 8 - 22), Wd = el.clientWidth || 640;
+    if (tot.length > 1) el.firstChild.insertAdjacentHTML("beforeend", '<line x1="8" x2="' + (Wd - 46) + '" y1="' + y + '" y2="' + y + '" stroke="var(--warn)" stroke-dasharray="4 4"/><text x="' + (Wd - 38) + '" y="' + (y + 4) + '" text-anchor="start" style="fill:var(--warn);font-weight:600">' + money(mx) + "</text>");
+  }
+
+  function overview() {
+    var sl = slice(), k = sl.k, f = sl.f, t = sl.total, today = S.range === "today";
+    var calls = sum(sl.idx.map(function (i) { return dayCalls[i]; })) * k, yday = dayTotal[28] * k, avg7 = 18.95 * k, vs = (dayTotal[29] / dayTotal[28] - 1) * 100, nSess = today ? 9 : Math.max(1, Math.round(299 * f));
+    var mtd = 126.81 * k, proj = 316.35 * k, raw = dayTotal.slice(25, 30), rs = sum(raw), cum = [], run = 0, fc = [];
+    raw.forEach(function (d) { run += d / rs * mtd; cum.push(run); });
+    for (var j = 1; j <= 5; j++) fc.push(mtd + (proj - mtd) * j / 5);
+    var hm = ovHeat();
+    var dsl = sl.idx.length < 7 ? { idx: dayTotal.map(function (_, i) { return i; }), k: k } : sl; /* a 1-5 day range still gets a 30-day trend */
+    var dtot = dsl.idx.map(function (i) { return dayTotal[i] * k; }), peak = Math.max.apply(null, dtot), peakI = dsl.idx[dtot.indexOf(peak)];
+    later.push(function () { var el = $("dsp"); stackedBars(el, dsl, 160); ovPeak(el, dtot, 160); });
+
+    var hero = '<section class="card flush"><h3 class="label"><span>' + RNAME[S.range] + (today ? " (2026-11-05)" : "") + '</span><span class="pill warn">6-day streak</span></h3><div class="inner hero">' +
+      '<div><p class="big">' + money(t) + '</p><p class="sub">' + cnt(calls) + " calls · at least " + nSess + ' sessions</p><div class="stat3"><div><span>Yesterday</span><b>' + money(yday) + "</b></div><div><span>7-day avg</span><b>" + money(avg7) + '</b></div><div><span>vs yesterday</span><b class="' + (vs > 0 ? "up" : "down") + '">' + (vs > 0 ? "+" : "") + Math.round(vs) + "%</b></div></div></div>" +
+      '<div><p class="sub">Daily activity <b class="mono" style="color:var(--accent)">' + hm.act + ' active days</b></p><div style="margin-top:var(--sp-3)">' + hm.html + "</div></div>" +
+      '<div><p class="sub">Efficiency <span class="ov-i" title="Blend of one-shot rate, cache hit and retry tax">ⓘ</span></p><div class="ring-wrap" style="margin-top:var(--sp-3)">' + ring(88, "A") + '<div style="flex:1;min-width:0">' + ef("One-shot", 88, "88%") + ef("Cache hit", 100, "100%") + ef("Retry tax", 6.1, "$0.46 · 6.1% of spend", 1) + "</div></div></div></div></section>";
+
+    var big = function (v, x) { return '<div class="big" style="font-size:var(--fs-2xl);color:var(--text)">' + v + (x || "") + "</div>"; };
+    var mp = '<div class="grid g2">' +
+      card("Month to date", "", '<div class="ov-mp"><div>' + big(money(mtd)) + '<p class="sub"><span class="pill bad">↑ 55%</span> vs October pace</p></div>' + spark(cum) + '</div><button class="link" data-go="spend">See spend →</button>') +
+      card("Projected month", "", '<div class="ov-mp"><div>' + big(money(proj), ' <small class="muted" style="font-size:var(--fs-xs)">est</small>') + '<p class="sub"><span class="pill neutral">' + money(proj - mtd) + ' to go</span></p></div>' + spark(cum.concat(fc), 1) + '</div><button class="link" data-go="plans">See plans →</button>') + "</div>";
+
+    var daily = card("Daily spend", '<span class="chips"><span class="pill neutral">Avg/day ' + money(sum(dtot) / dtot.length) + '</span><span class="pill neutral">Peak ' + money(peak) + " · " + dayDate(peakI).toLocaleDateString("en-US", { month: "numeric", day: "numeric" }) + '</span><span class="pill neutral">Yesterday ' + money(yday) + '</span></span>', '<div class="chart" id="dsp"></div><ul class="legend">' + MODELS.map(function (m) { return "<li>" + dot(m.color) + m.name + "</li>"; }).join("") + "</ul>");
+
+    var workflow = card("Workflow", "", ovPair(["Correction rate", "0%", "0 corrections"], ["Time to first edit", "1m", "median"]) + '<p class="sub" style="margin-top:var(--sp-3)">Top rework: <b class="mono">atlas-stats-overview.html</b> · 1 session · 2 edits</p><p class="sub">Corrections, first-edit latency, and file churn across your sessions.</p>');
+
+    var pace = '<section class="card banner"><span class="muted">↗</span><span>You\'re pacing <b>11% higher than last week</b>; <b>Sonnet 5.5</b> is the biggest driver. <b class="mono">' + money(t * .033) + '</b> is recoverable. <span class="sub">(as of ' + OV_ASOF + ')</span></span><span class="spacer"></span><button class="link" data-go="optimize">Review →</button></section>';
+
+    var asof = '<span class="ov-asof">as of ' + OV_ASOF + "</span>", li = function (a) { return "<li>" + a + "</li>"; };
+    var wir = '<section class="card"><div class="wir"><div class="wins"><h5>✓ Wins</h5><ul>' + li("Cache hit at 100%, most prompts reuse cache") + li("88% one-shot, edits land first try") + li("6-day usage streak") + '</ul></div><div class="imps"><h5>↗ Improvements</h5><ul>' +
+      FINDINGS.filter(function (x) { return x.cl === "fix"; }).slice(0, 3).map(function (x) { return '<li><button type="button" class="ov-wi" data-go="optimize"><span>' + esc(x.t) + "</span>" + asof + '<b class="mono">' + money(x.usd * f) + "</b></button></li>"; }).join("") +
+      '</ul></div><div class="risks"><h5>⚠ Risks</h5><ul>' + li(today ? "Today's spend is 8.5× your typical Thursday" : "Peak day hit " + money(peak) + " on " + dlabel(peakI)) + li("On pace for " + money(proj) + " this month, +76% vs last") + "</ul></div></div></section>";
+
+    var outcome = card("Cost per outcome", "as of 10:10 AM", (today ? ovPair(["$ / commit", "—", ""], ["$ / productive session", "—", ""]) : ovPair(["$ / commit", "$2.18", ""], ["$ / productive session", "$4.60", ""])) + '<p class="sub" style="margin-top:var(--sp-3)">' + (today ? "productive 0% · reverted 0% · abandoned 100%" : "productive 71% · reverted 10% · abandoned 19%") + '</p><p class="sub">Git-correlated. Reverted/abandoned = spend that didn\'t ship.</p>');
+
+    var mrows = today ? [{ n: MODELS[0].name, color: MODELS[0].color, i: 470 * k, o: 284900 * k, cr: 23.5e6 * k, c: t, ca: calls }] : MODELS.map(function (m, i) { return { n: m.name, color: m.color, i: m.input * f, o: m.output * f, cr: m.cr * f, c: sl.cost[i], ca: m.calls * f }; });
+    var models = card("Models this period", "Sorted by cost", table("om", [{ k: "n", h: "Model", fmt: function (v, r) { return dot(r.color) + '<button type="button" class="link" data-go="models">' + esc(v) + "</button>"; } }, { k: "i", h: "Input tok", r: 1, fmt: tok }, { k: "o", h: "Output tok", r: 1, fmt: tok }, { k: "cr", h: "Cache read", r: 1, fmt: tok }, { k: "c", h: "Cost", r: 1, fmt: money }, { k: "ca", h: "Calls", r: 1, fmt: cnt }], mrows, { sort: { k: "c", dir: -1 } }));
+
+    var byT = S.ovAct === "turns", AS = sum(ACTIVITY.map(function (a) { return a[1]; }));
+    var arows = ACTIVITY.map(function (a) { return { n: a[0], c: a[1] / AS * t, tn: Math.max(1, Math.round(a[2] * f)), o: a[3] }; }).sort(function (a, b) { return byT ? b.tn - a.tn : b.c - a.c; });
+    var amx = byT ? arows[0].tn : arows[0].c;
+    var acts = card("Top activities", segc([["cost", "Cost"], ["turns", "Turns"]], S.ovAct || "cost", "ov-act", "Sort activities"), arows.map(function (a) { return '<div class="ov-act"><div class="t"><div class="f" style="width:' + (byT ? a.tn : a.c) / amx * 100 + '%"></div></div><div class="kv"><b>' + a.n + "</b><span>" + money(a.c) + '</span></div><div class="kv"><span>' + cnt(a.tn) + " turn" + (a.tn === 1 ? "" : "s") + "</span><span>" + (a.o ? a.o + "% one-shot" : "— one-shot") + "</span></div></div>"; }).join(""));
+
+    var cut = 29 - RSLICE[S.range][0], tdy = dayDate(29);
+    var top = SESSIONS.filter(function (s) { return Math.round((tdy - new Date(s.at + ", 2026")) / 864e5) <= cut && (S.proj === "all" || s.p === S.proj) && (S.prov === "all" || s.prov === S.prov); }).sort(function (a, b) { return b.c - a.c; }).slice(0, 3);
+    var exp = card("Most expensive sessions", '<button type="button" class="link" data-go="sessions">See all →</button>', top.length ? top.map(function (s, i) { return '<button type="button" class="lrow" data-open="' + s.id + '"><span class="i">0' + (i + 1) + '</span><span class="b"><b>' + esc(s.t) + "</b><span>" + esc(s.p) + " · " + s.at + " · " + s.m + " · " + s.calls + ' calls</span></span><span class="v">' + money(s.c) + " ›</span></button>"; }).join("") : '<p class="empty">No sessions in this range</p>');
+
+    return hero + mp + daily + workflow + pace + wir + outcome + '<div class="grid g2 start"><div style="display:flex;flex-direction:column;gap:var(--sp-4);min-width:0">' + models + exp + "</div>" + acts + "</div>";
+  }
+
+  /* ---------- stub pages (new) ---------- */
+  function pluginsPage() { return card("Plugins", "", '<p class="sub" style="margin-bottom:var(--sp-3)">No third-party plugins installed. Built-in providers:</p>' + lrows(PROVIDERS.map(function (p) { return [p.name, "Built-in provider", "on"]; }), function (v) { return '<span class="pill">' + v + "</span>"; })); }
+  function settingsPage() {
+    return card("Appearance", "", '<div class="bar"><span class="sub">Theme</span>' + segc([["auto", "Auto"], ["light", "Light"], ["dark", "Dark"]], S.ovTheme, "ov-theme", "Theme") + "</div>") +
+      card("About", "", '<div class="kv"><span>Version</span><span>v0.9.27</span></div><div class="kv"><span>Navigate</span><span>Ctrl+1-9</span></div><div class="kv"><span>Settings</span><span>Ctrl+,</span></div><div class="kv"><span>Refresh</span><span>Ctrl+R</span></div>');
+  }
+
+  /* ---- sessions page ---- */
+  var seIc = function (id) { return '<svg class="se-ic" viewBox="0 0 16 16" aria-hidden="true"><path d="' + SEIC[id] + '"/></svg>'; };
+  var seT = function (n) { return n >= 1e6 ? tok(n) : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : String(n); };
+  var sePl = function (n, w) { return n + " " + w + (n === 1 ? "" : "s"); };
+  var sePn = function (id) { return SPROV.filter(function (p) { return p[0] === id; })[0][1]; };
+  /* range, project and provider filters, same as the rest of the app */
+  function seScope() { var r = RSLICE[S.range]; return SESSIONS.filter(function (s) { return s.d >= r[0] && s.d < r[1] && (S.proj === "all" || s.p === S.proj) && (S.prov === "all" || s.prov === S.prov); }); }
+  function seTab() { return seScope().filter(function (s) { return S.sessTab === "all" || s.prov === S.sessTab; }); }
+  function sessRows() { var q = S.q.toLowerCase(); return seTab().filter(function (s) { return !q || (s.t + s.p + s.m + s.id).toLowerCase().indexOf(q) >= 0; }); }
+  /* sample subagent split: ~18% of the session's cost, front-loaded */
+  function seSubs(s) {
+    var T = ["general-purpose", "Explore", "general-purpose", "fork"], w = [], i; for (i = 0; i < s.sub; i++) w.push(1 / (i + 1));
+    var ws = sum(w); return w.map(function (x, j) { return [T[j % 4] + " #" + (j + 1), seT(Math.round(s.tk * .2 * x / ws)) + " tokens", s.c * .18 * x / ws]; });
+  }
+
+  function sessionsPage() {
+    var sc = seScope(), cn = function (id) { return '<span class="se-n">' + sc.filter(function (s) { return id === "all" || s.prov === id; }).length + "</span>"; };
+    var tabs = [["all", "All" + cn("all")]].concat(SPROV.map(function (p) { return [p[0], seIc(p[0]) + p[1] + cn(p[0])]; }));
+    return '<div class="bar">' + segc(tabs, S.sessTab, "stab", "Provider") + "</div>" +
+      '<div class="bar"><input class="search" id="q" placeholder="Search project, model, or id…" value="' + esc(S.q) + '" aria-label="Search sessions"><div class="se-sort" role="group" aria-label="Sort">' +
+      [["c", "Cost"], ["recent", "Recent"], ["turns", "Turns"], ["tk", "Tokens"]].map(function (x) { return '<button type="button" aria-pressed="' + (S.sortBy === x[0]) + '" data-sby="' + x[0] + '">' + x[1] + "</button>"; }).join("") +
+      '</div><button class="btn se-pill ' + (S.group ? "primary" : "") + '" type="button" aria-pressed="' + S.group + '" data-group="1">Group by provider</button></div><div id="slist" class="se-list">' + sessList() + "</div>";
+  }
+  function sessList() {
+    var rows = sessRows(), by = S.sortBy, tabN = seTab().length;
+    rows = rows.slice().sort(function (a, b) { return by === "recent" ? b.d - a.d || SESSIONS.indexOf(a) - SESSIONS.indexOf(b) : b[by] - a[by]; });
+    var subs = sum(rows.map(function (r) { return r.sub; }));
+    var info = '<p class="sub">' + sePl(rows.length, "session") + (subs ? " + " + sePl(subs, "subagent") : "") + " · " + money(sum(rows.map(function (r) { return r.c; }))) + " · " + seT(sum(rows.map(function (r) { return r.tk; }))) + " tokens</p>";
+    if (!rows.length) {
+      var msg = !seScope().length ? "No sessions for " + RNAME[S.range].toLowerCase() + (S.proj !== "all" ? " in " + esc(S.proj) : "") + "." + (S.range === "30d" || S.range === "6m" || S.range === "life" ? "" : ' <button class="link" type="button" data-range="30d">Show last 30 days</button>')
+        : !tabN ? "No " + (S.sessTab === "all" ? "" : sePn(S.sessTab) + " ") + "sessions in this range."
+        : "No sessions match “" + esc(S.q) + "”. " + '<button class="link" type="button" data-se-clear>Clear search</button>';
+      return info + '<p class="empty">' + msg + "</p>";
+    }
+    var col = function (k, h, r) { return '<button type="button" class="' + (r ? "r" : "") + '" aria-pressed="' + (by === k) + '" data-sby="' + k + '">' + h + "</button>"; };
+    var cols = '<div class="se-cols"><span></span><span>Session</span>' + col("recent", "Date") + "<span>Model</span>" + col("turns", "Turns", 1) + col("c", "Cost", 1) + col("tk", "Tokens", 1) + "</div>";
+    function one(s) {
+      var open = S.open === s.id, sb = seSubs(s);
+      return '<div class="sess"><button type="button" aria-expanded="' + open + '" data-open="' + s.id + '"><span class="se-chev" aria-hidden="true">›</span><span class="t"><b>' + esc(s.t) + "</b><span>" + (S.group ? "" : seIc(s.prov)) + s.id + (s.sub ? " · " + sePl(s.sub, "subagent") : "") + '</span></span><span class="hide muted">' + s.at + '</span><span class="hide">' + esc(s.m) + '</span><span class="n hide">' + s.turns + '</span><span class="n">' + money(s.c) + '</span><span class="n hide">' + seT(s.tk) + "</span></button>" +
+        (open ? '<div class="why">' + (sb.length ? '<p class="sub" style="margin-bottom:var(--sp-2)">Subagents · ' + money(sum(sb.map(function (x) { return x[2]; }))) + " of " + money(s.c) + "</p>" + lrows(sb, money) : "") + '<p class="sub" style="margin:var(--sp-3) 0 var(--sp-2)">Why it cost this: biggest turns</p>' + WHY.map(function (w) { return '<div class="kv"><span>' + esc(w[0]) + "</span><span>" + money(w[1] * s.c / 106) + " · " + w[2] + " calls</span></div>"; }).join("") + "</div>" : "") + "</div>";
+    }
+    var groups = S.group ? SPROV.map(function (p) { return p[0]; }) : [null];
+    var out = groups.map(function (g) {
+      var rs = g ? rows.filter(function (r) { return r.prov === g; }) : rows; if (!rs.length) return "";
+      return '<section class="card flush">' + (g ? '<div class="ghead"><span>' + seIc(g) + sePn(g) + "</span><span>" + sePl(rs.length, "session") + " · " + money(sum(rs.map(function (r) { return r.c; }))) + "</span></div>" : "") + rs.map(one).join("") + "</section>";
+    }).join("");
+    return info + cols + out + '<p class="sub">Showing ' + rows.length + " of " + tabN + " top-level sessions</p>";
+  }
+
+  function prs() {
+    var list = PRS.filter(function (p) { return p.d <= PRDAYS[S.range]; });
+    if ((S.proj !== "all" && S.proj !== "atlas") || (S.prov !== "all" && S.prov !== "claude")) list = [];
+    if (!list.length) return card("Pull request spend", "", '<p class="empty">No pull requests in this range</p>');
+    var sg = ' <i class="pr-sep"></i> ', gi = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3v10M4 13a1.5 1.5 0 1 0 0-.01M12 13V7a2 2 0 0 0-2-2H8"/></svg>';
+    var total = sum(list.map(function (p) { return p.c; })), sess = {}; list.forEach(function (p) { sess[p.ses] = 1; });
+    function row(p) {
+      var open = S.prOpen === p.n, chunks = [p.st, "Follow-ups: not tracked", p.rev, p.link].filter(Boolean).map(esc).join(sg);
+      return '<div class="pr-w' + (open ? " open" : "") + '"><button type="button" class="pr" aria-expanded="' + open + '" data-pr-open="' + esc(p.n) + '"><span class="pr-ic">' + gi + '</span><span class="pr-main"><h5>' + esc(p.n) + '</h5><p class="sub">' + p.at + sg + p.runs + " run" + sg + p.calls + ' calls</p><p class="sub">' + chunks + "</p>" + (p.other ? '<p class="sub pr-in">' + money(p.other) + " from other work in the same session</p>" : "") + '</span><span class="pr-m"><span class="sub">MODELS</span>' + p.m.map(function (m) { return '<span class="pill neutral">' + esc(m[0]) + "</span>"; }).join("") + '</span><span class="pr-s"><span class="sub">SPEND</span><b class="mono">' + money(p.c) + '</b></span><span class="pr-chev" aria-hidden="true">' + (open ? "⌄" : "›") + "</span></button>" +
+        (open ? '<div class="pr-detail"><div>' + p.m.map(function (m) { return bar(esc(m[0]), m[1] / p.c * 100, money(m[1])); }).join("") + '</div><div><div class="kv"><span>Linked session</span><span>' + p.ses + '</span></div><div class="kv"><span>Calls</span><span>' + cnt(p.calls) + '</span></div><div class="kv"><span>Attributed to this PR</span><span>' + money(p.c) + '</span></div><div class="kv"><span>Other work, same session</span><span>' + money(p.other) + '</span></div><div class="kv"><span>Review</span><span>' + (p.rev.indexOf("No") === 0 ? "none" : "run") + "</span></div></div></div>" : "") + "</div>";
+    }
+    return card("Pull request spend", "", '<div class="grid g4">' + kpi("Attributed spend", money(total)) + kpi("Pull requests", list.length) + kpi("Linked sessions", Object.keys(sess).length) + kpi("Folded agent runs", 0) + "</div>") +
+      card("Attributed pull requests", 'Sorted by spend, highest first <span class="pill neutral">' + list.length + " total</span>", list.slice().sort(function (a, b) { return b.c - a.c; }).map(row).join("") + '<p class="sub" style="margin-top:var(--sp-4)">Costs are attributed turn by turn, so every row adds up without double counting.' + (list.length === PRS.length ? "<br>Not tied to a specific PR: " + money(UNTIED) : "") + "</p>");
+  }
+
+  function spChart(el, sl, h) {
+    var n = sl.idx.length, Wd = el.clientWidth || 640, H = h || 190, L = 8, R = 52, T = 10, B = 22, g = "";
+    var totals = sl.idx.map(function (di) { return dayTotal[di] * sl.k; }), mx = Math.max.apply(null, totals) || 1;
+    var step = [5, 10, 25, 50, 100, 200].filter(function (s) { return s * 3 >= mx; })[0] || 200, top = Math.ceil(mx / step) * step;
+    var y = function (v) { return T + (1 - v / top) * (H - T - B); }, slot = (Wd - L - R) / n, bw = Math.max(2, Math.min(28, slot * .7)), ids = MODELS.map(function (m) { return m.id; });
+    for (var t = 0; t <= top; t += step) { g += '<line x1="' + L + '" x2="' + (Wd - R) + '" y1="' + y(t) + '" y2="' + y(t) + '" stroke="var(--border)"/>'; if (Math.abs(y(t) - y(mx)) > 12) g += '<text x="' + (Wd - R + 8) + '" y="' + (y(t) + 4) + '">$' + t + "</text>"; }
+    var every = Math.max(1, Math.ceil(n / Math.max(1, Math.floor((Wd - L - R) / 70))));
+    sl.idx.forEach(function (di, i) {
+      var x = L + i * slot + (slot - bw) / 2, lo = 0;
+      TIERS.forEach(function (tr) { var v = sum(tr[2].map(function (id) { return dayCost[ids.indexOf(id)][di]; })) * sl.k; g += '<rect x="' + x + '" y="' + y(lo + v) + '" width="' + bw + '" height="' + Math.max(0, y(lo) - y(lo + v)) + '" style="fill:' + tr[1] + '"/>'; lo += v; });
+      if (i % every === 0) g += '<text x="' + (x + bw / 2) + '" y="' + (H - 6) + '" text-anchor="middle">' + dlabel(di) + "</text>";
+    });
+    g += '<line x1="' + L + '" x2="' + (Wd - R + 4) + '" y1="' + y(mx) + '" y2="' + y(mx) + '" stroke="var(--warn)" stroke-dasharray="4 3"/><text class="sp-pk" x="' + (Wd - R + 8) + '" y="' + (y(mx) + 4) + '">' + money(mx) + "</text>";
+    el.innerHTML = '<svg width="' + Wd + '" height="' + H + '" viewBox="0 0 ' + Wd + " " + H + '" role="img" aria-label="Daily spend by model tier, peak ' + money(mx) + '">' + g + '</svg><div class="tip" id="sptip"></div>';
+    var svg = el.firstChild, tip = $("sptip");
+    svg.onpointermove = function (e) {
+      var r = svg.getBoundingClientRect(), i = Math.max(0, Math.min(n - 1, Math.floor((e.clientX - r.left - L) / slot)));
+      tip.style.display = "flex"; tip.style.left = Math.max(70, Math.min(Wd - R - 70, L + (i + .5) * slot)) + "px";
+      tip.innerHTML = "<span class='muted'>" + dlabel(sl.idx[i]) + "</span><b>" + money(totals[i]) + "</b>";
+    };
+    svg.onpointerleave = function () { tip.style.display = "none"; };
+  }
+  var pl = function (n, w) { n = Math.round(n); return cnt(n) + " " + w + (n === 1 ? "" : "s"); };
+  function spRow(i, t, s, v, attr, on, chev) {
+    var inner = '<span class="i">' + String(i + 1).padStart(2, "0") + '</span><span class="b"><b>' + esc(t) + "</b><span>" + esc(s) + '</span></span><span class="v">' + (v || "") + (attr ? '<i class="sp-chev">' + (chev || "›") + "</i>" : "") + "</span>";
+    return attr ? '<button type="button" class="lrow' + (on ? " sp-on" : "") + '" ' + attr + ">" + inner + "</button>" : '<div class="lrow">' + inner + "</div>";
+  }
+  function flow(sl) {
+    var Wd = 900, H = 300, LX = 230, RX = 640, gap = 4, mid = (LX + RX) / 2;
+    var Ls = MODELS.map(function (m, i) { return [m.name, sl.cost[i], m.color]; }).concat(FLOW_X.map(function (x) { return [x[0], x[1] * sl.f, "var(--muted)"]; }));
+    var tot = sum(Ls.map(function (l) { return l[1]; })) || 1, Rs = FLOW_R.filter(function (p) { return S.proj === "all" || p[0] === S.proj; }), rt = sum(Rs.map(function (r) { return r[1]; })) || 1, u = (H - 160) / tot;
+    var lay = function (a) { var y = 0; return a.map(function (x, i) { var o = { y: y, h: Math.max(10, x[1] * u), c: x[1], i: i }; y += o.h + gap; return o; }); };
+    var left = lay(Ls), right = lay(Rs.map(function (r) { return [r[0], r[1] * tot / rt]; }));
+    var lo = left.map(function () { return 0; }), ro = right.map(function () { return 0; }), g = "", end = function (a) { var z = a[a.length - 1]; return z.y + z.h; }, vh = Math.max(end(left), end(right)) + 4;
+    left.forEach(function (l) { right.forEach(function (r) {
+      var v = l.c * r.c / tot, h = v * u, y0 = l.y + lo[l.i], y1 = r.y + ro[r.i]; lo[l.i] += h; ro[r.i] += h;
+      if (h < .15) return;
+      g += '<path data-sp-l="' + l.i + '" data-sp-r="' + r.i + '" d="M' + LX + "," + y0 + "C" + mid + "," + y0 + " " + mid + "," + y1 + " " + RX + "," + y1 + "L" + RX + "," + (y1 + h) + "C" + mid + "," + (y1 + h) + " " + mid + "," + (y0 + h) + " " + LX + "," + (y0 + h) + 'Z" style="fill:' + Ls[l.i][2] + ';fill-opacity:.4"><title>' + esc(Ls[l.i][0]) + " → " + esc(Rs[r.i][0]) + " · " + money(v) + "</title></path>";
+    }); });
+    left.forEach(function (l) { g += '<g data-sp-l="' + l.i + '"><rect x="' + (LX - 4) + '" y="' + l.y + '" width="4" height="' + l.h + '" style="fill:' + Ls[l.i][2] + '"/><text x="' + (LX - 10) + '" y="' + (l.y + l.h / 2 + 4) + '" text-anchor="end">' + esc(Ls[l.i][0]) + " · " + money(l.c) + "</text></g>"; });
+    right.forEach(function (r) { var nm = Rs[r.i][0], on = nm === S.proj, can = PROJECTS.slice(0, 5).some(function (p) { return p.n === nm; }); g += '<g data-sp-r="' + r.i + '"' + (can ? ' data-sp-proj="' + esc(nm) + '" style="cursor:pointer"' : "") + '><rect x="' + RX + '" y="' + r.y + '" width="4" height="' + r.h + '" style="fill:' + (on ? "var(--accent)" : "var(--muted)") + '"/><text x="' + (RX + 10) + '" y="' + (r.y + r.h / 2 + 4) + '"' + (on ? ' style="fill:var(--accent)"' : "") + ">" + esc(nm) + " · " + money(r.c) + "</text></g>"; });
+    return '<div class="flow sp-fl"><svg viewBox="0 0 ' + Wd + " " + vh + '" role="img" aria-label="Spend flow from model to project">' + g + "</svg></div>";
+  }
+  function punch() {
+    if (S.range !== "today" && S.range !== "7d") return '<div class="empty"><p style="margin:0 0 var(--sp-4)">Hour-of-day detail needs sub-daily buckets. Switch to Today or 7D to see the punchcard.</p><div class="row-bar" style="justify-content:center"><button class="btn" type="button" data-range="today">Today</button><button class="btn" type="button" data-range="7d">7D</button></div></div>';
+    var r = (function (s) { return function () { s = (s * 9301 + 49297) % 233280; return s / 233280; }; })(5), days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], h = '<div></div>';
+    for (var x = 0; x < 24; x++) h += "<span style=\"text-align:center\">" + (x % 6 === 0 ? x : "") + "</span>";
+    days.forEach(function (d, di) { h += "<span>" + d + "</span>"; for (var x2 = 0; x2 < 24; x2++) { var v = x2 >= 9 && x2 <= 22 ? r() * (di > 4 ? .4 : 1) : r() * .1; h += '<i title="' + d + " " + x2 + ':00" style="background:color-mix(in srgb, var(--accent) ' + Math.round(v * 100) + '%, var(--surface3))"></i>'; } });
+    return '<div class="scroll"><div class="punch" style="min-width:560px">' + h + '</div></div><p class="sub sp-lg">Less ' + [0, 25, 50, 75, 100].map(function (a) { return '<i style="background:color-mix(in srgb, var(--accent) ' + a + '%, var(--surface3))"></i>'; }).join("") + " More</p>";
+  }
+  function spend() {
+    var sl = slice(), rf = sl.f / jk(); later.push(function () { spChart($("sp2"), sl, 190); });
+    var filt = S.proj !== "all", br = BRANCH[S.brProj] || [], bt = sum(br.map(function (b) { return b[1]; })), nob = sum(br.filter(function (b) { return b[0] === "(no branch)"; }).map(function (b) { return b[1]; })), pj = PROJECTS.filter(function (p) { return p.n === S.brProj; })[0];
+    var projRows = PROJECTS.slice(0, 5).map(function (p, i) { return spRow(i, p.n, "At least " + pl(p.s, "session"), money(p.c * rf), 'data-sp-proj="' + esc(p.n) + '" aria-pressed="' + (S.proj === p.n) + '"', S.proj === p.n); }).join("");
+    var brRows = br.map(function (b, i) { var k = S.brProj + "|" + b[0], open = S.spBr === k; return spRow(i, b[0], b[2], money(b[1] * rf), 'data-sp-br="' + esc(k) + '" aria-expanded="' + open + '"', open, open ? "⌄" : "›") + (open ? '<div class="sp-x sub">' + pct(b[1] / bt * 100) + " of " + esc(S.brProj) + ' spend · <button type="button" class="link" data-go="sessions">View sessions →</button></div>' : ""); }).join("");
+    var brFoot = '<p class="sub" style="margin-top:var(--sp-3)">On branches ' + money((bt - nob) * rf) + " · Unknown, before first branch $0.00 · No branch data " + money(nob * rf) + '</p><p class="sub">' + (pj ? pj.s : 0) + " distinct sessions. A session that switched branches appears on each one, so rows are not summed.</p>";
+    var scr = function (name, rows) { return '<div class="sp-scroll" tabindex="0" role="region" aria-label="' + name + '">' + rows + "</div>"; };
+    return '<div class="grid g2 start">' + card("Daily spend by model", "", '<div class="chart" id="sp2"></div><ul class="legend">' + TIERS.map(function (t) { return "<li>" + dot(t[1]) + t[0] + "</li>"; }).join("") + "</ul>") + card("By project", filt ? "filtered · click again to clear" : "top 5", projRows) + "</div>" +
+      card("By branch", "spend per project and branch", '<select id="brp" aria-label="Project" style="margin-bottom:var(--sp-3)">' + Object.keys(BRANCH).map(function (k) { return '<option value="' + k + '"' + (k === S.brProj ? " selected" : "") + ">projects/" + k + "</option>"; }).join("") + "</select>" + brRows + brFoot) +
+      card("Cost flow · model → project", "model → project flow for this range", flow(sl)) + card("Spend punchcard", "hour of day × weekday", punch()) +
+      '<div class="grid g2 start">' + card("Activity", "", scr("Activity", ACTIVITY.map(function (a, i) { return spRow(i, a[0], pl(a[2] * sl.f, "turn"), money(a[1] * sl.f)); }).join(""))) + card("Tools", "", scr("Tools", TOOLS.map(function (a, i) { return spRow(i, a[0], pl(a[1] * sl.f, "call")); }).join(""))) + "</div>" +
+      '<div class="grid g2 start">' + card("MCP", "", MCP.map(function (a, i) { return spRow(i, a[0], pl(a[1], "call")); }).join("")) + card("Subagents", "", SUBAG.map(function (a, i) { return spRow(i, a[0], pl(a[1], "call"), money(a[2])); }).join("")) + "</div>";
+  }
+
+  /* ---------- Models page ---------- */
+  function moRows(sl) {
+    var rf = sl.f / pk(); /* range + project scaling only; provider is a filter here */
+    return MODEL_ROWS.filter(function (r) { return S.prov === "all" || r.pid === S.prov; }).map(function (r) {
+      var al = S.moAlias[r.id], R = MO_RATES[r.rt || al], o = { id: r.id, n: r.n, prov: r.prov, color: r.color, rt: r.rt || al, alias: al, un: r.cost == null, est: !!(r.est || al), saved: 0, calls: r.calls * rf, input: r.input * rf, output: r.output * rf, cr: r.cr * rf };
+      o.c = r.cost != null ? r.cost * rf : R ? (o.input * R[0] + o.output * R[1] + o.cr * R[2]) / 1e6 : -1;
+      return o;
+    });
+  }
+  function moName(v, r) {
+    var an = r.alias ? MO_ALIAS.filter(function (a) { return a[0] === r.alias; })[0][1] : "";
+    return dot(r.color) + '<button type="button" class="link mo-link" data-mo-open="' + r.id + '">' + esc(v) + "</button>" +
+      (r.un ? ' <button type="button" class="link" data-mo-alias="' + r.id + '">' + (r.alias ? "priced as " + an + " ✎" : "add alias ›") + "</button>" : "") +
+      '<div class="sub mo-prov">' + r.prov + "</div>" +
+      (S.moPick === r.id ? '<div class="mo-pick"><select id="moAlias" data-mo-for="' + r.id + '" aria-label="Price ' + esc(v) + ' as"><option value="">Price as…</option>' + MO_ALIAS.map(function (a) { return '<option value="' + a[0] + '"' + (a[0] === r.alias ? " selected" : "") + ">" + a[1] + "</option>"; }).join("") + (r.alias ? '<option value="-">Remove alias</option>' : "") + "</select></div>" : "");
+  }
+  function moDrawer(rows) {
+    var r = rows.filter(function (x) { return x.id === S.moOpen; })[0]; if (!r) return "";
+    later.push(function () { var b = document.querySelector(".drawer .close"); if (b) b.focus(); });
+    var R = MO_RATES[r.rt], i = rows.indexOf(r), priced = r.c >= 0;
+    var vals = dayCalls.map(function (c, d) { return c * (.6 + .4 * Math.abs(Math.sin(d * (i + 2)))); });
+    var comp = R ? [r.input * R[0], r.output * R[1], r.cr * R[2]].map(function (x) { return x / 1e6; }) : [0, 0, 0], ct = sum(comp), cl = ["var(--accent)", "var(--warn)", "var(--muted)"], cn = ["Input", "Output", "Cache read"];
+    var split = priced && ct > 0 ? '<div class="stack">' + comp.map(function (x, k) { return '<i style="width:' + x / ct * 100 + "%;background:" + cl[k] + '"></i>'; }).join("") + '</div><ul class="legend">' + comp.map(function (x, k) { return "<li>" + dot(cl[k]) + cn[k] + " " + money(x / ct * r.c) + "</li>"; }).join("") + "</ul>" : '<p class="sub">' + (priced ? "No billable tokens in this range." : "Unpriced. Add an alias to see a cost split.") + "</p>";
+    var projs = lrows(PROJECTS.slice(0, 4).map(function (p) { return [p.n, p.s + " sessions", (priced ? r.c : r.calls) * p.c / TOTAL]; }), priced ? money : function (v) { return cnt(v) + " calls"; });
+    return '<div class="drawer-wrap open"><div class="scrim" data-mo-close="1"></div><aside class="drawer" role="dialog" aria-modal="true" aria-label="' + esc(r.n) + ' details"><button class="btn close" type="button" data-mo-close="1">Close</button><h2>' + esc(r.n) + '</h2><p class="sub">' + r.prov + " · " + RNAME[S.range] + "</p>" +
+      '<div class="kv"><span>Calls</span><span>' + cnt(r.calls) + '</span></div><div class="kv"><span>Cost</span><span>' + (priced ? (r.est ? "~" : "") + money(r.c) : "—") + '</span></div><div class="kv"><span>Tokens in / out / cache</span><span>' + tok(r.input) + " / " + tok(r.output) + " / " + tok(r.cr) + "</span></div>" +
+      "<h4>Calls by day · last 30 days</h4>" + spark(vals) + "<h4>Cost split</h4>" + split + "<h4>Top projects</h4>" + projs +
+      (MODELS.some(function (m) { return m.id === r.id; }) ? '<p style="margin-top:var(--sp-4)"><button class="btn primary" type="button" data-mo-cmp="' + r.id + '">Compare ' + esc(r.n) + "…</button></p>" : '<p class="sub" style="margin-top:var(--sp-4)">Not in Compare: no one-shot data for this model.</p>') + '<p class="hint">Daily shape and project split are sample data.</p></aside></div>';
+  }
+  function models() {
+    var sl = slice(), a = sub("models", "by-model"), tabs = subtabs("models", [["by-model", "By model"], ["by-task", "By task"], ["audit", "Audit"]]), rows = moRows(sl), body;
+    var un = rows.filter(function (r) { return r.c < 0; }), cost = function (v, r) { return v < 0 ? "—" : (r.est ? "~" : "") + money(v); };
+    if (S.moPick) later.push(function () { var s = $("moAlias"); if (s) s.focus(); });
+    if (a === "by-model") body = '<p class="sub" style="margin-bottom:var(--sp-3)">' + rows.length + " models · " + money(sum(rows.map(function (r) { return Math.max(0, r.c); }))) + " priced · " + un.length + " unpriced (" + cnt(sum(un.map(function (r) { return r.calls; }))) + " calls). ~ marks an estimated cost.</p>" +
+      table("mm", [{ k: "n", h: "Model", fmt: moName }, { k: "calls", h: "Calls", r: 1, fmt: cnt }, { k: "input", h: "Input", r: 1, fmt: tok }, { k: "output", h: "Output", r: 1, fmt: tok }, { k: "cr", h: "Cache read", r: 1, fmt: tok }, { k: "c", h: "Cost", r: 1, fmt: cost }, { k: "saved", h: "Saved", r: 1, fmt: function (v, r) { return r.c < 0 ? "—" : money(v); } }], rows, { sort: { k: "c", dir: -1 }, empty: "No models for this provider" });
+    else if (a === "by-task") body = table("mt", [{ k: "n", h: "Task" }, { k: "turns", h: "Turns", r: 1 }, { k: "c", h: "Cost", r: 1, fmt: money }, { k: "sh", h: "Share", fmt: function (v) { return prog(v, Math.round(v) + "%"); } }, { k: "os", h: "One-shot", r: 1, fmt: function (v) { return v ? v + "%" : "—"; } }, { k: "cpt", h: "Cost / turn", r: 1, fmt: money }], ACTIVITY.map(function (x) { return { n: x[0], turns: x[2], c: x[1] * sl.f, sh: x[1] / sum(ACTIVITY.map(function (y) { return y[1]; })) * 100, os: x[3], cpt: x[1] / x[2] }; }), { sort: { k: "c", dir: -1 } });
+    else body = '<p class="sub" style="margin-bottom:var(--sp-3)">Pricing audit. ' + un.length + " model" + (un.length === 1 ? "" : "s") + " unpriced and excluded from totals. Add an alias to price them from another model's rates.</p>" +
+      table("ma", [{ k: "n", h: "Model", fmt: moName }, { k: "calls", h: "Calls", r: 1, fmt: cnt }, { k: "src", h: "Pricing source" }, { k: "st", h: "Status", fmt: function (v) { return '<span class="pill ' + (v === "priced" ? "" : v === "estimated" ? "warn" : "bad") + '">' + v + "</span>"; } }], rows.map(function (r) { var rn = MO_ALIAS.filter(function (x) { return x[0] === r.rt; })[0]; return { id: r.id, n: r.n, prov: r.prov, color: r.color, un: r.un, alias: r.alias, calls: r.calls, src: r.est ? "Mapped to " + (rn ? rn[1] : "?") + " rates" : r.c < 0 ? "No alias" : "Anthropic list price", st: r.c < 0 ? "unpriced" : r.est ? "estimated" : "priced" }; }), { sort: { k: "st", dir: -1 } });
+    return '<section class="card"><div class="bar"><h3 class="label" style="margin:0">By model <small>' + RNAME[S.range] + '</small></h3><span class="spacer"></span>' + tabs + '<button class="btn" type="button" data-mo-cmp="sonnet">Compare…</button></div>' + body + "</section>" + moDrawer(rows);
+  }
+
+  function opFinding(f) {
+    var k = esc(f.t), open = S.openF === f.t, sv = OPSEV[f.sev];
+    var row = '<button type="button" class="op-r" aria-expanded="' + open + '" data-of="' + k + '"><span class="pill ' + sv[0] + '">' + sv[1] + " " + f.sev + "</span><b>" + esc(f.t) + '</b><span class="op-v"><span class="good mono">' + money(f.usd) + '</span><span class="muted mono">' + tok(f.tk) + " tokens · " + f.b + '</span><span class="op-ch" aria-hidden="true">›</span></span></button>';
+    if (!open) return '<div class="sess">' + row + "</div>";
+    return '<div class="sess">' + row + '<div class="why op-why"><p class="sub">' + esc(f.x) + "</p><h4>Evidence</h4>" + lrows(f.ev, function (v) { return tok(v) + " tokens"; }) +
+      '<div class="kv"><span>Projected saving</span><span>' + money(f.usd) + " · " + tok(f.tk) + " tokens</span></div>" +
+      '<p class="sub">' + (f.b === "measured" ? "Measured: counted directly from the logged sessions. This is what these sessions actually used." : "Estimated: modelled from your usage pattern. The real saving depends on how often this recurs, so check the next period.") + "</p>" +
+      '<div class="fix" style="margin-top:var(--sp-3)">' + (f.fix ? "<code>" + esc(f.fix) + '</code><button class="btn" type="button" data-copy="' + esc(f.fix) + '">Copy command</button><button class="btn primary" type="button" data-fix="' + k + '">Apply</button>' : "") + '<button class="btn" type="button" data-op-dis="' + k + '">Dismiss</button></div></div></div>';
+  }
+
+  function optimize() {
+    var a = sub("optimize", "waste"), live = FINDINGS.filter(function (f) { return !S.fixes[f.t] && !S.opDis[f.t]; }), ap = FINDINGS.filter(function (f) { return S.fixes[f.t]; }), nDis = FINDINGS.filter(function (f) { return S.opDis[f.t]; }).length, health = Math.min(100, 20 + ap.length * 12), abTotal = sum(ABANDONED.map(function (r) { return r.c; })), body;
+    var tabs = subtabs("optimize", [["waste", "Waste " + money(sum(live.map(function (f) { return f.usd; })))], ["reverts", "Reverts $0.00"], ["abandoned", "Abandoned " + money(abTotal)], ["fixes", "Fixes " + ap.length]]);
+    if (a === "waste") {
+      var cls = [["fix", "Fix now (apply-able)"], ["nudge", "Habits"], ["keep", "FYI"]];
+      body = '<div class="op-sum"><p class="sub">' + live.length + " findings · " + money(sum(live.map(function (f) { return f.usd; }))) + ' potential</p><div class="op-h">' + bar("Health", health, health + "/100", health < 50) + "</div></div>" +
+        (live.length ? "" : '<p class="empty">Nothing left to fix.</p>') + cls.map(function (c) {
+          var fs = live.filter(function (f) { return f.cl === c[0]; }), todo = c[0] === "fix" ? fs.filter(function (f) { return f.fix; }).length : 0;
+          return fs.length ? '<div class="op-gh"><h4>' + c[1] + " · " + tok(sum(fs.map(function (f) { return f.tk; }))) + " tokens · " + money(sum(fs.map(function (f) { return f.usd; }))) + " · " + fs.length + (fs.length === 1 ? " finding" : " findings") + "</h4>" + (todo ? '<button class="btn primary" type="button" data-op-all="1">Apply all ' + todo + "</button>" : "") + "</div>" + fs.map(opFinding).join("") : "";
+        }).join("") + (nDis ? '<p class="sub" style="margin-top:var(--sp-4)">' + nDis + ' dismissed · <button class="link" type="button" data-op-restore="1">Restore all</button></p>' : "");
+    } else if (a === "fixes") {
+      body = ap.length ? '<div class="grid g3">' + kpi("Applied", ap.length) + kpi("Saved so far", money(sum(ap.map(function (f) { return f.usd * OPSAVED; }))), "since applied", "good") + kpi("Tokens saved", tok(sum(ap.map(function (f) { return f.tk * OPSAVED; }))), "since applied") + "</div>" +
+        table("opfx", [{ k: "t", h: "Fix", wrap: 1 }, { k: "tk", h: "Tokens saved", r: 1, fmt: tok }, { k: "usd", h: "Saved", r: 1, fmt: money }, { k: "u", h: "", r: 1, fmt: function (v, r) { return '<button class="btn" type="button" data-fix="' + esc(r.t) + '">Undo</button>'; } }], ap.map(function (f) { return { t: f.t, tk: f.tk * OPSAVED, usd: f.usd * OPSAVED, u: 0 }; })) : '<p class="empty">Nothing applied yet. Apply a Fix now finding on the Waste tab.</p>';
+    } else if (a === "abandoned") {
+      body = '<p class="sub">' + ABANDONED.length + " sessions · " + money(abTotal) + " spent on sessions that ended without a commit, merge or passing check.</p>" +
+        table("opab", [{ k: "s", h: "Session", wrap: 1 }, { k: "p", h: "Project" }, { k: "turns", h: "Turns", r: 1 }, { k: "c", h: "Cost", r: 1, fmt: money }, { k: "at", h: "Last active" }, { k: "why", h: "Why flagged", wrap: 1 }], ABANDONED, { sort: { k: "c", dir: -1 } });
+    } else body = '<p class="empty">No reverted work found in this range. Reverts show up when edits are undone or a commit is reset within the same session.</p>';
+    return '<section class="card"><div class="bar"><h3 class="label" style="margin:0">Waste · as of 10:16 AM</h3><span class="spacer"></span>' + tabs + "</div>" + body + "</section>";
+  }
+
+  function compare() {
+    if (S.cmpA === S.cmpB) S.cmpB = MODELS.filter(function (m) { return m.id !== S.cmpA; })[0].id; // guard: preselect or stale state
+    var A = MODELS.filter(function (m) { return m.id === S.cmpA; })[0], B = MODELS.filter(function (m) { return m.id === S.cmpB; })[0], XA = CMX[A.id], XB = CMX[B.id];
+    var opt = function (sel) { return MODELS.map(function (m) { return '<option value="' + m.id + '"' + (m.id === sel ? " selected" : "") + ">" + m.name + " · " + cnt(m.calls) + " calls</option>"; }).join(""); };
+    var th = function (m, x) { return '<th class="r" title="' + esc(m.name) + '">' + dot(m.color) + x.raw + "</th>"; };
+    var win = function (a, b, d) { return !d || a === b ? 0 : (d > 0 ? a > b : a < b) ? 1 : -1; }; // ties highlight neither
+    var tbl = function (rows) { return '<div class="scroll"><table><thead><tr><th>Metric</th>' + th(A, XA) + th(B, XB) + "</tr></thead><tbody>" + rows.map(function (r) { var a = r[1](A), b = r[1](B), w = win(a, b, r[2]); return "<tr><td>" + r[0] + '</td><td class="r ' + (w > 0 ? "good" : "") + '">' + r[3](a) + '</td><td class="r ' + (w < 0 ? "good" : "") + '">' + r[3](b) + "</td></tr>"; }).join("") + "</tbody></table></div>"; };
+    var f = function (k) { return function (m) { return m[k]; }; }, x = function (k) { return function (m) { return CMX[m.id][k]; }; };
+    var p1 = function (v) { return Math.round(v) + "%"; }, d2 = function (v) { return "$" + v.toFixed(2); }, n2 = function (v) { return v.toFixed(2); };
+    var note = '<p class="sub">Green = better on that metric. Ties are not highlighted.</p>';
+    var head = '<div class="bar">' + subtabs("compare", [["classic", "Classic"], ["cohorts", "Cohorts"]]) + "</div>";
+    var sel = '<div class="bar cm-sel"><select id="cmpA" aria-label="Model A">' + opt(S.cmpA) + '</select><button class="btn" type="button" data-cm-swap="1" aria-label="Swap models" title="Swap models">⇄</button><select id="cmpB" aria-label="Model B">' + opt(S.cmpB) + "</select></div>";
+    var cheap = A.cpe <= B.cpe ? A : B, dear = cheap === A ? B : A, os = A.oneShot >= B.oneShot ? A : B, gap = Math.abs(A.oneShot - B.oneShot);
+    var verdict = (A.cpe === B.cpe ? "Same cost per edit" : cheap.name + " is " + (dear.cpe / cheap.cpe).toFixed(1) + "x cheaper per edit") + (!gap ? "" : (os === cheap ? " and " : "; " + os.name + " is ") + gap + " pts higher on one-shot") + ".";
+    var vd = '<section class="card banner"><span class="muted">⇄</span><span>' + verdict + "</span></section>";
+    if (sub("compare", "classic") === "cohorts") {
+      var rows = CMC[S.cmBy].map(function (c) { var a = c[1][A.id], b = c[1][B.id]; return { g: c[0], a: a[0], na: a[1], b: b[0], nb: b[1], n: Math.min(a[1], b[1]) }; });
+      var cell = function (side) { return function (v, r) { return '<span class="' + (win(r.a, r.b, -1) === (side === "a" ? 1 : -1) ? "good" : "") + '">' + d2(v) + '</span> <span class="muted">n=' + r["n" + side] + "</span>"; }; };
+      var low = rows.filter(function (r) { return r.n < 10; }).length;
+      return head + sel + vd + card("Matched cohorts", "cost / edit · same " + (S.cmBy === "task" ? "task type" : "project") + " for both models", '<div class="bar">' + segc([["task", "By task"], ["project", "By project"]], S.cmBy, "cm-by", "Cohort basis") + "</div>" +
+        table("co", [{ k: "g", h: "Cohort" }, { k: "a", h: esc(A.name), r: 1, fmt: cell("a") }, { k: "b", h: esc(B.name), r: 1, fmt: cell("b") }, { k: "n", h: "Min n", r: 1, fmt: function (v, r) { return (v < 10 ? '<span class="pill warn" title="n = ' + r.na + " vs " + r.nb + '">low sample</span> ' : "") + v; } }], rows) +
+        '<p class="sub">' + (low ? low + " of " + rows.length + " cohorts have fewer than 10 samples on one side: directional only." : "All cohorts have 10 or more samples per side.") + "</p>");
+    }
+    var leg = '<ul class="legend cm-lg"><li>' + dot(A.color) + esc(A.name) + "</li><li>" + dot(B.color) + esc(B.name) + "</li></ul>";
+    var bars = CMCAT.map(function (c, i) {
+      var a = XA.cats[i], b = XB.cats[i], w = win(a[0], b[0], 1), one = function (m, v, wn) { return '<div class="cmp' + (v[1] < 10 ? " cm-low" : "") + '" title="' + esc(m.name) + ": " + v[0] + "% one-shot over " + v[1] + ' edit turns"><span></span><span class="t"><span class="f" style="width:' + v[0] + "%;background:" + m.color + '"></span></span><span class="mono ' + (wn ? "good" : "") + '">' + v[0] + "% (" + v[1] + ")</span></div>"; };
+      return '<div class="cm-cat"><b>' + c + "</b>" + one(A, a, w > 0) + one(B, b, w < 0) + "</div>";
+    }).join("");
+    return head + sel + vd + '<div class="grid g2 start">' + card("Performance", "", tbl([["One-shot rate", f("oneShot"), 1, p1], ["Retry rate", f("retry"), -1, n2], ["Self-correction", function (m) { return m.selfc / m.edits * 100; }, -1, function (v) { return Math.floor(v) + "%"; }]]) + note) + card("Efficiency", "", tbl([["Cost / call", f("cpc"), -1, d2], ["Cost / edit", f("cpe"), -1, d2], ["Output tok / call", f("otpc"), -1, function (v) { return Math.round(v); }], ["Cache hit rate", x("cache"), 1, p1]]) + note) + "</div>" +
+      card("Category head-to-head", "One-shot rate · edit turns", leg + bars + '<p class="sub">Faded rows have fewer than 10 edit turns.</p>') +
+      '<div class="grid g2 start">' + card("Working style", "", tbl([["Delegation rate", f("deleg"), 0, p1], ["Planning rate", f("plan"), 0, p1], ["Avg tools / turn", f("tpt"), 0, n2], ["Fast mode usage", x("fast"), 0, p1]])) + card("Context", "", tbl([["Calls", f("calls"), 0, cnt], ["Total cost", f("cost"), 0, d2], ["Input tokens", f("input"), 0, tok], ["Output tokens", f("output"), 0, tok], ["Edit turns", f("edits"), 0, String], ["Self-corrections", f("selfc"), 0, String], ["Cache hit rate", x("cache"), 0, p1], ["Days of data", x("days"), 0, String]])) + "</div>";
+  }
+
+  /* call counts drift up against cost over the 30 days (cheaper models take over), so cost per call can move */
+  var PCALLS = dayCalls.map(function (c, i) { return c * (.8 + .4 * i / 29); });
+  var PERIOD_P = [["e:/github/atlas", 5.44, 35.03], [".claude/worktrees/agent-ab84", 0, 3.61], [".claude/worktrees/agent-a707", 0, 3.16], [".claude/worktrees/agent-a40d", 0, 3.05], [".claude/worktrees/agent-aef7", 0, 2.93], ["fashion-app", 1.2, 0], ["wholesomenfl.com", 0, 2.93], ["jakeh", .8, 2.4], ["RogueMagic", .2, 1.1], ["terminal-registry", .4, .6], ["scratch", .1, 0]];
+  var PERIOD_M = [["Sonnet 5.5", 4.1, 69.8], ["Opus 5.5", 2.2, 44.6], ["Opus 5", 0.4, 7.1], ["Haiku 5.5", 0, 1.7]];
+  var PP_COUNTED = [["Cost", "API-equivalent dollars for every call in the window, priced from token counts. Not what a subscription bills."], ["Calls", "Each request sent to a model. Tool results fed back count as new calls."], ["Sessions", "Distinct conversations with at least one call in the window, estimated here at one per 57 calls."], ["Cost per 100 calls", "Cost divided by calls, times 100. Lower means each call was cheaper."], ["Tokens", "Input and output are fresh tokens. Cache read is context reused from cache, cache write is context stored for later."], ["B − A", "Every difference is B minus A. Swap the periods to flip the signs."], ["Movers", "Projects and models split the same difference two ways. Do not add them together."]];
+
+  function comparePeriods() {
+    var win = S.ppWin, wa = win.a, wb = win.b, len = function (w) { return w[1] - w[0] + 1; };
+    var M = function (w) {
+      var cost = sum(dayTotal.slice(w[0], w[1] + 1)), calls = sum(PCALLS.slice(w[0], w[1] + 1)), f = cost / TOTAL, tk = function (k) { return sum(MODELS.map(function (m) { return m[k]; })) * f; }, sess = Math.max(1, Math.round(calls / 57));
+      return { cost: cost, calls: calls, days: len(w), sess: sess, c100: cost / calls * 100, cps: cost / sess, cpd: cost / len(w), input: tk("input"), output: tk("output"), cr: tk("cr"), cw: tk("cr") * .028 };
+    };
+    var a = M(wa), b = M(wb);
+    var fp = function (x) { return (x < 0 ? "−" : "+") + Math.round(Math.abs(x)).toLocaleString("en-US") + "%"; };
+    var fd = function (x, f) { return (x < 0 ? "−" : "+") + f(Math.abs(x)); };
+    var tone = function (d) { return d > 0 ? "up" : d < 0 ? "down" : ""; };
+    var dl = function (x, y, f, t) { return '<span class="' + (t ? tone(y - x) : "") + '">' + fd(y - x, f) + (x ? ", " + fp((y / x - 1) * 100) : "") + "</span>"; };
+    var rng = function (w) { return w[0] === w[1] ? dlabel(w[0]) : dayDate(w[0]).getMonth() === dayDate(w[1]).getMonth() ? dlabel(w[0]) + "–" + dayDate(w[1]).getDate() : dlabel(w[0]) + "–" + dlabel(w[1]); };
+    var full = function (i) { return dayDate(i).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); };
+    var iso = function (i) { var d = dayDate(i); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+    var inW = function (i, w) { return i >= w[0] && i <= w[1]; };
+
+    /* header card: presets, swap, A and B windows */
+    var pick = function (k, w, lab, c) {
+      var inp = function (e, i) { return '<input type="date" data-ppd="' + k + e + '" aria-label="' + lab + (e === "s" ? " start" : " end") + '" min="' + iso(0) + '" max="' + iso(29) + '" value="' + iso(i) + '">'; };
+      return '<span class="pp-k">' + dot(c) + lab + "</span>" + (S.ppMode === "custom" ? inp("s", w[0]) + "<span class=\"muted\">–</span>" + inp("e", w[1]) : '<span class="pill neutral">' + full(w[0]) + " – " + full(w[1]) + "</span>");
+    };
+    var head = '<section class="card"><div class="bar">' + segc([["p7", "Last 7 vs prior 7"], ["custom", "Custom"]], S.ppMode, "ppmode", "Preset") + '<button class="btn" type="button" data-ppswap="1">⇄ Swap</button></div><div class="pp-win">' + pick("a", wa, "A · Reference", "var(--muted)") + pick("b", wb, "B · Analyzed", "var(--accent)") + '</div><p class="sub" style="margin-top:var(--sp-3)">A spans ' + len(wa) + (len(wa) > 1 ? " days" : " day") + " · B spans " + len(wb) + (len(wb) > 1 ? " days" : " day") + " · all differences are B − A</p></section>";
+
+    /* narrative, derived from the numbers */
+    var ch = (b.cost / a.cost - 1) * 100, cc = (b.c100 / a.c100 - 1) * 100, ss = (b.sess / a.sess - 1) * 100, wk = len(wa) === 7 && len(wb) === 7 && wb[0] === wa[1] + 1;
+    var who = wk ? "The week of " + dlabel(wb[0]) : "Period B (" + rng(wb) + ")", ref = wk ? "the week before" : "period A (" + rng(wa) + ")", r0 = function (x) { return Math.round(Math.abs(x)).toLocaleString("en-US"); };
+    var story = who + (Math.abs(ch) < 1 ? " cost about the same as " + ref : " cost " + r0(ch) + "% " + (ch > 0 ? "more" : "less") + " than " + ref) + ": <b>" + money(b.cost) + "</b> versus <b>" + money(a.cost) + "</b>. " +
+      (ss > 25 ? "Far more sessions" : ss < -25 ? "Far fewer sessions" : "About the same number of sessions") + ", and " + (cc < -5 ? "cheaper calls: cost per call fell " + r0(cc) + "%." : cc > 5 ? "pricier calls: cost per call rose " + r0(cc) + "%." : "a similar cost per call.");
+    var tip = '<div class="pp-tw" tabindex="0">' + money(b.cost) + '<div class="pp-tt" role="tooltip">' + [["Input", tok(b.input)], ["Output", tok(b.output)], ["Cache read", tok(b.cr)], ["Cache write", tok(b.cw)], ["Calls", cnt(b.calls)]].map(function (r) { return '<div class="kv"><span>' + r[0] + "</span><span>" + r[1] + "</span></div>"; }).join("") + "</div></div>";
+    var kpis = '<section class="card"><p style="margin:0 0 var(--sp-4);font-size:var(--fs-sm)">' + story + '</p><div class="grid g3">' + kpi("Total cost", tip, dl(a.cost, b.cost, money, 1)) + kpi("Cost per 100 calls", money(b.c100), dl(a.c100, b.c100, money, 1)) + kpi("Sessions", b.sess, dl(a.sess, b.sess, String)) + "</div></section>";
+
+    /* paired day-by-day chart, y labels on the right, peak line, hover tooltip */
+    later.push(function () {
+      var el = $("cp"), Wd = el.clientWidth || 640, H = 170, L = 8, R = 46, T = 10, B = 22, n = Math.max(len(wa), len(wb)), da = dayTotal.slice(wa[0], wa[1] + 1), db = dayTotal.slice(wb[0], wb[1] + 1);
+      var mx = Math.max.apply(null, da.concat(db)) || 1, step = [5, 10, 25, 50, 100, 200].filter(function (s) { return s * 3 >= mx; })[0] || 200, top = Math.ceil(mx / step) * step;
+      var y = function (v) { return T + (1 - v / top) * (H - T - B); }, slot = (Wd - L - R) / n, bw = Math.max(2, Math.min(20, slot * .36)), every = Math.ceil(n / Math.max(1, Math.floor((Wd - L - R) / 56))), g = '<rect id="pph" y="' + T + '" width="' + slot + '" height="' + (H - T - B) + '" style="fill:var(--surface2);display:none"/>';
+      for (var t = 0; t <= top; t += step) g += '<line x1="' + L + '" x2="' + (Wd - R) + '" y1="' + y(t) + '" y2="' + y(t) + '" stroke="var(--border)"/>' + (Math.abs(y(t) - y(mx)) < 12 && t ? "" : '<text x="' + (Wd - R + 6) + '" y="' + (y(t) + 4) + '">$' + t + "</text>");
+      for (var i = 0; i < n; i++) {
+        var cx = L + (i + .5) * slot, bar1 = function (v, x, c) { return v == null ? "" : '<rect x="' + x + '" y="' + y(v) + '" width="' + bw + '" height="' + (y(0) - y(v)) + '" style="fill:' + c + '"/>'; };
+        g += bar1(da[i], cx - bw - 1, "var(--muted)") + bar1(db[i], cx + 1, "var(--accent)") + (i % every === 0 ? '<text x="' + cx + '" y="' + (H - 6) + '" text-anchor="middle">Day ' + (i + 1) + "</text>" : "");
+      }
+      g += '<line x1="' + L + '" x2="' + (Wd - R) + '" y1="' + y(mx) + '" y2="' + y(mx) + '" stroke-dasharray="4 3" style="stroke:var(--accent)"/><text x="' + (Wd - R + 6) + '" y="' + (y(mx) + 4) + '" style="fill:var(--accent)">' + money(mx) + "</text>";
+      el.innerHTML = '<svg width="' + Wd + '" height="' + H + '" viewBox="0 0 ' + Wd + " " + H + '" role="img" aria-label="Daily cost, period A beside period B">' + g + '</svg><div class="tip" id="pptip"></div>';
+      var svg = el.firstChild, tp = $("pptip"), hl = $("pph");
+      svg.onpointermove = function (e) {
+        var i = Math.max(0, Math.min(n - 1, Math.floor((e.clientX - svg.getBoundingClientRect().left - L) / slot))), part = function (w, d, c) { return i < len(w) ? dot(c) + '<span class="muted">' + dlabel(w[0] + i) + "</span> <b>" + money(d[i]) + "</b>" : ""; };
+        hl.setAttribute("x", L + i * slot); hl.style.display = "";
+        tp.style.display = "flex"; tp.style.left = Math.max(110, Math.min(Wd - 110, L + (i + .5) * slot)) + "px";
+        tp.innerHTML = "<span>Day " + (i + 1) + "</span>" + part(wa, da, "var(--muted)") + part(wb, db, "var(--accent)");
+      };
+      svg.onpointerleave = function () { tp.style.display = "none"; hl.style.display = "none"; };
+    });
+    var chart = card("Cost, day by day, both periods side by side", "", '<ul class="legend" style="margin:0 0 var(--sp-3)"><li>' + dot("var(--muted)") + "A · " + rng(wa) + "</li><li>" + dot("var(--accent)") + "B · " + rng(wb) + '</li></ul><div class="chart" id="cp" style="min-height:170px"></div><p class="sub">Each pair is one day of A beside the same-numbered day of B. Dashed line marks the peak day.</p>');
+
+    /* movers: each row's share of a window's cost is blended between the early and late profile by where the window sits */
+    var by = S.periodBy, bs = S.basis, src = by === "project" ? PERIOD_P : PERIOD_M, so = S.sort.pm || { k: "ad", dir: -1 };
+    var share = function (w) { var t = Math.max(0, Math.min(1, ((w[0] + w[1]) / 2 - 19) / 7)), v = src.map(function (r) { return r[1] * (1 - t) + r[2] * t; }), s = sum(v); return v.map(function (x) { return x / s; }); };
+    var sa = share(wa), sb = share(wb), div = function (m) { return bs === "raw" ? 1 : bs === "day" ? m.days : m.calls / 100; };
+    var rows = src.map(function (r, i) { var x = sa[i] * a.cost / div(a), y = sb[i] * b.cost / div(b), d = y - x; return { n: r[0], a: x, b: y, d: d, ad: Math.abs(d), p: x > .005 ? d / x * 100 : y > .005 ? null : 0 }; });
+    rows.sort(function (x, y) { return (typeof x[so.k] === "string" ? x[so.k].localeCompare(y[so.k]) : x[so.k] - y[so.k]) * so.dir; });
+    var shown = S.ppAll ? rows : rows.slice(0, 5), sel = rows.filter(function (r) { return r.n === S.ppRow; })[0], panel = "";
+    if (sel) {
+      var ses = SESSIONS.map(function (s) { var m = s.at.split(" "), i = (m[0] === "Nov" ? 31 : 0) + +m[1] - 7; return [s, inW(i, wa) ? "A" : inW(i, wb) ? "B" : ""]; }).filter(function (x) { return x[1] && (by === "project" ? x[0].p === sel.n.split("/").pop() : x[0].m === sel.n); });
+      panel = "<h4>Sessions in " + esc(sel.n) + "</h4>" + (ses.length ? lrows(ses.map(function (x) { return [x[0].t, x[1] + " · " + x[0].p + " · " + x[0].m + " · " + x[0].at + " · " + x[0].calls + " calls", x[0].c]; }), money) : '<p class="empty" style="padding:var(--sp-4) 0">No sessions in the sample data fall in either window.</p>');
+    }
+    var movers = '<section class="card"><div class="bar"><h3 class="label" style="margin:0">What changed, biggest movers</h3><span class="spacer"></span>' + segc([["project", "By project"], ["model", "By model"]], by, "pby", "Group") + segc([["raw", "Raw"], ["day", "Per day"], ["100", "Per 100 calls"]], bs, "pbasis", "Basis") + (rows.length > 5 ? '<button class="link" type="button" data-ppall="1">' + (S.ppAll ? "Show top 5" : "Show all " + rows.length) + "</button>" : "") + "</div>" +
+      table("pm", [{ k: "n", h: by === "project" ? "Project" : "Model", fmt: function (v) { return '<button type="button" class="link mono" style="color:var(--text);font-weight:var(--fw-body)">' + esc(v) + "</button>"; } }, { k: "a", h: rng(wa), r: 1, fmt: money }, { k: "b", h: rng(wb), r: 1, fmt: money }, { k: "d", h: "Change", r: 1, fmt: function (v) { return '<span class="' + tone(v) + '">' + fd(v, money) + "</span>"; } }, { k: "p", h: "%", r: 1, fmt: function (v, r) { return v == null ? '<span class="pill">new this period</span>' : '<span class="' + tone(r.d) + '">' + fp(v) + "</span>"; } }], shown, { sort: so, tr: function (r) { return ' class="click" data-pprow="' + esc(r.n) + '"' + (r.n === S.ppRow ? ' style="background:var(--surface2)"' : ""); } }) +
+      '<p class="sub" style="margin-top:var(--sp-3)">Click a row to see its sessions. Projects and models split the same difference two ways. Do not add them together.</p>' + panel + "</section>";
+
+    /* disclosures */
+    var dis = function (k, title, body) { var o = S.ppDet[k]; return '<section class="card flush"><button type="button" class="pp-dis" aria-expanded="' + !!o + '" data-ppdet="' + k + '"><span>' + (o ? "⌄" : "›") + "</span>" + title + "</button>" + (o ? '<div class="inner">' + body + "</div>" : "") + "</section>"; };
+    var met = [["Total cost", "cost", money, 1], ["Calls", "calls", cnt, 0], ["Sessions", "sess", cnt, 0], ["Cost per 100 calls", "c100", money, 1], ["Cost per session", "cps", money, 1], ["Cost per day", "cpd", money, 1], ["Input tokens", "input", tok, 0], ["Output tokens", "output", tok, 0], ["Cache read", "cr", tok, 0], ["Cache write", "cw", tok, 0]].map(function (m) { return { n: m[0], a: a[m[1]], b: b[m[1]], d: b[m[1]] - a[m[1]], f: m[2], t: m[3] }; });
+    var all = table("pam", [{ k: "n", h: "Metric" }, { k: "a", h: "A", r: 1, fmt: function (v, r) { return r.f(v); } }, { k: "b", h: "B", r: 1, fmt: function (v, r) { return r.f(v); } }, { k: "d", h: "Change", r: 1, fmt: function (v, r) { return '<span class="' + (r.t ? tone(v) : "") + '">' + fd(v, r.f) + "</span>"; } }, { k: "p", h: "%", r: 1, fmt: function (v, r) { return r.a ? fp(r.d / r.a * 100) : "—"; } }], met);
+    var counted = PP_COUNTED.map(function (c) { return '<p class="sub" style="margin-bottom:var(--sp-3)"><b style="color:var(--text)">' + c[0] + "</b> · " + c[1] + "</p>"; }).join("");
+    return head + kpis + chart + movers + dis("metrics", "All metrics", all) + dis("counted", "What is counted", counted);
+  }
+
+  function plans() {
+    return '<div class="grid g3">' + kpi("Month to date", money(sum(dayTotal.slice(25, 30))), "API-equivalent") + kpi("Projected month", money(sum(dayTotal.slice(25, 30)) / 5 * 30), "at current pace") + kpi("Budget", "$400", "$189.54 to go", "warn") + "</div>" +
+      QUOTA.map(function (q) { return card(q.n, q.plan, q.w.map(function (w) { return '<div class="live-row"><span>' + w[0] + ' <span class="muted">resets ' + w[2] + "</span></span>" + prog(w[1], w[1] + "%") + "</div>"; }).join("")); }).join("");
+  }
+
+  var PAGES = { overview: ["Overview", overview], sessions: ["Sessions", sessionsPage], "pull-requests": ["Pull requests", prs], spend: ["Spend", spend], models: ["Models", models], optimize: ["Optimize", optimize], compare: ["Compare", compare], "compare-periods": ["Compare periods", comparePeriods], plans: ["Plans", plans], plugins: ["Plugins", pluginsPage], settings: ["Settings", settingsPage] };
+
+  /* ---------- shell ---------- */
+  function shell() {
+    $("app").classList.toggle("ov-col", S.ovCol);
+    $("tabs").innerHTML = NAV.map(function (g, gi) { return (gi ? '<span class="st-div" aria-hidden="true"></span>' : "") + g[1].filter(function (n) { return n[0] !== "settings"; }).map(function (n) { return '<button type="button" role="tab" class="st-tab" aria-selected="' + (n[0] === S.tab) + '" tabindex="' + (n[0] === S.tab ? 0 : -1) + '" data-tab="' + n[0] + '">' + n[1] + "</button>"; }).join(""); }).join("");
+    if (S.tab === "settings") $("gear").setAttribute("aria-current", "page"); else $("gear").removeAttribute("aria-current");
+    $("ranges").innerHTML = RANGES.map(function (r) { return '<button type="button" role="radio" aria-checked="' + (r[0] === S.range) + '" data-range="' + r[0] + '">' + r[1] + "</button>"; }).join("");
+    $("proj").innerHTML = '<option value="all">All projects</option>' + PROJECTS.slice(0, 5).map(function (p) { return '<option value="' + p.n + '"' + (p.n === S.proj ? " selected" : "") + ">" + p.n + "</option>"; }).join("");
+    $("prov").innerHTML = '<option value="all">All providers</option>' + PROVIDERS.map(function (p) { return '<option value="' + p.id + '"' + (p.id === S.prov ? " selected" : "") + ">" + p.name + "</option>"; }).join("");
+    $("ttl").textContent = PAGES[S.tab][0];
+    $("ctx").textContent = (S.range === "life" ? "Lifetime" : RNAME[S.range]) + " · " + (S.prov === "all" ? "All providers" : PROVIDERS.filter(function (p) { return p.id === S.prov; })[0].name);
+    var qm = Math.max.apply(null, QUOTA.map(function (q) { return Math.max.apply(null, q.w.map(function (w) { return w[1]; })); }));
+    $("ovq").style.cssText = "--qp:" + qm + ";--qc:var(--" + (qm > 90 ? "danger" : qm > 75 ? "warn" : "accent") + ")";
+    $("ovq").title = "Highest quota use: " + qm + "%"; $("ovq").innerHTML = "<span>" + qm + "%</span>";
+    ovTick();
+  }
+  function ovTick() { $("ovref").textContent = "refreshed " + Math.round((Date.now() - S.ovRef) / 1e3) + "s ago ↻"; $("ovref").title = $("ovref").textContent; }
+  function ovDate(v) { var i = Math.round((new Date(v + "T00:00") - dayDate(0)) / 864e5); if (isNaN(i)) return; i = Math.max(0, Math.min(29, i)); RSLICE.custom = [i, 30]; RNAME.custom = "Since " + dlabel(i); S.range = "custom"; }
+  function render() { later = []; shell(); $("view").innerHTML = PAGES[S.tab][1](); later.forEach(function (d) { d(); }); if (typeof hvAnnotate === "function") hvAnnotate(); }
+  function go(tab) { if (!PAGES[tab]) tab = "overview"; S.tab = tab; render(); window.scrollTo(0, 0); }
+  document.addEventListener("click", function (e) {
+    var t = e.target, q = function (a) { var el = t.closest("[data-" + a + "]"); return el ? el.getAttribute("data-" + a) : null; }, v;
+    if ((v = q("tab")) !== null) { if (location.hash !== "#" + v) location.hash = v; else go(v); return; }
+    if ((v = q("go"))) { location.hash = v; return; }
+    if ((v = q("range"))) { S.range = v; render(); return; }
+    if ((v = q("sub"))) { var p = v.split(":"); S.sub[p[0]] = p[1]; render(); return; }
+    if ((v = q("sort"))) { var s = v.split(":"), cur = S.sort[s[0]]; S.sort[s[0]] = { k: s[1], dir: cur && cur.k === s[1] ? -cur.dir : -1 }; render(); return; }
+    if ((v = q("stab"))) { S.sessTab = v; render(); return; }
+    if ((v = q("sby"))) { S.sortBy = v; render(); return; }
+    if (q("group")) { S.group = !S.group; render(); return; }
+    if (q("se-clear") !== null) { S.q = ""; render(); return; }
+    if ((v = q("open"))) { if (S.tab !== "sessions") { S.open = v; location.hash = "sessions"; } else { S.open = S.open === v ? null : v; render(); } return; }
+    if ((v = q("pr-open"))) { S.prOpen = S.prOpen === v ? null : v; render(); return; }
+    if ((v = q("of"))) { S.openF = S.openF === v ? null : v; render(); return; }
+    if ((v = q("op-dis"))) { S.opDis[v] = true; S.openF = null; render(); return; }
+    if (q("op-restore")) { S.opDis = {}; render(); return; }
+    if (q("op-all")) { FINDINGS.forEach(function (f) { if (f.cl === "fix" && f.fix && !S.opDis[f.t]) S.fixes[f.t] = true; }); render(); return; }
+    if ((v = q("fix"))) { S.fixes[v] = !S.fixes[v]; render(); return; }
+    if ((v = q("copy"))) { try { navigator.clipboard.writeText(v).catch(function () {}); } catch (x) {} t.textContent = "Copied"; return; }
+    if ((v = q("sp-proj"))) { S.proj = S.proj === v ? "all" : v; if (BRANCH[v]) S.brProj = v; render(); return; }
+    if ((v = q("sp-br"))) { S.spBr = S.spBr === v ? null : v; render(); return; }
+    if ((v = q("pby"))) { S.periodBy = v; render(); return; }
+    if (q("cm-swap")) { var tmp = S.cmpA; S.cmpA = S.cmpB; S.cmpB = tmp; render(); return; }
+    if ((v = q("cm-by"))) { S.cmBy = v; render(); return; }
+    if ((v = q("pbasis"))) { S.basis = v; render(); return; }
+    if ((v = q("ov-act"))) { S.ovAct = v; render(); return; }
+    if ((v = q("ov-theme"))) { S.ovTheme = v; if (v === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", v); render(); return; }
+    if ((v = q("ov-nav"))) { history.go(+v); return; }
+    if (q("ov-col")) { S.ovCol = !S.ovCol; render(); return; }
+    if (q("ov-refresh")) { S.ovRef = Date.now(); render(); return; }
+    if (q("ov-cal")) { var dp = $("ovdate"); try { dp.showPicker(); } catch (x) { dp.focus(); } return; }
+    if ((v = q("mo-open"))) { S.moOpen = v; render(); return; }
+    if (q("mo-close")) { S.moOpen = null; render(); return; }
+    if ((v = q("mo-alias"))) { S.moPick = S.moPick === v ? null : v; render(); return; }
+    if ((v = q("mo-cmp"))) { S.cmpA = v; if (S.cmpB === v) S.cmpB = MODELS.filter(function (m) { return m.id !== v; })[0].id; S.moOpen = null; location.hash = "compare"; return; }
+    if ((v = q("ppmode"))) { S.ppMode = v; if (v === "p7") S.ppWin = { a: [15, 21], b: [22, 28] }; render(); return; }
+    if (q("ppswap")) { S.ppWin = { a: S.ppWin.b, b: S.ppWin.a }; render(); return; }
+    if ((v = q("pprow"))) { S.ppRow = S.ppRow === v ? null : v; render(); return; }
+    if (q("ppall")) { S.ppAll = !S.ppAll; render(); return; }
+    if ((v = q("ppdet"))) { S.ppDet[v] = !S.ppDet[v]; render(); return; }
+  });
+  document.addEventListener("change", function (e) {
+    var id = e.target.id, v = e.target.value, pd = e.target.getAttribute("data-ppd");
+    if (pd) { var di = Math.round((Date.UTC.apply(null, v.split("-").map(function (x, k) { return k === 1 ? x - 1 : +x; })) - Date.UTC(2026, 9, 7)) / 864e5), w = S.ppWin[pd[0]], k = pd[1] === "s" ? 0 : 1; if (di >= 0 && di <= 29) { w[k] = di; if (w[0] > w[1]) w[1 - k] = di; } render(); return; }
+    if (id === "proj") S.proj = v; else if (id === "prov") S.prov = v; else if (id === "cmpA") { if (v === S.cmpB) S.cmpB = S.cmpA; S.cmpA = v; } else if (id === "cmpB") { if (v === S.cmpA) S.cmpA = S.cmpB; S.cmpB = v; } else if (id === "brp") S.brProj = v; else if (id === "ovdate") ovDate(v); else if (id === "moAlias") { var k = e.target.getAttribute("data-mo-for"); if (v === "-") delete S.moAlias[k]; else if (v) S.moAlias[k] = v; S.moPick = null; } else return;
+    render();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    var ids = NAV.reduce(function (a, g) { return a.concat(g[1].map(function (n) { return n[0]; })); }, []), go2 = function (id) { if (location.hash !== "#" + id) location.hash = id; else go(id); };
+    if (/^[1-9]$/.test(e.key) && ids[e.key - 1]) go2(ids[e.key - 1]); else if (e.key === ",") go2("settings"); else if (e.key.toLowerCase() === "r") { S.ovRef = Date.now(); render(); } else return;
+    e.preventDefault();
+  });
+  setInterval(ovTick, 1000);
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && (S.moOpen || S.moPick)) { S.moOpen = S.moPick = null; render(); } });
+  document.addEventListener("input", function (e) { if (e.target.id === "q") { S.q = e.target.value; $("slist").innerHTML = sessList(); hvAnnotate(); } });
+  document.addEventListener("pointerover", function (e) {
+    var f = document.querySelector(".sp-fl"); if (!f) return;
+    var n = e.target.closest && e.target.closest("[data-sp-l],[data-sp-r]"), l = n && n.getAttribute("data-sp-l"), r = n && n.getAttribute("data-sp-r");
+    f.querySelectorAll("path").forEach(function (p) { p.style.opacity = n && !((l === null || p.getAttribute("data-sp-l") === l) && (r === null || p.getAttribute("data-sp-r") === r)) ? ".08" : ""; });
+  });
+  window.addEventListener("hashchange", function () { go(location.hash.slice(1)); });
+  window.addEventListener("resize", function () { later.forEach(function (d) { d(); }); });
+
+  /* ---------- hover layer ---------- */
+  var htip = document.createElement("div"); htip.id = "htip"; htip.setAttribute("role", "tooltip"); document.body.appendChild(htip);
+  var tx = function (el) { return (el.textContent || "").replace(/\s+/g, " ").trim(); };
+  var hx = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+  function tipAt(e, html) { htip.innerHTML = html; htip.style.display = "block"; var w = htip.offsetWidth, hh = htip.offsetHeight, x = e.clientX + 14, y = e.clientY + 16; if (x + w > innerWidth - 8) x = e.clientX - w - 14; if (y + hh > innerHeight - 8) y = e.clientY - hh - 12; htip.style.left = Math.max(8, x) + "px"; htip.style.top = Math.max(8, y) + "px"; }
+  function hvAnnotate() {
+    var root = $("view"); if (!root) return;
+    root.querySelectorAll("[title]").forEach(function (el) { if (el.closest("button,select,input")) return; el.setAttribute("data-tip", hx(el.getAttribute("title"))); el.removeAttribute("title"); });
+    root.querySelectorAll(".hb:not([data-hv])").forEach(function (el) { el.setAttribute("data-hv", "1"); var n = el.querySelector(".name"), v = el.querySelector(".val"); if (!el.hasAttribute("data-tip")) el.setAttribute("data-tip", "<span>" + hx(n ? tx(n) : "") + "</span> <b>" + hx(v ? tx(v) : "") + "</b>"); });
+    root.querySelectorAll(".stack:not([data-hv])").forEach(function (st) { st.setAttribute("data-hv", "1"); var lg = st.nextElementSibling && st.nextElementSibling.matches(".legend") ? st.nextElementSibling.querySelectorAll("li") : []; st.querySelectorAll("i").forEach(function (seg, k) { var pc = parseFloat(seg.style.width) || 0; seg.setAttribute("data-tip", (lg[k] ? hx(tx(lg[k])) + " " : "") + "<b>" + pc.toFixed(1) + "%</b>"); }); });
+    root.querySelectorAll(".prog:not([data-hv])").forEach(function (el) { el.setAttribute("data-hv", "1"); var row = el.closest(".live-row, .kv, li, div") ; var lab = el.previousElementSibling ? tx(el.previousElementSibling) : ""; var f = el.querySelector(".f"); el.setAttribute("data-tip", (lab ? hx(lab) + " " : "") + "<b>" + hx(el.querySelector(".c") ? tx(el.querySelector(".c")) : (f ? parseFloat(f.style.width).toFixed(0) + "%" : "")) + "</b>"); });
+    root.querySelectorAll(".cmp:not([data-hv])").forEach(function (el) { el.setAttribute("data-hv", "1"); var c = el.children; el.setAttribute("data-tip", "<span>" + hx(c[0] ? tx(c[0]) : "") + "</span> <b>" + hx(c[c.length - 1] ? tx(c[c.length - 1]) : "") + "</b>"); });
+    root.querySelectorAll(".ring:not([data-hv])").forEach(function (el) { el.setAttribute("data-hv", "1"); var s = el.querySelector("svg"); el.setAttribute("data-tip", hx(s ? s.getAttribute("aria-label") : "Efficiency") + '<br><span class="m">Blend of one-shot rate, cache hit and retry tax</span>'); });
+    root.querySelectorAll(".kpi:not([data-hv])").forEach(function (el) { el.setAttribute("data-hv", "1"); var k = el.querySelector(".k"), v = el.querySelector(".v"), n = el.querySelector(".n"); el.setAttribute("data-tip", hx(k ? tx(k) : "") + " <b>" + hx(v ? tx(v) : "") + "</b>" + (n ? '<br><span class="m">' + hx(tx(n)) + "</span>" : "")); });
+    root.querySelectorAll("svg.sp:not([data-hv])").forEach(function (sv) { sv.setAttribute("data-hv", "1"); var ln = document.createElementNS("http://www.w3.org/2000/svg", "line"); ln.setAttribute("class", "hv-x"); ln.setAttribute("y1", 0); ln.setAttribute("y2", 72); sv.appendChild(ln); });
+  }
+  function hvLegend(li, on) {
+    var card = li.closest(".card, .drawer"); if (!card) return; var d = li.querySelector(".dot"); if (!d) return;
+    var c = getComputedStyle(d).backgroundColor;
+    card.querySelectorAll(".chart svg rect, .chart svg path, .chart svg circle, .stack i").forEach(function (el) {
+      if (!on) { el.classList.remove("hv-fade"); return; }
+      var cs = getComputedStyle(el), f = el.tagName === "I" ? cs.backgroundColor : cs.fill, s = cs.stroke;
+      if (f === "none" && (s === "none" || !s)) return;
+      if (f !== c && s !== c) el.classList.add("hv-fade");
+    });
+  }
+  var hvLast = null;
+  document.addEventListener("pointermove", function (e) {
+    var t = e.target; if (!t.closest) return;
+    var sv = t.closest("svg.sp");
+    if (sv) {
+      var vals = (sv.getAttribute("data-vals") || "").split(",").map(Number), r = sv.getBoundingClientRect(), i = Math.max(0, Math.min(vals.length - 1, Math.round(((e.clientX - r.left) / r.width * 300 - 8) / 284 * (vals.length - 1))));
+      var ln = sv.querySelector(".hv-x"), x = 8 + i / (vals.length - 1) * 284; if (ln) { ln.setAttribute("x1", x); ln.setAttribute("x2", x); ln.style.display = "block"; }
+      var lbl = vals.length === 30 ? dlabel(i) : "Point " + (i + 1);
+      tipAt(e, '<span class="m">' + hx(lbl) + "</span> <b>" + vals[i].toLocaleString("en-US", { maximumFractionDigits: 2 }) + "</b>"); return;
+    }
+    var el = t.closest("[data-tip]");
+    if (el && el.closest("#view")) {
+      if (hvLast !== el) { if (hvLast && hvLast.matches(".hb") && hvLast.parentNode) hvLast.parentNode.classList.remove("hv-dim"); if (el.matches(".hb") && el.parentNode) el.parentNode.classList.add("hv-dim"); hvLast = el; }
+      tipAt(e, el.getAttribute("data-tip")); return;
+    }
+    if (hvLast) { if (hvLast.parentNode) hvLast.parentNode.classList.remove("hv-dim"); hvLast = null; }
+    htip.style.display = "none";
+  });
+  document.addEventListener("pointerover", function (e) { var li = e.target.closest && e.target.closest(".legend li"); if (li) hvLegend(li, true); });
+  document.addEventListener("pointerout", function (e) {
+    var li = e.target.closest && e.target.closest(".legend li"); if (li && !li.contains(e.relatedTarget)) hvLegend(li, false);
+    var sv = e.target.closest && e.target.closest("svg.sp"); if (sv && !sv.contains(e.relatedTarget)) { var ln = sv.querySelector(".hv-x"); if (ln) ln.style.display = "none"; htip.style.display = "none"; }
+  });
+  document.addEventListener("pointerleave", function () { htip.style.display = "none"; });
+  window.addEventListener("scroll", function () { htip.style.display = "none"; }, true);
+  var hvQ = 0; new MutationObserver(function () { if (hvQ) return; hvQ = setTimeout(function () { hvQ = 0; hvAnnotate(); }, 0); }).observe($("view"), { childList: true, subtree: true });
+  go(location.hash.slice(1) || "overview");
+})();
+</script>
+
+</body></html>
