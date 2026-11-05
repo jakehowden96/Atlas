@@ -16,7 +16,6 @@
   import PullRequests from "./codeburn/PullRequests.svelte";
   import Sessions from "./codeburn/Sessions.svelte";
   import Spend from "./codeburn/Spend.svelte";
-  import Yield from "./codeburn/Yield.svelte";
 
   const INSTALL = "npm i -g codeburn";
 
@@ -35,7 +34,6 @@
     | "sessions"
     | "compare"
     | "prs"
-    | "yield"
     | "plans"
     | "optimize";
 
@@ -47,7 +45,6 @@
     { id: "sessions", label: "Sessions" },
     { id: "compare", label: "Compare" },
     { id: "prs", label: "Pull requests" },
-    { id: "yield", label: "Yield" },
     { id: "plans", label: "Plans" },
     { id: "optimize", label: "Optimize" },
   ];
@@ -117,8 +114,6 @@
       <Compare {filters} {refresh} />
     {:else if tab === "prs"}
       <PullRequests {filters} {refresh} />
-    {:else if tab === "yield"}
-      <Yield {filters} {refresh} />
     {:else if tab === "plans"}
       <Plans {filters} {refresh} />
     {:else if tab === "optimize"}

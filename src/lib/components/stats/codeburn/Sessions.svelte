@@ -6,6 +6,7 @@
   import Button from "../../ui/Button.svelte";
   import Drawer from "../../ui/Drawer.svelte";
   import EmptyState from "../../ui/EmptyState.svelte";
+  import SegmentedControl, { type Segment } from "../../ui/SegmentedControl.svelte";
   import Loader from "./Loader.svelte";
   import { type SortKey, sortSessions, topCategory } from "./sessions-sort";
 
@@ -14,6 +15,21 @@
   let key = $state<SortKey>("startedAt");
   let desc = $state(true);
   let picked = $state<SessionRow | null>(null);
+  let query = $state("");
+  let provider = $state("all");
+
+  const providerTabs = (rows: SessionRow[]): Segment<string>[] => [
+    { id: "all", label: "All" },
+    ...[...new Set(rows.map((r) => r.provider))].sort().map((id) => ({ id, label: id })),
+  ];
+  const visible = (rows: SessionRow[]) => {
+    const q = query.trim().toLowerCase();
+    return rows.filter(
+      (r) =>
+        (provider === "all" || r.provider === provider) &&
+        (!q || `${r.title} ${r.project} ${r.sessionId}`.toLowerCase().includes(q)),
+    );
+  };
 
   const COLS: { key: SortKey; label: string }[] = [
     { key: "title", label: "Session" },
@@ -35,6 +51,17 @@
     {#if rows.length === 0}
       <EmptyState icon="folder" title="No sessions in this period" />
     {:else}
+      <div class="bar">
+        <SegmentedControl
+          role="radiogroup"
+          label="Provider"
+          options={providerTabs(rows)}
+          value={provider}
+          onChange={(id) => (provider = id)}
+          size="sm"
+        />
+        <input type="search" placeholder="Search sessions" aria-label="Search sessions" bind:value={query} />
+      </div>
       <table>
         <thead>
           <tr>
@@ -47,7 +74,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each sortSessions(rows, key, desc) as r (r.sessionId)}
+          {#each sortSessions(visible(rows), key, desc) as r (r.sessionId)}
             <tr>
               <td>
                 <button type="button" class="plain" onclick={() => (picked = r)}>
@@ -61,6 +88,8 @@
               <td class="num">{fmtCost(r.cost)}</td>
               <td>{topCategory(r)}</td>
             </tr>
+          {:else}
+            <tr><td colspan="7">No sessions match.</td></tr>
           {/each}
         </tbody>
       </table>
@@ -112,6 +141,21 @@
 </Drawer>
 
 <style>
+  .bar {
+    display: flex;
+    gap: var(--sp-3);
+    align-items: center;
+    margin-bottom: var(--sp-3);
+  }
+  input {
+    margin-left: auto;
+    padding: var(--sp-1) var(--sp-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-card);
+    background: var(--surface);
+    color: inherit;
+    font: inherit;
+  }
   table {
     width: 100%;
     border-collapse: collapse;
