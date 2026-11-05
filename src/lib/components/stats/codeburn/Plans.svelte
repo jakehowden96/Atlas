@@ -3,7 +3,7 @@
   import { filterArgs, type Filters } from "../../../../types/codeburn";
   import { codeburnAction } from "../../../ipc";
   import { errorMessage } from "../../../ipc-error";
-  import { fmtCost, fmtCount } from "../../../stats-derive";
+  import { fmtCost } from "../../../stats-derive";
   import Banner from "../../ui/Banner.svelte";
   import Button from "../../ui/Button.svelte";
   import Progress from "../../ui/Progress.svelte";
@@ -21,6 +21,9 @@
   let saved = $state<string | null>(null);
   let localRefresh = $state(0);
   const now = Date.now();
+  const today = new Date(now);
+  const projected = (mtd: number) =>
+    (mtd / today.getDate()) * new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
 
   async function apply() {
     if (!preset) return;
@@ -42,10 +45,9 @@
 <Loader args={["status", "--format", "json", ...filterArgs(filters, "status")]} refresh={refresh + localRefresh}>
   {#snippet children(s: BudgetStatus)}
     <div class="kpis">
-      <div class="card"><Kpi label="Today" value={fmtCost(s.today.cost)} /></div>
-      <div class="card"><Kpi label="Today calls" value={fmtCount(s.today.calls)} /></div>
-      <div class="card"><Kpi label="This month" value={fmtCost(s.month.cost)} /></div>
-      <div class="card"><Kpi label="Month calls" value={fmtCount(s.month.calls)} /></div>
+      <div class="card"><Kpi label="Month to date" value={fmtCost(s.month.cost)} /></div>
+      <div class="card"><Kpi label="Projected month" value={fmtCost(projected(s.month.cost))} /></div>
+      <div class="card"><Kpi label="Budget" value="—" /></div>
     </div>
   {/snippet}
 </Loader>

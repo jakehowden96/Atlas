@@ -2,10 +2,16 @@
   import { filterArgs, type Filters } from "../../../../types/codeburn";
   import type { ModelRow } from "../../../../types/codeburn-models";
   import { fmtCost, fmtCount, fmtTokens } from "../../../stats-derive";
+  import Drawer from "../../ui/Drawer.svelte";
   import Loader from "./Loader.svelte";
   import { byCostDesc, cacheHit, isUnpriced } from "./models-derive";
 
   let { filters, refresh }: { filters: Filters; refresh: number } = $props();
+  let picked = $state<ModelRow | null>(null);
+
+  /** "—" when unpriced, "~" prefix when codeburn estimated the price. */
+  const costText = (m: ModelRow) =>
+    isUnpriced(m) ? "—" : `${m.isEstimated ? "~" : ""}${fmtCost(m.costUSD)}`;
 </script>
 
 <Loader args={["models", "--format", "json", ...filterArgs(filters, "models"), "--min-cost", "0"]} {refresh}>
@@ -28,14 +34,14 @@
             {#each byCostDesc(rows) as m (m.providerDisplayName + m.modelDisplayName)}
               <tr>
                 <td>
-                  {m.modelDisplayName}
+                  <button type="button" class="plain" onclick={() => (picked = m)}>{m.modelDisplayName}</button>
                   <span class="note">{m.providerDisplayName}</span>
                   {#if isUnpriced(m)}<span class="note">(unpriced)</span>{/if}
                 </td>
                 <td class="n">{fmtCount(m.calls)}</td>
                 <td class="n">{fmtTokens(m.totalTokens)}</td>
                 <td class="n">{cacheHit(m).toFixed(1)}%</td>
-                <td class="n">{isUnpriced(m) ? "-" : fmtCost(m.costUSD)}</td>
+                <td class="n">{costText(m)}</td>
               </tr>
             {/each}
           </tbody>
@@ -46,7 +52,41 @@
   {/snippet}
 </Loader>
 
+<Drawer open={picked !== null} onClose={() => (picked = null)} title={picked?.modelDisplayName ?? "Model"} width="420px">
+  {#if picked}
+    <dl>
+      <dt>Provider</dt><dd>{picked.providerDisplayName}</dd>
+      <dt>Calls</dt><dd>{fmtCount(picked.calls)}</dd>
+      <dt>Input</dt><dd>{fmtTokens(picked.inputTokens)}</dd>
+      <dt>Output</dt><dd>{fmtTokens(picked.outputTokens)}</dd>
+      <dt>Cache read</dt><dd>{fmtTokens(picked.cacheReadTokens)}</dd>
+      <dt>Cache write</dt><dd>{fmtTokens(picked.cacheWriteTokens)}</dd>
+      <dt>Cache hit</dt><dd>{cacheHit(picked).toFixed(1)}%</dd>
+      <dt>Est. cost</dt><dd>{costText(picked)}</dd>
+    </dl>
+  {/if}
+</Drawer>
+
 <style>
+  .plain {
+    all: unset;
+    cursor: pointer;
+    text-decoration: underline dotted;
+  }
+  dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--sp-2) var(--sp-4);
+    margin: 0;
+  }
+  dt {
+    color: var(--muted);
+  }
+  dd {
+    margin: 0;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
   .card {
     padding: var(--sp-4);
     border: 1px solid var(--border);

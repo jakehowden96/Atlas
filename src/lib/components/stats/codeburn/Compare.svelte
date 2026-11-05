@@ -11,6 +11,7 @@
   import ChartCard from "../charts/ChartCard.svelte";
   import HBarList from "../charts/HBarList.svelte";
   import Kpi from "../charts/Kpi.svelte";
+  import Button from "../../ui/Button.svelte";
   import Select from "../../ui/Select.svelte";
   import { modelStats, shortKey } from "./compare-derive";
   import Loader from "./Loader.svelte";
@@ -20,7 +21,14 @@
   let a = $state("");
   let b = $state("");
 
-  const pct = (v: number | null) => (v === null ? undefined : v);
+  function swap() {
+    [a, b] = [b, a];
+  }
+  function preset(s: { model: string }[]) {
+    a = s[0]?.model ?? "";
+    b = s[1]?.model ?? "";
+  }
+  const pct =(v: number | null) => (v === null ? undefined : v);
   const rate = (v: number | null) => (v === null ? "n/a" : `${Math.round(v * 100)}%`);
   const cost = (v: number | null) => (v === null ? "n/a" : fmtCost(v));
   const rows = (r: PeriodRow[]): Point[] =>
@@ -60,7 +68,9 @@
 
     {#if stats.length >= 2}
       <div class="pick">
+        <Button size="sm" onclick={() => preset(stats)}>Top two by cost</Button>
         <Select options={opts} bind:value={a} placeholder="Model A" size="sm" aria-label="Model A" />
+        <Button size="sm" disabled={!a || !b} onclick={swap}>Swap A/B</Button>
         <Select options={opts} bind:value={b} placeholder="Model B" size="sm" aria-label="Model B" />
       </div>
       {#if a && b && a !== b}
@@ -69,6 +79,11 @@
           {refresh}
         >
           {#snippet children(c: CohortComparison)}
+            <p class="narrative">
+              {c.modelA.label} one-shots {Math.round(c.modelA.stats.oneShotRate)}% of edits vs
+              {Math.round(c.modelB.stats.oneShotRate)}% for {c.modelB.label}; median cost
+              {cost(c.modelA.stats.costMedian)} vs {cost(c.modelB.stats.costMedian)}.
+            </p>
             <div class="kpis">
               {#each [c.modelA, c.modelB] as m (m.model)}
                 <div class="card">
@@ -180,6 +195,10 @@
   .row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: start;
+  }
+  .narrative {
+    color: var(--muted);
+    font-size: var(--fs-sm);
   }
   h3 {
     margin: var(--sp-4) 0 0;
