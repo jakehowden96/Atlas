@@ -19,7 +19,10 @@
     let stop: (() => void) | undefined;
     let gone = false;
     startDropListener()
-      .then((fn) => (gone ? fn() : (stop = fn)))
+      .then((fn) => {
+        if (gone) fn();
+        else stop = fn;
+      })
       .catch(() => {});
     return () => {
       gone = true;

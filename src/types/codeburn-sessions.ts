@@ -47,6 +47,9 @@ export interface SessionWhy {
   project: string;
   cost: number;
   calls: number;
+  /** Subagent ("helper") spend inside this session. */
+  helperCost?: number;
+  helperCount?: number;
   turns: WhyTurn[];
   findings?: WhyFinding[];
 }

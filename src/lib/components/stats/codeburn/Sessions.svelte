@@ -2,6 +2,7 @@
   import { filterArgs, type Filters } from "../../../../types/codeburn";
   import type { SessionRow, SessionWhy } from "../../../../types/codeburn-sessions";
   import { fmtCost, fmtCount } from "../../../stats-derive";
+  import { sessionTarget } from "../../../stores/sessionTarget";
   import { openNewSession } from "../../../stores/view";
   import Button from "../../ui/Button.svelte";
   import Drawer from "../../ui/Drawer.svelte";
@@ -17,6 +18,17 @@
   let picked = $state<SessionRow | null>(null);
   let query = $state("");
   let provider = $state("all");
+  let open = $state<string | null>(null);
+
+  // Opened from Overview: drop the filters that could hide it, expand it, then clear the request.
+  $effect(() => {
+    const id = $sessionTarget;
+    if (!id) return;
+    provider = "all";
+    query = "";
+    open = id;
+    sessionTarget.set(null);
+  });
 
   const providerTabs = (rows: SessionRow[]): Segment<string>[] => [
     { id: "all", label: "All" },
@@ -77,7 +89,13 @@
           {#each sortSessions(visible(rows), key, desc) as r (r.sessionId)}
             <tr>
               <td>
-                <button type="button" class="plain" onclick={() => (picked = r)}>
+                <button
+                  type="button"
+                  class="plain"
+                  aria-expanded={open === r.sessionId}
+                  onclick={() => (open = open === r.sessionId ? null : r.sessionId)}
+                >
+                  {open === r.sessionId ? "⌄" : "›"}
                   {r.title || r.sessionId.slice(0, 8)}
                 </button>
               </td>
@@ -88,6 +106,23 @@
               <td class="num">{fmtCost(r.cost)}</td>
               <td>{topCategory(r)}</td>
             </tr>
+            {#if open === r.sessionId}
+              <tr class="why">
+                <td colspan="7">
+                  <Loader args={["sessions", "--id", r.sessionId, "--why", "--format", "json"]} {refresh}>
+                    {#snippet children(why: SessionWhy)}
+                      <p>
+                        Subagents:
+                        {why.helperCount
+                          ? `${fmtCount(why.helperCount)} runs, ${fmtCost(why.helperCost ?? 0)} of ${fmtCost(why.cost)}`
+                          : "—"}
+                      </p>
+                      <Button size="sm" onclick={() => (picked = r)}>Why it cost this</Button>
+                    {/snippet}
+                  </Loader>
+                </td>
+              </tr>
+            {/if}
           {:else}
             <tr><td colspan="7">No sessions match.</td></tr>
           {/each}

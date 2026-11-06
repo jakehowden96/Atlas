@@ -32,13 +32,17 @@
     }
   }
 
+  async function applyOne(id: string) {
+    await run(["optimize", "--apply", "--yes", "--only", id], "Applied");
+  }
+
   async function apply() {
     const ok = await confirmAction({
       title: "Apply optimizations?",
       body: "This edits your Claude configuration. You can undo the last change afterwards.",
       confirmLabel: "Apply",
     });
-    if (ok) await run(["optimize", "--apply"], "Applied");
+    if (ok) await run(["optimize", "--apply", "--yes"], "Applied");
   }
 </script>
 
@@ -79,6 +83,14 @@
             {#if f.fix}
               <p class="fixlabel">{f.fix.label}</p>
               <pre>{f.fix.text}</pre>
+            {/if}
+            {#if f.class === "fix"}
+              <div class="actions">
+                <Button size="sm" disabled={busy} onclick={() => applyOne(f.id)}>Apply</Button>
+                <Button size="sm" disabled={busy} onclick={() => run(["act", "undo", "--last"], "Undone")}>
+                  Undo last
+                </Button>
+              </div>
             {/if}
           </article>
         {/each}

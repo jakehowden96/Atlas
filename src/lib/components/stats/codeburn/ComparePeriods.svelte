@@ -2,6 +2,7 @@
   import { filterArgs, type Filters } from "../../../../types/codeburn";
   import type { PeriodCompare } from "../../../../types/codeburn-compare";
   import { fmtCost } from "../../../stats-derive";
+  import { tooltip } from "../../../ui/tooltip";
   import Loader from "./Loader.svelte";
 
   let { filters, refresh }: { filters: Filters; refresh: number } = $props();
@@ -10,8 +11,6 @@
     daily: { date: string; cost: number }[];
   }
 
-  const W = 600;
-  const H = 160;
   const range = (r: { from: string; to: string }) => ["--from", r.from, "--to", r.to];
 
   /** Day i of each window, paired by offset from the window start. */
@@ -38,7 +37,6 @@
             {@const rows = pairs(p, a, b)}
             {@const max = Math.max(...rows.flatMap((r) => [r.a, r.b]), 0.01)}
             {@const peak = Math.max(...rows.map((r) => r.b), 0)}
-            {@const slot = W / Math.max(rows.length, 1)}
             <p class="legend">
               <span class="a">A {p.rangeA.from} to {p.rangeA.to}</span>
               <span class="b">B {p.rangeB.from} to {p.rangeB.to}</span>
@@ -47,17 +45,15 @@
             {#if rows.every((r) => r.a === 0 && r.b === 0)}
               <p class="legend">No spend in either window.</p>
             {:else}
-              <svg viewBox="0 0 {W} {H}" role="img" aria-label="Daily spend, window A against window B">
+              <div class="chart" role="group" aria-label="Daily spend, window A against window B">
                 {#each rows as r (r.i)}
-                  <g>
-                    <title>Day {r.i + 1}: A {fmtCost(r.a)}, B {fmtCost(r.b)}</title>
-                    <rect x={r.i * slot} y="0" width={slot} height={H} fill="transparent" />
-                    <rect class="a" x={r.i * slot + slot * 0.1} y={H - (r.a / max) * H} width={slot * 0.35} height={(r.a / max) * H} />
-                    <rect class="b" x={r.i * slot + slot * 0.5} y={H - (r.b / max) * H} width={slot * 0.35} height={(r.b / max) * H} />
-                  </g>
+                  {@const text = `Day ${r.i + 1}: A ${fmtCost(r.a)}, B ${fmtCost(r.b)}`}
+                  <span class="col" role="img" aria-label={text} use:tooltip={{ text, delay: 0, side: "top" }}>
+                    <i class="a" style:height={`${(r.a / max) * 100}%`}></i>
+                    <i class="b" style:height={`${(r.b / max) * 100}%`}></i>
+                  </span>
                 {/each}
-                <line class="peak" x1="0" x2={W} y1={H - (peak / max) * H} y2={H - (peak / max) * H} />
-              </svg>
+              </div>
             {/if}
           {/snippet}
         </Loader>
@@ -67,24 +63,30 @@
 </Loader>
 
 <style>
-  svg {
-    width: 100%;
-    height: auto;
+  .chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 160px;
   }
-  rect.a,
+  .col {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    align-items: flex-end;
+    gap: 1px;
+  }
+  .col i {
+    flex: 1;
+    min-height: 1px;
+  }
+  .col .a,
   .legend .a::before {
-    fill: var(--muted);
     background: var(--muted);
   }
-  rect.b,
+  .col .b,
   .legend .b::before {
-    fill: var(--accent);
     background: var(--accent);
-  }
-  .peak {
-    stroke: var(--accent);
-    stroke-dasharray: 4 4;
-    opacity: 0.6;
   }
   .legend {
     display: flex;
