@@ -8,7 +8,7 @@ pub mod panel;
 pub(crate) mod proc;
 pub mod prs;
 pub mod session;
-pub mod stats;
+pub mod resume;
 pub mod terminal;
 pub mod url;
 pub(crate) mod validate;

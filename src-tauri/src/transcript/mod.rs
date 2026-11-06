@@ -1,14 +1,10 @@
 //! Shared reading of Claude Code's `~/.claude/projects/**/*.jsonl` transcripts.
 //!
-//! Two callers read the same files: `commands::stats` aggregates every
-//! historical session in bulk, and `session::live` tails one running session
-//! incrementally. The pricing table, the per-`requestId` accumulation and the
-//! block walk live here so both produce the same numbers from the same bytes.
+//! `session::live` tails one running session incrementally; the per-`requestId`
+//! accumulation and the block walk live here.
 
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::io::BufRead;
 
 /// The lines of a JSONL transcript. A line that is not valid UTF-8 is skipped;
@@ -37,132 +33,6 @@ pub(crate) fn resolve_symlinks(dir: std::path::PathBuf) -> std::path::PathBuf {
         return dir;
     }
     dir.canonicalize().unwrap_or(dir)
-}
-
-// ── Pricing ───────────────────────────────────────────────────────────────────
-
-pub(crate) struct Pricing {
-    pub input: f64,
-    pub output: f64,
-    pub cache_write: f64,
-    pub cache_write_1h: f64,
-    pub cache_read: f64,
-}
-
-/// Claude 3 Opus, Opus 4 and Opus 4.1 — the Opus versions that cost 3x what
-/// every Opus from 4.5 on does.
-///
-/// Note the two id shapes: models up to Claude 3.5 put the version first
-/// (`claude-3-opus-20240229`), everything since puts the family first
-/// (`claude-opus-4-1-20250805`, and the undated `claude-opus-4-20250514`).
-/// `claude-opus-4-5` and later match none of these.
-fn is_legacy_opus(m: &str) -> bool {
-    m.contains("3-opus") || m.contains("opus-4-1") || m.contains("opus-4-2025")
-}
-
-/// **A change to a price or to `model_family` needs a `STATS_FILE_VERSION` bump
-/// in `commands::stats`:** costs are computed at parse time and cached per
-/// transcript, so unchanged files would otherwise keep their old cost.
-///
-/// Approximate API-equivalent pricing per million tokens, from Anthropic's
-/// published list prices (checked 2026-09-09). `cache_write` is the 5-minute
-/// rate and `cache_write_1h` the 1-hour rate (2x input); a transcript's
-/// `usage.cache_creation` says how many tokens were written at each TTL.
-///
-/// Matched on model *family*, with a version arm only where a family changed
-/// price, so a model newer than this table is priced as its family instead of
-/// falling through to an unrelated tier. That fall-through is why every
-/// `claude-opus-5` session was billed at Sonnet rates: the old table asked for
-/// `opus-4` and `opus-3` by name, and Opus 5 answered to neither.
-pub(crate) fn pricing_for(model: &str) -> Pricing {
-    let m = model.to_ascii_lowercase();
-    match model_family(&m).as_str() {
-        // Fable 5.1 reads cache at 0.025x input; Fable 5 at the usual 0.1x.
-        "Fable" => Pricing {
-            input: 10.0,
-            output: 50.0,
-            cache_write: 12.5,
-            cache_write_1h: 20.0,
-            cache_read: if m.contains("fable-5-1") { 0.25 } else { 1.0 },
-        },
-        "Opus" if is_legacy_opus(&m) => Pricing {
-            input: 15.0,
-            output: 75.0,
-            cache_write: 18.75,
-            cache_write_1h: 30.0,
-            cache_read: 1.5,
-        },
-        "Opus" => Pricing {
-            input: 5.0,
-            output: 25.0,
-            cache_write: 6.25,
-            cache_write_1h: 10.0,
-            cache_read: 0.5,
-        },
-        "Sonnet" if m.contains("sonnet-5") => Pricing {
-            input: 2.0,
-            output: 10.0,
-            cache_write: 2.5,
-            cache_write_1h: 4.0,
-            cache_read: 0.2,
-        },
-        "Sonnet" => Pricing {
-            input: 3.0,
-            output: 15.0,
-            cache_write: 3.75,
-            cache_write_1h: 6.0,
-            cache_read: 0.3,
-        },
-        // Version-first ids again — `claude-3-5-haiku-…`, `claude-3-haiku-…`.
-        "Haiku" if m.contains("3-5-haiku") => Pricing {
-            input: 0.8,
-            output: 4.0,
-            cache_write: 1.0,
-            cache_write_1h: 1.6,
-            cache_read: 0.08,
-        },
-        "Haiku" if m.contains("3-haiku") => Pricing {
-            input: 0.25,
-            output: 1.25,
-            cache_write: 0.3,
-            cache_write_1h: 0.5,
-            cache_read: 0.03,
-        },
-        "Haiku" => Pricing {
-            input: 1.0,
-            output: 5.0,
-            cache_write: 1.25,
-            cache_write_1h: 2.0,
-            cache_read: 0.1,
-        },
-        // A model from no family we know — mid-range Sonnet-tier fallback.
-        _ => {
-            warn_unknown_model(model);
-            Pricing {
-                input: 3.0,
-                output: 15.0,
-                cache_write: 3.75,
-                cache_write_1h: 6.0,
-                cache_read: 0.3,
-            }
-        }
-    }
-}
-
-/// Log, once per model id for the life of the process, that `model` is priced
-/// at the Sonnet-tier fallback. `pricing_for` runs for every request.
-fn warn_unknown_model(model: &str) {
-    static WARNED: std::sync::Mutex<Option<std::collections::HashSet<String>>> =
-        std::sync::Mutex::new(None);
-    let Ok(mut warned) = WARNED.lock() else {
-        return;
-    };
-    if warned
-        .get_or_insert_with(Default::default)
-        .insert(model.to_string())
-    {
-        log::warn!("Unknown model {model:?}: pricing it at the Sonnet-4 fallback rates");
-    }
 }
 
 pub(crate) fn model_family(model: &str) -> String {
@@ -203,76 +73,6 @@ pub(crate) fn context_pct(tokens: u64, model: &str) -> f64 {
     tokens as f64 / window as f64
 }
 
-// ── Activity over time ────────────────────────────────────────────────────────
-
-/// Width of one activity bucket. Every real UTC offset, and every DST shift, is a
-/// multiple of 15 minutes, so a bucket never straddles a local midnight.
-const SLOT_SECS: i64 = 15 * 60;
-
-/// The bucket a transcript timestamp (RFC 3339) falls in, as 15-minute periods
-/// since the Unix epoch.
-pub(crate) fn activity_slot(timestamp: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(timestamp)
-        .ok()
-        .map(|dt| dt.timestamp().div_euclid(SLOT_SECS))
-}
-
-/// When a bucket begins.
-pub(crate) fn slot_start(slot: i64) -> Option<chrono::DateTime<chrono::Utc>> {
-    chrono::DateTime::from_timestamp(slot.saturating_mul(SLOT_SECS), 0)
-}
-
-/// What a session did in one 15-minute period. Stored per record so usage can
-/// be attributed to the day it happened, not the day the session started.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ActivityBucket {
-    pub slot: i64,
-    pub output_tokens: u64,
-    pub cost: f64,
-    pub user_messages: u32,
-    pub peak_context: u64,
-}
-
-/// Collects `ActivityBucket`s while a transcript is parsed. Work whose line had
-/// no usable timestamp lands on `fallback` in `finish` (the session's start).
-#[derive(Default)]
-pub(crate) struct ActivityLog(std::collections::BTreeMap<Option<i64>, ActivityBucket>);
-
-impl ActivityLog {
-    pub fn add_usage(&mut self, slot: Option<i64>, output_tokens: u64, cost: f64, context: u64) {
-        let bucket = self.0.entry(slot).or_default();
-        bucket.output_tokens += output_tokens;
-        bucket.cost += cost;
-        bucket.peak_context = bucket.peak_context.max(context);
-    }
-
-    pub fn add_request(&mut self, req: &ReqData) {
-        self.add_usage(req.slot, req.output_tokens, req.cost(), req.context());
-    }
-
-    pub fn add_message(&mut self, slot: Option<i64>) {
-        self.0.entry(slot).or_default().user_messages += 1;
-    }
-
-    pub fn finish(self, fallback: Option<i64>) -> Vec<ActivityBucket> {
-        let mut merged: std::collections::BTreeMap<i64, ActivityBucket> =
-            std::collections::BTreeMap::new();
-        for (slot, bucket) in self.0 {
-            let Some(slot) = slot.or(fallback) else {
-                continue;
-            };
-            let into = merged.entry(slot).or_default();
-            into.slot = slot;
-            into.output_tokens += bucket.output_tokens;
-            into.cost += bucket.cost;
-            into.user_messages += bucket.user_messages;
-            into.peak_context = into.peak_context.max(bucket.peak_context);
-        }
-        merged.into_values().collect()
-    }
-}
-
 // ── Per-request accumulation ──────────────────────────────────────────────────
 
 /// Largest token count taken from a transcript field. No real request comes
@@ -298,15 +98,8 @@ pub(crate) struct ReqData {
     pub cache_read: u64,
     /// All cache writes, whatever the TTL.
     pub cache_create: u64,
-    /// The part of `cache_create` written at the 5-minute TTL.
-    pub cache_create_5m: u64,
-    /// The part of `cache_create` written at the 1-hour TTL.
-    pub cache_create_1h: u64,
     pub output_tokens: u64,
     pub tool_names: Vec<String>,
-    /// `activity_slot` of the line the request was first seen on; set by the
-    /// bulk parsers, which bucket spend by when it happened.
-    pub slot: Option<i64>,
 }
 
 impl ReqData {
@@ -317,11 +110,8 @@ impl ReqData {
             input_tokens: 0,
             cache_read: 0,
             cache_create: 0,
-            cache_create_5m: 0,
-            cache_create_1h: 0,
             output_tokens: 0,
             tool_names: Vec::new(),
-            slot: None,
         };
         req.set_usage(msg);
         req
@@ -335,17 +125,6 @@ impl ReqData {
         self.cache_read = field("cache_read_input_tokens");
         self.cache_create = field("cache_creation_input_tokens");
         self.output_tokens = field("output_tokens");
-        // Without the per-TTL split, every cache write is billed at the 5m rate.
-        match usage.get("cache_creation").filter(|v| v.is_object()) {
-            Some(split) => {
-                self.cache_create_5m = token_count(split.get("ephemeral_5m_input_tokens"));
-                self.cache_create_1h = token_count(split.get("ephemeral_1h_input_tokens"));
-            }
-            None => {
-                self.cache_create_5m = self.cache_create;
-                self.cache_create_1h = 0;
-            }
-        }
     }
 
     /// Context this request carried in — fresh input plus both cache buckets.
@@ -353,63 +132,6 @@ impl ReqData {
         self.input_tokens + self.cache_read + self.cache_create
     }
 
-    pub fn cost(&self) -> f64 {
-        let p = pricing_for(&self.model);
-        (self.input_tokens as f64 * p.input
-            + self.cache_create_5m as f64 * p.cache_write
-            + self.cache_create_1h as f64 * p.cache_write_1h
-            + self.cache_read as f64 * p.cache_read
-            + self.output_tokens as f64 * p.output)
-            / 1_000_000.0
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct ModelSessionData {
-    pub assistant_msgs: u32,
-    pub output_tokens: u64,
-    pub cache_creation_tokens: u64,
-    pub cost_estimate: f64,
-    pub tool_calls: u32,
-    pub peak_context: u64,
-    /// Chars/count from the human's own messages that this model family answered
-    /// (attributed per-turn, not blindly summed across every family in the session).
-    #[serde(default)]
-    pub user_chars: u64,
-    #[serde(default)]
-    pub user_messages: u32,
-    /// Errored `tool_result`s for tool calls this family issued. Per family, not
-    /// the session's total, so summing families does not count an error twice.
-    #[serde(default)]
-    pub tool_errors: u32,
-    /// Chars/count of prompts this model family sent when spawning a subagent
-    /// (the `Agent` tool's `prompt` input) — distinct from the human's own messages.
-    #[serde(default)]
-    pub subagent_prompt_chars: u64,
-    #[serde(default)]
-    pub subagent_prompt_count: u32,
-}
-
-pub(crate) fn requests_to_by_model(
-    requests: HashMap<String, ReqData>,
-) -> HashMap<String, ModelSessionData> {
-    let mut by_model: HashMap<String, ModelSessionData> = HashMap::new();
-    for data in requests.values() {
-        let ctx = data.context();
-        let cost = data.cost();
-        let family = model_family(&data.model);
-        let entry = by_model.entry(family).or_default();
-        entry.assistant_msgs += 1;
-        entry.output_tokens += data.output_tokens;
-        entry.cache_creation_tokens += data.cache_create;
-        entry.cost_estimate += cost;
-        if ctx > entry.peak_context {
-            entry.peak_context = ctx;
-        }
-        entry.tool_calls += data.tool_names.len() as u32;
-    }
-    by_model
 }
 
 // ── Line-level accessors ──────────────────────────────────────────────────────
@@ -428,26 +150,6 @@ pub(crate) fn request_key(obj: &Value) -> Option<String> {
         .or_else(|| obj.get("uuid").and_then(|v| v.as_str()))
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
-}
-
-/// A 64-bit FNV-1a hash of a line's identity, `tag` telling assistant requests
-/// (`a`) from user lines (`u`) apart. Hand-rolled because the value is stored in
-/// stats.json and `DefaultHasher` makes no promise of staying the same.
-///
-/// **Who owns a request.** A resumed or forked session's file starts with copies
-/// of earlier lines. The transcript that counted a `line_key` first owns it: the
-/// one with the oldest modified time (ties by path), the order `recompute_in`
-/// parses in. Every other file skips that line in its cost, tokens and context
-/// peak, so one request is billed once, on the day and in the session it
-/// happened. Stats applies this while parsing; the live tail applies the result
-/// through `commands::stats::foreign_keys`.
-pub(crate) fn line_key(tag: u8, key: &str) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in std::iter::once(tag).chain(key.bytes()) {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x0100_0000_01b3);
-    }
-    hash
 }
 
 /// `message.model` of an assistant line, skipping the empty and `<synthetic>`
@@ -574,59 +276,6 @@ mod tests {
         );
     }
 
-    fn rates(p: Pricing) -> [f64; 4] {
-        [p.input, p.output, p.cache_write, p.cache_read]
-    }
-
-    /// The regression: `claude-opus-5` answered to neither `opus-4` nor
-    /// `opus-3`, so it was priced at the Sonnet fallback and every cost Atlas
-    /// showed for it, live and in Stats, was wrong.
-    #[test]
-    fn pricing_follows_the_family_so_a_new_version_never_falls_through() {
-        let fallback = rates(pricing_for("some-future-model"));
-        let opus = rates(pricing_for("claude-opus-5"));
-        assert_ne!(opus, fallback);
-        assert_eq!(rates(pricing_for("claude-opus-9-20991231")), opus);
-        assert_eq!(rates(pricing_for("claude-opus-4-5")), opus);
-
-        let haiku = rates(pricing_for("claude-haiku-4-5-20251001"));
-        assert_ne!(haiku, fallback);
-        assert_eq!(rates(pricing_for("claude-haiku-9")), haiku);
-    }
-
-    /// Retired Opus models keep their own, higher rates so old sessions in
-    /// Stats stay right. Both id shapes are covered — see `is_legacy_opus`.
-    #[test]
-    fn retired_opus_ids_keep_their_own_rates() {
-        let current = rates(pricing_for("claude-opus-5"));
-        let legacy = rates(pricing_for("claude-3-opus-20240229"));
-        assert_ne!(legacy, current);
-        assert_eq!(rates(pricing_for("claude-opus-4-20250514")), legacy);
-        assert_eq!(rates(pricing_for("claude-opus-4-1-20250805")), legacy);
-    }
-
-    #[test]
-    fn one_hour_cache_writes_cost_twice_input() {
-        let msg = serde_json::json!({"usage": {
-            "cache_creation_input_tokens": 3_000_000,
-            "cache_creation": {
-                "ephemeral_5m_input_tokens": 1_000_000,
-                "ephemeral_1h_input_tokens": 2_000_000
-            }
-        }});
-        let req = ReqData::from_message("claude-opus-5", &msg);
-        // 1M at 6.25 plus 2M at 10.0.
-        assert!((req.cost() - 26.25).abs() < 1e-9);
-        assert_eq!(req.context(), 3_000_000);
-    }
-
-    #[test]
-    fn cache_writes_without_a_ttl_split_are_billed_at_the_5m_rate() {
-        let msg = serde_json::json!({"usage": {"cache_creation_input_tokens": 1_000_000}});
-        let req = ReqData::from_message("claude-opus-5", &msg);
-        assert!((req.cost() - 6.25).abs() < 1e-9);
-    }
-
     #[test]
     fn context_pct_measures_against_the_full_window() {
         // A 1M-window model runs the long-context beta, so autocompact fires
@@ -686,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn req_data_reads_usage_and_derives_context_and_cost() {
+    fn req_data_reads_usage_and_derives_context() {
         let msg = serde_json::json!({"usage": {
             "input_tokens": 100,
             "cache_read_input_tokens": 200,
@@ -695,7 +344,6 @@ mod tests {
         }});
         let req = ReqData::from_message("claude-sonnet-4-6", &msg);
         assert_eq!(req.context(), 600);
-        // 100*3 + 300*3.75 + 200*0.3 + 400*15 == 7485 per million
-        assert!((req.cost() - 7485.0 / 1_000_000.0).abs() < 1e-12);
+        assert_eq!(req.output_tokens, 400);
     }
 }

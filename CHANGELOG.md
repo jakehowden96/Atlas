@@ -7,6 +7,10 @@
 - The Stats screen is rebuilt on the `codeburn` CLI and now needs `npm i -g codeburn`. Tabs: Overview,
   Spend, Models, Sessions, Compare, Pull requests, Yield, Plans, Optimize.
 - Removed the old Stats dashboard code and CSV/JSON export helpers it orphaned.
+- Removed Atlas's own cost and stats pipeline (pricing table, transcript aggregation, the `stats.json`
+  cache and its watcher). Cost, token and stats numbers now come only from `codeburn`; without it, cost
+  surfaces show "—". The New Session Resume list now reads session transcripts directly, so it no
+  longer depends on a cache and scans only the newest 25 matching sessions.
 
 ### Polish pass
 

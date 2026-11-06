@@ -1,11 +1,8 @@
 //! Tracks the transcripts of the sessions Atlas is currently running and emits
 //! `session-update` as they grow.
 //!
-//! A `stats-update` watcher already sits on `~/.claude/projects` (see
-//! `commands::stats::start_stats_watcher`), but it debounces a full recompute
-//! over every historical transcript. The live path must not wait on that, so it
-//! keeps its own watcher on the same directory with a 250ms per-session
-//! debounce and an incremental read.
+//! The live path keeps its own watcher on `~/.claude/projects` with a 250ms
+//! per-session debounce and an incremental read.
 //!
 //! # Locking
 //!
@@ -24,7 +21,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 use super::live::{LiveSession, SessionTail};
-use crate::commands::stats::claude_projects_dir;
+use crate::commands::resume::claude_projects_dir;
 use crate::error::AtlasError;
 use ts_rs::TS;
 
@@ -55,11 +52,7 @@ impl Tracked {
 
     fn claude(session_uuid: &str, path: PathBuf) -> Arc<Self> {
         Arc::new(Tracked {
-            tail: Mutex::new(SessionTail::with_foreign(
-                session_uuid.to_string(),
-                path.clone(),
-                crate::commands::stats::foreign_keys(session_uuid),
-            )),
+            tail: Mutex::new(SessionTail::new(session_uuid.to_string(), path.clone())),
             transcript: path,
         })
     }

@@ -291,11 +291,10 @@ pub fn run() -> std::process::ExitCode {
             commands::git::git_checkout_branch,
             commands::git::list_workspace_repos,
             commands::url::open_url,
-            commands::stats::get_claude_stats,
             commands::codeburn::codeburn_info,
             commands::codeburn::codeburn_run,
             commands::codeburn::codeburn_action,
-            commands::stats::list_resumable_sessions,
+            commands::resume::list_resumable_sessions,
             commands::session::start_session_tail,
             commands::session::stop_session_tail,
             commands::session::claude_info,
@@ -335,19 +334,6 @@ pub fn run() -> std::process::ExitCode {
                 ),
             }
 
-            let stats_handle = app.handle().clone();
-            match commands::stats::start_stats_watcher(stats_handle) {
-                Ok(watcher) => {
-                    app.manage(watcher);
-                }
-                Err(e) => log::warn!(
-                    "Failed to start stats watcher: {} — live stats updates will not work",
-                    e
-                ),
-            }
-
-            // Separate from the stats watcher above: that one debounces a full
-            // recompute at 1s, which the live session view must not wait on.
             let live_handle = app.handle().clone();
             match session::manager::start_live_watcher(live_handle, live_sessions) {
                 Ok(watcher) => {
@@ -358,18 +344,6 @@ pub fn run() -> std::process::ExitCode {
                     e
                 ),
             }
-
-            // Back-fill stats from all historical transcripts on launch (off the UI thread).
-            let launch_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                match tokio::task::spawn_blocking(commands::stats::recompute).await {
-                    Ok(Ok(summary)) => {
-                        let _ = launch_handle.emit("stats-update", &summary);
-                    }
-                    Ok(Err(e)) => log::warn!("Initial stats recompute failed: {}", e),
-                    Err(e) => log::warn!("Initial stats recompute task failed: {}", e),
-                }
-            });
 
             // Off by user choice in Settings › Claude Code; on when the setting
             // has never been written.

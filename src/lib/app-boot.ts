@@ -7,7 +7,6 @@ import { startConnectorEvents } from "./stores/connectors";
 import { startPrPolling } from "./stores/prs";
 import { startAutoCheck } from "./updater";
 import { autoCheckUpdates, loadSettings } from "./stores/settings";
-import { startStatsFeed } from "./stores/stats";
 import { activeWorkspacePath, loadWorkspaces, visibleWorkspaces } from "./stores/workspace";
 import { get } from "svelte/store";
 
@@ -34,23 +33,12 @@ export async function bootApp(): Promise<() => void> {
   // current while the Pull requests screen is unmounted.
   const stopConnectors = await startConnectorEvents();
   const stopPrPolling = startPrPolling();
-  // Owned here rather than by the Stats screen: the top bar's spend figure has
-  // to stay current while that screen is unmounted. The first scan of a large
-  // `~/.claude` can take a while, so nothing waits on it.
   const stopUpdates = startAutoCheck(() => get(autoCheckUpdates));
-  let stopStats: (() => void) | null = null;
-  let stopped = false;
-  void startStatsFeed().then((stop) => {
-    if (stopped) stop();
-    else stopStats = stop;
-  });
 
   return () => {
-    stopped = true;
     stopEvents();
     stopConnectors();
     stopPrPolling();
     stopUpdates();
-    stopStats?.();
   };
 }

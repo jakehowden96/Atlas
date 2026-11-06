@@ -15,19 +15,11 @@ use std::collections::{HashMap, HashSet};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use crate::commands::stats::day_key;
 use crate::transcript::{
-    activity_slot, assistant_model, context_pct, line_key, line_type, request_key, slot_start,
-    tool_results, tool_uses, user_text, ReqData,
+    assistant_model, context_pct, line_type, request_key, tool_results, tool_uses, user_text,
+    ReqData,
 };
 use ts_rs::TS;
-
-/// `activity_slot` of a line's timestamp.
-fn obj_slot(obj: &Value) -> Option<i64> {
-    obj.get("timestamp")
-        .and_then(|v| v.as_str())
-        .and_then(activity_slot)
-}
 
 /// Transcript lines kept for the session view. The design shows the tail of the
 /// conversation, not its whole history.
@@ -150,10 +142,6 @@ pub struct LiveSession {
     /// A `tool_use` with no matching `tool_result` — what the permission bar names.
     pub pending_tool: Option<PendingTool>,
     pub output_tokens: u64,
-    pub cost_estimate: f64,
-    /// The part of `cost_estimate` incurred on today's local calendar day, bucketed
-    /// like Stats' `by_day`. Equals `cost_estimate` for a session begun today.
-    pub cost_today: f64,
     /// Context the newest request carried, plus the reply it produced — the
     /// number Claude Code's own status line shows, which is read off the newest
     /// assistant message the same way (`context_window.total_input_tokens` plus
@@ -196,8 +184,6 @@ impl LiveSession {
             last_tool: None,
             pending_tool: None,
             output_tokens: 0,
-            cost_estimate: 0.0,
-            cost_today: 0.0,
             context_tokens: 0,
             peak_context: 0,
             context_pct: 0.0,
@@ -348,7 +334,7 @@ impl LineReader {
     }
 }
 
-/// Output tokens, cost and the largest context over the requests added so far.
+/// Output tokens and the largest context over the requests added so far.
 ///
 /// A request's usage is replaced as later lines of it arrive (`replace`), so the
 /// totals are kept current instead of re-pricing every request of a
@@ -356,51 +342,19 @@ impl LineReader {
 #[derive(Default)]
 struct Spend {
     output_tokens: u64,
-    cost: f64,
     peak_context: u64,
-    /// `cost` by `ReqData::slot`, so spend can be split by day.
-    by_slot: HashMap<Option<i64>, f64>,
 }
 
 impl Spend {
     fn add(&mut self, req: &ReqData) {
         self.output_tokens += req.output_tokens;
-        self.cost += req.cost();
-        *self.by_slot.entry(req.slot).or_default() += req.cost();
         self.peak_context = self.peak_context.max(req.context());
     }
 
     /// Swap a request's earlier usage for its latest. `peak_context` only grows.
     fn replace(&mut self, old: &ReqData, new: &ReqData) {
         self.output_tokens -= old.output_tokens;
-        self.cost -= old.cost();
-        *self.by_slot.entry(old.slot).or_default() -= old.cost();
         self.add(new);
-    }
-
-    /// Spend on the local calendar day of `now` in `tz`. A request with no
-    /// timestamp counts on `fallback` (the session's start), as in Stats.
-    fn cost_on_day_of<Tz: chrono::TimeZone>(
-        &self,
-        now: chrono::DateTime<chrono::Utc>,
-        tz: &Tz,
-        fallback: Option<i64>,
-    ) -> f64
-    where
-        Tz::Offset: std::fmt::Display,
-    {
-        let today = day_key(now, tz);
-        self.by_slot
-            .iter()
-            .filter(|(slot, _)| {
-                (**slot)
-                    .or(fallback)
-                    .and_then(slot_start)
-                    .map(|at| day_key(at, tz))
-                    == Some(today.clone())
-            })
-            .map(|(_, cost)| cost)
-            .sum()
     }
 }
 
@@ -468,11 +422,9 @@ impl SubagentCounter {
                     self.last_action = Some(action_summary(last.name, last.input));
                 }
                 if let (Some(model), Some(key)) = (assistant_model(&obj), request_key(&obj)) {
-                    let mut new = ReqData::from_message(model, msg);
-                    new.slot = obj_slot(&obj);
+                    let new = ReqData::from_message(model, msg);
                     match self.seen.entry(key) {
                         Entry::Occupied(mut occupied) => {
-                            new.slot = occupied.get().slot;
                             self.spend.replace(occupied.get(), &new);
                             occupied.insert(new);
                         }
@@ -511,9 +463,6 @@ pub struct SessionTail {
     last_request: Option<String>,
     /// Spend over `requests`, kept current as requests are first seen.
     spend: Spend,
-    /// `line_key`s of requests another transcript owns (a resumed session's
-    /// copied history): left out of cost, tokens and peak context.
-    foreign: HashSet<u64>,
     /// `tool_use` blocks over `requests`.
     tool_calls: u32,
     /// The session's cwd, from the first line that names one.
@@ -555,12 +504,7 @@ pub struct SessionTail {
 }
 
 impl SessionTail {
-    #[cfg(test)]
     pub fn new(session_uuid: String, path: PathBuf) -> Self {
-        Self::with_foreign(session_uuid, path, HashSet::new())
-    }
-
-    pub fn with_foreign(session_uuid: String, path: PathBuf, foreign: HashSet<u64>) -> Self {
         let subagents_dir = path
             .parent()
             .map(|p| p.join(&session_uuid).join("subagents"))
@@ -578,7 +522,6 @@ impl SessionTail {
             requests: HashMap::new(),
             last_request: None,
             spend: Spend::default(),
-            foreign,
             tool_calls: 0,
             cwd: None,
             subagent_tool_ids: HashMap::new(),
@@ -904,24 +847,19 @@ impl SessionTail {
         }
 
         // A request's usage grows across its lines — the last line's is final.
-        if request_key(obj).is_some_and(|k| self.foreign.contains(&line_key(b'a', &k))) {
-            return;
-        }
         if let (Some(model), Some(key)) = (assistant_model(obj), request_key(obj)) {
             self.session.model = Some(model.to_string());
             self.last_request = Some(key.clone());
             let req = match self.requests.entry(key) {
                 Entry::Occupied(occupied) => {
                     let req = occupied.into_mut();
-                    let mut latest = ReqData::from_message(&req.model, msg);
-                    latest.slot = req.slot;
+                    let latest = ReqData::from_message(&req.model, msg);
                     self.spend.replace(req, &latest);
                     req.set_usage(msg);
                     req
                 }
                 Entry::Vacant(vacant) => {
-                    let mut req = ReqData::from_message(model, msg);
-                    req.slot = obj_slot(obj);
+                    let req = ReqData::from_message(model, msg);
                     self.spend.add(&req);
                     vacant.insert(req)
                 }
@@ -995,18 +933,12 @@ impl SessionTail {
 
     fn finalize(&mut self) {
         let mut output_tokens = self.spend.output_tokens;
-        let mut cost_estimate = self.spend.cost;
-        let fallback = self.session.started_at.as_deref().and_then(activity_slot);
-        let now = chrono::Utc::now();
-        let mut cost_today = self.spend.cost_on_day_of(now, &chrono::Local, fallback);
         let peak_context = self.spend.peak_context;
         let tool_calls = self.tool_calls;
         // A subagent's requests are billed to this session but never written
-        // into its transcript. Spend only: its context and tools are its own.
+        // into its transcript. Tokens only: its context and tools are its own.
         for counter in self.subagent_files.values() {
             output_tokens += counter.spend.output_tokens;
-            cost_estimate += counter.spend.cost;
-            cost_today += counter.spend.cost_on_day_of(now, &chrono::Local, fallback);
         }
         // Newest request, not biggest: after a compact or a `/clear` the window
         // really is emptier, and a peak would stay pinned to the old high while
@@ -1019,8 +951,6 @@ impl SessionTail {
             .unwrap_or(0);
 
         self.session.output_tokens = output_tokens;
-        self.session.cost_estimate = cost_estimate;
-        self.session.cost_today = cost_today;
         self.session.context_tokens = context_tokens;
         self.session.peak_context = peak_context;
         self.session.tool_calls = tool_calls;
@@ -1945,21 +1875,11 @@ mod tests {
     }
 
     #[test]
-    fn cost_and_peak_context_match_the_bulk_stats_parser() {
-        let (dir, mut tail) = tail_with(&fixture_lines());
+    fn peak_context_and_output_tokens_come_from_the_requests() {
+        let (_dir, mut tail) = tail_with(&fixture_lines());
         tail.poll();
-
-        let stats_path = dir.path().join(format!("{}.jsonl", UUID));
-        let record = crate::commands::stats::parse_session(&stats_path).unwrap();
-
-        assert_eq!(tail.session().peak_context, record.peak_context);
-        assert_eq!(tail.session().output_tokens, record.output_tokens);
-        assert!(
-            (tail.session().cost_estimate - record.cost_estimate).abs() < 1e-9,
-            "live cost {} vs stats cost {}",
-            tail.session().cost_estimate,
-            record.cost_estimate
-        );
+        assert!(tail.session().peak_context > 0);
+        assert!(tail.session().output_tokens > 0);
     }
 
     #[test]
@@ -2001,14 +1921,7 @@ mod tests {
             .expect("the Agent call is tracked");
         assert_eq!(agent.tool_count, 2);
 
-        // Regression: the tile showed the parent's spend alone, while Stats
-        // already folded the subagent files in.
-        let record =
-            crate::commands::stats::parse_session(&dir.path().join(format!("{}.jsonl", UUID)))
-                .unwrap();
         assert_eq!(tail.session().output_tokens, parent_only + 10);
-        assert_eq!(tail.session().output_tokens, record.output_tokens);
-        assert!((tail.session().cost_estimate - record.cost_estimate).abs() < 1e-9);
     }
 
     #[test]
@@ -2855,55 +2768,16 @@ mod tests {
                 r#"{"input_tokens":10,"output_tokens":90}"#,
             ),
         ];
-        let (dir, mut tail) = tail_with(&lines);
+        let (_dir, mut tail) = tail_with(&lines);
         tail.poll();
         assert_eq!(tail.session().output_tokens, 90);
-
-        let path = dir.path().join(format!("{}.jsonl", UUID));
-        let record = crate::commands::stats::parse_session(&path).unwrap();
-        assert_eq!(record.output_tokens, 90);
-        assert!((tail.session().cost_estimate - record.cost_estimate).abs() < 1e-9);
     }
 
-    /// The Stats page and the live card must price the same tokens the same
-    /// way for every model, including ones the pricing table has never heard
-    /// of. This is the invariant the shared pricing module exists for.
-    #[test]
-    fn live_and_stats_price_the_same_tokens_identically_for_any_model() {
-        let usage = r#"{"input_tokens":1234,"output_tokens":5678,"cache_creation_input_tokens":4321,"cache_read_input_tokens":8765}"#;
-        for model in [
-            "claude-opus-5",
-            "claude-opus-4-1-20250805",
-            "claude-haiku-9",
-            "claude-fable-5-1",
-            "totally-unknown-model",
-        ] {
-            let (dir, mut tail) = tail_with(&[assistant_line("r1", model, usage)]);
-            tail.poll();
-            let record =
-                crate::commands::stats::parse_session(&dir.path().join(format!("{UUID}.jsonl")))
-                    .unwrap();
-
-            assert!(tail.session().cost_estimate > 0.0, "{model} is priced");
-            assert!(
-                (tail.session().cost_estimate - record.cost_estimate).abs() < 1e-12,
-                "{model}: live {} vs stats {}",
-                tail.session().cost_estimate,
-                record.cost_estimate
-            );
-        }
-    }
-
-    /// A session's cost is its own requests plus every subagent file's, and a
+    /// A session's tokens are its own requests plus every subagent file's, and a
     /// subagent file that grows later adds only what is new.
     #[test]
-    fn cost_sums_the_main_transcript_and_each_subagent_file_once() {
+    fn tokens_sum_the_main_transcript_and_each_subagent_file_once() {
         let usage = |out: u64| format!(r#"{{"output_tokens":{out}}}"#);
-        let cost_of = |model: &str, out: u64| {
-            let (_d, mut t) = tail_with(&[assistant_line("r", model, &usage(out))]);
-            t.poll();
-            t.session().cost_estimate
-        };
         let main = assistant_line("m1", "claude-sonnet-4-6", &usage(1000));
         let (dir, mut tail) = tail_with(&[main]);
 
@@ -2940,10 +2814,6 @@ mod tests {
         );
 
         tail.poll();
-        let expected = cost_of("claude-sonnet-4-6", 1000)
-            + cost_of("claude-opus-5", 2000)
-            + cost_of("claude-haiku-4-5", 3000);
-        assert!((tail.session().cost_estimate - expected).abs() < 1e-9);
         assert_eq!(tail.session().output_tokens, 6000);
 
         // Polling again without a change, then growing one file by one request.
@@ -3024,139 +2894,5 @@ mod tests {
         tail.poll();
         assert!(tail.session().pending_tool.is_none());
         assert_eq!(tail.session().state, SessionState::Idle);
-    }
-
-    // ── One request is billed once across a resumed session ──────────────────
-
-    fn stamped(req: &str, ts: &str, out: u64) -> String {
-        format!(
-            r#"{{"type":"assistant","requestId":"{req}","timestamp":"{ts}","message":{{"model":"claude-opus-5","content":[],"usage":{{"output_tokens":{out}}}}}}}"#
-        )
-    }
-
-    /// File `a` (day 1) holds r1 and r2. File `b` is a resumed copy (day 2): the
-    /// same r1 and r2, then its own r3 and r4, plus a subagent request s1.
-    /// Returns (projects dir, stats.json path) with stats already computed.
-    fn resumed_pair() -> (tempfile::TempDir, PathBuf) {
-        let dir = tempfile::tempdir().unwrap();
-        let proj = dir.path().join("proj");
-        std::fs::create_dir_all(proj.join("b").join("subagents")).unwrap();
-        let day1 = "2026-03-01T10:00:00.000Z";
-        let day2 = "2026-03-02T10:00:00.000Z";
-        let r1 = stamped("r1", day1, 1000);
-        let r2 = stamped("r2", day1, 2000);
-        std::fs::write(
-            proj.join("a.jsonl"),
-            format!(
-                "{r1}
-{r2}
-"
-            ),
-        )
-        .unwrap();
-        // r3 launches the subagent, which is how the tail finds its transcript.
-        let r3 = stamped("r3", day2, 3000).replace(
-            r#""content":[]"#,
-            r#""content":[{"type":"tool_use","id":"toolu_agent1","name":"Agent","input":{}}]"#,
-        );
-        let b = [r1, r2, r3, stamped("r4", day2, 4000)];
-        std::fs::write(
-            proj.join("b.jsonl"),
-            b.join(
-                "
-",
-            ) + "
-",
-        )
-        .unwrap();
-        std::fs::write(
-            proj.join("b").join("subagents").join("agent-x.meta.json"),
-            r#"{"agentType":"Explore","description":"x","toolUseId":"toolu_agent1"}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            proj.join("b").join("subagents").join("agent-x.jsonl"),
-            stamped("s1", day2, 500)
-                + "
-",
-        )
-        .unwrap();
-        // `b` is the newer file, so `a` owns the shared requests.
-        let newer = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
-        std::fs::File::options()
-            .write(true)
-            .open(proj.join("b.jsonl"))
-            .unwrap()
-            .set_modified(newer)
-            .unwrap();
-        let stats = dir.path().join("stats.json");
-        crate::commands::stats::recompute_in(dir.path(), &stats).unwrap();
-        (dir, stats)
-    }
-
-    #[test]
-    fn a_resumed_session_bills_each_request_once_in_live_and_in_stats() {
-        let (dir, stats) = resumed_pair();
-        let price = |out: f64| out * 25.0 / 1_000_000.0;
-        let b_path = dir.path().join("proj").join("b.jsonl");
-        let mut tail = SessionTail::with_foreign(
-            "b".into(),
-            b_path.clone(),
-            crate::commands::stats::foreign_keys_in(&stats, "b"),
-        );
-        tail.poll();
-
-        let own = price(3000.0 + 4000.0 + 500.0);
-        assert!((tail.session().cost_estimate - own).abs() < 1e-9);
-        assert_eq!(tail.session().output_tokens, 7500);
-
-        let file: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&stats).unwrap()).unwrap();
-        let sessions = file["sessions"].as_array().unwrap();
-        let cost_of = |id: &str| {
-            sessions.iter().find(|r| r["sessionId"] == id).unwrap()["costEstimate"]
-                .as_f64()
-                .unwrap()
-        };
-        assert!((cost_of("b") - tail.session().cost_estimate).abs() < 1e-9);
-        let total: f64 = sessions
-            .iter()
-            .map(|r| r["costEstimate"].as_f64().unwrap())
-            .sum();
-        assert!((total - price(10_500.0)).abs() < 1e-9);
-
-        let summary = crate::commands::stats::recompute_in(dir.path(), &stats).unwrap();
-        let by_day: f64 = summary.by_day.values().map(|d| d.cost).sum();
-        assert!((summary.totals_all.cost - total).abs() < 1e-9);
-        assert!((by_day - total).abs() < 1e-9);
-    }
-
-    #[test]
-    fn cost_today_splits_spend_at_local_midnight() {
-        let (dir, stats) = resumed_pair();
-        let mut tail = SessionTail::with_foreign(
-            "b".into(),
-            dir.path().join("proj").join("b.jsonl"),
-            crate::commands::stats::foreign_keys_in(&stats, "b"),
-        );
-        tail.poll();
-        let at = |s: &str| chrono::DateTime::parse_from_rfc3339(s).unwrap().to_utc();
-        let today = |now: &str, tz: &chrono::FixedOffset| {
-            let fallback = tail.session().started_at.as_deref().and_then(activity_slot);
-            let mut c = tail.spend.cost_on_day_of(at(now), tz, fallback);
-            for counter in tail.subagent_files.values() {
-                c += counter.spend.cost_on_day_of(at(now), tz, fallback);
-            }
-            c
-        };
-        let utc = chrono::FixedOffset::east_opt(0).unwrap();
-        let plus2 = chrono::FixedOffset::east_opt(2 * 3600).unwrap();
-        // All of b's own spend (r3, r4, s1) happened on 2026-03-02.
-        let own = tail.session().cost_estimate;
-        assert!((today("2026-03-02T12:00:00Z", &utc) - own).abs() < 1e-9);
-        // 23:30 UTC on the 2nd is already the 3rd at +02:00: nothing today.
-        assert_eq!(today("2026-03-02T23:30:00Z", &plus2), 0.0);
-        // And the inherited day-1 requests were never counted at all.
-        assert_eq!(today("2026-03-01T12:00:00Z", &utc), 0.0);
     }
 }

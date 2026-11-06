@@ -1,9 +1,8 @@
 /**
- * Formatting and "today" cost helpers shared by the top bar, session tiles and
+ * Formatting helpers shared by the top bar, session tiles and
  * the Stats screen.
  */
 import { fmtCost } from "./format-cost";
-import type { StatsSummary } from "../types/generated/StatsSummary";
 
 // ── Formatting ────────────────────────────────────────────────────────────────
 
@@ -38,24 +37,6 @@ export function localDayKey(d: Date): string {
   return `${d.getFullYear()}-${month}-${day}`;
 }
 
-/**
- * Σ spend booked on the local day across every session on disk, not only the
- * ones Atlas is tailing. The backend books spend on the local day it was
- * incurred, so a conversation resumed today contributes today's turns only, not
- * its lifetime cost. Session totals can therefore be higher than this.
- */
-export function todayCost(summary: StatsSummary | null, now: Date): number {
-  return summary?.byDay?.[localDayKey(now)]?.cost ?? 0;
-}
-
 /** Tooltip on the top bar's spend figure. */
 export const TODAY_COST_TIP =
   "All sessions, since midnight, as reported by codeburn. Session totals can be higher because they include earlier days.";
-
-/** "$8.10 today" under a session's own cost, or null when the session began today. */
-export function costTodayLine(live: { costEstimate: number; costToday?: number }): string | null {
-  if (live.costToday == null) return null;
-  return Math.abs(live.costEstimate - live.costToday) < 0.005
-    ? null
-    : `${fmtCost(live.costToday)} today`;
-}

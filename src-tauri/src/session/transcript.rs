@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use crate::commands::stats::claude_projects_dir;
+use crate::commands::resume::claude_projects_dir;
 
 /// `^[0-9a-fA-F-]{36}$` — the shape `claude --session-id` accepts. Rejects `/`,
 /// `\` and `..` by construction, so the value is safe to join onto a path.

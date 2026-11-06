@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { get } from "svelte/store";
 
-const startStatsFeed = vi.hoisted(() => vi.fn());
-
 vi.mock("../ipc", () => ({
   onPanelUpdate: vi.fn(),
   onSessionUpdate: vi.fn(),
@@ -23,7 +21,6 @@ vi.mock("../stores/connectors", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../stores/connectors")>()),
   startConnectorEvents: vi.fn(async () => () => {}),
 }));
-vi.mock("../stores/stats", () => ({ startStatsFeed }));
 vi.mock("../sound", () => ({ playPing: vi.fn() }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("@tauri-apps/plugin-notification", () => ({
@@ -69,34 +66,14 @@ afterEach(() => {
 });
 
 describe("bootApp", () => {
-  it("has every event listener registered while the first stats scan is still running", async () => {
-    startStatsFeed.mockReturnValue(new Promise<() => void>(() => {}));
-
+  it("has every event listener registered", async () => {
     const stop = await bootApp();
 
     for (const on of LISTENERS) expect(on).toHaveBeenCalledTimes(1);
     stop();
   });
 
-  it("tears down a stats feed that finished after the app was already stopped", async () => {
-    let finishScan: (unsubscribe: () => void) => void = () => {};
-    startStatsFeed.mockReturnValue(
-      new Promise<() => void>((resolve) => {
-        finishScan = resolve;
-      }),
-    );
-    const unsubscribeStats = vi.fn();
-
-    const stop = await bootApp();
-    stop();
-    finishScan(unsubscribeStats);
-    await Promise.resolve();
-
-    expect(unsubscribeStats).toHaveBeenCalledTimes(1);
-  });
-
   it("removes every listener when stopped", async () => {
-    startStatsFeed.mockResolvedValue(() => {});
     const unlisten = vi.fn();
     for (const on of LISTENERS) vi.mocked(on).mockResolvedValue(unlisten);
 
@@ -111,7 +88,6 @@ describe("claude-notification", () => {
   async function deliver(event: ClaudeNotificationEvent, focused: boolean) {
     vi.stubGlobal("document", { hasFocus: () => focused });
     vi.mocked(isPermissionGranted).mockResolvedValue(true);
-    startStatsFeed.mockResolvedValue(() => {});
     const stop = await bootApp();
     const handler = vi.mocked(onClaudeNotification).mock.calls[0]![0];
     await handler(event);

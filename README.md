@@ -13,8 +13,8 @@ Mission control for [Claude Code](https://claude.com/claude-code). Run several s
 - **Changes drawer** — the session's git diff as a slide-over: file tree, unified or split, viewed-state tracking, and inline review comments you can send back to the session as a prompt. Very large diffs are cut at a size cap and the drawer says how much was shown.
 - **Pull requests** — open PRs across your watched repos grouped into cards, with CI and review status, All / Mine / Needs-my-review filters, and "Work on it" to check the branch out and start a session on it. Backed by your GitHub connector (no `gh` CLI needed); Linear tickets use the Linear connector. See [docs/connectors.md](docs/connectors.md).
 - **Files** — a three-column document workspace: Claude's plans (`~/.claude/plans`), your workspaces' documents and any folders you add, with a tabbed editor, Source / Split / Preview modes, an outline and links rail, and ⌘S to save. Saving refuses to overwrite a file that changed on disk since it was read, and unsaved edits are guarded on tab close and on quit. Source files get syntax highlighting; language servers (TypeScript/JavaScript, Svelte, Rust, Python, Go, when installed) are off by default and enabled per workspace in Settings > Workspaces, because a language server runs code from the workspace.
-- **Stats** — spend and usage across your Claude Code history, powered by the [`codeburn`](https://www.npmjs.com/package/codeburn) CLI (`npm i -g codeburn`). Tabs: Overview, Spend, Models, Sessions, Compare, Pull requests, Yield, Plans, Optimize.
-- **Live, not polled** — plan, subagents, tools, context and cost come from tailing `~/.claude/projects/**.jsonl`. Two Claude Code hooks tell Atlas when a session is waiting on you and when its session id changes (see [Hooks](#claude-code-hooks)).
+- **Stats** — spend and usage across your Claude Code history, powered by the [`codeburn`](https://www.npmjs.com/package/codeburn) CLI (`npm i -g codeburn`); all cost and stats numbers in Atlas come from codeburn. Tabs: Overview, Spend, Models, Sessions, Compare, Pull requests, Yield, Plans, Optimize.
+- **Live, not polled** — plan, subagents, tools and context come from tailing `~/.claude/projects/**.jsonl`. Two Claude Code hooks tell Atlas when a session is waiting on you and when its session id changes (see [Hooks](#claude-code-hooks)).
 - **Light, dark or system** — the whole app and the terminal re-theme together, with no restart.
 
 ## Install
@@ -56,7 +56,6 @@ Everything Atlas owns is under `~/.atlas/`:
 |---|---|
 | `settings.json` | Settings from the Settings modal. Versioned; written atomically. |
 | `workspaces.json` | Workspaces, their sessions and saved Claude session ids, used for resume. |
-| `stats.json` | Aggregated history for the Stats screen. Claude Code prunes old transcripts, so this may be the only remaining record of old sessions: it is backed up (`stats.json.bak`) rather than discarded on a format change. |
 | `logs/` | Daily log files (`atlas-*.log`). |
 | `sessions/<id>/` | Per-session working files: `panel.json` (diff and status for the Changes drawer) and the one-shot hook signals. |
 

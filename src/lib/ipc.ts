@@ -25,7 +25,6 @@ import type { PullRequest } from "../types/generated/PullRequest";
 import type { RepoRef } from "../types/generated/RepoRef";
 import type { StateFile } from "../types/generated/StateFile";
 import type { StateLoad } from "../types/generated/StateLoad";
-import type { StatsSummary } from "../types/generated/StatsSummary";
 import type { StatusEvent } from "../types/generated/StatusEvent";
 import type { TextFile } from "../types/generated/TextFile";
 import type { Ticket } from "../types/generated/Ticket";
@@ -268,10 +267,6 @@ export async function onSessionUpdate(
   });
 }
 
-export async function getClaudeStats(): Promise<StatsSummary> {
-  return call("get_claude_stats");
-}
-
 /** Never rejects for a missing `codeburn`: `binary` is null instead. */
 export async function codeburnInfo(): Promise<CodeburnInfo> {
   return call("codeburn_info");
@@ -289,19 +284,11 @@ export async function codeburnAction(args: string[]): Promise<string> {
 
 /**
  * Prior conversations in `cwd`, newest first, for the New Session modal's
- * Resume list. Read from the transcript cache — `claude --resume` is an
+ * Resume list. Read from the session transcripts — `claude --resume` is an
  * interactive picker with no machine-readable output.
  */
 export async function listResumableSessions(cwd: string): Promise<ResumableSession[]> {
   return call("list_resumable_sessions", { cwd });
-}
-
-export async function onStatsUpdate(
-  callback: (summary: StatsSummary) => void,
-): Promise<UnlistenFn> {
-  return listen<StatsSummary>("stats-update", (event) => {
-    callback(event.payload);
-  });
 }
 
 export async function onPanelUpdate(
