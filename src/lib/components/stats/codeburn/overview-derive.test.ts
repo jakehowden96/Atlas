@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Overview, Timeline } from "../../../../types/codeburn";
-import { activityCells, efficiencyRows, fmtMs, trend } from "./overview-derive";
+import { activityCells, efficiencyRows, fmtMs, fmtPct, pace, trend } from "./overview-derive";
 
 const tl: Timeline = {
   bucketMinutes: 1440,
@@ -62,5 +62,36 @@ describe("overview-derive", () => {
   it("formats the first-edit time", () => {
     expect(fmtMs(26_000)).toBe("26s");
     expect(fmtMs(317_483)).toBe("5m 17s");
+  });
+});
+
+describe("pace", () => {
+  const now = new Date(2026, 10, 10, 12); // 10 Nov 2026
+  const day = (n: number, cost: number) => ({
+    date: `2026-11-${String(n).padStart(2, "0")}`,
+    cost,
+  });
+
+  it("derives yesterday, 7-day mean, projection and vs-mean", () => {
+    const daily = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => day(n, 10)).concat(day(10, 15));
+    const p = pace(daily, 100, now);
+    expect(p.yesterday).toBe(10);
+    expect(p.avg7).toBe(10);
+    expect(p.projected).toBe(300); // 100 / 10 days * 30
+    expect(p.vsAvg7Pct).toBe(50);
+  });
+
+  it("is null where the data does not reach back", () => {
+    const p = pace([day(10, 5)], null, now);
+    expect(p.yesterday).toBeNull();
+    expect(p.avg7).toBeNull();
+    expect(p.projected).toBeNull();
+    expect(p.vsAvg7Pct).toBeNull();
+  });
+
+  it("formats percent", () => {
+    expect(fmtPct(null)).toBe("—");
+    expect(fmtPct(12.4)).toBe("+12%");
+    expect(fmtPct(-3)).toBe("-3%");
   });
 });

@@ -2,7 +2,7 @@
   import { filterArgs, type Filters, type Overview } from "../../../../types/codeburn";
   import type { OptimizeReport } from "../../../../types/codeburn-optimize";
   import { statsFilters } from "../../../stores/statsFilters";
-import type { Point } from "../../../stats-chart";
+  import type { Point } from "../../../stats-chart";
   import { fmtCost, fmtCount, fmtTokens } from "../../../stats-derive";
   import Button from "../../ui/Button.svelte";
   import Progress from "../../ui/Progress.svelte";
@@ -12,9 +12,28 @@ import type { Point } from "../../../stats-chart";
   import Loader from "./Loader.svelte";
   import Panel from "./Panel.svelte";
   import Trend from "./Trend.svelte";
-  import { activityCells, efficiencyRows, fmtMs, trend, type Metric } from "./overview-derive";
+  import {
+    activityCells,
+    efficiencyRows,
+    fmtMs,
+    fmtPct,
+    pace,
+    trend,
+    type Metric,
+  } from "./overview-derive";
+  import { monthCost } from "../../../stores/cost";
 
-  let { filters, refresh }: { filters: Filters; refresh: number } = $props();
+  let {
+    filters,
+    refresh,
+    onOpenSession,
+  }: { filters: Filters; refresh: number; onOpenSession?: (sessionId: string) => void } = $props();
+
+  const actMetrics: Segment<"cost" | "turns">[] = [
+    { id: "cost", label: "Cost" },
+    { id: "turns", label: "Turns" },
+  ];
+  let actMetric = $state<"cost" | "turns">("cost");
 
   const metrics: Segment<Metric>[] = [
     { id: "cost", label: "Cost" },
@@ -50,6 +69,7 @@ import type { Point } from "../../../stats-chart";
     {@const live = overview.liveSessions?.sessions ?? []}
     {@const eff = efficiencyRows(c)}
     {@const cells = activityCells(overview)}
+    {@const pc = pace(overview.history.daily, $monthCost, new Date())}
 
     {#snippet tile(label: string, value: string, note?: string, accent = false)}
       <div class="tile">
@@ -154,17 +174,24 @@ import type { Point } from "../../../stats-chart";
       {@render tile("Cache write", fmtTokens(c.cacheWriteTokens ?? 0))}
       {@render tile("Cache read", fmtTokens(c.cacheReadTokens ?? 0))}
       {@render tile("One-shot", `${Math.round(c.oneShotRate * 100)}%`)}
+      {@render tile("Yesterday", pc.yesterday === null ? "—" : fmtCost(pc.yesterday))}
+      {@render tile(
+        "7-day average",
+        pc.avg7 === null ? "—" : fmtCost(pc.avg7),
+        `today ${fmtPct(pc.vsAvg7Pct)} vs average`,
+      )}
+      {@render tile("Month to date", $monthCost === null ? "—" : fmtCost($monthCost))}
+      {@render tile(
+        "Projected month",
+        pc.projected === null ? "—" : fmtCost(pc.projected),
+        "at this month's daily rate",
+      )}
     </div>
 
     <div class="pair">
       <Panel title="Efficiency" note="Setup grade from codeburn optimize">
         <Loader
-          args={[
-            "optimize",
-            "--format",
-            "json",
-            ...filterArgs(filters, "optimize"),
-          ]}
+          args={["optimize", "--format", "json", ...filterArgs(filters, "optimize")]}
           {refresh}
         >
           {#snippet children(r: OptimizeReport)}
@@ -305,15 +332,26 @@ import type { Point } from "../../../stats-chart";
         )}
       </Panel>
       <Panel title="By activity" empty={c.topActivities.length === 0}>
+        <SegmentedControl
+          role="radiogroup"
+          label="Activity metric"
+          options={actMetrics}
+          value={actMetric}
+          onChange={(id) => (actMetric = id)}
+          size="sm"
+        />
         <HBarList
           points={pts(c.topActivities, (a) => ({
             key: a.name,
             label: a.name,
-            value: a.cost,
-            context: `${a.turns} turns, ${Math.round(a.oneShotRate * 100)}% one-shot`,
+            value: actMetric === "cost" ? a.cost : a.turns,
+            context:
+              actMetric === "cost"
+                ? `${a.turns} turns, ${Math.round(a.oneShotRate * 100)}% one-shot`
+                : `${fmtCost(a.cost)}, ${Math.round(a.oneShotRate * 100)}% one-shot`,
           }))}
-          unit="usd"
-          label="Cost by activity"
+          unit={actMetric === "cost" ? "usd" : "count"}
+          label={`${actMetric === "cost" ? "Cost" : "Turns"} by activity`}
           emptyText="No activity"
         />
       </Panel>
@@ -368,13 +406,24 @@ import type { Point } from "../../../stats-chart";
       <Panel title="Most expensive sessions" empty={!c.topSessions?.length}>
         {@render table(
           ["Project", "Date", "Calls", "Cost"],
-          (c.topSessions ?? []).map((s) => [
-            s.project.split(/[\\/]/).pop() ?? s.project,
-            s.date,
-            s.calls,
-            fmtCost(s.cost),
-          ]),
+          (c.topSessions ?? [])
+            .slice(0, 3)
+            .map((s) => [
+              s.project.split(/[\\/]/).pop() ?? s.project,
+              s.date,
+              s.calls,
+              fmtCost(s.cost),
+            ]),
         )}
+        {#if onOpenSession}
+          <div class="open-row">
+            {#each (c.topSessions ?? []).slice(0, 3) as s (s.sessionId)}
+              <Button size="sm" onclick={() => onOpenSession(s.sessionId)}
+                >Open {s.date} in Sessions</Button
+              >
+            {/each}
+          </div>
+        {/if}
       </Panel>
     </div>
 
@@ -477,6 +526,13 @@ import type { Point } from "../../../stats-chart";
     .pair {
       grid-template-columns: minmax(0, 1fr);
     }
+  }
+
+  .open-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    margin-top: var(--sp-3);
   }
 
   .scroll {
