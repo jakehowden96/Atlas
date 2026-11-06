@@ -109,3 +109,43 @@ export function fmtMs(ms: number): string {
   const s = Math.round(ms / 1000);
   return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
 }
+
+export interface Pace {
+  /** null when the data does not cover the day: shown as "—". */
+  yesterday: number | null;
+  /** Mean of the 7 days before `now`'s day. */
+  avg7: number | null;
+  /** Month-end estimate at the month's daily rate so far. */
+  projected: number | null;
+  /** Today against the 7-day mean. */
+  vsAvg7Pct: number | null;
+}
+
+const dayBefore = (now: Date, n: number) =>
+  localDayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - n));
+
+/** Yesterday, 7-day mean and month projection from daily cost, `monthCost` being the month to date. */
+export function pace(
+  daily: { date: string; cost: number }[],
+  monthCost: number | null,
+  now: Date,
+): Pace {
+  const by = new Map(daily.map((d) => [d.date, d.cost]));
+  const first = daily.map((d) => d.date).sort()[0];
+  const covers = (key: string) => first !== undefined && key >= first;
+  const yk = dayBefore(now, 1);
+  const prior = [1, 2, 3, 4, 5, 6, 7].map((n) => dayBefore(now, n));
+  const avg7 = prior.every(covers) ? prior.reduce((s, k) => s + (by.get(k) ?? 0), 0) / 7 : null;
+  const today = by.get(localDayKey(now));
+  const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  return {
+    yesterday: covers(yk) ? (by.get(yk) ?? 0) : null,
+    avg7,
+    projected: monthCost === null ? null : (monthCost / now.getDate()) * dim,
+    vsAvg7Pct: avg7 && today !== undefined ? ((today - avg7) / avg7) * 100 : null,
+  };
+}
+
+/** Consecutive-day streak is codeburn's `streak`; this only formats a signed percent. */
+export const fmtPct = (p: number | null) =>
+  p === null ? "—" : `${p >= 0 ? "+" : ""}${p.toFixed(0)}%`;
