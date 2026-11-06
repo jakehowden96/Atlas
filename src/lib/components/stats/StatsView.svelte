@@ -17,7 +17,8 @@
   import ComparePeriods from "./codeburn/ComparePeriods.svelte";
   import Models from "./codeburn/Models.svelte";
   import Optimize from "./codeburn/Optimize.svelte";
-  import Overview from "./codeburn/Overview.svelte";
+  import { sessionTarget } from "../../stores/sessionTarget";
+import Overview from "./codeburn/Overview.svelte";
   import Plans from "./codeburn/Plans.svelte";
   import Plugins from "./codeburn/Plugins.svelte";
   import PullRequests from "./codeburn/PullRequests.svelte";
