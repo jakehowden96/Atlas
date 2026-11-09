@@ -1,0 +1,22 @@
+/* Shared codeburn table style: <table class="cb-table">; add class "num" to numeric cells. */
+.cb-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.cb-table th {
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--muted);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-semi);
+  text-align: left;
+}
+.cb-table td {
+  padding: var(--sp-2);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-xs);
+}
+.cb-table .num {
+  font-family: var(--font-mono);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

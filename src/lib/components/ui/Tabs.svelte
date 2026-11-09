@@ -6,6 +6,8 @@
     dirty?: boolean;
     /** Vertical only: a heading is drawn when this changes between tabs. */
     group?: string;
+    /** Horizontal only: a rule is drawn before this tab. */
+    divider?: boolean;
   }
 
   /**
@@ -142,7 +144,7 @@
         {#if vertical && t.group && t.group !== visible[i - 1]?.group}
           <div class="heading" role="presentation">{t.group}</div>
         {/if}
-        <div class="item" class:sel={t.id === value} data-tab={t.id}>
+        <div class="item" class:sel={t.id === value} class:divider={t.divider && !vertical} data-tab={t.id}>
           <button
             type="button"
             role="tab"
@@ -215,6 +217,10 @@
     height: var(--h-lg);
     border-bottom: 2px solid transparent;
     color: var(--muted);
+  }
+  .item.divider {
+    margin-left: var(--sp-2);
+    border-left: 1px solid var(--border);
   }
   .item.sel {
     color: var(--text);
