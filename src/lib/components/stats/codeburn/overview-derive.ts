@@ -61,20 +61,26 @@ export function trend(
 }
 
 /**
- * Calls per local day over the span of the timeline, padded so the first day
- * sits on its Monday-first row: Heatmap fills seven cells per column.
+ * Calls per local day for the last `weeks` weeks ending `now`, Monday-first so
+ * Heatmap fills seven cells per column. Starts at the first day with data when
+ * that is later than the window, so days the data cannot cover are not drawn as 0.
  */
-export function activityCells(o: Overview): Point[] {
-  const pts = o.history.timeline?.points ?? [];
-  if (pts.length === 0) return [];
-  const calls = new Map(o.history.daily.map((d) => [d.date, d.calls ?? 0]));
-  const first = new Date(pts[0]!.timestamp);
-  const last = new Date(pts[pts.length - 1]!.timestamp);
-  first.setHours(0, 0, 0, 0);
+export function activityCells(o: Overview, now = new Date(), weeks = 20): Point[] {
+  const daily = o.history.daily;
+  if (daily.length === 0) return [];
+  const calls = new Map(daily.map((d) => [d.date, d.calls ?? 0]));
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const begin = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate() - ((today.getDay() + 6) % 7) - (weeks - 1) * 7,
+  );
+  const firstDay = new Date(`${daily.map((d) => d.date).sort()[0]}T00:00:00`);
+  const first = firstDay > begin ? firstDay : begin;
   const cells: Point[] = [];
   for (let i = 0; i < (first.getDay() + 6) % 7; i++)
     cells.push({ key: `pad-${i}`, label: "", value: 0 });
-  for (const d = new Date(first); d <= last; d.setDate(d.getDate() + 1)) {
+  for (const d = new Date(first); d <= today; d.setDate(d.getDate() + 1)) {
     const key = localDayKey(d);
     cells.push({
       key,
@@ -93,14 +99,13 @@ export interface EffRow {
   good: "high" | "low";
 }
 
-/** The shares behind the efficiency card, each as 0..100. */
+/** The shares behind the efficiency bars, each as 0..100. */
 export function efficiencyRows(c: Overview["current"]): EffRow[] {
-  const of = (usd: number | undefined) => (c.cost > 0 && usd ? (usd / c.cost) * 100 : 0);
+  const retry = c.cost > 0 && c.retryTax?.totalUSD ? (c.retryTax.totalUSD / c.cost) * 100 : 0;
   return [
+    { label: "One-shot", pct: c.oneShotRate * 100, good: "high" },
     { label: "Cache hit", pct: c.cacheHitPercent, good: "high" },
-    { label: "One-shot edits", pct: c.oneShotRate * 100, good: "high" },
-    { label: "Retry tax", pct: of(c.retryTax?.totalUSD), good: "low" },
-    { label: "Routing waste", pct: of(c.routingWaste?.totalSavingsUSD), good: "low" },
+    { label: "Retry tax", pct: retry, good: "low" },
   ];
 }
 
@@ -117,8 +122,8 @@ export interface Pace {
   avg7: number | null;
   /** Month-end estimate at the month's daily rate so far. */
   projected: number | null;
-  /** Today against the 7-day mean. */
-  vsAvg7Pct: number | null;
+  /** Today against yesterday. */
+  vsYesterdayPct: number | null;
 }
 
 const dayBefore = (now: Date, n: number) =>
@@ -137,13 +142,48 @@ export function pace(
   const prior = [1, 2, 3, 4, 5, 6, 7].map((n) => dayBefore(now, n));
   const avg7 = prior.every(covers) ? prior.reduce((s, k) => s + (by.get(k) ?? 0), 0) / 7 : null;
   const today = by.get(localDayKey(now));
+  const yesterday = covers(yk) ? (by.get(yk) ?? 0) : null;
   const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   return {
-    yesterday: covers(yk) ? (by.get(yk) ?? 0) : null,
+    yesterday,
     avg7,
     projected: monthCost === null ? null : (monthCost / now.getDate()) * dim,
-    vsAvg7Pct: avg7 && today !== undefined ? ((today - avg7) / avg7) * 100 : null,
+    vsYesterdayPct:
+      yesterday && today !== undefined ? ((today - yesterday) / yesterday) * 100 : null,
   };
+}
+
+const iso = (y: number, m: number, d: number) => localDayKey(new Date(y, m, d));
+
+/** compare-periods windows: this month's days so far (B) against the same days of last month (A). */
+export function monthWindows(now: Date): string[] {
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const n = now.getDate();
+  const lastDim = new Date(y, m, 0).getDate();
+  return [
+    ...["--from-a", iso(y, m - 1, 1), "--to-a", iso(y, m - 1, Math.min(n, lastDim))],
+    ...["--from-b", iso(y, m, 1), "--to-b", iso(y, m, n)],
+  ];
+}
+
+/** compare-periods windows: the 7 days before the last 7 (A) against the last 7, today included (B). */
+export function weekWindows(now: Date): string[] {
+  const [y, m, d] = [now.getFullYear(), now.getMonth(), now.getDate()];
+  return [
+    ...["--from-a", iso(y, m, d - 13), "--to-a", iso(y, m, d - 7)],
+    ...["--from-b", iso(y, m, d - 6), "--to-b", iso(y, m, d)],
+  ];
+}
+
+/** Running month-to-date cost, one entry per day from the 1st to `now`'s day. */
+export function monthCumulative(daily: { date: string; cost: number }[], now: Date): number[] {
+  const by = new Map(daily.map((d) => [d.date, d.cost]));
+  let sum = 0;
+  return Array.from({ length: now.getDate() }, (_, i) => {
+    sum += by.get(iso(now.getFullYear(), now.getMonth(), i + 1)) ?? 0;
+    return sum;
+  });
 }
 
 /** Consecutive-day streak is codeburn's `streak`; this only formats a signed percent. */

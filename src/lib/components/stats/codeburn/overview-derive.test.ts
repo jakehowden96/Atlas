@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { Overview, Timeline } from "../../../../types/codeburn";
-import { activityCells, efficiencyRows, fmtMs, fmtPct, pace, trend } from "./overview-derive";
+import {
+  activityCells,
+  efficiencyRows,
+  fmtMs,
+  fmtPct,
+  monthCumulative,
+  monthWindows,
+  pace,
+  trend,
+  weekWindows,
+} from "./overview-derive";
 
 const tl: Timeline = {
   bucketMinutes: 1440,
@@ -40,11 +50,26 @@ describe("overview-derive", () => {
 
   it("pads the first day onto its Monday-first row", () => {
     // 2026-10-06 is a Tuesday: one pad cell, then two days.
-    const o = { history: { daily: [{ date: "2026-10-06", cost: 3, calls: 9 }], timeline: tl } };
-    const cells = activityCells(o as unknown as Overview);
+    const o = { history: { daily: [{ date: "2026-10-06", cost: 3, calls: 9 }] } };
+    const cells = activityCells(o as unknown as Overview, new Date(2026, 9, 7, 12));
     expect(cells.map((c) => c.key.startsWith("pad"))).toEqual([true, false, false]);
     expect(cells[1]?.value).toBe(9);
     expect(activityCells({ history: { daily: [] } } as unknown as Overview)).toEqual([]);
+  });
+
+  it("caps the grid at the window, 20 Monday-first weeks", () => {
+    const o = { history: { daily: [{ date: "2020-01-01", cost: 1, calls: 1 }] } };
+    const cells = activityCells(o as unknown as Overview, new Date(2026, 10, 5)); // a Thursday
+    expect(cells.length).toBe(19 * 7 + 4);
+  });
+
+  it("builds compare windows and the month's running total", () => {
+    expect(monthWindows(new Date(2026, 2, 31))).toEqual([
+      ...["--from-a", "2026-02-01", "--to-a", "2026-02-28"],
+      ...["--from-b", "2026-03-01", "--to-b", "2026-03-31"],
+    ]);
+    expect(weekWindows(new Date(2026, 10, 10))[1]).toBe("2026-10-28");
+    expect(monthCumulative([{ date: "2026-11-01", cost: 2 }, { date: "2026-11-03", cost: 1 }], new Date(2026, 10, 3))).toEqual([2, 2, 3]);
   });
 
   it("turns retry tax and routing waste into shares of spend, zero-safe", () => {
@@ -55,7 +80,7 @@ describe("overview-derive", () => {
       retryTax: { totalUSD: 20 },
       routingWaste: { totalSavingsUSD: 5 },
     } as unknown as Overview["current"];
-    expect(efficiencyRows(c).map((r) => r.pct)).toEqual([99, 80, 20, 5]);
+    expect(efficiencyRows(c).map((r) => r.pct)).toEqual([80, 99, 20]);
     expect(efficiencyRows({ ...c, cost: 0 })[2]?.pct).toBe(0);
   });
 
@@ -78,7 +103,7 @@ describe("pace", () => {
     expect(p.yesterday).toBe(10);
     expect(p.avg7).toBe(10);
     expect(p.projected).toBe(300); // 100 / 10 days * 30
-    expect(p.vsAvg7Pct).toBe(50);
+    expect(p.vsYesterdayPct).toBe(50);
   });
 
   it("is null where the data does not reach back", () => {
@@ -86,7 +111,7 @@ describe("pace", () => {
     expect(p.yesterday).toBeNull();
     expect(p.avg7).toBeNull();
     expect(p.projected).toBeNull();
-    expect(p.vsAvg7Pct).toBeNull();
+    expect(p.vsYesterdayPct).toBeNull();
   });
 
   it("formats percent", () => {

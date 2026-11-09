@@ -10,20 +10,51 @@
     label: string;
     emptyText: string;
     onselect?: (key: string) => void;
+    /** Fills its container width, adds month labels, outlines the last cell, drops the side text. */
+    compact?: boolean;
   }
 
-  let { cells, noun, label, emptyText, onselect }: Props = $props();
+  let { cells, noun, label, emptyText, onselect, compact = false }: Props = $props();
 
   const max = $derived(Math.max(0, ...cells.map((c) => c.value)));
-  const peak = $derived(max > 0 ? cells.find((c) => c.value === max) : undefined);
+  const peak = $derived(
+    compact ? cells[cells.length - 1] : max > 0 ? cells.find((c) => c.value === max) : undefined,
+  );
+  const cols = $derived(compact ? `repeat(${Math.ceil(cells.length / 7)}, minmax(0, 1fr))` : undefined);
+  /** Month name over the first column that starts in it; cell keys are YYYY-MM-DD. */
+  const months = $derived.by(() => {
+    const out: { col: number; name: string }[] = [];
+    let last = "";
+    for (let col = 0; col * 7 < cells.length; col++) {
+      const key = cells.slice(col * 7, col * 7 + 7).find((c) => !c.key.startsWith("pad"))?.key;
+      if (!key || key.slice(0, 7) === last) continue;
+      last = key.slice(0, 7);
+      out.push({
+        col,
+        name: new Date(`${key}T00:00:00`).toLocaleDateString(undefined, { month: "short" }),
+      });
+    }
+    return out;
+  });
   const legend = $derived(heatLegend(max));
   const text = (c: Point) => `${c.label}, ${c.value} ${noun}${c.value === 1 ? "" : "s"}`;
   let live = $state("");
   let pinned = $state("");
 </script>
 
-<div class="wrap">
-  <div class="grid" role="group" aria-label={label} use:roving={{ h: 7, v: 1 }}>
+<div class="wrap" class:compact>
+  {#if compact}
+    <div class="months" aria-hidden="true" style:grid-template-columns={cols}>
+      {#each months as m (m.col)}<span style:grid-column={m.col + 1}>{m.name}</span>{/each}
+    </div>
+  {/if}
+  <div
+    class="grid"
+    role="group"
+    aria-label={label}
+    style:grid-template-columns={cols}
+    use:roving={{ h: 7, v: 1 }}
+  >
     {#each cells as c (c.key)}
       <button
         type="button"
@@ -42,7 +73,7 @@
       ></button>
     {/each}
   </div>
-  <div class="side">
+  <div class="side" hidden={compact}>
     {#if peak}
       <p>Busiest: {text(peak)}</p>
     {:else}
@@ -72,6 +103,22 @@
     grid-auto-flow: column;
     grid-auto-columns: var(--sp-5);
     gap: var(--sp-0);
+  }
+  .compact {
+    display: block;
+  }
+  .compact .grid {
+    grid-template-rows: repeat(7, var(--sp-4));
+  }
+  .months {
+    display: grid;
+    margin-bottom: var(--sp-1);
+    color: var(--muted);
+    font-size: var(--fs-2xs);
+    white-space: nowrap;
+  }
+  .side[hidden] {
+    display: none;
   }
   .cell {
     padding: 0;

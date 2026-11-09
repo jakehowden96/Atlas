@@ -260,7 +260,7 @@ import Overview from "./codeburn/Overview.svelte";
     {#if settings}
       <Settings {refresh} />
     {:else if tab === "overview"}
-      <Overview {filters} {refresh} onOpenSession={(id) => { sessionTarget.set(id); tab = "sessions"; }} />
+      <Overview {filters} {refresh} onNavigate={(id) => (tab = id)} onOpenSession={(id) => { sessionTarget.set(id); tab = "sessions"; }} />
     {:else if tab === "spend"}
       <Spend {filters} {refresh} />
     {:else if tab === "models"}
