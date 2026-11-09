@@ -17,6 +17,8 @@ export interface SessionRow {
   calls: number;
   turns: number;
   outputTokens: number;
+  /** Subagent count, when codeburn reports it on the row. */
+  helperCount?: number;
   startedAt: string;
   endedAt: string;
   durationMs: number;
