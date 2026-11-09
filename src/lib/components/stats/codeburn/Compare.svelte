@@ -240,7 +240,7 @@
   .pill {
     padding: 0 var(--sp-2);
     border: 1px solid var(--warn);
-    border-radius: var(--r-pill, 999px);
+    border-radius: var(--r-pill);
     color: var(--warn);
     font-size: var(--fs-2xs);
   }
@@ -296,7 +296,7 @@
   .fill {
     display: block;
     height: 100%;
-    border-radius: 2px;
+    border-radius: var(--r-xs);
   }
   .mono {
     font-family: var(--font-mono);

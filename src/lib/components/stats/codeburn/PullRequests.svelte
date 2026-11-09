@@ -120,7 +120,7 @@
     place-items: center;
     flex: none;
     width: 28px;
-    height: 28px;
+    height: var(--h-md);
     border-radius: var(--r-card);
     background: color-mix(in srgb, var(--accent) 18%, transparent);
     color: var(--accent);

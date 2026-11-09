@@ -253,7 +253,7 @@
   .pill {
     padding: var(--sp-1) var(--sp-3);
     border: 1px solid var(--border);
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     font-size: var(--fs-xs);
   }
   .pill[aria-pressed="true"] {
