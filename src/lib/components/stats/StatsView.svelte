@@ -73,6 +73,7 @@ import Overview from "./codeburn/Overview.svelte";
 
   let tab = $state("overview");
   let settings = $state(false);
+  let cmpModel = $state("");
   /** Bumped by Refresh; every tab skips the shared cache when it changes. */
   let refresh = $state(0);
   let refreshedAt = $state(Date.now());
@@ -264,11 +265,11 @@ import Overview from "./codeburn/Overview.svelte";
     {:else if tab === "spend"}
       <Spend {filters} {refresh} />
     {:else if tab === "models"}
-      <Models {filters} {refresh} />
+      <Models {filters} {refresh} onCompare={(m) => { cmpModel = m; tab = "compare"; }} />
     {:else if tab === "sessions"}
       <Sessions {filters} {refresh} />
     {:else if tab === "compare"}
-      <Compare {filters} {refresh} />
+      <Compare {filters} {refresh} preselect={cmpModel} />
     {:else if tab === "compare-periods"}
       <ComparePeriods {filters} {refresh} />
     {:else if tab === "pull-requests"}

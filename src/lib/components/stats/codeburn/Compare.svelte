@@ -16,9 +16,11 @@
   import { modelStats, shortKey } from "./compare-derive";
   import Loader from "./Loader.svelte";
 
-  let { filters, refresh }: { filters: Filters; refresh: number } = $props();
+  let { filters, refresh, preselect = "" }: { filters: Filters; refresh: number; preselect?: string } = $props();
 
-  let a = $state("");
+  // Compare remounts on each tab switch, so the initial value is all that is needed.
+  // svelte-ignore state_referenced_locally
+  let a = $state(preselect);
   let b = $state("");
 
   function swap() {
