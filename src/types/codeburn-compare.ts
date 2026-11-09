@@ -29,10 +29,25 @@ export interface CohortStats {
   costMean: number | null;
 }
 
+export interface CohortObservation {
+  project: string;
+  category: string;
+  costUSD: number;
+  costKnown: boolean;
+  oneShot: boolean;
+}
+
+export interface CohortSide {
+  model: string;
+  label: string;
+  stats: CohortStats;
+  observations: CohortObservation[];
+}
+
 export interface CohortComparison {
   kind: "cohort-comparison";
-  modelA: { model: string; label: string; stats: CohortStats };
-  modelB: { model: string; label: string; stats: CohortStats };
+  modelA: CohortSide;
+  modelB: CohortSide;
 }
 
 export interface PeriodTotals {
