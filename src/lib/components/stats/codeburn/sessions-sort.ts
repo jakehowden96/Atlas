@@ -1,6 +1,6 @@
 import type { SessionRow } from "../../../../types/codeburn-sessions";
 
-export type SortKey = "title" | "project" | "cost" | "calls" | "turns" | "startedAt";
+export type SortKey = "title" | "project" | "cost" | "calls" | "turns" | "startedAt" | "outputTokens";
 
 /** Sorted copy; numbers compare numerically, everything else as text. */
 export function sortSessions(rows: SessionRow[], key: SortKey, desc: boolean): SessionRow[] {
