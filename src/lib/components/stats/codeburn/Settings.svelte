@@ -2,26 +2,29 @@
   import type { BudgetStatus } from "../../../../types/codeburn-plans";
   import { codeburnStatus } from "../../../stores/codeburn";
   import CopyButton from "../../ui/CopyButton.svelte";
+  import Card from "./Card.svelte";
   import Loader from "./Loader.svelte";
 
   let { refresh }: { refresh: number } = $props();
   const INSTALL = "npm i -g codeburn";
 </script>
 
-<dl>
-  <dt>codeburn path</dt><dd>{$codeburnStatus?.binary ?? "—"}</dd>
-  <dt>Version</dt><dd>{$codeburnStatus?.version ?? "—"}</dd>
-  <Loader args={["status", "--format", "json"]} {refresh}>
-    {#snippet children(s: BudgetStatus)}
-      <dt>Currency</dt><dd>{s.currency}</dd>
-    {/snippet}
-  </Loader>
-  <dt>Plan</dt><dd>Set it on the Plans tab</dd>
-</dl>
-<p class="hint">
-  Install or update: <code>{INSTALL}</code>
-  <CopyButton value={INSTALL} label="Copy install command" size="sm" />
-</p>
+<Card title="codeburn">
+  <dl>
+    <dt>codeburn path</dt><dd>{$codeburnStatus?.binary ?? "—"}</dd>
+    <dt>Version</dt><dd>{$codeburnStatus?.version ?? "—"}</dd>
+    <Loader args={["status", "--format", "json"]} {refresh}>
+      {#snippet children(s: BudgetStatus)}
+        <dt>Currency</dt><dd>{s.currency}</dd>
+      {/snippet}
+    </Loader>
+    <dt>Plan</dt><dd>Set it on the Plans tab</dd>
+  </dl>
+  <p class="hint">
+    Install or update: <code>{INSTALL}</code>
+    <CopyButton value={INSTALL} label="Copy install command" size="sm" />
+  </p>
+</Card>
 
 <style>
   dl {
@@ -29,6 +32,7 @@
     grid-template-columns: max-content 1fr;
     gap: var(--sp-2) var(--sp-4);
     margin: 0;
+    font-size: var(--fs-xs);
   }
   dt {
     color: var(--muted);
@@ -39,6 +43,7 @@
     word-break: break-all;
   }
   .hint {
+    margin: var(--sp-3) 0 0;
     color: var(--muted);
     font-size: var(--fs-xs);
   }
