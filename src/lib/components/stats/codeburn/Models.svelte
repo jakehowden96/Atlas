@@ -2,11 +2,14 @@
   import { filterArgs, type Filters } from "../../../../types/codeburn";
   import type { ModelRow } from "../../../../types/codeburn-models";
   import { fmtCost, fmtCount, fmtTokens } from "../../../stats-derive";
+  import Button from "../../ui/Button.svelte";
   import Drawer from "../../ui/Drawer.svelte";
+  import Card from "./Card.svelte";
   import Loader from "./Loader.svelte";
   import { byCostDesc, cacheHit, isUnpriced } from "./models-derive";
 
-  let { filters, refresh }: { filters: Filters; refresh: number } = $props();
+  let { filters, refresh, onCompare }: { filters: Filters; refresh: number; onCompare: (model: string) => void } = $props();
+  const DOTS = ["var(--accent)", "var(--warn)", "var(--muted)", "var(--danger)"];
   let picked = $state<ModelRow | null>(null);
 
   /** "—" when unpriced, "~" prefix when codeburn estimated the price. */
@@ -19,35 +22,42 @@
     {#if rows.length === 0}
       <p class="note">No model usage in this period.</p>
     {:else}
-      <div class="card">
-        <table>
+      <Card title="By model">
+        {#snippet note()}
+          <Button size="sm" onclick={() => onCompare(rows[0]?.model ?? "")}>Compare…</Button>
+        {/snippet}
+        <table class="cb-table">
           <thead>
             <tr>
               <th>Model</th>
-              <th class="n">Calls</th>
-              <th class="n">Tokens</th>
-              <th class="n">Cache hit</th>
-              <th class="n">Est. cost</th>
+              <th class="num">Calls</th>
+              <th class="num">Input</th>
+              <th class="num">Output</th>
+              <th class="num">Cache read</th>
+              <th class="num">Cost</th>
+              <th class="num">Saved</th>
             </tr>
           </thead>
           <tbody>
-            {#each byCostDesc(rows) as m (m.providerDisplayName + m.modelDisplayName)}
+            {#each byCostDesc(rows) as m, i (m.providerDisplayName + m.modelDisplayName)}
               <tr>
                 <td>
+                  <span class="dot" style:background={DOTS[i % DOTS.length]}></span>
                   <button type="button" class="plain" onclick={() => (picked = m)}>{m.modelDisplayName}</button>
-                  <span class="note">{m.providerDisplayName}</span>
-                  {#if isUnpriced(m)}<span class="note">(unpriced)</span>{/if}
+                  <div class="note">{m.providerDisplayName}</div>
                 </td>
-                <td class="n">{fmtCount(m.calls)}</td>
-                <td class="n">{fmtTokens(m.totalTokens)}</td>
-                <td class="n">{cacheHit(m).toFixed(1)}%</td>
-                <td class="n">{costText(m)}</td>
+                <td class="num">{fmtCount(m.calls)}</td>
+                <td class="num">{fmtTokens(m.inputTokens)}</td>
+                <td class="num">{fmtTokens(m.outputTokens)}</td>
+                <td class="num">{fmtTokens(m.cacheReadTokens)}</td>
+                <td class="num">{costText(m)}</td>
+                <td class="num">{isUnpriced(m) ? "—" : fmtCost(m.savingsUSD)}</td>
               </tr>
             {/each}
           </tbody>
         </table>
-      </div>
-      <p class="note">Dollar figures are API-equivalent estimates, not what a subscription bills.</p>
+      </Card>
+      <p class="note">Dollar figures are API-equivalent estimates, not what a subscription bills. ~ marks an estimated cost.</p>
     {/if}
   {/snippet}
 </Loader>
@@ -64,6 +74,8 @@
       <dt>Cache hit</dt><dd>{cacheHit(picked).toFixed(1)}%</dd>
       <dt>Est. cost</dt><dd>{costText(picked)}</dd>
     </dl>
+    <Button size="sm" onclick={() => onCompare(picked!.model)}>Compare {picked.modelDisplayName}…</Button>
+
   {/if}
 </Drawer>
 
@@ -71,7 +83,8 @@
   .plain {
     all: unset;
     cursor: pointer;
-    text-decoration: underline dotted;
+    color: var(--accent);
+    text-decoration: underline;
   }
   dl {
     display: grid;
@@ -87,25 +100,12 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
-  .card {
-    padding: var(--sp-4);
-    border: 1px solid var(--border);
-    border-radius: var(--r-card);
-    background: var(--surface);
-    overflow-x: auto;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  th,
-  td {
-    padding: var(--sp-2);
-    text-align: left;
-  }
-  .n {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
+  .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: var(--sp-2);
+    border-radius: 50%;
   }
   .note {
     color: var(--muted);

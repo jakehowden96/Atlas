@@ -3,6 +3,8 @@ import type { ModelRow } from "../../../../types/codeburn-models";
 import { byCostDesc, cacheHit, isUnpriced } from "./models-derive";
 
 const row = (o: Partial<ModelRow>): ModelRow => ({
+  model: "m",
+  savingsUSD: 0,
   modelDisplayName: "m",
   providerDisplayName: "p",
   inputTokens: 0,
