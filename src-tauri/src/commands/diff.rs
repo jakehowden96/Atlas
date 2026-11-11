@@ -291,6 +291,20 @@ pub(crate) fn discover_diff(git_root: &str) -> DiffBundle {
     DiffBundle { local, full }
 }
 
+/// A linked worktree's changes since it forked from `parent_head`: its own
+/// commits plus its working tree. `discover_diff` would diff it against
+/// `main`, so a worktree forked from a feature branch would also carry every
+/// commit that branch has over `main`, repeated once per worktree.
+pub(crate) fn diff_since_fork(git_root: &str, parent_head: &str) -> DiffPart {
+    let fork = git_cmd(git_root, &["merge-base", parent_head, "HEAD"]).unwrap_or_default();
+    match git_diff(git_root, &[&fork, "--"]) {
+        Ok(tracked) if !fork.is_empty() => {
+            assemble(&tracked, Some(&generate_untracked_diffs(git_root)))
+        }
+        _ => discover_diff(git_root).full,
+    }
+}
+
 /// The account for `shown`, cut from a diff that touches `total_files`.
 fn truncation_of(shown: &str, total_files: u32) -> Truncation {
     Truncation {
