@@ -37,6 +37,8 @@
   let det = $state({ metrics: false, counted: false });
   let cw = $state(640);
   let hi = $state<number | null>(null);
+  /** Legend hover: show one period, fade the other. */
+  let only = $state<"a" | "b" | null>(null);
 
   const valid = $derived(
     [r.a0, r.a1, r.b0, r.b1].every((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)) && r.a0 <= r.a1 && r.b0 <= r.b1,
@@ -239,8 +241,8 @@
               <section class="card">
                 <h3 class="label">Cost, day by day, both periods side by side</h3>
                 <ul class="legend">
-                  <li><span class="dot" style:background="var(--muted)"></span>A · {rng(p.rangeA)}</li>
-                  <li><span class="dot" style:background="var(--accent)"></span>B · {rng(p.rangeB)}</li>
+                  <li onpointerenter={() => (only = "a")} onpointerleave={() => (only = null)}><span class="dot" style:background="var(--muted)"></span>A · {rng(p.rangeA)}</li>
+                  <li onpointerenter={() => (only = "b")} onpointerleave={() => (only = null)}><span class="dot" style:background="var(--accent)"></span>B · {rng(p.rangeB)}</li>
                 </ul>
                 <div class="chart" bind:clientWidth={cw}>
                   <svg width={cw} height={H} viewBox={`0 0 ${cw} ${H}`} role="img" aria-label="Daily cost, period A beside period B"
@@ -262,10 +264,10 @@
                     {#each rows as x (x.i)}
                       {@const cx = L + (x.i + 0.5) * slot}
                       {#if x.i < p.rangeA.days}
-                        <rect x={cx - bw - 1} y={y(x.a)} width={bw} height={y(0) - y(x.a)} style="fill:var(--muted)" />
+                        <rect x={cx - bw - 1} y={y(x.a)} width={bw} height={y(0) - y(x.a)} style="fill:var(--muted)" class:fade={only === "b"} />
                       {/if}
                       {#if x.i < p.rangeB.days}
-                        <rect x={cx + 1} y={y(x.b)} width={bw} height={y(0) - y(x.b)} style="fill:var(--accent)" />
+                        <rect x={cx + 1} y={y(x.b)} width={bw} height={y(0) - y(x.b)} style="fill:var(--accent)" class:fade={only === "a"} />
                       {/if}
                       {#if x.i % every === 0}
                         <text x={cx} y={H - 6} text-anchor="middle">Day {x.i + 1}</text>
@@ -658,6 +660,9 @@
     fill: var(--muted);
     font-family: var(--font-mono);
     font-size: var(--fs-2xs);
+  }
+  .fade {
+    opacity: 0.18;
   }
   .tip {
     position: absolute;

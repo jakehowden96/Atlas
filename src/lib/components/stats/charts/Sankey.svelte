@@ -2,7 +2,24 @@
   import type { SpendFlow } from "../../../../types/codeburn-spend";
   import { fmtCost } from "../../../stats-derive";
 
-  let { flow, maxProjects = 6 }: { flow: SpendFlow; maxProjects?: number } = $props();
+  let {
+    flow,
+    maxProjects = 6,
+    onselect,
+    active,
+  }: {
+    flow: SpendFlow;
+    maxProjects?: number;
+    /** Click a project node; "Other" is a bucket and never selects. */
+    onselect?: (projectId: string) => void;
+    /** Project id drawn in the accent colour. */
+    active?: string;
+  } = $props();
+
+  /** What the pointer is on: a model (l), a project (r), or one ribbon (both). Unrelated ribbons fade. */
+  let hl = $state<{ l?: string; r?: string } | null>(null);
+  const faded = (m: string, p: string) =>
+    hl !== null && !((hl.l === undefined || hl.l === m) && (hl.r === undefined || hl.r === p));
 
   // Geometry mirrors the design: wide canvas, 4px nodes, ribbons at 40% opacity.
   const W = 900;
@@ -59,7 +76,7 @@
     const li = new Map(L.map((n) => [n.id, n]));
     const ri = new Map(R.map((n) => [n.id, n]));
     const mid = (LX + RX) / 2;
-    const ribbons: { key: string; d: string; fill: string; text: string }[] = [];
+    const ribbons: { key: string; m: string; p: string; d: string; fill: string; text: string }[] = [];
     for (const [key, cost] of [...pairs].sort((a, b) => b[1] - a[1])) {
       const [m, p] = key.split("\0") as [string, string];
       const a = li.get(m);
@@ -72,6 +89,8 @@
       b.off += h;
       ribbons.push({
         key,
+        m,
+        p,
         d: `M${LX},${y0}C${mid},${y0} ${mid},${y1} ${RX},${y1}L${RX},${y1 + h}C${mid},${y1 + h} ${mid},${y0 + h} ${LX},${y0 + h}Z`,
         fill: color(a.label),
         text: `${a.label} → ${b.label} · ${fmtCost(cost)}`,
@@ -82,21 +101,65 @@
   });
 </script>
 
+{#snippet node(n: Node, on: boolean)}
+  <rect x={RX} y={n.y} width="4" height={n.h} fill={on ? "var(--accent)" : "var(--muted)"} />
+  <text x={RX + 10} y={n.y + n.h / 2 + 4}>{n.label} · {fmtCost(n.cost)}</text>
+{/snippet}
+
 {#if layout.ribbons.length === 0}
   <p class="empty">No spend</p>
 {:else}
   <div class="flow">
-    <svg viewBox={`0 0 ${W} ${layout.H}`} role="img" aria-label="Spend flow from model to project">
+    <svg
+      viewBox={`0 0 ${W} ${layout.H}`}
+      role="group"
+      aria-label="Spend flow from model to project"
+      onpointerleave={() => (hl = null)}
+    >
       {#each layout.ribbons as r (r.key)}
-        <path d={r.d} fill={r.fill} fill-opacity="0.4"><title>{r.text}</title></path>
+        <path
+          role="img"
+          aria-label={r.text}
+          d={r.d}
+          fill={r.fill}
+          fill-opacity="0.4"
+          class:fade={faded(r.m, r.p)}
+          onpointerenter={() => (hl = { l: r.m, r: r.p })}><title>{r.text}</title></path>
       {/each}
       {#each layout.L as n (n.id)}
-        <rect x={LX - 4} y={n.y} width="4" height={n.h} fill={color(n.label)} />
-        <text x={LX - 10} y={n.y + n.h / 2 + 4} text-anchor="end">{n.label} · {fmtCost(n.cost)}</text>
+        <g role="img" aria-label={`${n.label} · ${fmtCost(n.cost)}`} onpointerenter={() => (hl = { l: n.id })}>
+          <rect x={LX - 4} y={n.y} width="4" height={n.h} fill={color(n.label)} />
+          <text x={LX - 10} y={n.y + n.h / 2 + 4} text-anchor="end">{n.label} · {fmtCost(n.cost)}</text>
+        </g>
       {/each}
       {#each layout.R as n (n.id)}
-        <rect x={RX} y={n.y} width="4" height={n.h} fill="var(--muted)" />
-        <text x={RX + 10} y={n.y + n.h / 2 + 4}>{n.label} · {fmtCost(n.cost)}</text>
+        {@const on = n.id === active}
+        {#if onselect && n.id !== OTHER}
+          <g
+            class="pick"
+            class:on
+            role="button"
+            tabindex="0"
+            aria-pressed={on}
+            aria-label={`${n.label} · ${fmtCost(n.cost)}, ${on ? "click to clear filter" : "click to filter"}`}
+            onpointerenter={() => (hl = { r: n.id })}
+            onfocus={() => (hl = { r: n.id })}
+            onblur={() => (hl = null)}
+            onclick={() => onselect(n.id)}
+            onkeydown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onselect(n.id);
+              }
+            }}
+          >
+            {@render node(n, on)}
+          </g>
+        {:else}
+          <g role="img" aria-label={`${n.label} · ${fmtCost(n.cost)}`} onpointerenter={() => (hl = { r: n.id })}>
+            {@render node(n, on)}
+          </g>
+        {/if}
       {/each}
     </svg>
   </div>
@@ -113,6 +176,24 @@
     fill: var(--muted);
     font-family: var(--font-mono);
     font-size: var(--fs-2xs);
+  }
+  path {
+    transition: opacity 0.15s;
+  }
+  .fade {
+    opacity: 0.08;
+  }
+  .pick {
+    cursor: pointer;
+    outline: none;
+  }
+  .pick:hover text,
+  .pick:focus-visible text {
+    fill: var(--text);
+    text-decoration: underline;
+  }
+  .on text {
+    fill: var(--accent);
   }
   .empty {
     margin: 0;

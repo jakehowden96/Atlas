@@ -6,6 +6,7 @@
   import { codeburnAction } from "../../../ipc";
   import { fmtCost, fmtTokens } from "../../../stats-derive";
   import { codeburn } from "../../../stores/codeburn";
+  import { tooltip } from "../../../ui/tooltip";
   import Banner from "../../ui/Banner.svelte";
   import { confirmAction } from "../../ui/ConfirmDialog.svelte";
   import Card from "./Card.svelte";
@@ -102,7 +103,7 @@
       {#if tab === "waste"}
         <div class="op-sum">
           <p class="sub">{r.summary.findingCount} findings · {fmtCost(r.summary.potentialSavingsCostUSD)} potential</p>
-          <div class="hb">
+          <div class="hb" use:tooltip={{ text: `Health ${r.summary.healthScore}/100`, delay: 0, side: "top" }}>
             <span class="name">Health</span>
             <span class="t"
               ><span

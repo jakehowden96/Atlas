@@ -19,6 +19,8 @@
   const B = 22;
   let W = $state(640);
   let hover = $state<number | null>(null);
+  /** Series id under the pointer in the legend; other series fade. */
+  let focus = $state<string | null>(null);
 
   const n = $derived(days.length);
   const peak = $derived(Math.max(0, ...days.map((d) => d.total)));
@@ -34,10 +36,10 @@
   const segs = (d: TrendDay) => {
     let lo = 0;
     const parts = series.length
-      ? series.map((s) => ({ v: d.parts[s.id] ?? 0, color: s.color }))
-      : [{ v: d.total, color: "var(--accent)" }];
+      ? series.map((s) => ({ v: d.parts[s.id] ?? 0, color: s.color, id: s.id }))
+      : [{ v: d.total, color: "var(--accent)", id: "" }];
     return parts.map((p) => {
-      const out = { y: y(lo + p.v), h: Math.max(0, y(lo) - y(lo + p.v)), color: p.color };
+      const out = { y: y(lo + p.v), h: Math.max(0, y(lo) - y(lo + p.v)), color: p.color, id: p.id };
       lo += p.v;
       return out;
     });
@@ -67,7 +69,7 @@
       {/each}
       {#each days as d, i (d.key)}
         {#each segs(d) as s, j (j)}
-          <rect x={bx(i)} y={s.y} width={bw} height={s.h} style:fill={s.color} />
+          <rect x={bx(i)} y={s.y} width={bw} height={s.h} style:fill={s.color} class:fade={focus !== null && s.id !== focus} />
         {/each}
         {#if i % every === 0}<text x={bx(i) + bw / 2} y={H - 6} text-anchor="middle">{d.label}</text>{/if}
       {/each}
@@ -85,7 +87,11 @@
 </div>
 {#if series.length > 0}
   <ul class="legend" aria-label="Models">
-    {#each series as s (s.id)}<li><i style:background={s.color}></i>{s.label}</li>{/each}
+    {#each series as s (s.id)}
+      <li onpointerenter={() => (focus = s.id)} onpointerleave={() => (focus = null)}>
+        <i style:background={s.color}></i>{s.label}
+      </li>
+    {/each}
   </ul>
 {/if}
 
@@ -105,6 +111,12 @@
     fill: var(--muted);
     font-family: var(--font-mono);
     font-size: var(--fs-2xs);
+  }
+  rect {
+    transition: opacity var(--dur-base) var(--ease-out);
+  }
+  .fade {
+    opacity: 0.18;
   }
   .peak {
     stroke: var(--warn);

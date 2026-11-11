@@ -208,7 +208,11 @@
   <Loader args={["spend", "--format", "flow-json", ...filterArgs(filters, "spend")]} {refresh}>
     {#snippet children(flow: SpendFlow)}
       <Card title="Cost flow · model → project" note="model → project flow for this range">
-        <Sankey {flow} />
+        <Sankey
+          {flow}
+          active={flow.projects.find((p) => p.label === filters.project)?.id}
+          onselect={(k) => drill(flow, k)}
+        />
       </Card>
     {/snippet}
   </Loader>

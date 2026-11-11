@@ -12,6 +12,7 @@
   import DailySpend from "../charts/DailySpend.svelte";
   import Ring from "../charts/Ring.svelte";
   import Sparkline from "../charts/Sparkline.svelte";
+  import { tooltip } from "../../../ui/tooltip";
   import Card from "./Card.svelte";
   import Loader from "./Loader.svelte";
   import { byCostDesc, isUnpriced } from "./models-derive";
@@ -72,6 +73,10 @@
     new Date(`${key}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   const asOf = (o: Overview) =>
     new Date(o.generated).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  /** "Nov 1" … "Nov 30": sparkline hover labels, index i is day i + 1. */
+  const monthDays = Array.from({ length: new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() }, (_, i) =>
+    new Date(now.getFullYear(), now.getMonth(), i + 1).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+  );
   const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1).toLocaleDateString(undefined, { month: "long" });
   const sign = (p: number | null | undefined) =>
     p === null || p === undefined ? "" : `${p >= 0 ? "↑" : "↓"} ${Math.abs(Math.round(p))}%`;
@@ -135,14 +140,14 @@
           <div>
             <p class="sub">Efficiency</p>
             <div class="ring-wrap gap-top">
-              <Ring value={es.score} grade={es.grade} label="Efficiency score" />
+              <Ring value={es.score} grade={es.grade} label="Efficiency score" hint="Blend of one-shot rate, cache hit and retry tax" />
               <div class="efs">
                 {#each eff as r (r.label)}
                   {@const right =
                     r.label === "Retry tax" && c.retryTax
                       ? `${fmtCost(c.retryTax.totalUSD)} · ${r.pct.toFixed(1)}% of spend`
                       : `${Math.round(r.pct)}%`}
-                  <div class="ef">
+                  <div class="ef" use:tooltip={{ text: `${r.label} ${right}`, delay: 0, side: "top" }}>
                     <div class="ef-h"><span>{r.label}</span><b>{right}</b></div>
                     <span class="t"><span class="f" class:bad={r.good === "low"} style:width={`${Math.max(2, Math.min(100, r.pct))}%`}></span></span>
                   </div>
@@ -170,7 +175,7 @@
                 {/snippet}
               </Loader>
             </div>
-            <Sparkline values={cum} label="Cumulative spend this month" />
+            <Sparkline values={cum} labels={monthDays} format={fmtCost} label="Cumulative spend this month" />
           </div>
           {#if onNavigate}<button type="button" class="link" onclick={() => onNavigate("spend")}>See spend →</button>{/if}
         </Card>
@@ -182,7 +187,7 @@
                 <p class="sub"><span class="pill neutral">{fmtCost(Math.max(0, pc.projected - mtd))} to go</span></p>
               {/if}
             </div>
-            <Sparkline values={[...cum, ...fc]} dashed label="Projected spend this month" />
+            <Sparkline values={[...cum, ...fc]} labels={monthDays} format={fmtCost} dashed label="Projected spend this month" />
           </div>
           {#if onNavigate}<button type="button" class="link" onclick={() => onNavigate("plans")}>See plans →</button>{/if}
         </Card>

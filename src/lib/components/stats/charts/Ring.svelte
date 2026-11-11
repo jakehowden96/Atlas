@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { tooltip } from "../../../ui/tooltip";
+
   interface Props {
     /** 0..100 */
     value: number;
@@ -6,16 +8,18 @@
     grade?: string;
     /** Names the ring for screen readers, e.g. "Efficiency score". */
     label: string;
+    /** Extra line in the hover tooltip. */
+    hint?: string;
   }
 
-  let { value, grade, label }: Props = $props();
+  let { value, grade, label, hint }: Props = $props();
 
   const R = 36;
   const C = 2 * Math.PI * R;
   const pct = $derived(Math.max(0, Math.min(100, value)));
 </script>
 
-<div class="ring">
+<div class="ring" use:tooltip={{ text: `${label}: ${Math.round(pct)} of 100${hint ? ` · ${hint}` : ""}`, delay: 0, side: "top" }}>
   <svg width="84" height="84" viewBox="0 0 84 84" role="img" aria-label={`${label}: ${Math.round(pct)} of 100`}>
     <circle class="track" cx="42" cy="42" r={R} />
     <circle class="arc" cx="42" cy="42" r={R} stroke-dasharray={`${(C * pct) / 100} ${C}`} />

@@ -4,6 +4,7 @@
   import { codeburnAction } from "../../../ipc";
   import { errorMessage } from "../../../ipc-error";
   import { fmtCost } from "../../../stats-derive";
+  import { tooltip } from "../../../ui/tooltip";
   import Banner from "../../ui/Banner.svelte";
   import Button from "../../ui/Button.svelte";
   import Progress from "../../ui/Progress.svelte";
@@ -61,7 +62,9 @@
           {#each p.windows as w (w.label)}
             <div class="live-row">
               <span>{w.label} <span class="muted">resets in {resetCountdown(w.resetsAt, now)}</span></span>
-              <Progress thick thresholds label={`${p.name} ${w.label}`} value={w.usedPct} count={`${w.usedPct}%`} />
+              <div use:tooltip={{ text: `${w.label} ${w.usedPct}% used`, delay: 0, side: "top" }}>
+                <Progress thick thresholds label={`${p.name} ${w.label}`} value={w.usedPct} count={`${w.usedPct}%`} />
+              </div>
             </div>
           {:else}
             <p class="muted">No usage windows reported.</p>

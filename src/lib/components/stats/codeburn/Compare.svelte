@@ -18,6 +18,8 @@
   // svelte-ignore state_referenced_locally
   let pickA = $state<string | undefined>(preselect || undefined);
   let pickB = $state<string>();
+  /** Head-to-head legend hover: 0 = model A, 1 = model B; the other fades. */
+  let only = $state<0 | 1 | null>(null);
 
   type M = ReturnType<typeof metricsOf>;
   /** dir 1: higher is better, -1: lower is better, 0: never highlighted. */
@@ -144,15 +146,24 @@
                 {@const rows = cohortRows(c.modelA.observations, c.modelB.observations, "category")}
                 <Card title="Category head-to-head" note="One-shot rate · edit turns">
                   <ul class="legend">
-                    <li><span class="dot" style:background={ca}></span>{a.model}</li>
-                    <li><span class="dot" style:background={cb}></span>{b.model}</li>
+                    <li onpointerenter={() => (only = 0)} onpointerleave={() => (only = null)}><span class="dot" style:background={ca}></span>{a.model}</li>
+                    <li onpointerenter={() => (only = 1)} onpointerleave={() => (only = null)}><span class="dot" style:background={cb}></span>{b.model}</li>
                   </ul>
                   {#each rows as r (r.key)}
                     {@const w = win(r.a.rate, r.b.rate, 1)}
                     <div class="cat">
                       <b>{r.key}</b>
-                      {#each [[r.a, ca, w > 0], [r.b, cb, w < 0]] as const as [v, color, good], i (i)}
-                        <div class="cmp" class:low={v.n < 10}>
+                      {#each [[r.a, ca, w > 0, a.model], [r.b, cb, w < 0, b.model]] as const as [v, color, good, name], i (i)}
+                        <div
+                          class="cmp"
+                          class:low={v.n < 10}
+                          class:fade={only !== null && only !== i}
+                          use:tooltip={{
+                            text: `${name}: ${v.rate === null ? "—" : `${Math.round(v.rate)}%`} one-shot over ${v.n} edit turns`,
+                            delay: 0,
+                            side: "top",
+                          }}
+                        >
                           <span class="track">
                             <span class="fill" style:width={`${v.rate ?? 0}%`} style:background={color}></span>
                           </span>
@@ -387,6 +398,9 @@
   }
   .cmp.low {
     opacity: 0.55;
+  }
+  .cmp.fade {
+    opacity: 0.18;
   }
   .track {
     height: 6px;
