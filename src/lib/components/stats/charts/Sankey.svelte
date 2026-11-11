@@ -2,13 +2,13 @@
   import type { SpendFlow } from "../../../../types/codeburn-spend";
   import { fmtCost } from "../../../stats-derive";
 
-  let { flow, maxProjects = 10 }: { flow: SpendFlow; maxProjects?: number } = $props();
+  let { flow, maxProjects = 6 }: { flow: SpendFlow; maxProjects?: number } = $props();
 
-  const W = 720;
-  const H = 260;
-  const NODE_W = 10;
-  const GAP = 6;
-  const LABEL_W = 150;
+  // Geometry mirrors the design: wide canvas, 4px nodes, ribbons at 40% opacity.
+  const W = 900;
+  const LX = 230;
+  const RX = 640;
+  const GAP = 4;
   const OTHER = "__other__";
 
   const color = (label: string) => {
@@ -23,16 +23,6 @@
     y: number;
     h: number;
     off: number;
-  }
-
-  /** Stacks nodes top to bottom, scaled so the taller side fits H. */
-  function stack(xs: { id: string; label: string; cost: number }[], k: number): Node[] {
-    let y = 0;
-    return xs.map((x) => {
-      const n = { ...x, y, h: x.cost * k, off: 0 };
-      y += n.h + GAP;
-      return n;
-    });
   }
 
   const layout = $derived.by(() => {
@@ -55,60 +45,61 @@
     if (merged.get(OTHER)) right.push({ id: OTHER, label: "Other", cost: merged.get(OTHER)! });
     const left = flow.models.filter((m) => m.cost > 0).sort((a, b) => b.cost - a.cost);
     const total = right.reduce((s, p) => s + p.cost, 0);
-    const room = (n: number) => H - GAP * Math.max(0, n - 1);
-    const k = total > 0 ? Math.min(room(left.length), room(right.length)) / total : 0;
-    const L = stack(left, k);
-    const R = stack(right, k);
+    const u = total > 0 ? 140 / total : 0;
+    const stack = (xs: { id: string; label: string; cost: number }[]): Node[] => {
+      let y = 0;
+      return xs.map((x) => {
+        const n = { ...x, y, h: Math.max(10, x.cost * u), off: 0 };
+        y += n.h + GAP;
+        return n;
+      });
+    };
+    const L = stack(left);
+    const R = stack(right);
     const li = new Map(L.map((n) => [n.id, n]));
     const ri = new Map(R.map((n) => [n.id, n]));
-    const ribbons: { key: string; d: string; w: number; fill: string; text: string }[] = [];
-    // Largest first within each node so ribbons do not cross more than they must.
-    const sorted = [...pairs].sort((a, b) => b[1] - a[1]);
-    for (const [key, cost] of sorted) {
+    const mid = (LX + RX) / 2;
+    const ribbons: { key: string; d: string; fill: string; text: string }[] = [];
+    for (const [key, cost] of [...pairs].sort((a, b) => b[1] - a[1])) {
       const [m, p] = key.split("\0") as [string, string];
       const a = li.get(m);
       const b = ri.get(p);
       if (!a || !b) continue;
-      const w = cost * k;
-      const y1 = a.y + a.off + w / 2;
-      const y2 = b.y + b.off + w / 2;
-      a.off += w;
-      b.off += w;
-      const x1 = LABEL_W + NODE_W;
-      const x2 = W - LABEL_W - NODE_W;
-      const mid = (x1 + x2) / 2;
+      const h = cost * u;
+      const y0 = a.y + a.off;
+      const y1 = b.y + b.off;
+      a.off += h;
+      b.off += h;
       ribbons.push({
         key,
-        d: `M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}`,
-        w: Math.max(w, 1),
+        d: `M${LX},${y0}C${mid},${y0} ${mid},${y1} ${RX},${y1}L${RX},${y1 + h}C${mid},${y1 + h} ${mid},${y0 + h} ${LX},${y0 + h}Z`,
         fill: color(a.label),
-        text: `${a.label} → ${b.label}: ${fmtCost(cost)}`,
+        text: `${a.label} → ${b.label} · ${fmtCost(cost)}`,
       });
     }
-    return { L, R, ribbons };
+    const end = (a: Node[]) => a.reduce((m, x) => Math.max(m, x.y + x.h), 0);
+    return { L, R, ribbons, H: Math.max(end(L), end(R)) + 4 };
   });
 </script>
 
 {#if layout.ribbons.length === 0}
   <p class="empty">No spend</p>
 {:else}
-  <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Cost flow from model to project">
-    {#each layout.ribbons as r (r.key)}
-      <path d={r.d} stroke={r.fill} stroke-width={r.w} fill="none" opacity="0.4"><title>{r.text}</title></path>
-    {/each}
-    {#each layout.L as n (n.id)}
-      <rect x={LABEL_W} y={n.y} width={NODE_W} height={Math.max(n.h, 1)} fill={color(n.label)} />
-      <text x={LABEL_W - 6} y={n.y + n.h / 2} text-anchor="end" dominant-baseline="middle">
-        {n.label} {fmtCost(n.cost)}
-      </text>
-    {/each}
-    {#each layout.R as n (n.id)}
-      <rect x={W - LABEL_W - NODE_W} y={n.y} width={NODE_W} height={Math.max(n.h, 1)} fill="var(--muted)" />
-      <text x={W - LABEL_W + 6} y={n.y + n.h / 2} dominant-baseline="middle">
-        {n.label} {fmtCost(n.cost)}
-      </text>
-    {/each}
-  </svg>
+  <div class="flow">
+    <svg viewBox={`0 0 ${W} ${layout.H}`} role="img" aria-label="Spend flow from model to project">
+      {#each layout.ribbons as r (r.key)}
+        <path d={r.d} fill={r.fill} fill-opacity="0.4"><title>{r.text}</title></path>
+      {/each}
+      {#each layout.L as n (n.id)}
+        <rect x={LX - 4} y={n.y} width="4" height={n.h} fill={color(n.label)} />
+        <text x={LX - 10} y={n.y + n.h / 2 + 4} text-anchor="end">{n.label} · {fmtCost(n.cost)}</text>
+      {/each}
+      {#each layout.R as n (n.id)}
+        <rect x={RX} y={n.y} width="4" height={n.h} fill="var(--muted)" />
+        <text x={RX + 10} y={n.y + n.h / 2 + 4}>{n.label} · {fmtCost(n.cost)}</text>
+      {/each}
+    </svg>
+  </div>
 {/if}
 
 <style>
@@ -116,14 +107,18 @@
     display: block;
     width: 100%;
     height: auto;
+    overflow: visible;
   }
   text {
-    fill: var(--text);
+    fill: var(--muted);
+    font-family: var(--font-mono);
     font-size: var(--fs-2xs);
   }
   .empty {
     margin: 0;
+    padding: var(--sp-7) 0;
     color: var(--muted);
     font-size: var(--fs-xs);
+    text-align: center;
   }
 </style>

@@ -15,15 +15,16 @@
       {#if q.providers.length === 0}
         <EmptyState icon="search" title="No providers" />
       {:else}
-        <ul>
-          {#each q.providers as p (p.id)}
-            <li>
-              <strong>{p.name}</strong>
-              <span class="detail">Built-in provider{p.plan ? ` · ${p.plan}` : ""}</span>
-              <span class="pill" class:on={p.available}>{p.available ? "on" : "not set up"}</span>
-            </li>
-          {/each}
-        </ul>
+        {#each q.providers as p, i (p.id)}
+          <div class="lrow">
+            <span class="i">{String(i + 1).padStart(2, "0")}</span>
+            <span class="b">
+              <b>{p.name}</b>
+              <span>Built-in provider</span>
+            </span>
+            <span class="pill" class:neutral={!p.available}>{p.available ? "on" : "not set up"}</span>
+          </div>
+        {/each}
       {/if}
     </Card>
   {/snippet}
@@ -35,31 +36,56 @@
     color: var(--muted);
     font-size: var(--fs-xs);
   }
-  ul {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  li {
+  .lrow {
     display: flex;
-    align-items: baseline;
-    gap: var(--sp-3);
-    padding: var(--sp-2) 0;
-    border-top: 1px solid var(--border);
+    align-items: center;
+    gap: var(--sp-4);
+    padding: var(--sp-3) 0;
+    border-bottom: 1px solid var(--border);
     font-size: var(--fs-xs);
   }
-  .detail {
+  .lrow:last-child {
+    border-bottom: 0;
+  }
+  .lrow:hover {
+    background: var(--surface2);
+  }
+  .i {
+    width: 22px;
+    flex-shrink: 0;
+    color: var(--muted);
+    font-family: var(--font-mono);
+  }
+  .b {
     flex: 1;
+    min-width: 0;
+  }
+  .b b {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semi);
+  }
+  .b span {
     color: var(--muted);
   }
   .pill {
-    padding: 0 var(--sp-2);
+    display: inline-flex;
+    align-items: center;
+    height: var(--h-xs);
+    padding: 0 var(--sp-3);
     border-radius: var(--r-pill);
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: var(--fs-2xs);
+    font-weight: var(--fw-medium);
+    white-space: nowrap;
+  }
+  .pill.neutral {
     background: var(--surface3);
     color: var(--muted);
-    font-size: var(--fs-2xs);
-  }
-  .pill.on {
-    color: var(--text);
   }
 </style>

@@ -1,55 +1,70 @@
 <script lang="ts">
   interface Props {
-    /** Actual values, one per slot from the left. */
     values: number[];
-    /** Slots on the x axis; more than `values.length` leaves room for a forecast. */
-    slots?: number;
-    /** Dashed forecast from the last value to this value at the last slot. */
-    forecast?: number;
+    /** Draw the whole line dashed (a projection). */
+    dashed?: boolean;
     /** Names the chart for screen readers. */
     label: string;
   }
 
-  let { values, slots = values.length, forecast, label }: Props = $props();
+  let { values, dashed = false, label }: Props = $props();
 
-  const W = 240;
-  const H = 64;
-  const top = $derived(Math.max(1e-9, ...values, forecast ?? 0));
-  const x = (i: number) => (i / Math.max(1, slots - 1)) * W;
-  const y = (v: number) => 4 + (1 - v / top) * (H - 8);
-  const line = $derived(values.map((v, i) => `${x(i)},${y(v)}`).join("L"));
-  const last = $derived(values.length - 1);
+  const W = 300;
+  const H = 72;
+  const P = 8;
+  const top = $derived(Math.max(1e-9, ...values));
+  const pts = $derived(
+    values.map((v, i): [number, number] => [
+      P + (i / Math.max(1, values.length - 1)) * (W - 2 * P),
+      H - 4 - (v / top) * (H - 16),
+    ]),
+  );
+  const line = $derived(`M${pts.map((p) => p.join(",")).join("L")}`);
+  const last = $derived(pts[pts.length - 1] ?? ([P, H] as [number, number]));
 </script>
 
 {#if values.length > 0}
-  <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={label}>
-    <path class="area" d={`M${line}L${x(last)},${H}L0,${H}Z`} />
-    <path class="line" d={`M${line}`} />
-    {#if forecast !== undefined}
-      <path class="fc" d={`M${x(last)},${y(values[last]!)}L${x(slots - 1)},${y(forecast)}`} />
-    {/if}
-  </svg>
+  <div class="w">
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={label}>
+      <path class="area" d={`${line}L${last[0]},${H}L${P},${H}Z`} />
+      <path class="line" class:dashed d={line} />
+    </svg>
+    <i class="dot" style:left={`${(last[0] / W) * 100}%`} style:top={`${(last[1] / H) * 100}%`}></i>
+  </div>
 {/if}
 
 <style>
+  .w {
+    position: relative;
+    min-width: 0;
+    padding: var(--sp-1) 0;
+  }
   svg {
     display: block;
     width: 100%;
-    height: 64px;
-    overflow: visible;
+    height: 72px;
   }
   .area {
-    fill: color-mix(in srgb, var(--accent) 16%, transparent);
+    fill: var(--accent);
+    fill-opacity: 0.12;
   }
-  .line,
-  .fc {
+  .line {
     fill: none;
     stroke: var(--accent);
-    stroke-width: 1.5;
-    stroke-linejoin: round;
+    stroke-width: 2;
     vector-effect: non-scaling-stroke;
   }
-  .fc {
-    stroke-dasharray: 3 3;
+  .dashed {
+    stroke-dasharray: 4 4;
+  }
+  .dot {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 2px var(--surface);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
   }
 </style>

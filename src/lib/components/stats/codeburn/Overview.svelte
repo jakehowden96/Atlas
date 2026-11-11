@@ -7,10 +7,9 @@
   import type { Yield } from "../../../../types/codeburn-yield";
   import { fmtCost, fmtCount, fmtTokens, localDayKey } from "../../../stats-derive";
   import { monthCost } from "../../../stores/cost";
-  import Icon from "../../ui/Icon.svelte";
   import SegmentedControl, { type Segment } from "../../ui/SegmentedControl.svelte";
-  import DailyBars from "../charts/DailyBars.svelte";
-  import Heatmap from "../charts/Heatmap.svelte";
+  import ActivityGrid from "../charts/ActivityGrid.svelte";
+  import DailySpend from "../charts/DailySpend.svelte";
   import Ring from "../charts/Ring.svelte";
   import Sparkline from "../charts/Sparkline.svelte";
   import Card from "./Card.svelte";
@@ -19,8 +18,10 @@
   import {
     activityCells,
     efficiencyRows,
+    efficiencyScore,
     fmtMs,
     fmtPct,
+    modelColor,
     monthCumulative,
     monthWindows,
     pace,
@@ -71,8 +72,9 @@
     new Date(`${key}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   const asOf = (o: Overview) =>
     new Date(o.generated).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1).toLocaleDateString(undefined, { month: "long" });
   const sign = (p: number | null | undefined) =>
-    p === null || p === undefined ? "" : `${p >= 0 ? "↑" : "↓"}${Math.abs(Math.round(p))}%`;
+    p === null || p === undefined ? "" : `${p >= 0 ? "↑" : "↓"} ${Math.abs(Math.round(p))}%`;
   /** The one-shot rate is 0 when a category had no edit turns: show "—" rather than 0%. */
   const oneShot = (r: number) => (r > 0 ? `${Math.round(r * 100)}% one-shot` : "— one-shot");
 </script>
@@ -83,7 +85,7 @@
       {@const c = o.current}
       {@const pc = pace(o.history.daily, $monthCost, now)}
       {@const eff = efficiencyRows(c)}
-      {@const cells = activityCells(o, now)}
+      {@const es = efficiencyScore(c)}      {@const cells = activityCells(o, now)}
       {@const active = cells.filter((x) => x.value > 0).length}
       {@const worst = (c.topReworkedFiles ?? [])[0]}
       {@const t = trend(o.history.timeline, "cost")}
@@ -99,56 +101,50 @@
       {@const barPeak = bars.reduce((m, d) => (d.total > m.total ? d : m), bars[0] ?? { total: 0, label: "" })}
       {@const cum = monthCumulative(o.history.daily, now)}
       {@const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()}
+      {@const mtd = $monthCost}
+      {@const left = Math.max(1, dim - cum.length)}
+      {@const fc =
+        pc.projected !== null && mtd !== null
+          ? Array.from({ length: left }, (_, j) => mtd + ((pc.projected! - mtd) * (j + 1)) / left)
+          : []}
 
       <!-- 1. Hero -->
-      <Card
-        title={filters.period === "today" ? `Today (${localDayKey(now)})` : c.label}
-        note={o.streak ? `${o.streak}-day streak` : undefined}
-      >
+      <Card flush title={filters.period === "today" ? `Today (${localDayKey(now)})` : c.label}>
+        {#snippet note()}
+          {#if o.streak}<span class="pill warn">{o.streak}-day streak</span>{/if}
+        {/snippet}
         <div class="hero">
-          <div class="col">
+          <div>
             <p class="big">{fmtCost(c.cost)}</p>
-            <p class="muted">
-              {fmtCount(c.calls)} calls · {c.sessionCountBasis === "partial" ? "at least " : ""}{c.sessions}
-              sessions
+            <p class="sub">
+              {fmtCount(c.calls)} calls · {c.sessionCountBasis === "partial" ? "at least " : ""}{c.sessions} sessions
             </p>
-            <dl class="trio">
-              <div><dt>Yesterday</dt><dd>{pc.yesterday === null ? "—" : fmtCost(pc.yesterday)}</dd></div>
-              <div><dt>7-day avg</dt><dd>{pc.avg7 === null ? "—" : fmtCost(pc.avg7)}</dd></div>
-              <div><dt>vs yesterday</dt><dd class:up={(pc.vsYesterdayPct ?? 0) > 0}>{fmtPct(pc.vsYesterdayPct)}</dd></div>
-            </dl>
+            <div class="stat3">
+              <div><span>Yesterday</span><b>{pc.yesterday === null ? "—" : fmtCost(pc.yesterday)}</b></div>
+              <div><span>7-day avg</span><b>{pc.avg7 === null ? "—" : fmtCost(pc.avg7)}</b></div>
+              <div>
+                <span>vs yesterday</span>
+                <b class:up={(pc.vsYesterdayPct ?? 0) > 0} class:down={(pc.vsYesterdayPct ?? 0) < 0}>{fmtPct(pc.vsYesterdayPct)}</b>
+              </div>
+            </div>
           </div>
-          <div class="col">
-            <p class="muted">Daily activity <b class="accent">{active} active days</b></p>
-            <Heatmap {cells} noun="call" label="Calls per day" emptyText="No activity" compact />
+          <div>
+            <p class="sub">Daily activity <b class="mono accent">{active} active days</b></p>
+            <div class="gap-top"><ActivityGrid {cells} noun="call" /></div>
           </div>
-          <div class="col">
-            <p class="muted">Efficiency</p>
-            <div class="eff">
-              <Loader args={optArgs} {refresh}>
-                {#snippet children(r: OptimizeReport)}
-                  <div class="ringbox">
-                    <Ring value={r.summary.healthScore} label="Efficiency score" />
-                    <span class="grade">{r.summary.healthGrade}</span>
-                  </div>
-                {/snippet}
-              </Loader>
-              <div class="rows">
+          <div>
+            <p class="sub">Efficiency</p>
+            <div class="ring-wrap gap-top">
+              <Ring value={es.score} grade={es.grade} label="Efficiency score" />
+              <div class="efs">
                 {#each eff as r (r.label)}
-                  <div class="erow">
-                    <span>{r.label}</span>
-                    <span class="num">
-                      {r.label === "Retry tax" && c.retryTax
-                        ? `${fmtCost(c.retryTax.totalUSD)} · ${r.pct.toFixed(1)}% of spend`
-                        : `${Math.round(r.pct)}%`}
-                    </span>
-                    <span class="track"
-                      ><span
-                        class="fill"
-                        class:waste={r.good === "low"}
-                        style:width={`${Math.min(100, r.pct)}%`}
-                      ></span></span
-                    >
+                  {@const right =
+                    r.label === "Retry tax" && c.retryTax
+                      ? `${fmtCost(c.retryTax.totalUSD)} · ${r.pct.toFixed(1)}% of spend`
+                      : `${Math.round(r.pct)}%`}
+                  <div class="ef">
+                    <div class="ef-h"><span>{r.label}</span><b>{right}</b></div>
+                    <span class="t"><span class="f" class:bad={r.good === "low"} style:width={`${Math.max(2, Math.min(100, r.pct))}%`}></span></span>
                   </div>
                 {/each}
               </div>
@@ -158,35 +154,36 @@
       </Card>
 
       <!-- 2. Month to date / Projected month -->
-      <div class="pair">
+      <div class="grid g2">
         <Card title="Month to date">
-          <p class="big sm">{$monthCost === null ? "—" : fmtCost($monthCost)}</p>
-          <Loader args={monthArgs} {refresh}>
-            {#snippet children(p: PeriodCompare)}
-              {#if p.totals.pct.cost !== null}
-                <p class="muted">
-                  <span class="pill" class:up={p.totals.pct.cost > 0}>{sign(p.totals.pct.cost)}</span>
-                  vs last month pace
-                </p>
-              {/if}
-            {/snippet}
-          </Loader>
-          <Sparkline values={cum} slots={dim} label="Cumulative spend this month" />
+          <div class="ov-mp">
+            <div>
+              <div class="big sm">{mtd === null ? "—" : fmtCost(mtd)}</div>
+              <Loader args={monthArgs} {refresh}>
+                {#snippet children(p: PeriodCompare)}
+                  {#if p.totals.pct.cost !== null}
+                    <p class="sub">
+                      <span class="pill" class:bad={p.totals.pct.cost > 0}>{sign(p.totals.pct.cost)}</span>
+                      vs {lastMonth} pace
+                    </p>
+                  {/if}
+                {/snippet}
+              </Loader>
+            </div>
+            <Sparkline values={cum} label="Cumulative spend this month" />
+          </div>
           {#if onNavigate}<button type="button" class="link" onclick={() => onNavigate("spend")}>See spend →</button>{/if}
         </Card>
         <Card title="Projected month">
-          <p class="big sm">
-            {pc.projected === null ? "—" : fmtCost(pc.projected)} <span class="muted">est</span>
-          </p>
-          {#if pc.projected !== null && $monthCost !== null}
-            <p class="muted"><span class="pill">{fmtCost(Math.max(0, pc.projected - $monthCost))} to go</span></p>
-          {/if}
-          <Sparkline
-            values={cum}
-            slots={dim}
-            forecast={pc.projected ?? undefined}
-            label="Projected spend this month"
-          />
+          <div class="ov-mp">
+            <div>
+              <div class="big sm">{pc.projected === null ? "—" : fmtCost(pc.projected)} <small class="est">est</small></div>
+              {#if pc.projected !== null && mtd !== null}
+                <p class="sub"><span class="pill neutral">{fmtCost(Math.max(0, pc.projected - mtd))} to go</span></p>
+              {/if}
+            </div>
+            <Sparkline values={[...cum, ...fc]} dashed label="Projected spend this month" />
+          </div>
           {#if onNavigate}<button type="button" class="link" onclick={() => onNavigate("plans")}>See plans →</button>{/if}
         </Card>
       </div>
@@ -195,32 +192,32 @@
       <Card title="Daily spend">
         {#snippet note()}
           <span class="chips">
-            <span class="chip">Avg/day {bars.length ? fmtCost(bars.reduce((s, d) => s + d.total, 0) / bars.length) : "—"}</span>
-            <span class="chip">Peak {fmtCost(barPeak.total)} · {barPeak.label}</span>
-            <span class="chip">Yesterday {pc.yesterday === null ? "—" : fmtCost(pc.yesterday)}</span>
+            <span class="pill neutral">Avg/day {bars.length ? fmtCost(bars.reduce((s, d) => s + d.total, 0) / bars.length) : "—"}</span>
+            <span class="pill neutral">Peak {fmtCost(barPeak.total)} · {barPeak.label}</span>
+            <span class="pill neutral">Yesterday {pc.yesterday === null ? "—" : fmtCost(pc.yesterday)}</span>
           </span>
         {/snippet}
-        <DailyBars days={bars} series={stacked ? t.series : []} unit="usd" label="Daily spend" />
+        <DailySpend days={bars} series={stacked ? t.series : []} label="Daily spend" />
       </Card>
 
       <!-- 4. Workflow -->
       <Card title="Workflow">
-        <div class="cells">
+        <div class="ov-pair">
           <div>
-            <span class="k">Correction rate</span>
-            <b class="v">{c.workflow ? `${(c.workflow.correctionRate * 100).toFixed(0)}%` : "—"}</b>
-            <span class="k">{c.workflow ? `${c.workflow.corrections} corrections` : ""}</span>
+            <div class="sub">Correction rate</div>
+            <div class="mono ov-big">{c.workflow ? `${(c.workflow.correctionRate * 100).toFixed(0)}%` : "—"}</div>
+            <div class="sub">{c.workflow ? `${c.workflow.corrections} corrections` : ""}</div>
           </div>
           <div>
-            <span class="k">Time to first edit</span>
-            <b class="v">{c.workflow ? fmtMs(c.workflow.medianTimeToFirstEditMs) : "—"}</b>
-            <span class="k">median</span>
+            <div class="sub">Time to first edit</div>
+            <div class="mono ov-big">{c.workflow ? fmtMs(c.workflow.medianTimeToFirstEditMs) : "—"}</div>
+            <div class="sub">median</div>
           </div>
         </div>
-        <p class="muted">
-          Top rework: {#if worst}<code>{worst.path}</code> · {worst.sessions} session{worst.sessions === 1 ? "" : "s"} · {worst.edits} edits{:else}—{/if}
+        <p class="sub mt">
+          Top rework: {#if worst}<b class="mono">{worst.path}</b> · {worst.sessions} session{worst.sessions === 1 ? "" : "s"} · {worst.edits} edits{:else}—{/if}
         </p>
-        <p class="muted">Corrections, first-edit latency, and file churn across your sessions.</p>
+        <p class="sub">Corrections, first-edit latency, and file churn across your sessions.</p>
       </Card>
 
       <!-- 5. Pace banner -->
@@ -230,57 +227,69 @@
           {@const driver = [...p.models].sort((a, b) => b.diff - a.diff)[0]}
           <Loader args={optArgs} {refresh}>
             {#snippet children(r: OptimizeReport)}
-              <div class="banner">
+              <section class="card banner">
+                <span class="muted">↗</span>
                 <span>
                   {#if pct === null}
                     Not enough data from last week to compare pace.
                   {:else}
-                    You're pacing <b>{Math.abs(Math.round(pct))}% {pct >= 0 ? "higher" : "lower"}</b> than last week{#if driver && driver.diff > 0}; <b>{driver.key}</b> is the biggest driver{/if}.
+                    You're pacing <b>{Math.abs(Math.round(pct))}% {pct >= 0 ? "higher" : "lower"} than last week</b>{#if driver && driver.diff > 0}; <b>{driver.key}</b> is the biggest driver{/if}.
                   {/if}
-                  <b>{fmtCost(r.summary.potentialSavingsCostUSD)}</b> is recoverable.
-                  <span class="muted">(as of {asOf(o)})</span>
+                  <b class="mono">{fmtCost(r.summary.potentialSavingsCostUSD)}</b> is recoverable.
+                  <span class="sub">(as of {asOf(o)})</span>
                 </span>
+                <span class="spacer"></span>
                 {#if onNavigate}<button type="button" class="link" onclick={() => onNavigate("optimize")}>Review →</button>{/if}
-              </div>
+              </section>
             {/snippet}
           </Loader>
         {/snippet}
       </Loader>
 
       <!-- 6. Wins / Improvements / Risks -->
-      <Card title="Wins, improvements, risks">
-        <div class="three">
-          <div>
-            <h4 class="ok">Wins</h4>
-            {#if c.cacheHitPercent >= 80}<p>Cache hit at {Math.round(c.cacheHitPercent)}%, most prompts reuse cache</p>{/if}
-            {#if c.oneShotRate >= 0.7}<p>{Math.round(c.oneShotRate * 100)}% one-shot, edits land first try</p>{/if}
-            {#if (o.streak ?? 0) >= 2}<p>{o.streak}-day usage streak</p>{/if}
+      <section class="card">
+        <div class="wir">
+          <div class="wins">
+            <h5>✓ Wins</h5>
+            <ul>
+              {#if c.cacheHitPercent >= 80}<li>Cache hit at {Math.round(c.cacheHitPercent)}%, most prompts reuse cache</li>{/if}
+              {#if c.oneShotRate >= 0.7}<li>{Math.round(c.oneShotRate * 100)}% one-shot, edits land first try</li>{/if}
+              {#if (o.streak ?? 0) >= 2}<li>{o.streak}-day usage streak</li>{/if}
+            </ul>
           </div>
-          <div>
-            <h4 class="warn">Improvements</h4>
+          <div class="imps">
+            <h5>↗ Improvements</h5>
             <Loader args={optArgs} {refresh}>
               {#snippet children(r: OptimizeReport)}
-                {#each r.findings.filter((f) => f.class !== "keep").slice(0, 3) as f (f.id)}
-                  <p class="imp"><span>{f.title}</span><span class="num">as of {asOf(o)} {fmtCost(f.estimatedSavingsUSD)}</span></p>
-                {:else}
-                  <p class="muted">No findings.</p>
-                {/each}
+                <ul>
+                  {#each r.findings.filter((f) => f.class !== "keep").slice(0, 3) as f (f.id)}
+                    <li>
+                      <button type="button" class="ov-wi" onclick={() => onNavigate?.("optimize")}>
+                        <span>{f.title}</span><span class="ov-asof">as of {asOf(o)}</span><b class="mono">{fmtCost(f.estimatedSavingsUSD)}</b>
+                      </button>
+                    </li>
+                  {:else}
+                    <li>No findings.</li>
+                  {/each}
+                </ul>
               {/snippet}
             </Loader>
           </div>
-          <div>
-            <h4 class="bad">Risks</h4>
-            {#if barPeak.total > 0}<p>Peak day {fmtCost(barPeak.total)} on {barPeak.label}</p>{/if}
+          <div class="risks">
+            <h5>⚠ Risks</h5>
             <Loader args={monthArgs} {refresh}>
               {#snippet children(p: PeriodCompare)}
-                {#if pc.projected !== null && p.totals.pct.cost !== null}
-                  <p>On pace for {fmtCost(pc.projected)} this month, {fmtPct(p.totals.pct.cost)} vs last</p>
-                {/if}
+                <ul>
+                  {#if barPeak.total > 0}<li>Peak day hit {fmtCost(barPeak.total)} on {barPeak.label}</li>{/if}
+                  {#if pc.projected !== null}
+                    <li>On pace for {fmtCost(pc.projected)} this month{p.totals.pct.cost !== null ? `, ${fmtPct(p.totals.pct.cost)} vs last` : ""}</li>
+                  {/if}
+                </ul>
               {/snippet}
             </Loader>
           </div>
         </div>
-      </Card>
+      </section>
 
       <!-- 7. Cost per outcome -->
       <Card title="Cost per outcome" note={`as of ${asOf(o)}`}>
@@ -288,50 +297,57 @@
           {#snippet children(y: Yield)}
             {@const commits = y.details.reduce((s, d) => s + d.commitCount, 0)}
             {@const prod = y.summary.productive}
-            <div class="cells">
+            <div class="ov-pair">
               <div>
-                <span class="k">$ / commit</span>
-                <b class="v">{commits > 0 ? fmtCost(prod.costUSD / commits) : "—"}</b>
+                <div class="sub">$ / commit</div>
+                <div class="mono ov-big">{commits > 0 ? fmtCost(prod.costUSD / commits) : "—"}</div>
+                <div class="sub"></div>
               </div>
               <div>
-                <span class="k">$ / productive session</span>
-                <b class="v">{prod.sessions > 0 ? fmtCost(prod.costUSD / prod.sessions) : "—"}</b>
+                <div class="sub">$ / productive session</div>
+                <div class="mono ov-big">{prod.sessions > 0 ? fmtCost(prod.costUSD / prod.sessions) : "—"}</div>
+                <div class="sub"></div>
               </div>
             </div>
-            <p class="muted">
+            <p class="sub mt">
               productive {Math.round(prod.costPercent)}% · reverted {Math.round(y.summary.reverted.costPercent)}% · abandoned {Math.round(y.summary.abandoned.costPercent)}%
             </p>
-            <p class="muted">Git-correlated. Reverted/abandoned = spend that didn't ship.</p>
+            <p class="sub">Git-correlated. Reverted/abandoned = spend that didn't ship.</p>
           {/snippet}
         </Loader>
       </Card>
 
       <!-- 8. Models + sessions | Top activities -->
-      <div class="pair top">
+      <div class="grid g2 start">
         <div class="stack">
           <Card title="Models this period" note="Sorted by cost">
             <Loader args={["models", "--format", "json", ...filterArgs(filters, "models"), "--min-cost", "0"]} {refresh}>
               {#snippet children(rows: ModelRow[])}
-                <table class="cb-table">
-                  <thead>
-                    <tr>
-                      <th>Model</th><th class="num">Input tok</th><th class="num">Output tok</th>
-                      <th class="num">Cache read</th><th class="num">Cost</th><th class="num">Calls</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {#each byCostDesc(rows).slice(0, 5) as m (m.providerDisplayName + m.modelDisplayName)}
+                <div class="scroll">
+                  <table>
+                    <thead>
                       <tr>
-                        <td class="accent">{m.modelDisplayName}</td>
-                        <td class="num">{fmtTokens(m.inputTokens)}</td>
-                        <td class="num">{fmtTokens(m.outputTokens)}</td>
-                        <td class="num">{fmtTokens(m.cacheReadTokens)}</td>
-                        <td class="num">{isUnpriced(m) ? "—" : fmtCost(m.costUSD)}</td>
-                        <td class="num">{fmtCount(m.calls)}</td>
+                        <th>Model</th><th class="r">Input tok</th><th class="r">Output tok</th>
+                        <th class="r">Cache read</th><th class="r">Cost</th><th class="r">Calls</th>
                       </tr>
-                    {/each}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {#each byCostDesc(rows).slice(0, 5) as m (m.providerDisplayName + m.modelDisplayName)}
+                        <tr>
+                          <td>
+                            <span class="dot" style:background={modelColor(m.modelDisplayName)}></span>
+                            <button type="button" class="link" onclick={() => onNavigate?.("models")}>{m.modelDisplayName}</button>
+                          </td>
+                          <td class="r">{fmtTokens(m.inputTokens)}</td>
+                          <td class="r">{fmtTokens(m.outputTokens)}</td>
+                          <td class="r">{fmtTokens(m.cacheReadTokens)}</td>
+                          <td class="r">{isUnpriced(m) ? "—" : fmtCost(m.costUSD)}</td>
+                          <td class="r">{fmtCount(m.calls)}</td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
               {/snippet}
             </Loader>
           </Card>
@@ -341,18 +357,17 @@
             {/snippet}
             <Loader args={["sessions", "--format", "json", ...filterArgs(filters, "sessions")]} {refresh}>
               {#snippet children(rows: SessionRow[])}
-                {#each [...rows].sort((a, b) => b.cost - a.cost).slice(0, 2) as s, i (s.sessionId)}
-                  <button type="button" class="sess" onclick={() => onOpenSession?.(s.sessionId)}>
-                    <span class="idx">{String(i + 1).padStart(2, "0")}</span>
-                    <span class="grow">
+                {#each [...rows].sort((a, b) => b.cost - a.cost).slice(0, 3) as s, i (s.sessionId)}
+                  <button type="button" class="lrow" onclick={() => onOpenSession?.(s.sessionId)}>
+                    <span class="i">{String(i + 1).padStart(2, "0")}</span>
+                    <span class="b">
                       <b>{s.title}</b>
-                      <span class="muted">{s.project} · {shortDay(s.startedAt.slice(0, 10))} · {s.models[0] ?? "—"} · {s.calls} calls</span>
+                      <span>{s.project} · {shortDay(s.startedAt.slice(0, 10))} · {s.models[0] ?? "—"} · {s.calls} calls</span>
                     </span>
-                    <span class="num">{fmtCost(s.cost)}</span>
-                    <Icon name="chevron_right" size={16} />
+                    <span class="v">{fmtCost(s.cost)} ›</span>
                   </button>
                 {:else}
-                  <p class="muted">No sessions.</p>
+                  <p class="empty">No sessions in this range</p>
                 {/each}
               {/snippet}
             </Loader>
@@ -363,7 +378,7 @@
           {#snippet note()}
             <SegmentedControl
               role="radiogroup"
-              label="Activity metric"
+              label="Sort activities"
               options={actMetrics}
               value={actMetric}
               onChange={(id) => (actMetric = id)}
@@ -373,21 +388,21 @@
           {@const acts = [...c.topActivities].sort((a, b) => b[actMetric] - a[actMetric])}
           {@const top = Math.max(1e-9, ...acts.map((a) => a[actMetric]))}
           {#each acts as a (a.name)}
-            <div class="act">
-              <span class="bar"><i style:width={`${(a[actMetric] / top) * 100}%`}></i></span>
-              <span class="row"><b>{a.name}</b><span class="num">{actMetric === "cost" ? fmtCost(a.cost) : a.turns}</span></span>
-              <span class="row muted">
-                <span>{actMetric === "cost" ? `${a.turns} turn${a.turns === 1 ? "" : "s"}` : fmtCost(a.cost)}</span>
+            <div class="ov-act">
+              <div class="t"><div class="f" style:width={`${(a[actMetric] / top) * 100}%`}></div></div>
+              <div class="kv"><b>{a.name}</b><span>{fmtCost(a.cost)}</span></div>
+              <div class="kv">
+                <span>{fmtCount(a.turns)} turn{a.turns === 1 ? "" : "s"}</span>
                 <span>{oneShot(a.oneShotRate)}</span>
-              </span>
+              </div>
             </div>
           {:else}
-            <p class="muted">No activity.</p>
+            <p class="empty">No activity.</p>
           {/each}
         </Card>
       </div>
 
-      <p class="muted">Dollar figures are API-equivalent estimates, not what a subscription bills.</p>
+      <p class="foot">Dollar figures are API-equivalent estimates, not what a subscription bills.</p>
     {/snippet}
   </Loader>
 </div>
@@ -397,7 +412,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-4);
-    max-width: 920px;
+    max-width: 972px;
     margin: 0 auto;
   }
   :global(.page > .body) {
@@ -405,12 +420,12 @@
     flex-direction: column;
     gap: var(--sp-4);
   }
-  .pair {
+  .grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--sp-4);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .pair.top {
+  .start {
     align-items: start;
   }
   .stack {
@@ -419,277 +434,472 @@
     gap: var(--sp-4);
     min-width: 0;
   }
-  @media (max-width: 800px) {
-    .pair,
-    .hero,
-    .three,
-    .cells {
-      grid-template-columns: minmax(0, 1fr);
-    }
-  }
-
-  .hero {
-    display: grid;
-    grid-template-columns: 1fr 1.3fr 1.3fr;
-    gap: var(--sp-6);
-  }
-  .col {
-    min-width: 0;
-  }
-  .big {
-    margin: 0;
+  .mono {
     font-family: var(--font-mono);
-    font-size: calc(var(--fs-2xl) * 1.6);
-    font-weight: var(--fw-bold);
-    letter-spacing: -0.02em;
-    line-height: 1.1;
-  }
-  .big.sm {
-    font-size: var(--fs-2xl);
-  }
-  .muted {
-    margin: var(--sp-1) 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
   }
   .accent {
     color: var(--accent);
   }
-  .trio {
-    display: flex;
-    gap: var(--sp-5);
-    margin: var(--sp-4) 0 0;
-    padding-top: var(--sp-3);
+  .sub {
+    margin: 0;
+    color: var(--muted);
+    font-size: var(--fs-xs);
+  }
+  .mt {
+    margin-top: var(--sp-3);
+  }
+  .muted {
+    color: var(--muted);
+  }
+  .gap-top {
+    margin-top: var(--sp-3);
+  }
+  .foot {
+    margin: 0;
+    color: var(--muted);
+    font-size: var(--fs-xs);
+  }
+  .card {
+    min-width: 0;
+    padding: var(--sp-5);
+    border: 1px solid var(--border);
+    border-radius: var(--r-card);
+    background: var(--surface);
+  }
+  @media (max-width: 860px) {
+    .grid,
+    .hero {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  /* hero */
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 1.35fr);
+    gap: var(--sp-6);
+    align-items: start;
+  }
+  .big {
+    margin: var(--sp-1) 0;
+    font-family: var(--font-mono);
+    font-size: calc(var(--fs-2xl) * 1.6);
+    font-weight: var(--fw-semi);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+  .big.sm {
+    font-size: var(--fs-2xl);
+  }
+  .est {
+    color: var(--muted);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-body);
+    letter-spacing: 0;
+  }
+  .stat3 {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: var(--sp-5);
+    padding-top: var(--sp-4);
     border-top: 1px solid var(--border);
   }
-  .trio dt {
+  .stat3 > div {
+    padding: 0 var(--sp-3);
+  }
+  .stat3 > div:first-child {
+    padding-left: 0;
+  }
+  .stat3 > div + div {
+    border-left: 1px solid var(--border);
+  }
+  .stat3 span {
+    display: block;
     color: var(--muted);
     font-size: var(--fs-2xs);
+    white-space: nowrap;
   }
-  .trio dd {
-    margin: 0;
+  .stat3 b {
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
+    font-weight: var(--fw-medium);
   }
   .up {
     color: var(--danger);
   }
-
-  .eff {
+  .down {
+    color: var(--accent);
+  }
+  .ring-wrap {
     display: flex;
     align-items: center;
     gap: var(--sp-5);
   }
-  .ringbox {
+  .efs {
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--sp-1);
-  }
-  .grade {
-    padding: 0 var(--sp-3);
-    border-radius: var(--r-pill);
-    background: color-mix(in srgb, var(--accent) 18%, transparent);
-    color: var(--accent);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-bold);
-  }
-  .rows {
     flex: 1;
-    min-width: 0;
-    display: flex;
     flex-direction: column;
     gap: var(--sp-3);
+    min-width: 0;
   }
-  .erow {
+  .ef {
     display: grid;
-    grid-template-columns: 1fr auto;
     gap: var(--sp-1);
-    font-size: var(--fs-2xs);
+    cursor: default;
   }
-  .erow .track {
-    grid-column: 1 / -1;
+  .ef-h {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--sp-3);
+    font-size: var(--fs-xs);
   }
-  .num {
+  .ef-h span {
+    white-space: nowrap;
+  }
+  .ef-h b {
     font-family: var(--font-mono);
+    font-size: var(--fs-2xs);
+    font-weight: var(--fw-semi);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
-  .track {
-    height: var(--sp-1);
+  .ef .t {
+    height: 6px;
     border-radius: var(--r-pill);
     background: var(--surface3);
     overflow: hidden;
   }
-  .fill {
+  .ef .f {
     display: block;
     height: 100%;
+    border-radius: var(--r-pill);
     background: var(--accent);
   }
-  .fill.waste {
+  .ef .f.bad {
     background: var(--danger);
   }
 
-  .pill,
-  .chip {
+  /* pills, links */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    height: var(--h-xs);
     padding: 0 var(--sp-3);
     border-radius: var(--r-pill);
-    background: var(--surface3);
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--accent);
+    font-family: var(--font-mono);
     font-size: var(--fs-2xs);
+    font-weight: var(--fw-medium);
+    white-space: nowrap;
+    box-sizing: border-box;
   }
-  .pill.up {
-    background: color-mix(in srgb, var(--danger) 18%, transparent);
+  .pill.warn {
+    background: color-mix(in srgb, var(--warn) 16%, transparent);
+    color: var(--warn);
+  }
+  .pill.bad {
+    background: color-mix(in srgb, var(--danger) 16%, transparent);
     color: var(--danger);
+  }
+  .pill.neutral {
+    background: var(--surface3);
+    color: var(--muted);
   }
   .chips {
     display: inline-flex;
+    flex-wrap: wrap;
     gap: var(--sp-2);
   }
   .link {
-    all: unset;
+    padding: 0;
+    border: 0;
+    background: none;
     color: var(--accent);
-    font-size: var(--fs-2xs);
+    font: inherit;
+    font-size: var(--fs-xs);
     font-weight: var(--fw-semi);
     cursor: pointer;
+  }
+  .link:hover {
+    text-decoration: underline;
   }
   .link:focus-visible {
     outline: var(--focus-width) solid var(--focus);
     outline-offset: var(--focus-offset);
   }
+  .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: var(--sp-3);
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
 
-  .cells {
+  /* month / projected, paired stats */
+  .ov-mp {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+    gap: var(--sp-4);
+    align-items: end;
+    margin-bottom: var(--sp-3);
+  }
+  @media (max-width: 520px) {
+    .ov-mp {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .ov-pair {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     border: 1px solid var(--border);
     border-radius: var(--r-md);
   }
-  .cells > div {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-1);
+  .ov-pair > div {
     padding: var(--sp-4);
   }
-  .cells > div + div {
+  .ov-pair > div + div {
     border-left: 1px solid var(--border);
   }
-  .k {
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-  }
-  .v {
-    font-family: var(--font-mono);
-    font-size: var(--fs-lg);
-  }
-  code {
-    font-family: var(--font-mono);
-    color: var(--text);
+  .ov-big {
+    font-size: var(--fs-xl);
+    font-weight: var(--fw-semi);
   }
 
+  /* banner */
   .banner {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
     gap: var(--sp-4);
-    padding: var(--sp-4) var(--sp-5);
-    border: 1px solid var(--border);
-    border-radius: var(--r-card);
-    background: var(--surface);
     font-size: var(--fs-sm);
   }
-  .three {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--sp-6);
-    font-size: var(--fs-xs);
+  .spacer {
+    flex: 1;
   }
-  .three h4 {
-    margin: 0 0 var(--sp-2);
+
+  /* wins / improvements / risks */
+  .wir {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr);
+    gap: var(--sp-5);
+  }
+  .wir h5 {
+    margin: 0 0 var(--sp-3);
     font-size: var(--fs-2xs);
+    font-weight: var(--fw-semi);
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
-  .three p {
-    margin: var(--sp-1) 0;
+  .wir ul {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: var(--muted);
+    font-size: var(--fs-2xs);
   }
-  .ok {
+  .wins h5 {
     color: var(--accent);
   }
-  .warn {
+  .imps h5 {
     color: var(--warn);
   }
-  .bad {
+  .risks h5 {
     color: var(--danger);
   }
-  .imp {
-    display: flex;
-    justify-content: space-between;
-    gap: var(--sp-3);
+  .imps,
+  .risks {
+    padding-left: var(--sp-5);
+    border-left: 1px solid var(--border);
   }
-  .imp .num {
+  @media (max-width: 760px) {
+    .wir {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .imps,
+    .risks {
+      padding-left: 0;
+      border-left: 0;
+    }
+  }
+  .ov-wi {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-3);
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .ov-wi:hover > span:first-child {
+    text-decoration: underline;
+  }
+  .ov-wi > span:first-child {
+    flex: 1;
+    min-width: 0;
+  }
+  .ov-wi b {
+    color: var(--text);
+    font-weight: var(--fw-semi);
+  }
+  .ov-asof {
     color: var(--muted);
+    font-size: var(--fs-2xs);
     white-space: nowrap;
   }
 
-  .sess {
-    all: unset;
-    box-sizing: border-box;
+  /* models table */
+  .scroll {
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--fs-xs);
+  }
+  th {
+    padding: var(--sp-2);
+    border-bottom: 1px solid var(--border2);
+    color: var(--muted);
+    font-size: var(--fs-2xs);
+    font-weight: var(--fw-medium);
+    text-align: left;
+    white-space: nowrap;
+  }
+  td {
+    padding: var(--sp-3) var(--sp-2);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  tbody tr:hover {
+    background: var(--surface2);
+  }
+  th:first-child,
+  td:first-child {
+    padding-left: 0;
+  }
+  th:last-child,
+  td:last-child {
+    padding-right: 0;
+  }
+  .r {
+    text-align: right;
+  }
+  td.r {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* sessions */
+  .lrow {
     display: flex;
     align-items: center;
     gap: var(--sp-4);
     width: 100%;
     padding: var(--sp-3) 0;
-    border-top: 1px solid var(--border);
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-size: var(--fs-xs);
+    text-align: left;
     cursor: pointer;
   }
-  .sess:first-child {
-    border-top: 0;
+  .lrow:last-child {
+    border-bottom: 0;
   }
-  .sess:focus-visible {
+  .lrow:hover {
+    background: var(--surface2);
+  }
+  .lrow:focus-visible {
     outline: var(--focus-width) solid var(--focus);
     outline-offset: var(--focus-offset);
   }
-  .sess .grow {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    min-width: 0;
-    font-size: var(--fs-xs);
+  .lrow .i {
+    width: 22px;
+    flex-shrink: 0;
+    color: var(--muted);
+    font-family: var(--font-mono);
   }
-  .sess .grow .muted {
-    margin: 0;
+  .lrow .b {
+    flex: 1;
+    min-width: 0;
+  }
+  .lrow .b b {
+    display: block;
     overflow: hidden;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semi);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .idx {
+  .lrow .b span {
     color: var(--muted);
+  }
+  .lrow .v {
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
+    white-space: nowrap;
+  }
+  .empty {
+    margin: 0;
+    padding: var(--sp-7) 0;
+    color: var(--muted);
+    font-size: var(--fs-xs);
+    text-align: center;
   }
 
-  .act {
+  /* top activities */
+  .ov-act {
     padding: var(--sp-3) 0;
     border-bottom: 1px solid var(--border);
-    font-size: var(--fs-xs);
   }
-  .act:last-child {
-    border-bottom: 0;
-  }
-  .act .bar {
-    display: block;
-    height: 2px;
+  .ov-act > .t {
+    height: 3px;
     margin-bottom: var(--sp-2);
+    background: var(--surface3);
   }
-  .act .bar i {
-    display: block;
+  .ov-act > .t .f {
     height: 100%;
     background: var(--accent);
   }
-  .act .row {
+  .kv {
     display: flex;
     justify-content: space-between;
-    gap: var(--sp-3);
+    gap: var(--sp-4);
+    font-size: var(--fs-xs);
   }
-  .act .muted {
-    margin: 0;
+  .kv > :first-child {
+    color: var(--muted);
+  }
+  .kv > :last-child {
+    font-family: var(--font-mono);
+    font-weight: var(--fw-medium);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .kv > b {
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-weight: var(--fw-semi);
+  }
+  @media (max-width: 860px) {
+    .hero {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 </style>

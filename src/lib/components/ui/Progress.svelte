@@ -8,9 +8,11 @@
     count?: string;
     /** Amber above 75%, red above 90%. */
     thresholds?: boolean;
+    /** Taller 8px track (the Stats quota bars). */
+    thick?: boolean;
   }
 
-  let { label, value, max = 100, count, thresholds = false }: Props = $props();
+  let { label, value, max = 100, count, thresholds = false, thick = false }: Props = $props();
   const pct = $derived(value === undefined ? 0 : Math.min(100, Math.max(0, (value / max) * 100)));
   const tone = $derived(!thresholds ? "" : pct > 90 ? "danger" : pct > 75 ? "warn" : "");
 </script>
@@ -18,6 +20,7 @@
 <div class="wrap">
   <div
     class="bar"
+    class:thick
     role="progressbar"
     aria-label={label}
     aria-valuemin={0}
@@ -47,6 +50,9 @@
     background: var(--surface3);
     border-radius: var(--r-pill);
     overflow: hidden;
+  }
+  .bar.thick {
+    height: var(--sp-3);
   }
   .fill {
     height: 100%;

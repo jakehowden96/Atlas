@@ -2,11 +2,12 @@
   import { filterArgs, type Filters } from "../../../../types/codeburn";
   import type { CohortComparison, ModelCompareRow } from "../../../../types/codeburn-compare";
   import { fmtCost, fmtCount, fmtTokens } from "../../../stats-derive";
+  import { tooltip } from "../../../ui/tooltip";
   import Button from "../../ui/Button.svelte";
   import Select from "../../ui/Select.svelte";
   import SegmentedControl from "../../ui/SegmentedControl.svelte";
   import Card from "./Card.svelte";
-  import { cohortRows, metricsOf, modelStats, verdict, win } from "./compare-derive";
+  import { cohortRows, metricsOf, modelColor, modelStats, verdict, win } from "./compare-derive";
   import Loader from "./Loader.svelte";
 
   let { filters, refresh, preselect = "" }: { filters: Filters; refresh: number; preselect?: string } = $props();
@@ -58,62 +59,82 @@
   ];
 </script>
 
-{#snippet metricTable(rows: Row[], a: ModelCompareRow, b: ModelCompareRow, foot: boolean)}
-  <table class="cb-table">
-    <thead>
-      <tr><th>Metric</th><th class="num">{a.model}</th><th class="num">{b.model}</th></tr>
-    </thead>
-    <tbody>
-      {#each rows as r (r.label)}
-        {@const x = r.get(a, metricsOf(a))}
-        {@const y = r.get(b, metricsOf(b))}
-        {@const w = r.dir ? win(x, y, r.dir) : 0}
+{#snippet dotted(model: string, color: string)}
+  <span class="dot" style:background={color}></span>{model}
+{/snippet}
+
+{#snippet metricTable(rows: Row[], a: ModelCompareRow, b: ModelCompareRow, ca: string, cb: string, foot: boolean)}
+  <div class="scroll">
+    <table>
+      <thead>
         <tr>
-          <td>{r.label}</td>
-          <td class="num" class:good={w > 0}>{x === null ? "—" : r.fmt(x)}</td>
-          <td class="num" class:good={w < 0}>{y === null ? "—" : r.fmt(y)}</td>
+          <th>Metric</th>
+          <th class="num">{@render dotted(a.model, ca)}</th>
+          <th class="num">{@render dotted(b.model, cb)}</th>
         </tr>
-      {/each}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {#each rows as r (r.label)}
+          {@const x = r.get(a, metricsOf(a))}
+          {@const y = r.get(b, metricsOf(b))}
+          {@const w = r.dir ? win(x, y, r.dir) : 0}
+          <tr>
+            <td>{r.label}</td>
+            <td class="num" class:good={w > 0}>{x === null ? "—" : r.fmt(x)}</td>
+            <td class="num" class:good={w < 0}>{y === null ? "—" : r.fmt(y)}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
   {#if foot}<p class="foot">Green = better on that metric. Ties are not highlighted.</p>{/if}
 {/snippet}
 
 <Loader args={["compare", "--format", "json", ...filterArgs(filters, "compare")]} {refresh}>
   {#snippet children(models: ModelCompareRow[])}
     {@const byCost = modelStats(models)}
+    {@const names = byCost.map((s) => s.model)}
     {@const A = pickA ?? byCost[0]?.model}
     {@const B = pickB ?? byCost[1]?.model}
     {@const a = models.find((m) => m.model === A)}
     {@const b = models.find((m) => m.model === B)}
+    {@const ca = modelColor(A ?? "", names)}
+    {@const cb = modelColor(B ?? "", names)}
     {@const opts = byCost.map((s) => ({ id: s.model, label: `${s.model} · ${fmtCount(s.calls)} calls` }))}
     <div class="page">
       {#if byCost.length < 2}
-        <p class="note">Need activity from at least two models in this period to compare.</p>
+        <p class="empty">Need activity from at least two models in this period to compare.</p>
       {:else}
-        <SegmentedControl
-          size="sm"
-          label="Compare view"
-          options={[
-            { id: "classic", label: "Classic" },
-            { id: "cohorts", label: "Cohorts" },
-          ]}
-          value={tab}
-          onChange={(id) => (tab = id)}
-        />
-        <div class="pick">
+        <div class="bar">
+          <SegmentedControl
+            size="sm"
+            label="Compare view"
+            options={[
+              { id: "classic", label: "Classic" },
+              { id: "cohorts", label: "Cohorts" },
+            ]}
+            value={tab}
+            onChange={(id) => (tab = id)}
+          />
+        </div>
+        <div class="bar">
           <Select options={opts} value={A} onChange={(id) => (pickA = id)} size="sm" aria-label="Model A" />
           <Button size="sm" aria-label="Swap models" onclick={() => ([pickA, pickB] = [B, A])}>⇄</Button>
           <Select options={opts} value={B} onChange={(id) => (pickB = id)} size="sm" aria-label="Model B" />
         </div>
         {#if a && b && a !== b}
           {@const text = verdict(a, b)}
-          {#if text}<div class="banner">{text}</div>{/if}
+          {#if text}
+            <section class="banner">
+              <span class="muted">⇄</span>
+              <span>{text}</span>
+            </section>
+          {/if}
 
           {#if tab === "classic"}
             <div class="two">
-              <Card title="Performance">{@render metricTable(performance, a, b, true)}</Card>
-              <Card title="Efficiency">{@render metricTable(efficiency, a, b, true)}</Card>
+              <Card title="Performance">{@render metricTable(performance, a, b, ca, cb, true)}</Card>
+              <Card title="Efficiency">{@render metricTable(efficiency, a, b, ca, cb, true)}</Card>
             </div>
             <Loader
               args={["compare", "--format", "cohort-json", "--model-a", a.model, "--model-b", b.model, ...filterArgs(filters, "compare")]}
@@ -123,31 +144,32 @@
                 {@const rows = cohortRows(c.modelA.observations, c.modelB.observations, "category")}
                 <Card title="Category head-to-head" note="One-shot rate · edit turns">
                   <ul class="legend">
-                    <li><i class="a"></i>{a.model}</li>
-                    <li><i class="b"></i>{b.model}</li>
+                    <li><span class="dot" style:background={ca}></span>{a.model}</li>
+                    <li><span class="dot" style:background={cb}></span>{b.model}</li>
                   </ul>
                   {#each rows as r (r.key)}
+                    {@const w = win(r.a.rate, r.b.rate, 1)}
                     <div class="cat">
                       <b>{r.key}</b>
-                      {#each [["a", r.a], ["b", r.b]] as const as [side, v] (side)}
-                        <div class="bar" class:low={v.n < 10}>
+                      {#each [[r.a, ca, w > 0], [r.b, cb, w < 0]] as const as [v, color, good], i (i)}
+                        <div class="cmp" class:low={v.n < 10}>
                           <span class="track">
-                            <span class={`fill ${side}`} style:width={`${v.rate ?? 0}%`}></span>
+                            <span class="fill" style:width={`${v.rate ?? 0}%`} style:background={color}></span>
                           </span>
-                          <span class="mono">{v.rate === null ? "—" : `${Math.round(v.rate)}% (${v.n})`}</span>
+                          <span class="mono" class:good>{v.rate === null ? "—" : `${Math.round(v.rate)}% (${v.n})`}</span>
                         </div>
                       {/each}
                     </div>
                   {:else}
-                    <p class="note">No categorised edit turns.</p>
+                    <p class="empty">No categorised edit turns.</p>
                   {/each}
                   <p class="foot">Faded rows have fewer than 10 edit turns.</p>
                 </Card>
               {/snippet}
             </Loader>
             <div class="two">
-              <Card title="Working style">{@render metricTable(style, a, b, false)}</Card>
-              <Card title="Context">{@render metricTable(context, a, b, false)}</Card>
+              <Card title="Working style">{@render metricTable(style, a, b, ca, cb, false)}</Card>
+              <Card title="Context">{@render metricTable(context, a, b, ca, cb, false)}</Card>
             </div>
           {:else}
             <Loader
@@ -158,33 +180,42 @@
                 {@const rows = cohortRows(c.modelA.observations, c.modelB.observations, by)}
                 {@const low = rows.filter((r) => r.minN < 10).length}
                 <Card title="Matched cohorts" note={`cost / edit · same ${by === "category" ? "task type" : "project"} for both models`}>
-                  <SegmentedControl
-                    size="sm"
-                    role="radiogroup"
-                    label="Cohort basis"
-                    options={[
-                      { id: "category", label: "By task" },
-                      { id: "project", label: "By project" },
-                    ]}
-                    value={by}
-                    onChange={(id) => (by = id)}
-                  />
-                  <table class="cb-table">
-                    <thead>
-                      <tr><th>Cohort</th><th class="num">{a.model}</th><th class="num">{b.model}</th><th class="num">Min n</th></tr>
-                    </thead>
-                    <tbody>
-                      {#each rows as r (r.key)}
-                        {@const w = win(r.a.cost, r.b.cost, -1)}
+                  <div class="bar">
+                    <SegmentedControl
+                      size="sm"
+                      role="radiogroup"
+                      label="Cohort basis"
+                      options={[
+                        { id: "category", label: "By task" },
+                        { id: "project", label: "By project" },
+                      ]}
+                      value={by}
+                      onChange={(id) => (by = id)}
+                    />
+                  </div>
+                  <div class="scroll">
+                    <table>
+                      <thead>
                         <tr>
-                          <td>{r.key}</td>
-                          <td class="num" class:good={w > 0}>{r.a.cost === null ? "—" : fmtCost(r.a.cost)} <span class="muted">n={r.a.n}</span></td>
-                          <td class="num" class:good={w < 0}>{r.b.cost === null ? "—" : fmtCost(r.b.cost)} <span class="muted">n={r.b.n}</span></td>
-                          <td class="num">{#if r.minN < 10}<span class="pill">low sample</span> {/if}{r.minN}</td>
+                          <th>Cohort</th>
+                          <th class="num">{@render dotted(a.model, ca)}</th>
+                          <th class="num">{@render dotted(b.model, cb)}</th>
+                          <th class="num">Min n</th>
                         </tr>
-                      {/each}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {#each rows as r (r.key)}
+                          {@const w = win(r.a.cost, r.b.cost, -1)}
+                          <tr>
+                            <td>{r.key}</td>
+                            <td class="num"><span class:good={w > 0}>{r.a.cost === null ? "—" : fmtCost(r.a.cost)}</span> <span class="muted">n={r.a.n}</span></td>
+                            <td class="num"><span class:good={w < 0}>{r.b.cost === null ? "—" : fmtCost(r.b.cost)}</span> <span class="muted">n={r.b.n}</span></td>
+                            <td class="num">{#if r.minN < 10}<span class="pill" use:tooltip={{ text: `n = ${r.a.n} vs ${r.b.n}` }}>low sample</span> {/if}{r.minN}</td>
+                          </tr>
+                        {/each}
+                      </tbody>
+                    </table>
+                  </div>
                   <p class="foot">
                     {low
                       ? `${low} of ${rows.length} cohorts have fewer than 10 samples on one side: directional only.`
@@ -206,13 +237,18 @@
     flex-direction: column;
     gap: var(--sp-4);
   }
-  .pick {
+  .bar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--sp-3);
+    gap: var(--sp-4);
   }
   .banner {
-    padding: var(--sp-3) var(--sp-5);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-4);
+    padding: var(--sp-5);
     border: 1px solid var(--border);
     border-radius: var(--r-card);
     background: var(--surface);
@@ -224,79 +260,143 @@
     gap: var(--sp-4);
     align-items: start;
   }
+  @media (max-width: 860px) {
+    .two {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .scroll {
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--fs-xs);
+  }
+  th {
+    padding: var(--sp-2);
+    border-bottom: 1px solid var(--border2);
+    color: var(--muted);
+    font-size: var(--fs-2xs);
+    font-weight: var(--fw-medium);
+    text-align: left;
+    white-space: nowrap;
+  }
+  td {
+    padding: var(--sp-3) var(--sp-2);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  tbody tr:hover {
+    background: var(--surface2);
+  }
+  th:first-child,
+  td:first-child {
+    padding-left: 0;
+  }
+  th:last-child,
+  td:last-child {
+    padding-right: 0;
+  }
+  th.num {
+    text-align: right;
+  }
+  td.num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  .dot {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    margin-right: var(--sp-3);
+    border-radius: 50%;
+  }
   .good {
     color: var(--accent);
     font-weight: var(--fw-semi);
   }
   .foot,
-  .note,
   .muted {
+    margin: 0;
     color: var(--muted);
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
   }
-  .foot {
-    margin: var(--sp-3) 0 0;
+  .empty {
+    margin: 0;
+    padding: var(--sp-7) 0;
+    color: var(--muted);
+    font-size: var(--fs-xs);
+    text-align: center;
   }
   .pill {
-    padding: 0 var(--sp-2);
-    border: 1px solid var(--warn);
+    display: inline-flex;
+    align-items: center;
+    height: var(--h-xs);
+    padding: 0 var(--sp-3);
     border-radius: var(--r-pill);
+    background: color-mix(in srgb, var(--warn) 16%, transparent);
     color: var(--warn);
     font-size: var(--fs-2xs);
+    font-weight: var(--fw-medium);
   }
   .legend {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
-    gap: var(--sp-4);
-    margin: 0 0 var(--sp-3);
+    gap: var(--sp-2) var(--sp-5);
+    margin: 0 0 var(--sp-4);
     padding: 0;
     list-style: none;
     color: var(--muted);
     font-size: var(--fs-2xs);
   }
-  .legend i {
-    display: inline-block;
-    width: var(--sp-4);
-    height: 3px;
-    margin-right: var(--sp-2);
-    vertical-align: middle;
+  .legend li {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
   }
-  i.a,
-  .fill.a {
-    background: var(--warn);
-  }
-  i.b,
-  .fill.b {
-    background: var(--text);
+  .legend .dot {
+    margin: 0;
   }
   .cat {
     display: grid;
-    grid-template-columns: 7rem 1fr;
+    grid-template-columns: 88px minmax(0, 1fr);
     align-items: center;
-    column-gap: var(--sp-3);
-    padding: var(--sp-2) 0;
+    row-gap: var(--sp-1);
+    margin-bottom: var(--sp-4);
   }
   .cat b {
-    grid-row: span 2;
+    grid-row: 1 / span 2;
+    grid-column: 1;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semi);
+  }
+  .cmp {
+    display: grid;
+    grid-column: 2;
+    grid-template-columns: minmax(0, 1fr) 80px;
+    gap: var(--sp-3);
+    align-items: center;
     font-size: var(--fs-xs);
   }
-  .bar {
-    display: grid;
-    grid-template-columns: 1fr 5rem;
-    align-items: center;
-    gap: var(--sp-3);
-    font-size: var(--fs-2xs);
-  }
-  .bar.low {
-    opacity: 0.45;
+  .cmp.low {
+    opacity: 0.55;
   }
   .track {
-    height: 3px;
+    height: 6px;
+    overflow: hidden;
+    border-radius: var(--r-pill);
+    background: var(--surface3);
   }
   .fill {
     display: block;
     height: 100%;
-    border-radius: var(--r-xs);
   }
   .mono {
     font-family: var(--font-mono);

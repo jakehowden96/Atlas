@@ -38,14 +38,6 @@ import Overview from "./codeburn/Overview.svelte";
     { id: "6m", label: "6M" },
     { id: "all", label: "Life" },
   ];
-  const rangeName: Record<string, string> = {
-    today: "Today",
-    week: "Last 7 days",
-    "30days": "Last 30 days",
-    month: "This month",
-    "6m": "Last 6 months",
-    all: "Lifetime",
-  };
 
   /** One entry per codeburn page; each is rendered by its own component below. */
   const tabs: Tab[] = [
@@ -72,6 +64,20 @@ import Overview from "./codeburn/Overview.svelte";
   }
 
   let tab = $state("overview");
+  let hist = $state(["overview"]);
+  let histAt = $state(0);
+  function open(id: string) {
+    settings = false;
+    if (id === tab) return;
+    hist = [...hist.slice(0, histAt + 1), id];
+    histAt = hist.length - 1;
+    tab = id;
+  }
+  function go(d: number) {
+    histAt = Math.max(0, Math.min(hist.length - 1, histAt + d));
+    tab = hist[histAt] ?? "overview";
+    settings = false;
+  }
   let settings = $state(false);
   let cmpModel = $state("");
   /** Bumped by Refresh; every tab skips the shared cache when it changes. */
@@ -90,19 +96,6 @@ import Overview from "./codeburn/Overview.svelte";
       : filters.period.from === sixMonthsAgo() && filters.period.to === localDayKey(new Date())
         ? "6m"
         : "since",
-  );
-  const context = $derived(
-    [
-      typeof filters.period === "string" || range === "6m"
-        ? rangeName[range]
-        : `Since ${filters.period.from}`,
-      filters.project ? (projects.find((p) => p.id === filters.project)?.label ?? filters.project) : null,
-      filters.provider
-        ? (providers.find((p) => p.id === filters.provider)?.label ?? filters.provider)
-        : "All providers",
-    ]
-      .filter(Boolean)
-      .join(" · "),
   );
   let sincePicker = $state<HTMLInputElement>();
   const ago = $derived(Math.max(0, Math.round((now - refreshedAt) / 1000)));
@@ -178,20 +171,29 @@ import Overview from "./codeburn/Overview.svelte";
       {/snippet}
     </EmptyState>
   {:else}
-<div class="column">
-    <div class="range-bar">
-      <div class="heading">
-        <h2>Stats</h2>
-        <span class="ctx">{context}</span>
-      </div>
-      <div class="spacer"></div>
-      <Select
-        size="sm"
-        aria-label="Project"
-        options={projects}
-        value={filters.project ?? "all"}
-        onChange={setFilter("project")}
+<div class="tab-bar">
+      <Tabs
+        {tabs}
+        value={settings ? "" : tab}
+        label="Page"
+        onselect={open}
       />
+    </div>
+
+    <div class="range-bar">
+      <IconButton icon="arrow_back" label="Back" size="sm" disabled={histAt === 0} onclick={() => go(-1)} />
+      <IconButton icon="chevron_right" label="Forward" size="sm" disabled={histAt >= hist.length - 1} onclick={() => go(1)} />
+      <div class="spacer"></div>
+      <button type="button" class="live" onclick={doRefresh}>refreshed {ago}s ago ↻</button>
+      <div class="sel">
+        <Select
+          size="sm"
+          aria-label="Project"
+          options={projects}
+          value={filters.project ?? "all"}
+          onChange={setFilter("project")}
+        />
+      </div>
       <SegmentedControl
         role="radiogroup"
         label="Range"
@@ -221,13 +223,15 @@ import Overview from "./codeburn/Overview.svelte";
         value={since}
         onchange={(e) => setSince(e.currentTarget.value)}
       />
-      <Select
-        size="sm"
-        aria-label="Provider"
-        options={providers}
-        value={filters.provider ?? "all"}
-        onChange={setFilter("provider")}
-      />
+      <div class="sel">
+        <Select
+          size="sm"
+          aria-label="Provider"
+          options={providers}
+          value={filters.provider ?? "all"}
+          onChange={setFilter("provider")}
+        />
+      </div>
       {#if quotaPct !== null}
         <span
           class="ring {quotaTone}"
@@ -235,9 +239,8 @@ import Overview from "./codeburn/Overview.svelte";
           role="img"
           aria-label="Quota {Math.round(quotaPct)}%"
           use:tooltip={{ text: `Highest quota window in use: ${Math.round(quotaPct)}%` }}
-        ></span>
+        ><span>{Math.round(quotaPct)}%</span></span>
       {/if}
-      <button type="button" class="live" onclick={doRefresh}>refreshed {ago}s ago</button>
       <IconButton
         icon="settings"
         label="Settings"
@@ -246,26 +249,15 @@ import Overview from "./codeburn/Overview.svelte";
       />
     </div>
 
-    <div class="tab-bar">
-      <Tabs
-        {tabs}
-        value={settings ? "" : tab}
-        label="Page"
-        onselect={(id) => {
-          settings = false;
-          tab = id;
-        }}
-      />
-    </div>
-
+    <div class="column">
     {#if settings}
       <Settings {refresh} />
     {:else if tab === "overview"}
-      <Overview {filters} {refresh} onNavigate={(id) => (tab = id)} onOpenSession={(id) => { sessionTarget.set(id); tab = "sessions"; }} />
+      <Overview {filters} {refresh} onNavigate={open} onOpenSession={(id) => { sessionTarget.set(id); open("sessions"); }} />
     {:else if tab === "spend"}
       <Spend {filters} {refresh} />
     {:else if tab === "models"}
-      <Models {filters} {refresh} onCompare={(m) => { cmpModel = m; tab = "compare"; }} />
+      <Models {filters} {refresh} onCompare={(m) => { cmpModel = m; open("compare"); }} />
     {:else if tab === "sessions"}
       <Sessions {filters} {refresh} />
     {:else if tab === "compare"}
@@ -281,7 +273,7 @@ import Overview from "./codeburn/Overview.svelte";
     {:else if tab === "optimize"}
       <Optimize {filters} {refresh} />
     {/if}
-</div>
+    </div>
   {/if}
 </div>
 
@@ -290,9 +282,8 @@ import Overview from "./codeburn/Overview.svelte";
     display: flex;
     flex-direction: column;
     flex: 1;
-    gap: var(--sp-3);
     min-height: 0;
-    padding: var(--sp-3) var(--sp-5) var(--sp-4);
+    padding: 0 0 var(--sp-6);
     overflow: auto;
     font-family: var(--font-ui);
     color: var(--text);
@@ -302,13 +293,18 @@ import Overview from "./codeburn/Overview.svelte";
     display: flex;
     flex-direction: column;
     gap: var(--sp-4);
-    width: 100%;
-    max-width: 1020px;
-    margin: 0 auto;
+    width: min(972px, 100% - 2 * var(--sp-5));
+    margin: var(--sp-2) auto 0;
   }
 
   .tab-bar {
     flex-shrink: 0;
+    padding: 0 var(--sp-5);
+    border-bottom: 1px solid var(--border);
+  }
+  .sel {
+    flex: none;
+    width: 150px;
   }
 
   .range-bar {
@@ -317,21 +313,7 @@ import Overview from "./codeburn/Overview.svelte";
     align-items: center;
     flex-shrink: 0;
     gap: var(--sp-3);
-  }
-
-  .heading {
-    display: flex;
-    align-items: baseline;
-    gap: var(--sp-3);
-  }
-  h2 {
-    margin: 0;
-    font-size: var(--fs-xl);
-    font-weight: var(--fw-semi);
-  }
-  .ctx {
-    color: var(--muted);
-    font-size: var(--fs-sm);
+    padding: var(--sp-3) var(--sp-5);
   }
 
   .spacer {
@@ -367,11 +349,26 @@ import Overview from "./codeburn/Overview.svelte";
 
   .ring {
     --c: var(--accent);
-    width: var(--h-xs);
-    height: var(--h-xs);
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 36px;
+    aspect-ratio: 1;
     border-radius: 50%;
-    background: conic-gradient(var(--c) calc(var(--pct) * 1%), var(--border) 0);
-    mask: radial-gradient(circle, transparent 5px, black 6px);
+    background: conic-gradient(var(--c) calc(var(--pct) * 1%), var(--surface3) 0);
+    font-family: var(--font-mono);
+    font-size: var(--fs-2xs);
+  }
+  .ring::before {
+    content: "";
+    position: absolute;
+    inset: 3px;
+    border-radius: 50%;
+    background: var(--bg);
+  }
+  .ring > span {
+    position: relative;
   }
   .ring.warn {
     --c: var(--warn);

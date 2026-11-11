@@ -31,6 +31,9 @@ function modelColors(labels: string[]): string[] {
   });
 }
 
+/** Colour for one model name, by family. */
+export const modelColor = (label: string) => modelColors([label])[0]!;
+
 const dayLabel = (d: Date, hourly: boolean) =>
   hourly
     ? d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
@@ -107,6 +110,18 @@ export function efficiencyRows(c: Overview["current"]): EffRow[] {
     { label: "Cache hit", pct: c.cacheHitPercent, good: "high" },
     { label: "Retry tax", pct: retry, good: "low" },
   ];
+}
+
+/** Efficiency ring, ported 1:1 from the CodeBurn desktop app's renderer (components BT and LT). */
+export function efficiencyScore(c: Overview["current"]): { score: number; grade: string } {
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
+  const oneShot = c.oneShotRate ?? 0.6;
+  const cache = clamp(c.cacheHitPercent / 100);
+  const retry = clamp(((c.retryTax?.totalUSD ?? 0) / Math.max(c.cost, 1e-9)) * 4);
+  const score = 100 * (0.45 * oneShot + 0.3 * cache + 0.25 * (1 - retry));
+  const grade =
+    score >= 93 ? "A+" : score >= 85 ? "A" : score >= 75 ? "B" : score >= 65 ? "C" : score >= 55 ? "D" : "F";
+  return { score: Math.round(score), grade };
 }
 
 /** "4m 12s" for the median time to first edit. */

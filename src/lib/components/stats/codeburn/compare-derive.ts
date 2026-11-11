@@ -102,3 +102,12 @@ export function cohortRows(
 export function shortKey(key: string): string {
   return key.split(/[\\/]/).filter(Boolean).pop() ?? key;
 }
+
+/** Series colour for a model: its family token, mixed toward the surface for later models of one family. */
+export function modelColor(model: string, all: string[]): string {
+  const fam = ["sonnet", "opus", "haiku"].find((f) => model.toLowerCase().includes(f));
+  if (!fam) return "var(--muted)";
+  const n = all.filter((m) => m.toLowerCase().includes(fam)).indexOf(model);
+  const base = `var(--model-${fam})`;
+  return n <= 0 ? base : `color-mix(in srgb, ${base} ${n === 1 ? 60 : 38}%, var(--surface))`;
+}

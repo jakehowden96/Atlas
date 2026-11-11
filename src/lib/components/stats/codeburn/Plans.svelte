@@ -8,12 +8,11 @@
   import Button from "../../ui/Button.svelte";
   import Progress from "../../ui/Progress.svelte";
   import Select from "../../ui/Select.svelte";
-  import Kpi from "../charts/Kpi.svelte";
   import Card from "./Card.svelte";
   import Loader from "./Loader.svelte";
   import { PLAN_PRESETS, resetCountdown } from "./plans";
 
-    let { filters, refresh }: { filters: Filters; refresh: number } = $props();
+  let { filters, refresh }: { filters: Filters; refresh: number } = $props();
 
   const options = PLAN_PRESETS.map((id) => ({ id, label: id }));
   let preset = $state<string | undefined>(undefined);
@@ -43,96 +42,99 @@
   }
 </script>
 
-<Loader args={["status", "--format", "json", ...filterArgs(filters, "status")]} refresh={refresh + localRefresh}>
-  {#snippet children(s: BudgetStatus)}
-    <div class="kpis">
-      <div class="tile"><Kpi label="Month to date" value={fmtCost(s.month.cost)} /></div>
-      <div class="tile"><Kpi label="Projected month" value={fmtCost(projected(s.month.cost))} /></div>
-      <div class="tile"><Kpi label="Budget" value="—" /></div>
-    </div>
-  {/snippet}
-</Loader>
+<div class="page">
+  <Loader args={["status", "--format", "json", ...filterArgs(filters, "status")]} refresh={refresh + localRefresh}>
+    {#snippet children(s: BudgetStatus)}
+      <div class="g3">
+        <div class="kpi"><div class="k">Month to date</div><div class="v">{fmtCost(s.month.cost)}</div><div class="n">API-equivalent</div></div>
+        <div class="kpi"><div class="k">Projected month</div><div class="v">{fmtCost(projected(s.month.cost))}</div><div class="n">at current pace</div></div>
+        <div class="kpi"><div class="k">Budget</div><div class="v">—</div></div>
+      </div>
+    {/snippet}
+  </Loader>
 
-<Loader args={["quota", "--format", "json"]} refresh={refresh + localRefresh}>
-  {#snippet children(q: Quota)}
-    {@const shown = q.providers.filter((p) => p.available)}
-    <div class="providers">
+  <Loader args={["quota", "--format", "json"]} refresh={refresh + localRefresh}>
+    {#snippet children(q: Quota)}
+      {@const shown = q.providers.filter((p) => p.available)}
       {#each shown as p (p.id)}
         <Card title={p.name} note={p.plan}>
-          <div class="windows">
-            {#each p.windows as w (w.label)}
-              <div class="win">
-                <span>{w.label} <span class="muted">resets in {resetCountdown(w.resetsAt, now)}</span></span>
-                <Progress thresholds label={`${p.name} ${w.label}`} value={w.usedPct} count={`${w.usedPct}%`} />
-              </div>
-            {:else}
-              <p class="muted">No usage windows reported.</p>
-            {/each}
-          </div>
+          {#each p.windows as w (w.label)}
+            <div class="live-row">
+              <span>{w.label} <span class="muted">resets in {resetCountdown(w.resetsAt, now)}</span></span>
+              <Progress thick thresholds label={`${p.name} ${w.label}`} value={w.usedPct} count={`${w.usedPct}%`} />
+            </div>
+          {:else}
+            <p class="muted">No usage windows reported.</p>
+          {/each}
         </Card>
       {:else}
         <p class="muted">No providers available.</p>
       {/each}
-    </div>
-  {/snippet}
-</Loader>
+    {/snippet}
+  </Loader>
 
-<div class="plan">
-<Card title="Plan">
-  <div class="controls">
-    <Select {options} bind:value={preset} placeholder="Choose a plan" aria-label="Plan preset" />
-    <Button variant="primary" disabled={!preset} loading={saving} onclick={apply}>Set plan</Button>
-  </div>
-  {#if error}
-    <Banner tone="error" title="Couldn't set plan">{error}</Banner>
-  {:else if saved}
-    <p class="muted">Plan set to {saved}.</p>
-  {/if}
-</Card>
+  <Card title="Plan">
+    <div class="controls">
+      <Select {options} bind:value={preset} placeholder="Choose a plan" aria-label="Plan preset" />
+      <Button variant="primary" disabled={!preset} loading={saving} onclick={apply}>Set plan</Button>
+    </div>
+    {#if error}
+      <Banner tone="error" title="Couldn't set plan">{error}</Banner>
+    {:else if saved}
+      <p class="muted">Plan set to {saved}.</p>
+    {/if}
+  </Card>
 </div>
 
 <style>
-  .kpis {
+  .page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+  }
+  .g3 {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--sp-3);
+    gap: var(--sp-4);
   }
-  .providers {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--sp-3);
-    margin-top: var(--sp-3);
-  }
-  @media (max-width: 1100px) {
-    .providers {
+  @media (max-width: 520px) {
+    .g3 {
       grid-template-columns: minmax(0, 1fr);
     }
   }
-  .tile {
+  .kpi {
     min-width: 0;
-    padding: var(--sp-4);
+    padding: var(--sp-5);
     border: 1px solid var(--border);
     border-radius: var(--r-card);
     background: var(--surface);
   }
-  .windows {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-3);
+  .k {
+    font-size: var(--fs-2xs);
+    font-weight: var(--fw-semi);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
   }
-  .win {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-1);
+  .v {
+    margin-top: var(--sp-1);
+    font-family: var(--font-mono);
+    font-size: var(--fs-2xl);
+    font-weight: var(--fw-semi);
+    font-variant-numeric: tabular-nums;
+  }
+  .n {
+    margin-top: var(--sp-1);
     font-size: var(--fs-xs);
+    color: var(--muted);
   }
-  .plan {
-    margin-top: var(--sp-3);
-  }
-  .plan :global(.body) {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-3);
+  .live-row {
+    display: grid;
+    grid-template-columns: minmax(120px, 1fr) minmax(0, 2fr);
+    align-items: center;
+    gap: var(--sp-4);
+    padding: var(--sp-1) 0;
+    font-size: var(--fs-xs);
   }
   .controls {
     display: flex;
