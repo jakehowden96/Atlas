@@ -105,7 +105,7 @@
   .tip {
     position: absolute;
     bottom: 100%;
-    z-index: 2;
+    z-index: var(--z-popover);
     display: flex;
     gap: var(--sp-3);
     padding: var(--sp-1) var(--sp-3);
