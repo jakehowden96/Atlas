@@ -9,12 +9,27 @@ export default defineConfig({
   clearScreen: false,
   build: {
     /* The default 500 kB warning is about download time over a network. Atlas
-       ships its bundle inside the app and loads it off local disk, so the one
-       chunk over that line (xterm plus the CodeMirror core, ~1.2 MB since
-       vite 8.3; it was ~890 kB on 8.0.3) costs nothing to fetch. Raised rather than code-split: splitting the editor and
-       terminal out would mean dynamic imports through session-actions,
+       ships its bundle inside the app and loads it off local disk, so chunks
+       over that line cost nothing to fetch. Lazy-loading the editor and
+       terminal would mean dynamic imports through session-actions,
        terminal-session and CodeEditor for no measurable gain here. */
     chunkSizeWarningLimit: 1300,
+    /* Vendor libraries in their own chunks keep `index` under the limit
+       without dynamic imports; everything still loads at startup. */
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            /* Core only: language packs stay in their own lazy chunks. */
+            {
+              name: "codemirror",
+              test: /node_modules[\\/](@codemirror[\\/](state|view|language|commands|search|autocomplete|lint)|@lezer[\\/](common|highlight|lr))[\\/]/,
+            },
+            { name: "xterm", test: /node_modules[\\/]@xterm[\\/]/ },
+          ],
+        },
+      },
+    },
   },
   server: {
     port: 1420,

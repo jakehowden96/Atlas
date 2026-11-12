@@ -24,7 +24,6 @@ const ALLOW = {
     "ui/Menu.svelte", // role is computed per item; arrow/enter keys handled by the menu container
     "ui/Modal.svelte", // backdrop click to close; Escape handled by the dialog
     "ui/Select.svelte", // role=option; the combobox trigger owns the keys
-    "ui/TreeRow.svelte", // twisty is a mouse shortcut; the row handles arrow keys
   ],
   /* Gallery pages are documentation of the system itself, not product UI. */
   gallery: ["/gallery/"],
@@ -159,7 +158,9 @@ describe("design lint", () => {
           /* Backdrops that only close on a direct click are marked presentation. */
           return !(
             /\srole=/.test(tag) &&
-            /\sonkeydown=|\sonkeyup=|\sonkeypress=|role="presentation"|role="none"/.test(tag)
+            /\son(?:keydown|keyup|keypress)=|\{on(?:keydown|keyup|keypress)\}|role="presentation"|role="none"/.test(
+              tag,
+            )
           );
         },
       ),

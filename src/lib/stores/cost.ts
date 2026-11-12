@@ -44,11 +44,14 @@ export async function refreshCosts(fresh = false): Promise<void> {
   );
 }
 
-/** Load now, then every 60s while the window is visible. Returns a stop function. */
+/**
+ * Load now, then re-read every 60s while the window is visible. The shared
+ * codeburn cache decides when codeburn is actually asked again (FRESH_MS).
+ */
 export function startCostRefresh(): () => void {
   void refreshCosts();
   const id = setInterval(() => {
-    if (document.visibilityState === "visible") void refreshCosts(true);
+    if (document.visibilityState === "visible") void refreshCosts();
   }, REFRESH_MS);
   return () => clearInterval(id);
 }

@@ -15,6 +15,7 @@
   import Connectors from "./sections/Connectors.svelte";
   import Harnesses from "./sections/Harnesses.svelte";
   import Keyboard from "./sections/Keyboard.svelte";
+  import PullRequests from "./sections/PullRequests.svelte";
   import Workspaces from "./sections/Workspaces.svelte";
 
   const NAV: Tab[] = [
@@ -22,6 +23,7 @@
     { id: "keyboard", label: "Keyboard", group: "App" },
     { id: "workspaces", label: "Workspaces", group: "Work" },
     { id: "connectors", label: "Connectors", group: "Work" },
+    { id: "pullRequests", label: "Pull requests", group: "Work" },
     { id: "harnesses", label: "Harnesses", group: "Work" },
     { id: "claude", label: "Claude Code", group: "System" },
     { id: "about", label: "About", group: "System" },
@@ -135,6 +137,8 @@
           <Workspaces />
         {:else if section === "connectors"}
           <Connectors />
+        {:else if section === "pullRequests"}
+          <PullRequests />
         {:else if section === "claude"}
           <ClaudeCode />
         {:else if section === "about"}

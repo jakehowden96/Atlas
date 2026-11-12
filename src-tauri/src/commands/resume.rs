@@ -208,7 +208,10 @@ mod tests {
             normalize_path(r"C:\Users\jakeh\Documents\GitHub\Atlas"),
             normalize_path("C:/Users/jakeh/Documents/GitHub/Atlas/"),
         );
-        assert_eq!(normalize_path("/repo/atlas/"), normalize_path("/repo/atlas"));
+        assert_eq!(
+            normalize_path("/repo/atlas/"),
+            normalize_path("/repo/atlas")
+        );
     }
 
     #[cfg(windows)]
@@ -230,9 +233,30 @@ mod tests {
     #[test]
     fn resumable_offers_only_uuid_shaped_ids() {
         let dir = tempfile::tempdir().unwrap();
-        write(dir.path(), "p", SID, "/repo/atlas", "2026-01-01T00:00:00Z", 1);
-        write(dir.path(), "p", "x;touch pwned", "/repo/atlas", "2026-01-02T00:00:00Z", 1);
-        write(dir.path(), "p", "--dangerously-skip", "/repo/atlas", "2026-01-03T00:00:00Z", 1);
+        write(
+            dir.path(),
+            "p",
+            SID,
+            "/repo/atlas",
+            "2026-01-01T00:00:00Z",
+            1,
+        );
+        write(
+            dir.path(),
+            "p",
+            "x;touch pwned",
+            "/repo/atlas",
+            "2026-01-02T00:00:00Z",
+            1,
+        );
+        write(
+            dir.path(),
+            "p",
+            "--dangerously-skip",
+            "/repo/atlas",
+            "2026-01-03T00:00:00Z",
+            1,
+        );
         let found = resumable_in(dir.path(), "/repo/atlas");
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].session_id, SID);
@@ -241,7 +265,14 @@ mod tests {
     #[test]
     fn resumable_matches_a_workspace_whose_separators_differ_from_the_transcript() {
         let dir = tempfile::tempdir().unwrap();
-        write(dir.path(), "p", SID, r"C:\repo\atlas", "2026-01-01T00:00:00Z", 1);
+        write(
+            dir.path(),
+            "p",
+            SID,
+            r"C:\repo\atlas",
+            "2026-01-01T00:00:00Z",
+            1,
+        );
         let found = resumable_in(dir.path(), "C:/repo/atlas/");
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].session_id, SID);
@@ -271,7 +302,9 @@ mod tests {
         let found = resumable_in(dir.path(), "/repo/atlas");
         assert_eq!(found.len(), RESUMABLE_LIMIT, "capped at 25");
         assert_eq!(found[0].session_id, "0000001d-0000-4000-8000-000000000000");
-        assert!(found.iter().all(|r| r.session_id != "ffffffff-0000-4000-8000-000000000000"));
+        assert!(found
+            .iter()
+            .all(|r| r.session_id != "ffffffff-0000-4000-8000-000000000000"));
         assert_eq!(found[0].user_messages, 2);
         assert_eq!(found[0].git_branch.as_deref(), Some("main"));
         assert_eq!(found[0].title.as_deref(), Some("A title"));
@@ -280,7 +313,14 @@ mod tests {
     #[test]
     fn resumable_is_empty_for_a_workspace_with_no_history() {
         let dir = tempfile::tempdir().unwrap();
-        write(dir.path(), "p", SID, "/repo/atlas", "2026-01-01T00:00:00Z", 1);
+        write(
+            dir.path(),
+            "p",
+            SID,
+            "/repo/atlas",
+            "2026-01-01T00:00:00Z",
+            1,
+        );
         assert!(resumable_in(dir.path(), "/repo/brand-new").is_empty());
     }
 

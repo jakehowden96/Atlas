@@ -131,7 +131,6 @@ impl ReqData {
     pub fn context(&self) -> u64 {
         self.input_tokens + self.cache_read + self.cache_create
     }
-
 }
 
 // ── Line-level accessors ──────────────────────────────────────────────────────

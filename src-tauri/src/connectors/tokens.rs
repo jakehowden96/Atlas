@@ -12,7 +12,7 @@ use ts_rs::TS;
 
 use super::http::{offline, status_error};
 use super::keychain::StoredToken;
-use super::provider::{AuthFlow, ConnectorStatus};
+use super::provider::{AuthFlow, AuthMethod, ConnectorStatus};
 use super::Connectors;
 use crate::error::AtlasError;
 
@@ -20,6 +20,9 @@ use crate::error::AtlasError;
 const MIN_REMAINING: Duration = Duration::from_secs(60);
 /// Providers whose tokens do not expire omit `expires_in`.
 const DEFAULT_LIFETIME: Duration = Duration::from_secs(3600);
+/// How long a CLI token is reused before the CLI is asked again, so a
+/// `gh auth switch` or logout is picked up without a restart.
+const CLI_LIFETIME: Duration = Duration::from_secs(300);
 const MAX_RETRIES: u32 = 2;
 const BACKOFF: Duration = Duration::from_millis(250);
 
@@ -80,8 +83,9 @@ struct OAuthError {
 }
 
 impl Connectors {
-    /// A valid access token for `id`, refreshing if needed. Concurrent callers
-    /// share one refresh.
+    /// A valid access token for `id`, by the method it was linked with:
+    /// refreshed (OAuth), read from the keychain (API key) or asked of the
+    /// provider's CLI. Concurrent callers share one fetch.
     pub async fn access_token(&self, id: &str) -> Result<String, AtlasError> {
         if let Some(t) = self.access.cached(id)? {
             return Ok(t);
@@ -108,14 +112,26 @@ impl Connectors {
             .registry
             .get(id)
             .ok_or_else(|| AtlasError::not_found(format!("No connector named {id}")))?;
-        let stored = self
-            .tokens
-            .get(id)?
-            .ok_or_else(|| AtlasError::ConnectorNotLinked {
-                message: format!("{} is not connected", provider.info().name),
-            })?;
+        let not_linked = || AtlasError::ConnectorNotLinked {
+            message: format!("{} is not connected", provider.info().name),
+        };
+        let method = self.method(id)?.ok_or_else(not_linked)?;
+        if method == AuthMethod::Cli {
+            let token = match provider.cli_token().await {
+                Err(AtlasError::ConnectorReconnectNeeded { message }) => {
+                    return Err(self.mark_reconnect(id, &message)?)
+                }
+                r => r?,
+            };
+            self.access.tokens.lock()?.insert(
+                id.to_string(),
+                (token.clone(), Instant::now() + CLI_LIFETIME),
+            );
+            return Ok(token);
+        }
+        let stored = self.tokens.get(id)?.ok_or_else(not_linked)?;
         // shortcut: device-flow tokens (GitHub) do not expire and are stored whole, so there is nothing to refresh; revisit if a device-flow provider issues refresh tokens.
-        if stored.api_key || provider.info().flow == AuthFlow::DeviceCode {
+        if method == AuthMethod::ApiKey || provider.info().flow == AuthFlow::DeviceCode {
             return Ok(stored.refresh_token);
         }
         let cfg = provider.auth_config();
@@ -174,7 +190,7 @@ impl Connectors {
                 &StoredToken {
                     refresh_token: next,
                     account: stored.account,
-                    api_key: false,
+                    legacy_api_key: false,
                 },
             )?;
         }

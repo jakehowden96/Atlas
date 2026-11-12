@@ -8,6 +8,8 @@
   import ConnectorLogo from "../../ui/ConnectorLogo.svelte";
   import EmptyState from "../../ui/EmptyState.svelte";
   import Loader from "./Loader.svelte";
+  import { codeburn } from "../../../stores/codeburn";
+  import { prefetch, whyArgs } from "./prefetch";
   import { type SortKey, sortSessions } from "./sessions-sort";
 
   let { filters, refresh }: { filters: Filters; refresh: number } = $props();
@@ -52,6 +54,16 @@
       true,
     );
   };
+  // Opening a session's detail spawns codeburn (~2.5s), so warm the top few.
+  $effect(() => {
+    const argv = ["sessions", "--format", "json", ...filterArgs(filters, "sessions"), "--contributions"];
+    void key;
+    void provider;
+    codeburn<SessionRow[]>(argv)
+      .then((rows) => prefetch("why", visible(rows).slice(0, 5).map((r) => whyArgs(r.sessionId))))
+      .catch(() => {});
+  });
+
   const day = (iso: string) =>
     new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 </script>
@@ -149,7 +161,7 @@
                     </button>
                     {#if open === r.sessionId}
                       <div class="why">
-                        <Loader args={["sessions", "--id", r.sessionId, "--why", "--format", "json"]} {refresh}>
+                        <Loader args={whyArgs(r.sessionId)} {refresh}>
                           {#snippet children(why: SessionWhy)}
                             <p class="sub gapb">
                               Subagents ·
@@ -161,7 +173,9 @@
                               <div class="kv">
                                 <span>{f.kind}{f.turn ? ` (turn ${f.turn})` : ""}</span>
                                 <span>
-                                  {fmtCost(f.usd)} · {Math.round(f.share * 100)}%{f.alt
+                                  {f.usd == null ? "—" : fmtCost(f.usd)}{f.share == null
+                                    ? ""
+                                    : ` · ${Math.round(f.share * 100)}%`}{f.alt
                                     ? ` · ${f.alt.model} would be ${fmtCost(f.alt.cost)}`
                                     : ""}
                                 </span>

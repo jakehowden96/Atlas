@@ -3,14 +3,6 @@
 use super::graphql::{Context, PrNode};
 use crate::connectors::provider::{Check, CheckStatus, PullRequest, PullRequestState, ReviewState};
 
-/// A mapped pull request plus what the neutral type has no room for.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MappedPr {
-    pub pr: PullRequest,
-    /// More than 100 checks exist; `pr.checks` holds the first 100.
-    pub checks_truncated: bool,
-}
-
 fn check_run_status(status: &str, conclusion: Option<&str>) -> CheckStatus {
     if status != "COMPLETED" {
         return CheckStatus::Pending;
@@ -61,7 +53,7 @@ fn review(node: &PrNode) -> ReviewState {
     }
 }
 
-pub fn map_pr(node: PrNode) -> MappedPr {
+pub fn map_pr(node: PrNode) -> PullRequest {
     let rollup = node
         .commits
         .as_ref()
@@ -90,23 +82,20 @@ pub fn map_pr(node: PrNode) -> MappedPr {
                 .collect()
         })
         .unwrap_or_default();
-    MappedPr {
-        checks_truncated: rollup.is_some_and(|r| r.contexts.page_info.has_next_page),
-        pr: PullRequest {
-            number: node.number,
-            title: node.title,
-            url: node.url,
-            state,
-            head_ref_name: node.head_ref_name,
-            author: node.author.map(|a| a.login).unwrap_or_default(),
-            is_cross_repository: node.is_cross_repository,
-            ci,
-            checks,
-            review,
-            created_at: node.created_at,
-            updated_at: node.updated_at,
-            review_request_logins,
-            comments_count: node.comments.map_or(0, |c| c.total_count),
-        },
+    PullRequest {
+        number: node.number,
+        title: node.title,
+        url: node.url,
+        state,
+        head_ref_name: node.head_ref_name,
+        author: node.author.map(|a| a.login).unwrap_or_default(),
+        is_cross_repository: node.is_cross_repository,
+        ci,
+        checks,
+        review,
+        created_at: node.created_at,
+        updated_at: node.updated_at,
+        review_request_logins,
+        comments_count: node.comments.map_or(0, |c| c.total_count),
     }
 }

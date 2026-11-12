@@ -125,5 +125,8 @@ async fn personal_api_keys_are_sent_without_bearer() {
         .mount(&s)
         .await;
     let p = LinearProvider::with_api_url(&s.uri());
-    assert_eq!(p.get_ticket("lin_api_k", "ENG-482").await.unwrap().id, "ENG-482");
+    assert_eq!(
+        p.get_ticket("lin_api_k", "ENG-482").await.unwrap().id,
+        "ENG-482"
+    );
 }

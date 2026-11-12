@@ -1,4 +1,6 @@
-//! GitHub pull requests over GraphQL, signed in with the device-code flow.
+//! GitHub pull requests over GraphQL. Signs in with Atlas's OAuth app
+//! (device-code flow) or borrows the token of the user's `gh` CLI, which
+//! carries its own org approvals.
 //!
 //! Scope: `repo`. GitHub's OAuth apps have no read-only scope for private
 //! repositories (`public_repo` covers public ones only), and Atlas needs
@@ -8,28 +10,30 @@ pub mod checkout;
 pub mod graphql;
 pub mod map;
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use reqwest::{header, StatusCode};
 use serde_json::{json, Value};
 
 use super::clients::{is_configured, GITHUB_CLIENT_ID};
+use super::http::now_secs as now;
 use super::provider::{
-    AuthConfig, AuthFlow, ConnectorInfo, ConnectorKind, ConnectorProvider, PullRequest,
+    AuthConfig, AuthFlow, AuthMethod, ConnectorInfo, ConnectorKind, ConnectorProvider, PullRequest,
     PullRequestProvider, RepoRef, Viewer,
 };
 use crate::error::AtlasError;
 use graphql::{RepoNode, Response};
-pub use map::MappedPr;
 
 const GRAPHQL_URL: &str = "https://api.github.com/graphql";
+/// A `gh` stuck on a keychain prompt must not hang the PR screen.
+const CLI_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// One repo's outcome; a failing repo does not fail the others.
 #[derive(Debug)]
 pub struct RepoPullRequests {
     pub repo: RepoRef,
-    pub result: Result<Vec<MappedPr>, AtlasError>,
+    pub result: Result<Vec<PullRequest>, AtlasError>,
 }
 
 pub struct GithubProvider {
@@ -41,12 +45,6 @@ impl Default for GithubProvider {
     fn default() -> Self {
         Self::with_endpoint(GRAPHQL_URL)
     }
-}
-
-fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
 }
 
 fn split_slug(slug: &str) -> Result<(&str, &str), AtlasError> {
@@ -183,26 +181,10 @@ impl GithubProvider {
         }
         out
     }
-
-    /// The newest pull request (open, draft or merged) whose head is `branch`.
-    pub async fn pull_request_for_branch(
-        &self,
-        token: &str,
-        repo: &RepoRef,
-        branch: &str,
-    ) -> Result<Option<MappedPr>, AtlasError> {
-        let (owner, name) = split_slug(&repo.slug)?;
-        let mut vars = graphql::repo_variables(&[(owner, name)]);
-        vars.insert("h".into(), json!(branch));
-        let resp = self
-            .post(token, &graphql::branch_pr_query(), Value::Object(vars))
-            .await?;
-        Ok(repo_result(&resp, 0)?.into_iter().next())
-    }
 }
 
 /// Alias `r{i}`'s pull requests, or the error GraphQL attached to it.
-fn repo_result(resp: &Response, i: usize) -> Result<Vec<MappedPr>, AtlasError> {
+fn repo_result(resp: &Response, i: usize) -> Result<Vec<PullRequest>, AtlasError> {
     let alias = format!("r{i}");
     if let Some(e) = resp.errors.iter().find(|e| e.alias() == Some(&alias)) {
         return Err(e.to_atlas());
@@ -236,6 +218,7 @@ impl ConnectorProvider for GithubProvider {
             name: "GitHub".into(),
             kind: ConnectorKind::PullRequests,
             flow: AuthFlow::DeviceCode,
+            methods: vec![AuthMethod::OAuth, AuthMethod::Cli],
             configured: is_configured(GITHUB_CLIENT_ID),
         }
     }
@@ -267,6 +250,17 @@ impl ConnectorProvider for GithubProvider {
         })
     }
 
+    async fn cli_token(&self) -> Result<String, AtlasError> {
+        let run = tokio::task::spawn_blocking(gh_token);
+        match tokio::time::timeout(CLI_TIMEOUT, run).await {
+            Ok(joined) => joined.map_err(|e| AtlasError::internal(e.to_string()))?,
+            Err(_) => Err(AtlasError::tool_failed(
+                "gh",
+                "The GitHub CLI did not answer. Run `gh auth status` in a terminal.",
+            )),
+        }
+    }
+
     fn pull_requests(&self) -> Option<&dyn PullRequestProvider> {
         Some(self)
     }
@@ -287,7 +281,7 @@ impl PullRequestProvider for GithubProvider {
             match r.result {
                 Ok(list) => {
                     any_ok = true;
-                    prs.extend(list.into_iter().map(|m| m.pr));
+                    prs.extend(list);
                 }
                 Err(e) => first_error = first_error.or(Some(e)),
             }
@@ -297,15 +291,27 @@ impl PullRequestProvider for GithubProvider {
             _ => Ok(prs),
         }
     }
+}
 
-    async fn checkout_ref(
-        &self,
-        _token: &str,
-        _repo: &RepoRef,
-        number: u32,
-    ) -> Result<String, AtlasError> {
-        Ok(format!("pull/{number}/head"))
+/// The token `gh auth token` prints for github.com.
+fn gh_token() -> Result<String, AtlasError> {
+    let mut cmd = std::process::Command::new("gh");
+    cmd.args(["auth", "token", "--hostname", "github.com"])
+        .stdin(std::process::Stdio::null());
+    crate::commands::proc::no_window(&mut cmd);
+    let out = cmd.output().map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => AtlasError::ConnectorReconnectNeeded {
+            message: "The GitHub CLI is not installed. Install it from cli.github.com.".into(),
+        },
+        _ => AtlasError::tool_failed("gh", format!("Could not run the GitHub CLI: {e}")),
+    })?;
+    let token = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if !out.status.success() || token.is_empty() {
+        return Err(AtlasError::ConnectorReconnectNeeded {
+            message: "The GitHub CLI is not signed in. Run `gh auth login`, then try again.".into(),
+        });
     }
+    Ok(token)
 }
 
 #[cfg(test)]

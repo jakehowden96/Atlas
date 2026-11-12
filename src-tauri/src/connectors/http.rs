@@ -1,13 +1,11 @@
-//! The one HTTP client providers use: bearer auth, one retry after a refresh
-//! on 401, and errors mapped to `AtlasError`.
+//! The shared HTTP client for token requests, and status codes mapped to
+//! `AtlasError`.
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reqwest::header::HeaderMap;
-use reqwest::{Client, RequestBuilder, StatusCode};
-use serde::{de::DeserializeOwned, Serialize};
+use reqwest::{Client, StatusCode};
 
-use super::Connectors;
 use crate::error::AtlasError;
 
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -64,57 +62,5 @@ pub fn status_error(status: StatusCode, headers: &HeaderMap) -> AtlasError {
 pub fn offline() -> AtlasError {
     AtlasError::ConnectorOffline {
         message: "Could not reach the service".to_string(),
-    }
-}
-
-pub struct AuthorizedClient<'a>(&'a Connectors);
-
-impl Connectors {
-    pub fn authorized(&self) -> AuthorizedClient<'_> {
-        AuthorizedClient(self)
-    }
-}
-
-impl AuthorizedClient<'_> {
-    pub async fn get<T: DeserializeOwned>(&self, id: &str, url: &str) -> Result<T, AtlasError> {
-        self.send(id, |c| c.get(url)).await
-    }
-
-    pub async fn post_json<B: Serialize + Sync, T: DeserializeOwned>(
-        &self,
-        id: &str,
-        url: &str,
-        body: &B,
-    ) -> Result<T, AtlasError> {
-        self.send(id, |c| c.post(url).json(body)).await
-    }
-
-    async fn send<T: DeserializeOwned>(
-        &self,
-        id: &str,
-        build: impl Fn(&Client) -> RequestBuilder,
-    ) -> Result<T, AtlasError> {
-        let mut retried = false;
-        loop {
-            let token = self.0.access_token(id).await?;
-            let resp = build(&self.0.http)
-                .bearer_auth(&token)
-                .send()
-                .await
-                .map_err(|_| offline())?;
-            let status = resp.status();
-            if status == StatusCode::UNAUTHORIZED && !retried {
-                retried = true;
-                self.0.access.forget(id)?;
-                continue;
-            }
-            if !status.is_success() {
-                return Err(status_error(status, resp.headers()));
-            }
-            return resp
-                .json()
-                .await
-                .map_err(|_| AtlasError::parse("The service sent an unreadable response"));
-        }
     }
 }

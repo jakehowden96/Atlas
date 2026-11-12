@@ -33,6 +33,7 @@ const ticket: Ticket = {
 const conn = (status: ConnectorState["status"]): ConnectorState => ({
   info: { id: "linear", name: "Linear", kind: "tickets", flow: "pkce", configured: true } as never,
   status,
+  method: null,
 });
 const linked = { kind: "linked", account: "a" } as const;
 const props = { sessionId: SID, branch: "eng-482-fix", branchLine: "" };

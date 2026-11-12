@@ -6,6 +6,7 @@ import {
   connectorConnect,
   connectorDisconnect,
   connectorLinkApiKey,
+  connectorLinkCli,
   connectorList,
   onConnectorDeviceCode,
   onConnectorProgress,
@@ -87,6 +88,26 @@ export async function cancel(id: string): Promise<void> {
 export async function linkApiKey(id: string, key: string): Promise<void> {
   await connectorLinkApiKey(id, key);
   await refresh();
+}
+
+/** Link `id` through its provider's CLI; throws with the CLI's reason. */
+export async function linkCli(id: string): Promise<void> {
+  await connectorLinkCli(id);
+  await refresh();
+}
+
+/**
+ * Sign `c` in again the way it was linked. A pasted key needs a new key from
+ * the user, so Settings is the only way back for that one.
+ */
+export async function reconnect(c: ConnectorState): Promise<void> {
+  if (c.method === "apiKey") return;
+  if (c.method !== "cli") return connect(c.info.id);
+  try {
+    await linkCli(c.info.id);
+  } catch (e) {
+    log.warn("connectors", `CLI reconnect failed: ${e}`);
+  }
 }
 
 export async function disconnect(id: string): Promise<void> {

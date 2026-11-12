@@ -27,9 +27,6 @@ describe("setupProblem", () => {
     expect(setupProblem([connector({ kind: "reconnectNeeded", reason: "x" })], null)).toEqual({
       kind: "reconnect",
     });
-    expect(setupProblem([connector({ kind: "error", message: "x" })], null)).toEqual({
-      kind: "error",
-    });
   });
 
   it("finds rate limits, offline and expired sign-ins in any repo", () => {

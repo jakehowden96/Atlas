@@ -27,7 +27,8 @@
   import Popover from "../ui/Popover.svelte";
   import StatusMark from "../ui/StatusMark.svelte";
   import { installUpdate } from "../../updater";
-  import { connect } from "../../stores/connectors";
+  import { reconnect } from "../../stores/connectors";
+  import type { ConnectorState } from "../../../types/generated/ConnectorState";
   import { prsLastUpdated } from "../../stores/prs";
   import { openSettings } from "../../stores/settings";
 
@@ -47,10 +48,10 @@
 
   const toggle = (id: string) => (open = open === id ? null : id);
 
-  function reconnect(id: string) {
+  function reconnectFrom(c: ConnectorState) {
     open = null;
     openSettings("connectors");
-    void connect(id);
+    void reconnect(c);
   }
 
   function dismiss(id: string) {
@@ -91,7 +92,7 @@
     label="{c.info.name} needs reconnecting"
   >
     <div class="pop">
-      <Button size="sm" variant="primary" onclick={() => reconnect(c.info.id)}>Reconnect</Button>
+      <Button size="sm" variant="primary" onclick={() => reconnectFrom(c)}>Reconnect</Button>
       <Button size="sm" variant="ghost" onclick={() => dismiss(c.info.id)}>Dismiss for now</Button>
     </div>
   </Popover>

@@ -145,13 +145,15 @@
         aria-label="Search pull requests"
       />
     </div>
-    <Select
-      size="sm"
-      aria-label="Sort pull requests"
-      options={SORT_OPTIONS}
-      value={sort}
-      onChange={(id) => (sort = id as PrSort)}
-    />
+    <div class="sort">
+      <Select
+        size="sm"
+        aria-label="Sort pull requests"
+        options={SORT_OPTIONS}
+        value={sort}
+        onChange={(id) => (sort = id as PrSort)}
+      />
+    </div>
     <div class="spacer"></div>
     <span class="meta" use:tooltip={{ text: `Refreshes every ${$prRefreshMinutes} minutes` }}>
       {$prsLoading ? "Updating" : updatedLabel($prsLastUpdated, now)}
@@ -160,7 +162,7 @@
       {#snippet leading()}<Icon name="refresh" size={16} />{/snippet}
       Refresh
     </Button>
-    <Button size="sm" onclick={() => openSettings("connectors")}>Watched repos</Button>
+    <Button size="sm" onclick={() => openSettings("pullRequests")}>Watched repos</Button>
   </div>
 
   <div class="cards">
@@ -296,6 +298,10 @@
 
   .search {
     width: 240px;
+  }
+
+  .sort {
+    width: 170px;
   }
 
   .spacer {

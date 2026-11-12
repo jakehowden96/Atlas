@@ -4,8 +4,10 @@
 //! subcommands run, and every argument is held to a strict character set
 //! because on Windows the npm `.cmd` shim is executed through cmd.exe.
 
-use std::io::Read;
-use std::process::Stdio;
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::process::{Child, ChildStdin, Stdio};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -84,7 +86,9 @@ fn validate_read(args: &[String]) -> Result<(), AtlasError> {
         )));
     }
     if args[0] == "plan" && args.iter().any(|a| a == "set") {
-        return Err(AtlasError::invalid_input("plan set is an action, not a read"));
+        return Err(AtlasError::invalid_input(
+            "plan set is an action, not a read",
+        ));
     }
     if args.iter().any(|a| a == "--apply") {
         return Err(AtlasError::invalid_input("--apply is not allowed here"));
@@ -206,6 +210,127 @@ fn run(args: &[String], timeout: Duration) -> Result<Vec<u8>, AtlasError> {
     Ok(out)
 }
 
+/// A warm `codeburn serve` process. Each CLI start costs ~2s of module
+/// loading, so reads go through this one and only fall back to a fresh
+/// process for commands it refuses to serve.
+struct Serve {
+    child: Child,
+    stdin: ChildStdin,
+    pending: Arc<Mutex<HashMap<u64, mpsc::Sender<serde_json::Value>>>>,
+    next: u64,
+}
+
+impl Drop for Serve {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+    }
+}
+
+/// Each server answers one request at a time, so the slow scans (seconds
+/// each) get a second server (~200MB) and never hold up the quick queries.
+const SLOW_COMMANDS: &[&str] = &["yield", "optimize", "compare"];
+static SERVE: [Mutex<Option<Serve>>; 2] = [const { Mutex::new(None) }; 2];
+
+fn lane_for(args: &[String]) -> usize {
+    usize::from(SLOW_COMMANDS.contains(&args[0].as_str()))
+}
+
+fn start_serve() -> Option<Serve> {
+    let binary = which_codeburn()?;
+    let mut command = probe(&binary);
+    command
+        .arg("serve")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    let mut child = command.spawn().ok()?;
+    let stdin = child.stdin.take()?;
+    let mut stdout = BufReader::new(child.stdout.take()?);
+    let mut first = String::new();
+    if stdout.read_line(&mut first).ok()? == 0 || !first.contains("\"ready\"") {
+        let _ = child.kill();
+        return None;
+    }
+    let pending: Arc<Mutex<HashMap<u64, mpsc::Sender<serde_json::Value>>>> = Arc::default();
+    let routes = pending.clone();
+    std::thread::spawn(move || {
+        for line in stdout.lines() {
+            let Ok(line) = line else { break };
+            let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+            if msg.get("progress").is_some() {
+                continue;
+            }
+            let Some(id) = msg.get("id").and_then(|v| v.as_u64()) else { continue };
+            if let Some(tx) = routes.lock().ok().and_then(|mut p| p.remove(&id)) {
+                let _ = tx.send(msg);
+            }
+        }
+        // The server is gone: dropping the senders sends waiters to the fallback.
+        if let Ok(mut p) = routes.lock() {
+            p.clear();
+        }
+    });
+    Some(Serve { child, stdin, pending, next: 0 })
+}
+
+/// A serve reply as stdout, or `None` when it refused the command.
+fn serve_reply(args: &[String], msg: &serde_json::Value) -> Option<Result<Vec<u8>, AtlasError>> {
+    if msg.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+        let out = msg.get("output").and_then(|v| v.as_str()).unwrap_or_default();
+        return Some(Ok(out.as_bytes().to_vec()));
+    }
+    if msg.get("refused").and_then(|v| v.as_bool()) == Some(true) {
+        return None;
+    }
+    let error = msg.get("error").and_then(|v| v.as_str()).unwrap_or("failed");
+    Some(Err(AtlasError::tool_failed(
+        TOOL,
+        format!("codeburn {} {error}", args[0]),
+    )))
+}
+
+/// Ask the warm server; `None` means run a fresh process instead.
+fn serve_run(args: &[String]) -> Option<Result<Vec<u8>, AtlasError>> {
+    let rx = {
+        let mut guard = SERVE[lane_for(args)].lock().ok()?;
+        if guard
+            .as_mut()
+            .is_some_and(|s| !matches!(s.child.try_wait(), Ok(None)))
+        {
+            *guard = None;
+        }
+        if guard.is_none() {
+            *guard = start_serve();
+        }
+        let serve = guard.as_mut()?;
+        serve.next += 1;
+        let id = serve.next;
+        let (tx, rx) = mpsc::channel();
+        serve.pending.lock().ok()?.insert(id, tx);
+        let line = serde_json::json!({ "id": id, "args": args }).to_string();
+        if writeln!(serve.stdin, "{line}")
+            .and_then(|_| serve.stdin.flush())
+            .is_err()
+        {
+            *guard = None;
+            return None;
+        }
+        rx
+    };
+    match rx.recv_timeout(RUN_TIMEOUT) {
+        Ok(msg) => serve_reply(args, &msg),
+        Err(mpsc::RecvTimeoutError::Timeout) => Some(Err(AtlasError::timeout(
+            TOOL,
+            format!(
+                "codeburn {} did not finish in {}s",
+                args[0],
+                RUN_TIMEOUT.as_secs()
+            ),
+        ))),
+        Err(mpsc::RecvTimeoutError::Disconnected) => None,
+    }
+}
+
 /// Whether codeburn is installed, and which version.
 #[tauri::command]
 pub async fn codeburn_info() -> Result<CodeburnInfo, AtlasError> {
@@ -226,7 +351,10 @@ pub async fn codeburn_info() -> Result<CodeburnInfo, AtlasError> {
 pub async fn codeburn_run(args: Vec<String>) -> Result<serde_json::Value, AtlasError> {
     validate_read(&args)?;
     tokio::task::spawn_blocking(move || {
-        let out = run(&args, RUN_TIMEOUT)?;
+        let out = match serve_run(&args) {
+            Some(result) => result?,
+            None => run(&args, RUN_TIMEOUT)?,
+        };
         serde_json::from_slice(&out).map_err(|e| {
             AtlasError::parse(format!("codeburn {} printed invalid JSON: {e}", args[0]))
         })
@@ -274,6 +402,27 @@ mod tests {
         validate_read(&args).unwrap();
         let out = run(&args, RUN_TIMEOUT).unwrap();
         serde_json::from_slice::<serde_json::Value>(&out).expect("valid JSON");
+    }
+
+    #[test]
+    fn serve_reply_maps_ok_refused_and_errors() {
+        let args = v(&["status", "--format", "json"]);
+        let ok = serde_json::json!({ "id": 1, "ok": true, "output": "{}" });
+        assert_eq!(serve_reply(&args, &ok).unwrap().unwrap(), b"{}");
+        let refused = serde_json::json!({ "id": 1, "ok": false, "refused": true, "error": "command not served" });
+        assert!(serve_reply(&args, &refused).is_none(), "refused falls back to a fresh run");
+        let failed = serde_json::json!({ "id": 1, "ok": false, "error": "exit 1" });
+        assert!(serve_reply(&args, &failed).unwrap().is_err());
+    }
+
+    /// Needs `npm i -g codeburn`; run with `cargo test codeburn -- --ignored`.
+    #[test]
+    #[ignore]
+    fn serves_and_falls_back() {
+        let served = v(&["status", "--format", "json"]);
+        let out = serve_run(&served).expect("status is served").unwrap();
+        serde_json::from_slice::<serde_json::Value>(&out).expect("valid JSON");
+        assert!(serve_run(&v(&["quota", "--format", "json"])).is_none(), "quota is not served");
     }
 
     #[test]

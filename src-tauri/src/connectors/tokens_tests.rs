@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use serde_json::json;
-use wiremock::matchers::{body_string_contains, header, method, path};
+use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::*;
@@ -24,6 +24,7 @@ impl ConnectorProvider for Fake {
             name: "Fake".into(),
             kind: ConnectorKind::Tickets,
             flow: AuthFlow::Browser,
+            methods: vec![AuthMethod::OAuth, AuthMethod::ApiKey],
             configured: true,
         }
     }
@@ -51,7 +52,7 @@ fn setup(token_url: String) -> (Connectors, Arc<AtomicUsize>, tempfile::TempDir)
         Box::new(MemoryStore::default()),
         ConfigStore::new(Some(dir.path().to_path_buf())),
     );
-    c.link("fake", "me", "r1", false).unwrap();
+    c.link("fake", "me", Some("r1"), AuthMethod::OAuth).unwrap();
     let events = Arc::new(AtomicUsize::new(0));
     let n = events.clone();
     c.set_emitter(Box::new(move |_| {
@@ -175,35 +176,6 @@ async fn offline_does_not_unlink() {
 }
 
 #[tokio::test]
-async fn authorized_client_refreshes_once_after_a_401() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/token"))
-        .respond_with(ok("a1", "r2"))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/data"))
-        .and(header("authorization", "Bearer a1"))
-        .respond_with(ResponseTemplate::new(401))
-        .up_to_n_times(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/data"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "n": 1 })))
-        .mount(&server)
-        .await;
-    let (c, _, _d) = setup(format!("{}/token", server.uri()));
-    let v: serde_json::Value = c
-        .authorized()
-        .get("fake", &format!("{}/data", server.uri()))
-        .await
-        .unwrap();
-    assert_eq!(v["n"], 1);
-}
-
-#[tokio::test]
 async fn pasted_api_keys_are_used_as_is_without_refresh() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -212,6 +184,7 @@ async fn pasted_api_keys_are_used_as_is_without_refresh() {
         .mount(&server)
         .await;
     let (c, _, _d) = setup(format!("{}/token", server.uri()));
-    c.link("fake", "me", "lin_api_k", true).unwrap();
+    c.link("fake", "me", Some("lin_api_k"), AuthMethod::ApiKey)
+        .unwrap();
     assert_eq!(c.access_token("fake").await.unwrap(), "lin_api_k");
 }

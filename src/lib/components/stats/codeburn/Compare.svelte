@@ -120,9 +120,9 @@
           />
         </div>
         <div class="bar">
-          <Select options={opts} value={A} onChange={(id) => (pickA = id)} size="sm" aria-label="Model A" />
+          <div class="sel"><Select options={opts} value={A} onChange={(id) => (pickA = id)} size="sm" aria-label="Model A" /></div>
           <Button size="sm" aria-label="Swap models" onclick={() => ([pickA, pickB] = [B, A])}>⇄</Button>
-          <Select options={opts} value={B} onChange={(id) => (pickB = id)} size="sm" aria-label="Model B" />
+          <div class="sel"><Select options={opts} value={B} onChange={(id) => (pickB = id)} size="sm" aria-label="Model B" /></div>
         </div>
         {#if a && b && a !== b}
           {@const text = verdict(a, b)}
@@ -253,6 +253,9 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--sp-4);
+  }
+  .sel {
+    width: 220px;
   }
   .banner {
     display: flex;

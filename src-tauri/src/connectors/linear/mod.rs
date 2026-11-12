@@ -60,6 +60,7 @@ impl ConnectorProvider for LinearProvider {
             name: "Linear".into(),
             kind: ConnectorKind::Tickets,
             flow: AuthFlow::Browser,
+            methods: vec![AuthMethod::OAuth, AuthMethod::ApiKey],
             configured: is_configured(LINEAR_CLIENT_ID),
         }
     }

@@ -78,7 +78,7 @@
 
   <Card title="Plan">
     <div class="controls">
-      <Select {options} bind:value={preset} placeholder="Choose a plan" aria-label="Plan preset" />
+      <div class="sel"><Select {options} bind:value={preset} placeholder="Choose a plan" aria-label="Plan preset" /></div>
       <Button variant="primary" disabled={!preset} loading={saving} onclick={apply}>Set plan</Button>
     </div>
     {#if error}
@@ -143,6 +143,9 @@
     display: flex;
     gap: var(--sp-3);
     align-items: center;
+  }
+  .sel {
+    width: 240px;
   }
   .muted {
     margin: 0;

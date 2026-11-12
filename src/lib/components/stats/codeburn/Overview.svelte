@@ -406,8 +406,6 @@
           {/each}
         </Card>
       </div>
-
-      <p class="foot">Dollar figures are API-equivalent estimates, not what a subscription bills.</p>
     {/snippet}
   </Loader>
 </div>
@@ -458,11 +456,6 @@
   }
   .gap-top {
     margin-top: var(--sp-3);
-  }
-  .foot {
-    margin: 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
   }
   .card {
     min-width: 0;

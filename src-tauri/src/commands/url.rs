@@ -49,4 +49,3 @@ pub async fn open_url(url: String) -> Result<(), AtlasError> {
     })
     .await?
 }
-

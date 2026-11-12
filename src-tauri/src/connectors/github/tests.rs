@@ -6,7 +6,6 @@ use crate::connectors::provider::{CheckStatus as C, PullRequestState, ReviewStat
 
 const LIST_OK: &str = include_str!("../../../tests/fixtures/github/list_ok.json");
 const LIST_PARTIAL: &str = include_str!("../../../tests/fixtures/github/list_partial.json");
-const BRANCH_MERGED: &str = include_str!("../../../tests/fixtures/github/branch_merged.json");
 const VIEWER: &str = include_str!("../../../tests/fixtures/github/viewer.json");
 
 fn repo(slug: &str) -> RepoRef {
@@ -45,7 +44,7 @@ async fn maps_prs_checks_and_review_states() {
     let prs = out[0].result.as_ref().unwrap();
     assert_eq!(prs.len(), 4);
 
-    let a = &prs[0].pr;
+    let a = &prs[0];
     assert_eq!(a.state, PullRequestState::Open);
     assert_eq!(a.review, ReviewState::Approved);
     assert_eq!(a.ci, Some(C::Fail));
@@ -81,10 +80,9 @@ async fn maps_prs_checks_and_review_states() {
             ),
         ]
     );
-    assert!(!prs[0].checks_truncated);
 
     // Draft fork: no checks, two unresolved threads.
-    let b = &prs[1].pr;
+    let b = &prs[1];
     assert_eq!(b.state, PullRequestState::Draft);
     assert!(b.is_cross_repository);
     assert_eq!(b.ci, None);
@@ -92,16 +90,15 @@ async fn maps_prs_checks_and_review_states() {
     assert_eq!(b.review, ReviewState::Comments { count: 2 });
 
     // Changes requested beats comments; unknown/queued are pending; truncated.
-    let c = &prs[2].pr;
+    let c = &prs[2];
     assert_eq!(c.review, ReviewState::Changes);
     assert_eq!(c.author, "");
     assert_eq!(
         c.checks.iter().map(|k| k.status).collect::<Vec<_>>(),
         vec![C::Pending, C::Fail, C::Fail, C::Fail, C::Pending]
     );
-    assert!(prs[2].checks_truncated);
 
-    let d = &prs[3].pr;
+    let d = &prs[3];
     assert_eq!(d.review, ReviewState::Awaiting);
     assert_eq!(d.ci, Some(C::Pass));
     assert_eq!(d.checks[1].status, C::Fail);
@@ -145,18 +142,6 @@ async fn trait_list_succeeds_unless_every_repo_fails() {
 }
 
 #[tokio::test]
-async fn branch_lookup_returns_a_merged_pr() {
-    let (_s, p) = serve(json(BRANCH_MERGED)).await;
-    let m = p
-        .pull_request_for_branch("tok", &repo("acme/app"), "ship")
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(m.pr.state, PullRequestState::Merged);
-    assert_eq!(m.pr.number, 40);
-}
-
-#[tokio::test]
 async fn http_failures_map_to_connector_errors() {
     let cases = [
         (ResponseTemplate::new(401), "ConnectorReconnectNeeded"),
@@ -169,10 +154,7 @@ async fn http_failures_map_to_connector_errors() {
     ];
     for (resp, want) in cases {
         let (_s, p) = serve(resp).await;
-        let err = p
-            .pull_request_for_branch("tok", &repo("acme/app"), "x")
-            .await
-            .unwrap_err();
+        let err = p.viewer("tok").await.unwrap_err();
         assert!(format!("{err:?}").starts_with(want), "{want}: {err:?}");
     }
 }
@@ -194,4 +176,5 @@ fn provider_is_github_device_code_pull_requests() {
     assert_eq!(info.id, "github");
     assert_eq!(info.flow, AuthFlow::DeviceCode);
     assert_eq!(info.kind, ConnectorKind::PullRequests);
+    assert_eq!(info.methods, [AuthMethod::OAuth, AuthMethod::Cli]);
 }

@@ -88,6 +88,18 @@
   aria-label={label}
   tabindex="-1"
   {onkeydown}
+  onclick={(e) => {
+    const id = idOf(e.target);
+    if (!id) return;
+    // The twisty is a mouse shortcut for the arrow keys: toggle without opening.
+    if ((e.target as HTMLElement).closest("[data-twisty]")) {
+      const n = nodes.find((x) => x.id === id);
+      if (n) ontoggle?.(id, !n.expanded);
+    } else {
+      focusNode(id);
+      onopen?.(id);
+    }
+  }}
   onfocusin={(e) => {
     const id = idOf(e.target);
     if (id) focusId = id;
@@ -114,11 +126,6 @@
         selected={n.id === selectedId}
         unsaved={n.unsaved}
         tabindex={n.id === tabId ? 0 : -1}
-        onclick={() => {
-          focusNode(n.id);
-          onopen?.(n.id);
-        }}
-        ontwisty={() => ontoggle?.(n.id, !n.expanded)}
       />
     {/if}
   {/each}

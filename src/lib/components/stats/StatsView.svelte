@@ -24,6 +24,7 @@ import Overview from "./codeburn/Overview.svelte";
   import Plugins from "./codeburn/Plugins.svelte";
   import PullRequests from "./codeburn/PullRequests.svelte";
   import Sessions from "./codeburn/Sessions.svelte";
+  import { prefetch, tabQueries } from "./codeburn/prefetch";
   import Settings from "./codeburn/Settings.svelte";
   import Spend from "./codeburn/Spend.svelte";
 
@@ -148,6 +149,13 @@ import Overview from "./codeburn/Overview.svelte";
     const pcts = ps.flatMap((p) => p.windows.map((w) => w.usedPct));
     quotaPct = pcts.length ? Math.max(...pcts) : null;
   }
+
+  // Warm every tab for these filters once the visible page has had its turn.
+  $effect(() => {
+    const queries = tabQueries(filters);
+    const id = setTimeout(() => void prefetch("tabs", queries), 1500);
+    return () => clearTimeout(id);
+  });
 
   onMount(() => {
     void checkCodeburn();

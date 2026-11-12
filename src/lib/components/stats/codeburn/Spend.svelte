@@ -235,6 +235,7 @@
     overflow-y: auto;
   }
   .pick {
+    width: 240px;
     margin-bottom: var(--sp-3);
   }
   .note {
