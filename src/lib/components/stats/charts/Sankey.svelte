@@ -76,7 +76,8 @@
     const li = new Map(L.map((n) => [n.id, n]));
     const ri = new Map(R.map((n) => [n.id, n]));
     const mid = (LX + RX) / 2;
-    const ribbons: { key: string; m: string; p: string; d: string; fill: string; text: string }[] = [];
+    const ribbons: { key: string; m: string; p: string; d: string; fill: string; text: string }[] =
+      [];
     for (const [key, cost] of [...pairs].sort((a, b) => b[1] - a[1])) {
       const [m, p] = key.split("\0") as [string, string];
       const a = li.get(m);
@@ -124,12 +125,19 @@
           fill={r.fill}
           fill-opacity="0.4"
           class:fade={faded(r.m, r.p)}
-          onpointerenter={() => (hl = { l: r.m, r: r.p })}><title>{r.text}</title></path>
+          onpointerenter={() => (hl = { l: r.m, r: r.p })}><title>{r.text}</title></path
+        >
       {/each}
       {#each layout.L as n (n.id)}
-        <g role="img" aria-label={`${n.label} · ${fmtCost(n.cost)}`} onpointerenter={() => (hl = { l: n.id })}>
+        <g
+          role="img"
+          aria-label={`${n.label} · ${fmtCost(n.cost)}`}
+          onpointerenter={() => (hl = { l: n.id })}
+        >
           <rect x={LX - 4} y={n.y} width="4" height={n.h} fill={color(n.label)} />
-          <text x={LX - 10} y={n.y + n.h / 2 + 4} text-anchor="end">{n.label} · {fmtCost(n.cost)}</text>
+          <text x={LX - 10} y={n.y + n.h / 2 + 4} text-anchor="end"
+            >{n.label} · {fmtCost(n.cost)}</text
+          >
         </g>
       {/each}
       {#each layout.R as n (n.id)}
@@ -156,7 +164,11 @@
             {@render node(n, on)}
           </g>
         {:else}
-          <g role="img" aria-label={`${n.label} · ${fmtCost(n.cost)}`} onpointerenter={() => (hl = { r: n.id })}>
+          <g
+            role="img"
+            aria-label={`${n.label} · ${fmtCost(n.cost)}`}
+            onpointerenter={() => (hl = { r: n.id })}
+          >
             {@render node(n, on)}
           </g>
         {/if}

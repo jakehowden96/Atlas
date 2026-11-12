@@ -1,6 +1,7 @@
 import type { SessionRow } from "../../../../types/codeburn-sessions";
 
-export type SortKey = "title" | "project" | "cost" | "calls" | "turns" | "startedAt" | "outputTokens";
+export type SortKey =
+  "title" | "project" | "cost" | "calls" | "turns" | "startedAt" | "outputTokens";
 
 /** Sorted copy; numbers compare numerically, everything else as text. */
 export function sortSessions(rows: SessionRow[], key: SortKey, desc: boolean): SessionRow[] {
@@ -9,8 +10,9 @@ export function sortSessions(rows: SessionRow[], key: SortKey, desc: boolean): S
     const x = a[key];
     const y = b[key];
     return (
-      (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y))) *
-      dir
+      (typeof x === "number" && typeof y === "number"
+        ? x - y
+        : String(x).localeCompare(String(y))) * dir
     );
   });
 }

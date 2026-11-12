@@ -26,12 +26,25 @@ export function presetRanges(today: Date) {
 /** Movers on one basis (total, per day of its window, or per 100 calls), biggest change first. */
 export function movers(rows: PeriodRow[], basis: Basis, daysA: number, daysB: number): Mover[] {
   const val = (cost: number, calls: number, days: number) =>
-    basis === "day" ? cost / (days || 1) : basis === "calls" ? (calls ? (cost / calls) * 100 : 0) : cost;
+    basis === "day"
+      ? cost / (days || 1)
+      : basis === "calls"
+        ? calls
+          ? (cost / calls) * 100
+          : 0
+        : cost;
   return rows
     .map((r) => {
       const a = val(r.costA, r.callsA, daysA);
       const b = val(r.costB, r.callsB, daysB);
-      return { key: r.key, a, b, diff: b - a, pct: a > 0 ? ((b - a) / a) * 100 : null, isNew: a === 0 && b > 0 };
+      return {
+        key: r.key,
+        a,
+        b,
+        diff: b - a,
+        pct: a > 0 ? ((b - a) / a) * 100 : null,
+        isNew: a === 0 && b > 0,
+      };
     })
     .sort((x, y) => Math.abs(y.diff) - Math.abs(x.diff));
 }
@@ -59,6 +72,8 @@ export function sortMovers(list: Mover[], k: MoverSort, dir: 1 | -1): Mover[] {
   return list.slice().sort((x, y) => {
     const u = val(x);
     const v = val(y);
-    return (typeof u === "string" ? u.localeCompare(v as string) : (u as number) - (v as number)) * dir;
+    return (
+      (typeof u === "string" ? u.localeCompare(v as string) : (u as number) - (v as number)) * dir
+    );
   });
 }

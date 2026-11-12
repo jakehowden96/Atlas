@@ -3,8 +3,7 @@ import type { RepoPrs } from "./stores/prs";
 
 /** Why the Pull requests screen cannot show data, as the connector sees it. */
 export type PrSetupProblem =
-  | { kind: "noConnector" | "reconnect" | "offline" }
-  | { kind: "rateLimited"; retryAt: number };
+  { kind: "noConnector" | "reconnect" | "offline" } | { kind: "rateLimited"; retryAt: number };
 
 /** What the screen tells the user about a connector problem. */
 export interface PrSetupHint {

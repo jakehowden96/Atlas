@@ -69,9 +69,17 @@
       {/each}
       {#each days as d, i (d.key)}
         {#each segs(d) as s, j (j)}
-          <rect x={bx(i)} y={s.y} width={bw} height={s.h} style:fill={s.color} class:fade={focus !== null && s.id !== focus} />
+          <rect
+            x={bx(i)}
+            y={s.y}
+            width={bw}
+            height={s.h}
+            style:fill={s.color}
+            class:fade={focus !== null && s.id !== focus}
+          />
         {/each}
-        {#if i % every === 0}<text x={bx(i) + bw / 2} y={H - 6} text-anchor="middle">{d.label}</text>{/if}
+        {#if i % every === 0}<text x={bx(i) + bw / 2} y={H - 6} text-anchor="middle">{d.label}</text
+          >{/if}
       {/each}
       {#if n > 1}
         <line class="peak" x1={L} x2={W - R} y1={y(peak)} y2={y(peak)} />

@@ -22,7 +22,9 @@
               <b>{p.name}</b>
               <span>Built-in provider</span>
             </span>
-            <span class="pill" class:neutral={!p.available}>{p.available ? "on" : "not set up"}</span>
+            <span class="pill" class:neutral={!p.available}
+              >{p.available ? "on" : "not set up"}</span
+            >
           </div>
         {/each}
       {/if}

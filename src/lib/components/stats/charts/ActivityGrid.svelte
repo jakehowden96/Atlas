@@ -21,8 +21,19 @@
     const lastKey = real[real.length - 1]?.key;
     if (!lastKey) return { days: [], months: [] };
     const end = new Date(`${lastKey}T00:00:00`);
-    const start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - ((end.getDay() + 6) % 7) - 7 * (weeks - 1));
-    const days: { key: string; col: number; row: number; value: number; label: string; now: boolean }[] = [];
+    const start = new Date(
+      end.getFullYear(),
+      end.getMonth(),
+      end.getDate() - ((end.getDay() + 6) % 7) - 7 * (weeks - 1),
+    );
+    const days: {
+      key: string;
+      col: number;
+      row: number;
+      value: number;
+      label: string;
+      now: boolean;
+    }[] = [];
     const months: { col: number; name: string }[] = [];
     let lastMonth = -1;
     for (let c = 0; c < weeks; c++)
@@ -46,18 +57,26 @@
     return { days, months };
   });
   const step = (v: number) => (v > 0 && max > 0 ? Math.min(4, Math.ceil((v / max) * 4)) : 0);
-  const tip = (d: { label: string; value: number }) => `${d.label}, ${d.value} ${noun}${d.value === 1 ? "" : "s"}`;
+  const tip = (d: { label: string; value: number }) =>
+    `${d.label}, ${d.value} ${noun}${d.value === 1 ? "" : "s"}`;
 </script>
 
 <div class="hm" role="img" aria-label="Activity per day">
-  {#each grid.months as m (m.col)}<span style:grid-column={`${m.col + 2} / span 3`} style:grid-row="1">{m.name}</span>{/each}
-  {#each ["Mon", "Wed", "Fri"] as n, j (n)}<span style:grid-column="1" style:grid-row={2 + j * 2}>{n}</span>{/each}
+  {#each grid.months as m (m.col)}<span
+      style:grid-column={`${m.col + 2} / span 3`}
+      style:grid-row="1">{m.name}</span
+    >{/each}
+  {#each ["Mon", "Wed", "Fri"] as n, j (n)}<span style:grid-column="1" style:grid-row={2 + j * 2}
+      >{n}</span
+    >{/each}
   {#each grid.days as d (d.key)}
     <i
       class:now={d.now}
       style:grid-column={d.col + 2}
       style:grid-row={d.row + 2}
-      style:background={step(d.value) ? `color-mix(in srgb, var(--accent) ${step(d.value) * 25}%, var(--surface3))` : undefined}
+      style:background={step(d.value)
+        ? `color-mix(in srgb, var(--accent) ${step(d.value) * 25}%, var(--surface3))`
+        : undefined}
       use:tooltip={{ text: tip(d), delay: 0, side: "top" }}
     ></i>
   {/each}

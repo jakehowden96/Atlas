@@ -25,7 +25,9 @@
     <b>{it.title}</b>
     {#if it.sub}<span>{it.sub}</span>{/if}
   </span>
-  <span class="v">{it.value ?? ""}{#if onselect}<i class="chev">›</i>{/if}</span>
+  <span class="v"
+    >{it.value ?? ""}{#if onselect}<i class="chev">›</i>{/if}</span
+  >
 {/snippet}
 
 {#if items.length === 0}

@@ -35,7 +35,10 @@
   const onMove = (e: PointerEvent) => {
     const r = (e.currentTarget as SVGElement).getBoundingClientRect();
     const x = ((e.clientX - r.left) / r.width) * W;
-    hover = Math.max(0, Math.min(values.length - 1, Math.round(((x - P) / (W - 2 * P)) * (values.length - 1))));
+    hover = Math.max(
+      0,
+      Math.min(values.length - 1, Math.round(((x - P) / (W - 2 * P)) * (values.length - 1))),
+    );
   };
 </script>
 
@@ -51,12 +54,19 @@
     >
       <path class="area" d={`${line}L${last[0]},${H}L${P},${H}Z`} />
       <path class="line" class:dashed d={line} />
-      {#if hover !== null && pts[hover]}<line class="x" x1={pts[hover]![0]} x2={pts[hover]![0]} y1="0" y2={H} />{/if}
+      {#if hover !== null && pts[hover]}<line
+          class="x"
+          x1={pts[hover]![0]}
+          x2={pts[hover]![0]}
+          y1="0"
+          y2={H}
+        />{/if}
     </svg>
     <i class="dot" style:left={`${(last[0] / W) * 100}%`} style:top={`${(last[1] / H) * 100}%`}></i>
     {#if hover !== null && pts[hover]}
       <div class="tip" style:left={`${Math.max(15, Math.min(85, (pts[hover]![0] / W) * 100))}%`}>
-        <span class="m">{labels[hover] ?? `Point ${hover + 1}`}</span><b>{format(values[hover]!)}</b>
+        <span class="m">{labels[hover] ?? `Point ${hover + 1}`}</span><b>{format(values[hover]!)}</b
+        >
       </div>
     {/if}
   </div>

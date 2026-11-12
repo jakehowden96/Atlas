@@ -4,9 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const run = vi.fn();
 vi.mock("../ipc", () => ({ codeburnRun: (args: string[]) => run(args), codeburnInfo: vi.fn() }));
 
-const { codeburn, FRESH_MS, onCodeburn, peekCodeburn, refreshWarm, warmCodeburn } = await import(
-  "../stores/codeburn"
-);
+const { codeburn, FRESH_MS, onCodeburn, peekCodeburn, refreshWarm, warmCodeburn } =
+  await import("../stores/codeburn");
 
 afterEach(() => {
   vi.useRealTimers();

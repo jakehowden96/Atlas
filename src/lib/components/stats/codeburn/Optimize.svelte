@@ -43,7 +43,11 @@
   });
 
   // Severity -> pill tone + arrow, as in the design's OPSEV.
-  const SEV: Record<string, [string, string]> = { high: ["bad", "↑"], medium: ["warn", "→"], low: ["neutral", "↓"] };
+  const SEV: Record<string, [string, string]> = {
+    high: ["bad", "↑"],
+    medium: ["warn", "→"],
+    low: ["neutral", "↓"],
+  };
   const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1);
   const asOf = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
@@ -83,7 +87,10 @@
   }
 </script>
 
-<Loader args={["optimize", "--format", "json", ...filterArgs(filters, "optimize")]} refresh={refresh + local}>
+<Loader
+  args={["optimize", "--format", "json", ...filterArgs(filters, "optimize")]}
+  refresh={refresh + local}
+>
   {#snippet children(r: OptimizeReport)}
     <Card title="Waste · as of {asOf}">
       {#snippet note()}
@@ -93,7 +100,8 @@
           </button>
           {#each yieldTabs as t (t.cat)}
             <button role="tab" aria-selected={tab === t.cat} onclick={() => (tab = t.cat)}>
-              {t.label} {fmtCost(yieldData?.summary[t.cat].costUSD ?? 0)}
+              {t.label}
+              {fmtCost(yieldData?.summary[t.cat].costUSD ?? 0)}
             </button>
           {/each}
         </span>
@@ -105,8 +113,13 @@
 
       {#if tab === "waste"}
         <div class="op-sum">
-          <p class="sub">{r.summary.findingCount} findings · {fmtCost(r.summary.potentialSavingsCostUSD)} potential</p>
-          <div class="hb" use:tooltip={{ text: `Health ${r.summary.healthScore}/100`, delay: 0, side: "top" }}>
+          <p class="sub">
+            {r.summary.findingCount} findings · {fmtCost(r.summary.potentialSavingsCostUSD)} potential
+          </p>
+          <div
+            class="hb"
+            use:tooltip={{ text: `Health ${r.summary.healthScore}/100`, delay: 0, side: "top" }}
+          >
             <span class="name">Health</span>
             <span class="t"
               ><span
@@ -124,7 +137,8 @@
             <h4>
               {g.title}{g.cls === "fix" ? " (apply-able)" : ""} · {fmtTokens(
                 g.items.reduce((n, f) => n + f.tokensSaved, 0),
-              )} tokens · {fmtCost(g.items.reduce((n, f) => n + f.estimatedSavingsUSD, 0))} · {g.items.length}
+              )} tokens · {fmtCost(g.items.reduce((n, f) => n + f.estimatedSavingsUSD, 0))} · {g
+                .items.length}
               {g.items.length === 1 ? "finding" : "findings"}
             </h4>
             {#if g.cls === "fix"}
@@ -145,8 +159,14 @@
           </div>
           {#each g.items as f (f.id)}
             <div class="sess">
-              <button class="op-r" aria-expanded={!!open[f.id]} onclick={() => (open[f.id] = !open[f.id])}>
-                <span class="pill {SEV[f.severity]?.[0] ?? 'neutral'}">{SEV[f.severity]?.[1]} {cap(f.severity)}</span>
+              <button
+                class="op-r"
+                aria-expanded={!!open[f.id]}
+                onclick={() => (open[f.id] = !open[f.id])}
+              >
+                <span class="pill {SEV[f.severity]?.[0] ?? 'neutral'}"
+                  >{SEV[f.severity]?.[1]} {cap(f.severity)}</span
+                >
                 <b>{f.title}</b>
                 <span class="op-v">
                   <span class="good mono">{fmtCost(f.estimatedSavingsUSD)}</span>
@@ -159,7 +179,8 @@
                   <p class="sub">{f.explanation}</p>
                   <div class="kv">
                     <span>Projected saving</span>
-                    <span>{fmtCost(f.estimatedSavingsUSD)} · {fmtTokens(f.tokensSaved)} tokens</span>
+                    <span>{fmtCost(f.estimatedSavingsUSD)} · {fmtTokens(f.tokensSaved)} tokens</span
+                    >
                   </div>
                   <p class="sub">
                     {f.basis === "measured"
@@ -182,7 +203,12 @@
                         </button>
                       {/if}
                       {#if f.class === "fix"}
-                        <button class="btn primary" type="button" disabled={busy} onclick={() => applyOne(f.id)}>
+                        <button
+                          class="btn primary"
+                          type="button"
+                          disabled={busy}
+                          onclick={() => applyOne(f.id)}
+                        >
                           Apply
                         </button>
                       {/if}
@@ -208,7 +234,11 @@
           </thead>
           <tbody>
             {#each tabRows as d (d.sessionId)}
-              <tr><td>{d.project}</td><td class="num">{d.commitCount}</td><td class="num">{fmtCost(d.costUSD)}</td></tr>
+              <tr
+                ><td>{d.project}</td><td class="num">{d.commitCount}</td><td class="num"
+                  >{fmtCost(d.costUSD)}</td
+                ></tr
+              >
             {/each}
           </tbody>
         </table>

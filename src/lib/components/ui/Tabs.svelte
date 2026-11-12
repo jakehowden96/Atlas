@@ -144,7 +144,12 @@
         {#if vertical && t.group && t.group !== visible[i - 1]?.group}
           <div class="heading" role="presentation">{t.group}</div>
         {/if}
-        <div class="item" class:sel={t.id === value} class:divider={t.divider && !vertical} data-tab={t.id}>
+        <div
+          class="item"
+          class:sel={t.id === value}
+          class:divider={t.divider && !vertical}
+          data-tab={t.id}
+        >
           <button
             type="button"
             role="tab"

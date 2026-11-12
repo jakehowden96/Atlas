@@ -19,8 +19,21 @@
   const pct = $derived(Math.max(0, Math.min(100, value)));
 </script>
 
-<div class="ring" use:tooltip={{ text: `${label}: ${Math.round(pct)} of 100${hint ? ` · ${hint}` : ""}`, delay: 0, side: "top" }}>
-  <svg width="84" height="84" viewBox="0 0 84 84" role="img" aria-label={`${label}: ${Math.round(pct)} of 100`}>
+<div
+  class="ring"
+  use:tooltip={{
+    text: `${label}: ${Math.round(pct)} of 100${hint ? ` · ${hint}` : ""}`,
+    delay: 0,
+    side: "top",
+  }}
+>
+  <svg
+    width="84"
+    height="84"
+    viewBox="0 0 84 84"
+    role="img"
+    aria-label={`${label}: ${Math.round(pct)} of 100`}
+  >
     <circle class="track" cx="42" cy="42" r={R} />
     <circle class="arc" cx="42" cy="42" r={R} stroke-dasharray={`${(C * pct) / 100} ${C}`} />
   </svg>

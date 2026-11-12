@@ -55,7 +55,8 @@ export function verdict(a: ModelCompareRow, b: ModelCompareRow): string | null {
   const aCheap = ma.costPerEdit <= mb.costPerEdit;
   const cheap = aCheap ? a : b;
   const ratio = Math.max(ma.costPerEdit, mb.costPerEdit) / Math.min(ma.costPerEdit, mb.costPerEdit);
-  const cost = ratio === 1 ? "Same cost per edit" : `${cheap.model} is ${ratio.toFixed(1)}x cheaper per edit`;
+  const cost =
+    ratio === 1 ? "Same cost per edit" : `${cheap.model} is ${ratio.toFixed(1)}x cheaper per edit`;
   const gap = Math.round(Math.abs(ma.oneShot - mb.oneShot));
   if (!gap) return `${cost}.`;
   const best = ma.oneShot >= mb.oneShot ? a : b;

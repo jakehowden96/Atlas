@@ -48,7 +48,8 @@
     return sortSessions(
       inTab(rows).filter(
         (r) =>
-          !q || `${r.title} ${r.project} ${r.sessionId} ${r.models.join(" ")}`.toLowerCase().includes(q),
+          !q ||
+          `${r.title} ${r.project} ${r.sessionId} ${r.models.join(" ")}`.toLowerCase().includes(q),
       ),
       key,
       true,
@@ -56,13 +57,25 @@
   };
   // Opening a session's detail spawns codeburn (~2.5s), so warm the top few.
   $effect(() => {
-    const argv = ["sessions", "--format", "json", ...filterArgs(filters, "sessions"), "--contributions"];
+    const argv = [
+      "sessions",
+      "--format",
+      "json",
+      ...filterArgs(filters, "sessions"),
+      "--contributions",
+    ];
     void key;
     void provider;
     let live = true;
     codeburn<SessionRow[]>(argv)
       .then((rows) => {
-        if (live) return prefetch("why", visible(rows).slice(0, 5).map((r) => whyArgs(r.sessionId)));
+        if (live)
+          return prefetch(
+            "why",
+            visible(rows)
+              .slice(0, 5)
+              .map((r) => whyArgs(r.sessionId)),
+          );
       })
       .catch(() => {});
     return () => {
@@ -75,7 +88,10 @@
     new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 </script>
 
-<Loader args={["sessions", "--format", "json", ...filterArgs(filters, "sessions"), "--contributions"]} {refresh}>
+<Loader
+  args={["sessions", "--format", "json", ...filterArgs(filters, "sessions"), "--contributions"]}
+  {refresh}
+>
   {#snippet children(rows: SessionRow[])}
     {#if rows.length === 0}
       <EmptyState icon="folder" title="No sessions in this period" />
@@ -92,7 +108,9 @@
             >
               {#if id !== "all"}<ConnectorLogo connector={id} size={16} />{/if}
               <span class="cap">{id === "all" ? "All" : id}</span>
-              <span class="se-n">{id === "all" ? rows.length : rows.filter((r) => r.provider === id).length}</span>
+              <span class="se-n"
+                >{id === "all" ? rows.length : rows.filter((r) => r.provider === id).length}</span
+              >
             </button>
           {/each}
         </div>
@@ -106,33 +124,65 @@
           />
           <div class="se-sort" role="group" aria-label="Sort">
             {#each SORTS as s (s.key)}
-              <button type="button" aria-pressed={key === s.key} onclick={() => (key = s.key)}>{s.label}</button>
+              <button type="button" aria-pressed={key === s.key} onclick={() => (key = s.key)}
+                >{s.label}</button
+              >
             {/each}
           </div>
-          <button type="button" class="btn" class:primary={group} aria-pressed={group} onclick={() => (group = !group)}>
+          <button
+            type="button"
+            class="btn"
+            class:primary={group}
+            aria-pressed={group}
+            onclick={() => (group = !group)}
+          >
             Group by provider
           </button>
         </div>
         <div class="list">
           <p class="sub">
             {plural(list.length, "session")}{rows.some((r) => r.helperCount !== undefined)
-              ? ` + ${plural(sum(list, (r) => r.helperCount ?? 0), "subagent")}`
+              ? ` + ${plural(
+                  sum(list, (r) => r.helperCount ?? 0),
+                  "subagent",
+                )}`
               : ""}
             · {fmtCost(sum(list, (r) => r.cost))} · {fmtTokens(sum(list, (r) => r.outputTokens))} tokens
           </p>
           {#if list.length === 0}
             <p class="empty">
               No sessions match{query ? ` “${query}”` : ""}.
-              {#if query}<button type="button" class="link" onclick={() => (query = "")}>Clear search</button>{/if}
+              {#if query}<button type="button" class="link" onclick={() => (query = "")}
+                  >Clear search</button
+                >{/if}
             </p>
           {:else}
             <div class="cols">
               <span></span><span>Session</span>
-              <button type="button" aria-pressed={key === "startedAt"} onclick={() => (key = "startedAt")}>Date</button>
+              <button
+                type="button"
+                aria-pressed={key === "startedAt"}
+                onclick={() => (key = "startedAt")}>Date</button
+              >
               <span>Model</span>
-              <button type="button" class="r" aria-pressed={key === "turns"} onclick={() => (key = "turns")}>Turns</button>
-              <button type="button" class="r" aria-pressed={key === "cost"} onclick={() => (key = "cost")}>Cost</button>
-              <button type="button" class="r" aria-pressed={key === "outputTokens"} onclick={() => (key = "outputTokens")}>Tokens</button>
+              <button
+                type="button"
+                class="r"
+                aria-pressed={key === "turns"}
+                onclick={() => (key = "turns")}>Turns</button
+              >
+              <button
+                type="button"
+                class="r"
+                aria-pressed={key === "cost"}
+                onclick={() => (key = "cost")}>Cost</button
+              >
+              <button
+                type="button"
+                class="r"
+                aria-pressed={key === "outputTokens"}
+                onclick={() => (key = "outputTokens")}>Tokens</button
+              >
             </div>
             {#each group ? providers(list) : [null] as g (g ?? "")}
               {@const rs = g ? list.filter((r) => r.provider === g) : list}
@@ -151,11 +201,16 @@
                       aria-expanded={open === r.sessionId}
                       onclick={() => (open = open === r.sessionId ? null : r.sessionId)}
                     >
-                      <span class="chev" class:open={open === r.sessionId} aria-hidden="true">›</span>
+                      <span class="chev" class:open={open === r.sessionId} aria-hidden="true"
+                        >›</span
+                      >
                       <span class="t">
                         <b>{r.title || r.sessionId.slice(0, 8)}</b>
                         <span class="id">
-                          {#if !group}<ConnectorLogo connector={r.provider} size={16} />{/if}{r.sessionId}{r.helperCount
+                          {#if !group}<ConnectorLogo
+                              connector={r.provider}
+                              size={16}
+                            />{/if}{r.sessionId}{r.helperCount
                             ? ` · ${plural(r.helperCount, "subagent")}`
                             : ""}
                         </span>
@@ -189,7 +244,9 @@
                               </div>
                             {/each}
                             <p class="sub gap">Why it cost this: biggest turns</p>
-                            {#each [...why.turns].sort((a, b) => b.cost - a.cost).slice(0, 5) as t (t.i)}
+                            {#each [...why.turns]
+                              .sort((a, b) => b.cost - a.cost)
+                              .slice(0, 5) as t (t.i)}
                               <div class="kv">
                                 <span>{t.prompt?.text.slice(0, 80) ?? "(no prompt)"}</span>
                                 <span>{fmtCost(t.cost)} · {plural(t.calls, "call")}</span>
@@ -198,7 +255,10 @@
                             <Button
                               size="sm"
                               onclick={() =>
-                                openNewSession({ workspacePath: why.project, resumeSessionId: why.sessionId })}
+                                openNewSession({
+                                  workspacePath: why.project,
+                                  resumeSessionId: why.sessionId,
+                                })}
                             >
                               Resume session
                             </Button>

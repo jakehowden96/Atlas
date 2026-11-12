@@ -15,7 +15,14 @@ export const tabQueries = (f: Filters): string[][] => [
   ["yield", "--format", "json", ...filterArgs(f, "yield")],
 ];
 
-export const whyArgs = (sessionId: string) => ["sessions", "--id", sessionId, "--why", "--format", "json"];
+export const whyArgs = (sessionId: string) => [
+  "sessions",
+  "--id",
+  sessionId,
+  "--why",
+  "--format",
+  "json",
+];
 
 const generations = new Map<string, number>();
 

@@ -7,9 +7,20 @@
   import SegmentedControl from "../../ui/SegmentedControl.svelte";
   import Card from "./Card.svelte";
   import Loader from "./Loader.svelte";
-  import { byCostDesc, cacheHit, isUnpriced, pricingStatus, sortRows, type SortKey } from "./models-derive";
+  import {
+    byCostDesc,
+    cacheHit,
+    isUnpriced,
+    pricingStatus,
+    sortRows,
+    type SortKey,
+  } from "./models-derive";
 
-  let { filters, refresh, onCompare }: { filters: Filters; refresh: number; onCompare: (model: string) => void } = $props();
+  let {
+    filters,
+    refresh,
+    onCompare,
+  }: { filters: Filters; refresh: number; onCompare: (model: string) => void } = $props();
   const DOTS = ["var(--accent)", "var(--warn)", "var(--muted)", "var(--danger)"];
   const TABS = [
     { id: "by-model", label: "By model" },
@@ -23,14 +34,20 @@
 
   const priced = (m: ModelRow) => !isUnpriced(m);
   /** "—" when unpriced, "~" prefix when codeburn estimated the price. */
-  const costText = (m: ModelRow) => (priced(m) ? `${m.isEstimated ? "~" : ""}${fmtCost(m.costUSD)}` : "—");
-  const SOURCE = { priced: "List price", estimated: "Estimated from similar model", unpriced: "No pricing data" };
+  const costText = (m: ModelRow) =>
+    priced(m) ? `${m.isEstimated ? "~" : ""}${fmtCost(m.costUSD)}` : "—";
+  const SOURCE = {
+    priced: "List price",
+    estimated: "Estimated from similar model",
+    unpriced: "No pricing data",
+  };
   const PILL = { priced: "", estimated: "warn", unpriced: "bad" };
 
   function setSort(k: SortKey) {
     sort = { k, dir: sort.k === k ? (sort.dir === 1 ? -1 : 1) : k === "modelDisplayName" ? 1 : -1 };
   }
-  const ariaSort = (k: SortKey) => (sort.k === k ? (sort.dir === 1 ? "ascending" : "descending") : undefined);
+  const ariaSort = (k: SortKey) =>
+    sort.k === k ? (sort.dir === 1 ? "ascending" : "descending") : undefined;
   const arrow = (k: SortKey) => (sort.k === k ? (sort.dir === 1 ? " ↑" : " ↓") : "");
 </script>
 
@@ -46,14 +63,23 @@
   <div class="sub mo-prov">{m.providerDisplayName}</div>
 {/snippet}
 
-<Loader args={["models", "--format", "json", ...filterArgs(filters, "models"), "--min-cost", "0"]} {refresh}>
+<Loader
+  args={["models", "--format", "json", ...filterArgs(filters, "models"), "--min-cost", "0"]}
+  {refresh}
+>
   {#snippet children(rows: ModelRow[])}
     {@const sorted = sortRows(byCostDesc(rows), sort)}
     {@const un = rows.filter(isUnpriced)}
     <Card title="By model">
       {#snippet note()}
         <span class="tools">
-          <SegmentedControl size="sm" label="Models view" options={[...TABS]} value={tab} onChange={(id) => (tab = id)} />
+          <SegmentedControl
+            size="sm"
+            label="Models view"
+            options={[...TABS]}
+            value={tab}
+            onChange={(id) => (tab = id)}
+          />
           <Button size="sm" onclick={() => onCompare(rows[0]?.model ?? "")}>Compare…</Button>
         </span>
       {/snippet}
@@ -61,7 +87,10 @@
         <p class="empty">No models for this provider</p>
       {:else if tab === "by-model"}
         <p class="sub lead">
-          {rows.length} models · {fmtCost(rows.reduce((s, m) => s + (priced(m) ? m.costUSD : 0), 0))} priced · {un.length} unpriced ({fmtCount(un.reduce((s, m) => s + m.calls, 0))} calls). ~ marks an estimated cost.
+          {rows.length} models · {fmtCost(
+            rows.reduce((s, m) => s + (priced(m) ? m.costUSD : 0), 0),
+          )} priced · {un.length} unpriced ({fmtCount(un.reduce((s, m) => s + m.calls, 0))} calls). ~
+          marks an estimated cost.
         </p>
         <div class="scroll">
           <table>
@@ -123,18 +152,33 @@
   {/snippet}
 </Loader>
 
-<Drawer open={picked !== null} onClose={() => (picked = null)} ariaLabel="{picked?.modelDisplayName ?? 'Model'} details" width="520px">
+<Drawer
+  open={picked !== null}
+  onClose={() => (picked = null)}
+  ariaLabel="{picked?.modelDisplayName ?? 'Model'} details"
+  width="520px"
+>
   {#if picked}
     <div class="dr">
       <h2>{picked.modelDisplayName}</h2>
       <p class="sub">{picked.providerDisplayName}</p>
       <div class="kv"><span>Calls</span><span>{fmtCount(picked.calls)}</span></div>
       <div class="kv"><span>Cost</span><span>{costText(picked)}</span></div>
-      <div class="kv"><span>Tokens in / out / cache</span><span>{fmtTokens(picked.inputTokens)} / {fmtTokens(picked.outputTokens)} / {fmtTokens(picked.cacheReadTokens)}</span></div>
-      <div class="kv"><span>Cache write</span><span>{fmtTokens(picked.cacheWriteTokens)}</span></div>
+      <div class="kv">
+        <span>Tokens in / out / cache</span><span
+          >{fmtTokens(picked.inputTokens)} / {fmtTokens(picked.outputTokens)} / {fmtTokens(
+            picked.cacheReadTokens,
+          )}</span
+        >
+      </div>
+      <div class="kv">
+        <span>Cache write</span><span>{fmtTokens(picked.cacheWriteTokens)}</span>
+      </div>
       <div class="kv"><span>Cache hit</span><span>{cacheHit(picked).toFixed(1)}%</span></div>
       <p class="act">
-        <Button variant="primary" onclick={() => onCompare(picked!.model)}>Compare {picked.modelDisplayName}…</Button>
+        <Button variant="primary" onclick={() => onCompare(picked!.model)}
+          >Compare {picked.modelDisplayName}…</Button
+        >
       </p>
     </div>
   {/if}

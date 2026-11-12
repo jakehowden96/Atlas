@@ -10,7 +10,11 @@
   import { cohortRows, metricsOf, modelColor, modelStats, verdict, win } from "./compare-derive";
   import Loader from "./Loader.svelte";
 
-  let { filters, refresh, preselect = "" }: { filters: Filters; refresh: number; preselect?: string } = $props();
+  let {
+    filters,
+    refresh,
+    preselect = "",
+  }: { filters: Filters; refresh: number; preselect?: string } = $props();
 
   let tab = $state<"classic" | "cohorts">("classic");
   let by = $state<"category" | "project">("category");
@@ -37,17 +41,30 @@
   const performance: Row[] = [
     { label: "One-shot rate", get: (_r, m) => m.oneShot, dir: 1, fmt: p0 },
     { label: "Retry rate", get: (_r, m) => m.retry, dir: -1, fmt: n2 },
-    { label: "Self-correction", get: (_r, m) => m.selfCorr, dir: -1, fmt: (v) => `${Math.floor(v)}%` },
+    {
+      label: "Self-correction",
+      get: (_r, m) => m.selfCorr,
+      dir: -1,
+      fmt: (v) => `${Math.floor(v)}%`,
+    },
   ];
   const efficiency: Row[] = [
     { label: "Cost / call", get: (_r, m) => m.costPerCall, dir: -1, fmt: fmtCost },
     { label: "Cost / edit", get: (_r, m) => m.costPerEdit, dir: -1, fmt: fmtCost },
-    { label: "Output tok / call", get: (_r, m) => m.outPerCall, dir: -1, fmt: (v) => String(Math.round(v)) },
+    {
+      label: "Output tok / call",
+      get: (_r, m) => m.outPerCall,
+      dir: -1,
+      fmt: (v) => String(Math.round(v)),
+    },
     { label: "Cache hit rate", get: (_r, m) => m.cache, dir: 1, fmt: p0 },
   ];
-  const style: Row[] = ["Delegation rate", "Planning rate", "Avg tools / turn", "Fast mode usage"].map(
-    (label) => ({ label, get: none, dir: 0, fmt: String }),
-  );
+  const style: Row[] = [
+    "Delegation rate",
+    "Planning rate",
+    "Avg tools / turn",
+    "Fast mode usage",
+  ].map((label) => ({ label, get: none, dir: 0, fmt: String }));
   const context: Row[] = [
     { label: "Calls", get: (r) => r.calls, dir: 0, fmt: fmtCount },
     { label: "Total cost", get: (r) => r.cost, dir: 0, fmt: fmtCost },
@@ -64,7 +81,14 @@
   <span class="dot" style:background={color}></span>{model}
 {/snippet}
 
-{#snippet metricTable(rows: Row[], a: ModelCompareRow, b: ModelCompareRow, ca: string, cb: string, foot: boolean)}
+{#snippet metricTable(
+  rows: Row[],
+  a: ModelCompareRow,
+  b: ModelCompareRow,
+  ca: string,
+  cb: string,
+  foot: boolean,
+)}
   <div class="scroll">
     <table>
       <thead>
@@ -101,7 +125,10 @@
     {@const b = models.find((m) => m.model === B)}
     {@const ca = modelColor(A ?? "", names)}
     {@const cb = modelColor(B ?? "", names)}
-    {@const opts = byCost.map((s) => ({ id: s.model, label: `${s.model} · ${fmtCount(s.calls)} calls` }))}
+    {@const opts = byCost.map((s) => ({
+      id: s.model,
+      label: `${s.model} · ${fmtCount(s.calls)} calls`,
+    }))}
     <div class="page">
       {#if byCost.length < 2}
         <p class="empty">Need activity from at least two models in this period to compare.</p>
@@ -119,9 +146,27 @@
           />
         </div>
         <div class="bar">
-          <div class="sel"><Select options={opts} value={A} onChange={(id) => (pickA = id)} size="sm" aria-label="Model A" /></div>
-          <Button size="sm" aria-label="Swap models" onclick={() => ([pickA, pickB] = [B, A])}>⇄</Button>
-          <div class="sel"><Select options={opts} value={B} onChange={(id) => (pickB = id)} size="sm" aria-label="Model B" /></div>
+          <div class="sel">
+            <Select
+              options={opts}
+              value={A}
+              onChange={(id) => (pickA = id)}
+              size="sm"
+              aria-label="Model A"
+            />
+          </div>
+          <Button size="sm" aria-label="Swap models" onclick={() => ([pickA, pickB] = [B, A])}
+            >⇄</Button
+          >
+          <div class="sel">
+            <Select
+              options={opts}
+              value={B}
+              onChange={(id) => (pickB = id)}
+              size="sm"
+              aria-label="Model B"
+            />
+          </div>
         </div>
         {#if a && b && a !== b}
           {@const text = verdict(a, b)}
@@ -134,19 +179,33 @@
 
           {#if tab === "classic"}
             <div class="two">
-              <Card title="Performance">{@render metricTable(performance, a, b, ca, cb, true)}</Card>
+              <Card title="Performance">{@render metricTable(performance, a, b, ca, cb, true)}</Card
+              >
               <Card title="Efficiency">{@render metricTable(efficiency, a, b, ca, cb, true)}</Card>
             </div>
             <Loader
-              args={["compare", "--format", "cohort-json", "--model-a", a.model, "--model-b", b.model, ...filterArgs(filters, "compare")]}
+              args={[
+                "compare",
+                "--format",
+                "cohort-json",
+                "--model-a",
+                a.model,
+                "--model-b",
+                b.model,
+                ...filterArgs(filters, "compare"),
+              ]}
               {refresh}
             >
               {#snippet children(c: CohortComparison)}
                 {@const rows = cohortRows(c.modelA.observations, c.modelB.observations, "category")}
                 <Card title="Category head-to-head" note="One-shot rate · edit turns">
                   <ul class="legend">
-                    <li onpointerenter={() => (only = 0)} onpointerleave={() => (only = null)}><span class="dot" style:background={ca}></span>{a.model}</li>
-                    <li onpointerenter={() => (only = 1)} onpointerleave={() => (only = null)}><span class="dot" style:background={cb}></span>{b.model}</li>
+                    <li onpointerenter={() => (only = 0)} onpointerleave={() => (only = null)}>
+                      <span class="dot" style:background={ca}></span>{a.model}
+                    </li>
+                    <li onpointerenter={() => (only = 1)} onpointerleave={() => (only = null)}>
+                      <span class="dot" style:background={cb}></span>{b.model}
+                    </li>
                   </ul>
                   {#each rows as r (r.key)}
                     {@const w = win(r.a.rate, r.b.rate, 1)}
@@ -164,9 +223,15 @@
                           }}
                         >
                           <span class="track">
-                            <span class="fill" style:width={`${v.rate ?? 0}%`} style:background={color}></span>
+                            <span
+                              class="fill"
+                              style:width={`${v.rate ?? 0}%`}
+                              style:background={color}
+                            ></span>
                           </span>
-                          <span class="mono" class:good>{v.rate === null ? "—" : `${Math.round(v.rate)}% (${v.n})`}</span>
+                          <span class="mono" class:good
+                            >{v.rate === null ? "—" : `${Math.round(v.rate)}% (${v.n})`}</span
+                          >
                         </div>
                       {/each}
                     </div>
@@ -183,13 +248,25 @@
             </div>
           {:else}
             <Loader
-              args={["compare", "--format", "cohort-json", "--model-a", a.model, "--model-b", b.model, ...filterArgs(filters, "compare")]}
+              args={[
+                "compare",
+                "--format",
+                "cohort-json",
+                "--model-a",
+                a.model,
+                "--model-b",
+                b.model,
+                ...filterArgs(filters, "compare"),
+              ]}
               {refresh}
             >
               {#snippet children(c: CohortComparison)}
                 {@const rows = cohortRows(c.modelA.observations, c.modelB.observations, by)}
                 {@const low = rows.filter((r) => r.minN < 10).length}
-                <Card title="Matched cohorts" note={`cost / edit · same ${by === "category" ? "task type" : "project"} for both models`}>
+                <Card
+                  title="Matched cohorts"
+                  note={`cost / edit · same ${by === "category" ? "task type" : "project"} for both models`}
+                >
                   <div class="bar">
                     <SegmentedControl
                       size="sm"
@@ -218,9 +295,24 @@
                           {@const w = win(r.a.cost, r.b.cost, -1)}
                           <tr>
                             <td>{r.key}</td>
-                            <td class="num"><span class:good={w > 0}>{r.a.cost === null ? "—" : fmtCost(r.a.cost)}</span> <span class="muted">n={r.a.n}</span></td>
-                            <td class="num"><span class:good={w < 0}>{r.b.cost === null ? "—" : fmtCost(r.b.cost)}</span> <span class="muted">n={r.b.n}</span></td>
-                            <td class="num">{#if r.minN < 10}<span class="pill" use:tooltip={{ text: `n = ${r.a.n} vs ${r.b.n}` }}>low sample</span> {/if}{r.minN}</td>
+                            <td class="num"
+                              ><span class:good={w > 0}
+                                >{r.a.cost === null ? "—" : fmtCost(r.a.cost)}</span
+                              > <span class="muted">n={r.a.n}</span></td
+                            >
+                            <td class="num"
+                              ><span class:good={w < 0}
+                                >{r.b.cost === null ? "—" : fmtCost(r.b.cost)}</span
+                              > <span class="muted">n={r.b.n}</span></td
+                            >
+                            <td class="num"
+                              >{#if r.minN < 10}<span
+                                  class="pill"
+                                  use:tooltip={{ text: `n = ${r.a.n} vs ${r.b.n}` }}
+                                  >low sample</span
+                                >
+                              {/if}{r.minN}</td
+                            >
                           </tr>
                         {/each}
                       </tbody>

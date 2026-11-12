@@ -37,7 +37,11 @@ export function trend(
     .filter((s) => (totals.get(s.id) ?? 0) > 0)
     .sort((a, b) => (totals.get(b.id) ?? 0) - (totals.get(a.id) ?? 0));
   const labels = used.map((s) => s.label);
-  const series = used.map((s) => ({ id: s.id, label: s.label, color: modelColor(s.label, labels) }));
+  const series = used.map((s) => ({
+    id: s.id,
+    label: s.label,
+    color: modelColor(s.label, labels),
+  }));
   const days = timeline.points.map((p) => ({
     key: p.timestamp,
     label: dayLabel(new Date(p.timestamp), hourly),
@@ -104,7 +108,17 @@ export function efficiencyScore(c: Overview["current"]): { score: number; grade:
   const retry = clamp(((c.retryTax?.totalUSD ?? 0) / Math.max(c.cost, 1e-9)) * 4);
   const score = 100 * (0.45 * oneShot + 0.3 * cache + 0.25 * (1 - retry));
   const grade =
-    score >= 93 ? "A+" : score >= 85 ? "A" : score >= 75 ? "B" : score >= 65 ? "C" : score >= 55 ? "D" : "F";
+    score >= 93
+      ? "A+"
+      : score >= 85
+        ? "A"
+        : score >= 75
+          ? "B"
+          : score >= 65
+            ? "C"
+            : score >= 55
+              ? "D"
+              : "F";
   return { score: Math.round(score), grade };
 }
 

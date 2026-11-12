@@ -69,7 +69,15 @@ describe("overview-derive", () => {
       ...["--from-b", "2026-03-01", "--to-b", "2026-03-31"],
     ]);
     expect(weekWindows(new Date(2026, 10, 10))[1]).toBe("2026-10-28");
-    expect(monthCumulative([{ date: "2026-11-01", cost: 2 }, { date: "2026-11-03", cost: 1 }], new Date(2026, 10, 3))).toEqual([2, 2, 3]);
+    expect(
+      monthCumulative(
+        [
+          { date: "2026-11-01", cost: 2 },
+          { date: "2026-11-03", cost: 1 },
+        ],
+        new Date(2026, 10, 3),
+      ),
+    ).toEqual([2, 2, 3]);
   });
 
   it("turns retry tax and routing waste into shares of spend, zero-safe", () => {

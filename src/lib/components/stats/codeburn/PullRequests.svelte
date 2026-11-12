@@ -10,46 +10,75 @@
   let open = $state<string | null>(null);
 </script>
 
-<Loader args={["sessions", "--by-pr", "--format", "json", ...filterArgs(filters, "sessions")]} {refresh}>
+<Loader
+  args={["sessions", "--by-pr", "--format", "json", ...filterArgs(filters, "sessions")]}
+  {refresh}
+>
   {#snippet children(d: PullRequests)}
     {@const rows = [...d.prs].sort((a, b) => b.cost - a.cost)}
     <div class="page">
       <Card title="Pull request spend">
         <div class="grid">
           {#each [["Attributed spend", fmtCost(d.distinct.attributedCost)], ["Pull requests", fmtCount(d.prs.length)], ["Linked sessions", fmtCount(d.distinct.sessions)], ["Folded agent runs", "—"]] as [k, v] (k)}
-            <div class="kpi"><div class="k">{k}</div><div class="v">{v}</div></div>
+            <div class="kpi">
+              <div class="k">{k}</div>
+              <div class="v">{v}</div>
+            </div>
           {/each}
         </div>
       </Card>
 
       <Card title="Attributed pull requests">
-        {#snippet note()}Sorted by spend, highest first <span class="pill neutral">{rows.length} total</span>{/snippet}
+        {#snippet note()}Sorted by spend, highest first <span class="pill neutral"
+            >{rows.length} total</span
+          >{/snippet}
         {#if rows.length === 0}
           <p class="empty">No pull requests in this range</p>
         {:else}
           {#each rows as p (p.url)}
             {@const isOpen = open === p.url}
             <div class="pr-w" class:open={isOpen}>
-              <button type="button" class="pr" aria-expanded={isOpen} onclick={() => (open = isOpen ? null : p.url)}>
+              <button
+                type="button"
+                class="pr"
+                aria-expanded={isOpen}
+                onclick={() => (open = isOpen ? null : p.url)}
+              >
                 <span class="pr-ic">
-                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3v10M4 13a1.5 1.5 0 1 0 0-.01M12 13V7a2 2 0 0 0-2-2H8" /></svg>
+                  <svg viewBox="0 0 16 16" aria-hidden="true"
+                    ><path d="M4 3v10M4 13a1.5 1.5 0 1 0 0-.01M12 13V7a2 2 0 0 0-2-2H8" /></svg
+                  >
                 </span>
                 <span class="pr-main">
                   <h5>{p.label}</h5>
-                  <span class="sub">{fmtCount(p.sessions)} {p.sessions === 1 ? "run" : "runs"}<i class="pr-sep"></i>— calls</span>
-                  <span class="sub">{p.state === "merged" ? "Merged" : "Open"}<i class="pr-sep"></i>Follow-ups: not tracked</span>
+                  <span class="sub"
+                    >{fmtCount(p.sessions)}
+                    {p.sessions === 1 ? "run" : "runs"}<i class="pr-sep"></i>— calls</span
+                  >
+                  <span class="sub"
+                    >{p.state === "merged" ? "Merged" : "Open"}<i class="pr-sep"></i>Follow-ups: not
+                    tracked</span
+                  >
                 </span>
-                <span class="pr-m"><span class="sub">MODELS</span><span class="pill neutral">—</span></span>
-                <span class="pr-s"><span class="sub">SPEND</span><b class="mono">{fmtCost(p.cost)}</b></span>
+                <span class="pr-m"
+                  ><span class="sub">MODELS</span><span class="pill neutral">—</span></span
+                >
+                <span class="pr-s"
+                  ><span class="sub">SPEND</span><b class="mono">{fmtCost(p.cost)}</b></span
+                >
                 <span class="pr-chev" aria-hidden="true">{isOpen ? "⌄" : "›"}</span>
               </button>
               {#if isOpen}
                 <div class="pr-detail">
                   <div class="sub">Per-model split unavailable</div>
                   <div>
-                    <div class="kv"><span>Linked sessions</span><span>{fmtCount(p.sessions)}</span></div>
+                    <div class="kv">
+                      <span>Linked sessions</span><span>{fmtCount(p.sessions)}</span>
+                    </div>
                     <div class="kv"><span>Calls</span><span>—</span></div>
-                    <div class="kv"><span>Attributed to this PR</span><span>{fmtCost(p.cost)}</span></div>
+                    <div class="kv">
+                      <span>Attributed to this PR</span><span>{fmtCost(p.cost)}</span>
+                    </div>
                     <div class="kv"><span>Other work, same session</span><span>—</span></div>
                     <div class="kv"><span>Review</span><span>—</span></div>
                   </div>

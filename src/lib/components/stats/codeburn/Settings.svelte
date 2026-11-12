@@ -33,7 +33,9 @@
   </Card>
 
   <Card title="About">
-    <div class="kv"><span>codeburn path</span><span class="path">{$codeburnStatus?.binary ?? "—"}</span></div>
+    <div class="kv">
+      <span>codeburn path</span><span class="path">{$codeburnStatus?.binary ?? "—"}</span>
+    </div>
     <div class="kv"><span>Version</span><span>{$codeburnStatus?.version ?? "—"}</span></div>
     <Loader args={["status", "--format", "json"]} {refresh}>
       {#snippet children(s: BudgetStatus)}
@@ -43,7 +45,10 @@
     <div class="kv"><span>Plan</span><span>Set it on the Plans tab</span></div>
     <div class="kv">
       <span>Install or update</span>
-      <span><code>{INSTALL}</code> <CopyButton value={INSTALL} label="Copy install command" size="sm" /></span>
+      <span
+        ><code>{INSTALL}</code>
+        <CopyButton value={INSTALL} label="Copy install command" size="sm" /></span
+      >
     </div>
   </Card>
 </div>

@@ -8,7 +8,7 @@
   import { shouldClearNeedsInput } from "./lib/overview";
   import { handleGlobalKeydown } from "./lib/shortcuts";
   import { startCostRefresh } from "./lib/stores/cost";
-import { activeTabId, setTabNeedsInput } from "./lib/stores/terminal";
+  import { activeTabId, setTabNeedsInput } from "./lib/stores/terminal";
   import { activeView } from "./lib/stores/view";
 
   // Clear needsInput once the user is actually looking at the session — see

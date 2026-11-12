@@ -65,7 +65,7 @@
   };
 
   let live = $derived(tile.live);
-let cost = $derived($sessionCosts?.get(live.sessionUuid));
+  let cost = $derived($sessionCosts?.get(live.sessionUuid));
   let needsYou = $derived(tile.state === "needsYou");
   let elapsed = $derived(formatElapsed(live.startedAt, now));
   let staleMin = $derived(tailing ? tailStaleMinutes(tile.state, live.lastActivity, now) : null);
@@ -336,7 +336,9 @@ let cost = $derived($sessionCosts?.get(live.sessionUuid));
   <div class="foot">
     <span class="last-tool">{shortToolName(live.pendingTool?.name ?? live.lastTool)}</span>
     <span class="stats"
-      >{live.toolCalls} tools · {formatTokens(live.contextTokens)} ctx · {cost ? fmtCost(cost.total) : "—"}{#if costTodayLine(cost)}
+      >{live.toolCalls} tools · {formatTokens(live.contextTokens)} ctx · {cost
+        ? fmtCost(cost.total)
+        : "—"}{#if costTodayLine(cost)}
         · {costTodayLine(cost)}{/if}</span
     >
   </div>

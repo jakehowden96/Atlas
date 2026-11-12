@@ -9,7 +9,7 @@
   import Sankey from "../charts/Sankey.svelte";
   import Card from "./Card.svelte";
   import Loader from "./Loader.svelte";
-  
+
   let { filters, refresh }: { filters: Filters; refresh: number } = $props();
 
   const SHOWN = 5;
@@ -184,20 +184,27 @@
             />
           </div>
         {/if}
-        <RankList label="Cost by branch" emptyText="No branch data" items={branchRows(d, current)} />
+        <RankList
+          label="Cost by branch"
+          emptyText="No branch data"
+          items={branchRows(d, current)}
+        />
         {@const rows = d.projects.find((p) => p.id === current)?.branches ?? []}
-        {@const nob = rows.filter((b) => b.branch === "(no branch)").reduce((a, b) => a + b.cost, 0)}
+        {@const nob = rows
+          .filter((b) => b.branch === "(no branch)")
+          .reduce((a, b) => a + b.cost, 0)}
         {@const lbl = d.projects.find((p) => p.id === current)?.label}
         {@const sess = r.projects?.find((p) => p.name === lbl)?.sessions}
         {@const total = rows.reduce((a, b) => a + b.cost, 0)}
         {#if rows.length > 0}
-        <p class="note first">
-          On branches {fmtCost(total - nob)} · Unknown, before first branch {fmtCost(0)} · No branch data {fmtCost(nob)}
-        </p>
-        <p class="note">
-          {sess == null ? "—" : plural(sess, "distinct session")}.
-          A session that switched branches appears on each one, so rows are not summed.
-        </p>
+          <p class="note first">
+            On branches {fmtCost(total - nob)} · Unknown, before first branch {fmtCost(0)} · No branch
+            data {fmtCost(nob)}
+          </p>
+          <p class="note">
+            {sess == null ? "—" : plural(sess, "distinct session")}. A session that switched
+            branches appears on each one, so rows are not summed.
+          </p>
         {/if}
       </Card>
     {/snippet}

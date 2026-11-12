@@ -26,7 +26,6 @@ export function fmtCount(n: number): string {
   return n >= 10_000 ? fmtTokens(n) : String(Math.round(n));
 }
 
-
 /**
  * `byDay` keys are calendar days in the machine's local time zone, as the
  * backend buckets them, so every key built here is a local date too.

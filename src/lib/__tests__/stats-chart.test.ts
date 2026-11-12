@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  formatValue,
-  medianText,
-  niceTicks,
-  toCsv,
-  visibleLabels,
-} from "../stats-chart";
+import { formatValue, medianText, niceTicks, toCsv, visibleLabels } from "../stats-chart";
 
 describe("stats-chart helpers", () => {
   it("niceTicks starts at 0, covers max, and has few gridlines", () => {

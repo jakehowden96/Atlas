@@ -74,10 +74,17 @@
   const asOf = (o: Overview) =>
     new Date(o.generated).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   /** "Nov 1" … "Nov 30": sparkline hover labels, index i is day i + 1. */
-  const monthDays = Array.from({ length: new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() }, (_, i) =>
-    new Date(now.getFullYear(), now.getMonth(), i + 1).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+  const monthDays = Array.from(
+    { length: new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() },
+    (_, i) =>
+      new Date(now.getFullYear(), now.getMonth(), i + 1).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+      }),
   );
-  const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1).toLocaleDateString(undefined, { month: "long" });
+  const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1).toLocaleDateString(undefined, {
+    month: "long",
+  });
   const sign = (p: number | null | undefined) =>
     p === null || p === undefined ? "" : `${p >= 0 ? "↑" : "↓"} ${Math.abs(Math.round(p))}%`;
   /** The one-shot rate is 0 when a category had no edit turns: show "—" rather than 0%. */
@@ -90,7 +97,8 @@
       {@const c = o.current}
       {@const pc = pace(o.history.daily, $monthCost, now)}
       {@const eff = efficiencyRows(c)}
-      {@const es = efficiencyScore(c)}      {@const cells = activityCells(o, now)}
+      {@const es = efficiencyScore(c)}
+      {@const cells = activityCells(o, now)}
       {@const active = cells.filter((x) => x.value > 0).length}
       {@const worst = (c.topReworkedFiles ?? [])[0]}
       {@const t = trend(o.history.timeline, "cost")}
@@ -103,7 +111,10 @@
             total: d.cost,
             parts: {},
           }))}
-      {@const barPeak = bars.reduce((m, d) => (d.total > m.total ? d : m), bars[0] ?? { total: 0, label: "" })}
+      {@const barPeak = bars.reduce(
+        (m, d) => (d.total > m.total ? d : m),
+        bars[0] ?? { total: 0, label: "" },
+      )}
       {@const cum = monthCumulative(o.history.daily, now)}
       {@const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()}
       {@const mtd = $monthCost}
@@ -122,14 +133,20 @@
           <div>
             <p class="big">{fmtCost(c.cost)}</p>
             <p class="sub">
-              {fmtCount(c.calls)} calls · {c.sessionCountBasis === "partial" ? "at least " : ""}{c.sessions} sessions
+              {fmtCount(c.calls)} calls · {c.sessionCountBasis === "partial"
+                ? "at least "
+                : ""}{c.sessions} sessions
             </p>
             <div class="stat3">
-              <div><span>Yesterday</span><b>{pc.yesterday === null ? "—" : fmtCost(pc.yesterday)}</b></div>
+              <div>
+                <span>Yesterday</span><b>{pc.yesterday === null ? "—" : fmtCost(pc.yesterday)}</b>
+              </div>
               <div><span>7-day avg</span><b>{pc.avg7 === null ? "—" : fmtCost(pc.avg7)}</b></div>
               <div>
                 <span>vs yesterday</span>
-                <b class:up={(pc.vsYesterdayPct ?? 0) > 0} class:down={(pc.vsYesterdayPct ?? 0) < 0}>{fmtPct(pc.vsYesterdayPct)}</b>
+                <b class:up={(pc.vsYesterdayPct ?? 0) > 0} class:down={(pc.vsYesterdayPct ?? 0) < 0}
+                  >{fmtPct(pc.vsYesterdayPct)}</b
+                >
               </div>
             </div>
           </div>
@@ -140,16 +157,30 @@
           <div>
             <p class="sub">Efficiency</p>
             <div class="ring-wrap gap-top">
-              <Ring value={es.score} grade={es.grade} label="Efficiency score" hint="Blend of one-shot rate, cache hit and retry tax" />
+              <Ring
+                value={es.score}
+                grade={es.grade}
+                label="Efficiency score"
+                hint="Blend of one-shot rate, cache hit and retry tax"
+              />
               <div class="efs">
                 {#each eff as r (r.label)}
                   {@const right =
                     r.label === "Retry tax" && c.retryTax
                       ? `${fmtCost(c.retryTax.totalUSD)} · ${r.pct.toFixed(1)}% of spend`
                       : `${Math.round(r.pct)}%`}
-                  <div class="ef" use:tooltip={{ text: `${r.label} ${right}`, delay: 0, side: "top" }}>
+                  <div
+                    class="ef"
+                    use:tooltip={{ text: `${r.label} ${right}`, delay: 0, side: "top" }}
+                  >
                     <div class="ef-h"><span>{r.label}</span><b>{right}</b></div>
-                    <span class="t"><span class="f" class:bad={r.good === "low"} style:width={`${Math.max(2, Math.min(100, r.pct))}%`}></span></span>
+                    <span class="t"
+                      ><span
+                        class="f"
+                        class:bad={r.good === "low"}
+                        style:width={`${Math.max(2, Math.min(100, r.pct))}%`}
+                      ></span></span
+                    >
                   </div>
                 {/each}
               </div>
@@ -168,28 +199,49 @@
                 {#snippet children(p: PeriodCompare)}
                   {#if p.totals.pct.cost !== null}
                     <p class="sub">
-                      <span class="pill" class:bad={p.totals.pct.cost > 0}>{sign(p.totals.pct.cost)}</span>
+                      <span class="pill" class:bad={p.totals.pct.cost > 0}
+                        >{sign(p.totals.pct.cost)}</span
+                      >
                       vs {lastMonth} pace
                     </p>
                   {/if}
                 {/snippet}
               </Loader>
             </div>
-            <Sparkline values={cum} labels={monthDays} format={fmtCost} label="Cumulative spend this month" />
+            <Sparkline
+              values={cum}
+              labels={monthDays}
+              format={fmtCost}
+              label="Cumulative spend this month"
+            />
           </div>
-          {#if onNavigate}<button type="button" class="link" onclick={() => onNavigate("spend")}>See spend →</button>{/if}
+          {#if onNavigate}<button type="button" class="link" onclick={() => onNavigate("spend")}
+              >See spend →</button
+            >{/if}
         </Card>
         <Card title="Projected month">
           <div class="ov-mp">
             <div>
-              <div class="big sm">{pc.projected === null ? "—" : fmtCost(pc.projected)} <small class="est">est</small></div>
+              <div class="big sm">
+                {pc.projected === null ? "—" : fmtCost(pc.projected)} <small class="est">est</small>
+              </div>
               {#if pc.projected !== null && mtd !== null}
-                <p class="sub"><span class="pill neutral">{fmtCost(Math.max(0, pc.projected - mtd))} to go</span></p>
+                <p class="sub">
+                  <span class="pill neutral">{fmtCost(Math.max(0, pc.projected - mtd))} to go</span>
+                </p>
               {/if}
             </div>
-            <Sparkline values={[...cum, ...fc]} labels={monthDays} format={fmtCost} dashed label="Projected spend this month" />
+            <Sparkline
+              values={[...cum, ...fc]}
+              labels={monthDays}
+              format={fmtCost}
+              dashed
+              label="Projected spend this month"
+            />
           </div>
-          {#if onNavigate}<button type="button" class="link" onclick={() => onNavigate("plans")}>See plans →</button>{/if}
+          {#if onNavigate}<button type="button" class="link" onclick={() => onNavigate("plans")}
+              >See plans →</button
+            >{/if}
         </Card>
       </div>
 
@@ -197,9 +249,15 @@
       <Card title="Daily spend">
         {#snippet note()}
           <span class="chips">
-            <span class="pill neutral">Avg/day {bars.length ? fmtCost(bars.reduce((s, d) => s + d.total, 0) / bars.length) : "—"}</span>
+            <span class="pill neutral"
+              >Avg/day {bars.length
+                ? fmtCost(bars.reduce((s, d) => s + d.total, 0) / bars.length)
+                : "—"}</span
+            >
             <span class="pill neutral">Peak {fmtCost(barPeak.total)} · {barPeak.label}</span>
-            <span class="pill neutral">Yesterday {pc.yesterday === null ? "—" : fmtCost(pc.yesterday)}</span>
+            <span class="pill neutral"
+              >Yesterday {pc.yesterday === null ? "—" : fmtCost(pc.yesterday)}</span
+            >
           </span>
         {/snippet}
         <DailySpend days={bars} series={stacked ? t.series : []} label="Daily spend" />
@@ -210,17 +268,24 @@
         <div class="ov-pair">
           <div>
             <div class="sub">Correction rate</div>
-            <div class="mono ov-big">{c.workflow ? `${(c.workflow.correctionRate * 100).toFixed(0)}%` : "—"}</div>
+            <div class="mono ov-big">
+              {c.workflow ? `${(c.workflow.correctionRate * 100).toFixed(0)}%` : "—"}
+            </div>
             <div class="sub">{c.workflow ? `${c.workflow.corrections} corrections` : ""}</div>
           </div>
           <div>
             <div class="sub">Time to first edit</div>
-            <div class="mono ov-big">{c.workflow ? fmtMs(c.workflow.medianTimeToFirstEditMs) : "—"}</div>
+            <div class="mono ov-big">
+              {c.workflow ? fmtMs(c.workflow.medianTimeToFirstEditMs) : "—"}
+            </div>
             <div class="sub">median</div>
           </div>
         </div>
         <p class="sub mt">
-          Top rework: {#if worst}<b class="mono">{worst.path}</b> · {worst.sessions} session{worst.sessions === 1 ? "" : "s"} · {worst.edits} edits{:else}—{/if}
+          Top rework: {#if worst}<b class="mono">{worst.path}</b> · {worst.sessions} session{worst.sessions ===
+            1
+              ? ""
+              : "s"} · {worst.edits} edits{:else}—{/if}
         </p>
         <p class="sub">Corrections, first-edit latency, and file churn across your sessions.</p>
       </Card>
@@ -238,13 +303,19 @@
                   {#if pct === null}
                     Not enough data from last week to compare pace.
                   {:else}
-                    You're pacing <b>{Math.abs(Math.round(pct))}% {pct >= 0 ? "higher" : "lower"} than last week</b>{#if driver && driver.diff > 0}; <b>{driver.key}</b> is the biggest driver{/if}.
+                    You're pacing <b
+                      >{Math.abs(Math.round(pct))}% {pct >= 0 ? "higher" : "lower"} than last week</b
+                    >{#if driver && driver.diff > 0}; <b>{driver.key}</b> is the biggest driver{/if}.
                   {/if}
                   <b class="mono">{fmtCost(r.summary.potentialSavingsCostUSD)}</b> is recoverable.
                   <span class="sub">(as of {asOf(o)})</span>
                 </span>
                 <span class="spacer"></span>
-                {#if onNavigate}<button type="button" class="link" onclick={() => onNavigate("optimize")}>Review →</button>{/if}
+                {#if onNavigate}<button
+                    type="button"
+                    class="link"
+                    onclick={() => onNavigate("optimize")}>Review →</button
+                  >{/if}
               </section>
             {/snippet}
           </Loader>
@@ -257,8 +328,12 @@
           <div class="wins">
             <h5>✓ Wins</h5>
             <ul>
-              {#if c.cacheHitPercent >= 80}<li>Cache hit at {Math.round(c.cacheHitPercent)}%, most prompts reuse cache</li>{/if}
-              {#if c.oneShotRate >= 0.7}<li>{Math.round(c.oneShotRate * 100)}% one-shot, edits land first try</li>{/if}
+              {#if c.cacheHitPercent >= 80}<li>
+                  Cache hit at {Math.round(c.cacheHitPercent)}%, most prompts reuse cache
+                </li>{/if}
+              {#if c.oneShotRate >= 0.7}<li>
+                  {Math.round(c.oneShotRate * 100)}% one-shot, edits land first try
+                </li>{/if}
               {#if (o.streak ?? 0) >= 2}<li>{o.streak}-day usage streak</li>{/if}
             </ul>
           </div>
@@ -270,7 +345,9 @@
                   {#each r.findings.filter((f) => f.class !== "keep").slice(0, 3) as f (f.id)}
                     <li>
                       <button type="button" class="ov-wi" onclick={() => onNavigate?.("optimize")}>
-                        <span>{f.title}</span><span class="ov-asof">as of {asOf(o)}</span><b class="mono">{fmtCost(f.estimatedSavingsUSD)}</b>
+                        <span>{f.title}</span><span class="ov-asof">as of {asOf(o)}</span><b
+                          class="mono">{fmtCost(f.estimatedSavingsUSD)}</b
+                        >
                       </button>
                     </li>
                   {:else}
@@ -285,9 +362,15 @@
             <Loader args={monthArgs} {refresh}>
               {#snippet children(p: PeriodCompare)}
                 <ul>
-                  {#if barPeak.total > 0}<li>Peak day hit {fmtCost(barPeak.total)} on {barPeak.label}</li>{/if}
+                  {#if barPeak.total > 0}<li>
+                      Peak day hit {fmtCost(barPeak.total)} on {barPeak.label}
+                    </li>{/if}
                   {#if pc.projected !== null}
-                    <li>On pace for {fmtCost(pc.projected)} this month{p.totals.pct.cost !== null ? `, ${fmtPct(p.totals.pct.cost)} vs last` : ""}</li>
+                    <li>
+                      On pace for {fmtCost(pc.projected)} this month{p.totals.pct.cost !== null
+                        ? `, ${fmtPct(p.totals.pct.cost)} vs last`
+                        : ""}
+                    </li>
                   {/if}
                 </ul>
               {/snippet}
@@ -310,12 +393,16 @@
               </div>
               <div>
                 <div class="sub">$ / productive session</div>
-                <div class="mono ov-big">{prod.sessions > 0 ? fmtCost(prod.costUSD / prod.sessions) : "—"}</div>
+                <div class="mono ov-big">
+                  {prod.sessions > 0 ? fmtCost(prod.costUSD / prod.sessions) : "—"}
+                </div>
                 <div class="sub"></div>
               </div>
             </div>
             <p class="sub mt">
-              productive {Math.round(prod.costPercent)}% · reverted {Math.round(y.summary.reverted.costPercent)}% · abandoned {Math.round(y.summary.abandoned.costPercent)}%
+              productive {Math.round(prod.costPercent)}% · reverted {Math.round(
+                y.summary.reverted.costPercent,
+              )}% · abandoned {Math.round(y.summary.abandoned.costPercent)}%
             </p>
             <p class="sub">Git-correlated. Reverted/abandoned = spend that didn't ship.</p>
           {/snippet}
@@ -326,7 +413,17 @@
       <div class="grid g2 start">
         <div class="stack">
           <Card title="Models this period" note="Sorted by cost">
-            <Loader args={["models", "--format", "json", ...filterArgs(filters, "models"), "--min-cost", "0"]} {refresh}>
+            <Loader
+              args={[
+                "models",
+                "--format",
+                "json",
+                ...filterArgs(filters, "models"),
+                "--min-cost",
+                "0",
+              ]}
+              {refresh}
+            >
               {#snippet children(rows: ModelRow[])}
                 {@const top = byCostDesc(rows).slice(0, 5)}
                 {@const names = top.map((r) => r.modelDisplayName)}
@@ -342,8 +439,15 @@
                       {#each top as m (m.providerDisplayName + m.modelDisplayName)}
                         <tr>
                           <td>
-                            <span class="dot" style:background={modelColor(m.modelDisplayName, names)}></span>
-                            <button type="button" class="link" onclick={() => onNavigate?.("models")}>{m.modelDisplayName}</button>
+                            <span
+                              class="dot"
+                              style:background={modelColor(m.modelDisplayName, names)}
+                            ></span>
+                            <button
+                              type="button"
+                              class="link"
+                              onclick={() => onNavigate?.("models")}>{m.modelDisplayName}</button
+                            >
                           </td>
                           <td class="r">{fmtTokens(m.inputTokens)}</td>
                           <td class="r">{fmtTokens(m.outputTokens)}</td>
@@ -360,16 +464,26 @@
           </Card>
           <Card title="Most expensive sessions">
             {#snippet note()}
-              {#if onNavigate}<button type="button" class="link" onclick={() => onNavigate("sessions")}>See all →</button>{/if}
+              {#if onNavigate}<button
+                  type="button"
+                  class="link"
+                  onclick={() => onNavigate("sessions")}>See all →</button
+                >{/if}
             {/snippet}
-            <Loader args={["sessions", "--format", "json", ...filterArgs(filters, "sessions")]} {refresh}>
+            <Loader
+              args={["sessions", "--format", "json", ...filterArgs(filters, "sessions")]}
+              {refresh}
+            >
               {#snippet children(rows: SessionRow[])}
                 {#each [...rows].sort((a, b) => b.cost - a.cost).slice(0, 3) as s, i (s.sessionId)}
                   <button type="button" class="lrow" onclick={() => onOpenSession?.(s.sessionId)}>
                     <span class="i">{String(i + 1).padStart(2, "0")}</span>
                     <span class="b">
                       <b>{s.title}</b>
-                      <span>{s.project} · {shortDay(s.startedAt.slice(0, 10))} · {s.models[0] ?? "—"} · {s.calls} calls</span>
+                      <span
+                        >{s.project} · {shortDay(s.startedAt.slice(0, 10))} · {s.models[0] ?? "—"} · {s.calls}
+                        calls</span
+                      >
                     </span>
                     <span class="v">{fmtCost(s.cost)} ›</span>
                   </button>
@@ -396,7 +510,9 @@
           {@const top = Math.max(1e-9, ...acts.map((a) => a[actMetric]))}
           {#each acts as a (a.name)}
             <div class="ov-act">
-              <div class="t"><div class="f" style:width={`${(a[actMetric] / top) * 100}%`}></div></div>
+              <div class="t">
+                <div class="f" style:width={`${(a[actMetric] / top) * 100}%`}></div>
+              </div>
               <div class="kv"><b>{a.name}</b><span>{fmtCost(a.cost)}</span></div>
               <div class="kv">
                 <span>{fmtCount(a.turns)} turn{a.turns === 1 ? "" : "s"}</span>

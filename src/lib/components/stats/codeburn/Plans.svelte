@@ -44,12 +44,26 @@
 </script>
 
 <div class="page">
-  <Loader args={["status", "--format", "json", ...filterArgs(filters, "status")]} refresh={refresh + localRefresh}>
+  <Loader
+    args={["status", "--format", "json", ...filterArgs(filters, "status")]}
+    refresh={refresh + localRefresh}
+  >
     {#snippet children(s: BudgetStatus)}
       <div class="g3">
-        <div class="kpi"><div class="k">Month to date</div><div class="v">{fmtCost(s.month.cost)}</div><div class="n">API-equivalent</div></div>
-        <div class="kpi"><div class="k">Projected month</div><div class="v">{fmtCost(projected(s.month.cost))}</div><div class="n">at current pace</div></div>
-        <div class="kpi"><div class="k">Budget</div><div class="v">—</div></div>
+        <div class="kpi">
+          <div class="k">Month to date</div>
+          <div class="v">{fmtCost(s.month.cost)}</div>
+          <div class="n">API-equivalent</div>
+        </div>
+        <div class="kpi">
+          <div class="k">Projected month</div>
+          <div class="v">{fmtCost(projected(s.month.cost))}</div>
+          <div class="n">at current pace</div>
+        </div>
+        <div class="kpi">
+          <div class="k">Budget</div>
+          <div class="v">—</div>
+        </div>
       </div>
     {/snippet}
   </Loader>
@@ -61,9 +75,18 @@
         <Card title={p.name} note={p.plan}>
           {#each p.windows as w (w.label)}
             <div class="live-row">
-              <span>{w.label} <span class="muted">resets in {resetCountdown(w.resetsAt, now)}</span></span>
+              <span
+                >{w.label}
+                <span class="muted">resets in {resetCountdown(w.resetsAt, now)}</span></span
+              >
               <div use:tooltip={{ text: `${w.label} ${w.usedPct}% used`, delay: 0, side: "top" }}>
-                <Progress thick thresholds label={`${p.name} ${w.label}`} value={w.usedPct} count={`${w.usedPct}%`} />
+                <Progress
+                  thick
+                  thresholds
+                  label={`${p.name} ${w.label}`}
+                  value={w.usedPct}
+                  count={`${w.usedPct}%`}
+                />
               </div>
             </div>
           {:else}
@@ -78,8 +101,16 @@
 
   <Card title="Plan">
     <div class="controls">
-      <div class="sel"><Select {options} bind:value={preset} placeholder="Choose a plan" aria-label="Plan preset" /></div>
-      <Button variant="primary" disabled={!preset} loading={saving} onclick={apply}>Set plan</Button>
+      <div class="sel">
+        <Select
+          {options}
+          bind:value={preset}
+          placeholder="Choose a plan"
+          aria-label="Plan preset"
+        />
+      </div>
+      <Button variant="primary" disabled={!preset} loading={saving} onclick={apply}>Set plan</Button
+      >
     </div>
     {#if error}
       <Banner tone="error" title="Couldn't set plan">{error}</Banner>

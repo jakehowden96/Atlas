@@ -35,7 +35,8 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined;
 try {
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}") as Record<string, Entry>;
   for (const [key, e] of Object.entries(saved)) {
-    if (Date.now() - e.usedAt < KEEP_SAVED_MS) cache.set(key, { value: e.value, at: e.at, usedAt: e.usedAt });
+    if (Date.now() - e.usedAt < KEEP_SAVED_MS)
+      cache.set(key, { value: e.value, at: e.at, usedAt: e.usedAt });
   }
 } catch {
   // Unreadable or blocked storage: start empty.

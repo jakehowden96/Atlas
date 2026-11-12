@@ -19,7 +19,7 @@
   import Models from "./codeburn/Models.svelte";
   import Optimize from "./codeburn/Optimize.svelte";
   import { sessionTarget } from "../../stores/sessionTarget";
-import Overview from "./codeburn/Overview.svelte";
+  import Overview from "./codeburn/Overview.svelte";
   import Plans from "./codeburn/Plans.svelte";
   import Plugins from "./codeburn/Plugins.svelte";
   import PullRequests from "./codeburn/PullRequests.svelte";
@@ -179,18 +179,25 @@ import Overview from "./codeburn/Overview.svelte";
       {/snippet}
     </EmptyState>
   {:else}
-<div class="tab-bar">
-      <Tabs
-        {tabs}
-        value={settings ? "" : tab}
-        label="Page"
-        onselect={open}
-      />
+    <div class="tab-bar">
+      <Tabs {tabs} value={settings ? "" : tab} label="Page" onselect={open} />
     </div>
 
     <div class="range-bar">
-      <IconButton icon="arrow_back" label="Back" size="sm" disabled={histAt === 0} onclick={() => go(-1)} />
-      <IconButton icon="chevron_right" label="Forward" size="sm" disabled={histAt >= hist.length - 1} onclick={() => go(1)} />
+      <IconButton
+        icon="arrow_back"
+        label="Back"
+        size="sm"
+        disabled={histAt === 0}
+        onclick={() => go(-1)}
+      />
+      <IconButton
+        icon="chevron_right"
+        label="Forward"
+        size="sm"
+        disabled={histAt >= hist.length - 1}
+        onclick={() => go(1)}
+      />
       <div class="spacer"></div>
       <button type="button" class="live" onclick={doRefresh}>refreshed {ago}s ago ↻</button>
       <div class="sel">
@@ -218,8 +225,18 @@ import Overview from "./codeburn/Overview.svelte";
         use:tooltip={{ text: "Since a date" }}
         onclick={() => sincePicker?.showPicker()}
       >
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-          <rect x="2" y="3" width="12" height="11" rx="2" /><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3" />
+        <svg
+          viewBox="0 0 16 16"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.4"
+          aria-hidden="true"
+        >
+          <rect x="2" y="3" width="12" height="11" rx="2" /><path
+            d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"
+          />
         </svg>
       </button>
       <input
@@ -247,7 +264,8 @@ import Overview from "./codeburn/Overview.svelte";
           role="img"
           aria-label="Quota {Math.round(quotaPct)}%"
           use:tooltip={{ text: `Highest quota window in use: ${Math.round(quotaPct)}%` }}
-        ><span>{Math.round(quotaPct)}%</span></span>
+          ><span>{Math.round(quotaPct)}%</span></span
+        >
       {/if}
       <IconButton
         icon="settings"
@@ -258,29 +276,44 @@ import Overview from "./codeburn/Overview.svelte";
     </div>
 
     <div class="column">
-    {#if settings}
-      <Settings {refresh} />
-    {:else if tab === "overview"}
-      <Overview {filters} {refresh} onNavigate={open} onOpenSession={(id) => { sessionTarget.set(id); open("sessions"); }} />
-    {:else if tab === "spend"}
-      <Spend {filters} {refresh} />
-    {:else if tab === "models"}
-      <Models {filters} {refresh} onCompare={(m) => { cmpModel = m; open("compare"); }} />
-    {:else if tab === "sessions"}
-      <Sessions {filters} {refresh} />
-    {:else if tab === "compare"}
-      <Compare {filters} {refresh} preselect={cmpModel} />
-    {:else if tab === "compare-periods"}
-      <ComparePeriods {filters} {refresh} />
-    {:else if tab === "pull-requests"}
-      <PullRequests {filters} {refresh} />
-    {:else if tab === "plans"}
-      <Plans {filters} {refresh} />
-    {:else if tab === "plugins"}
-      <Plugins {refresh} />
-    {:else if tab === "optimize"}
-      <Optimize {filters} {refresh} />
-    {/if}
+      {#if settings}
+        <Settings {refresh} />
+      {:else if tab === "overview"}
+        <Overview
+          {filters}
+          {refresh}
+          onNavigate={open}
+          onOpenSession={(id) => {
+            sessionTarget.set(id);
+            open("sessions");
+          }}
+        />
+      {:else if tab === "spend"}
+        <Spend {filters} {refresh} />
+      {:else if tab === "models"}
+        <Models
+          {filters}
+          {refresh}
+          onCompare={(m) => {
+            cmpModel = m;
+            open("compare");
+          }}
+        />
+      {:else if tab === "sessions"}
+        <Sessions {filters} {refresh} />
+      {:else if tab === "compare"}
+        <Compare {filters} {refresh} preselect={cmpModel} />
+      {:else if tab === "compare-periods"}
+        <ComparePeriods {filters} {refresh} />
+      {:else if tab === "pull-requests"}
+        <PullRequests {filters} {refresh} />
+      {:else if tab === "plans"}
+        <Plans {filters} {refresh} />
+      {:else if tab === "plugins"}
+        <Plugins {refresh} />
+      {:else if tab === "optimize"}
+        <Optimize {filters} {refresh} />
+      {/if}
     </div>
   {/if}
 </div>

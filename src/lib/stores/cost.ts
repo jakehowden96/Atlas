@@ -40,7 +40,9 @@ export async function refreshCosts(fresh = false): Promise<void> {
   }
   const todayById = new Map((today ?? []).map((s) => [s.sessionId, s.cost]));
   sessionCosts.set(
-    new Map(all.map((s) => [s.sessionId, { total: s.cost, today: todayById.get(s.sessionId) ?? 0 }])),
+    new Map(
+      all.map((s) => [s.sessionId, { total: s.cost, today: todayById.get(s.sessionId) ?? 0 }]),
+    ),
   );
 }
 

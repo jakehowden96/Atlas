@@ -3,7 +3,14 @@
   import type { PeriodCompare, PeriodTotals } from "../../../../types/codeburn-compare";
   import { fmtCost, fmtCount, fmtTokens } from "../../../stats-derive";
   import SegmentedControl from "../../ui/SegmentedControl.svelte";
-  import { dayPairs, movers, presetRanges, sortMovers, type Basis, type MoverSort } from "./compare-periods-derive";
+  import {
+    dayPairs,
+    movers,
+    presetRanges,
+    sortMovers,
+    type Basis,
+    type MoverSort,
+  } from "./compare-periods-derive";
   import Loader from "./Loader.svelte";
 
   let { filters, refresh }: { filters: Filters; refresh: number } = $props();
@@ -11,14 +18,20 @@
   interface Daily {
     daily: { date: string; cost: number }[];
   }
-  
+
   const PREVIEW = 5;
   const COUNTED = [
-    ["Cost", "API-equivalent dollars for every call in the window, priced from token counts. Not what a subscription bills."],
+    [
+      "Cost",
+      "API-equivalent dollars for every call in the window, priced from token counts. Not what a subscription bills.",
+    ],
     ["Calls", "Each request sent to a model. Tool results fed back count as new calls."],
     ["Sessions", "Distinct conversations with at least one call in the window."],
     ["Cost per 100 calls", "Cost divided by calls, times 100. Lower means each call was cheaper."],
-    ["Tokens", "Input and output are fresh tokens. Cache read is context reused from cache, cache write is context stored for later."],
+    [
+      "Tokens",
+      "Input and output are fresh tokens. Cache read is context reused from cache, cache write is context stored for later.",
+    ],
     ["B − A", "Every difference is B minus A. Swap the periods to flip the signs."],
     ["Movers", "Projects and models split the same difference two ways. Do not add them together."],
   ];
@@ -41,7 +54,9 @@
   let only = $state<"a" | "b" | null>(null);
 
   const valid = $derived(
-    [r.a0, r.a1, r.b0, r.b1].every((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)) && r.a0 <= r.a1 && r.b0 <= r.b1,
+    [r.a0, r.a1, r.b0, r.b1].every((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)) &&
+      r.a0 <= r.a1 &&
+      r.b0 <= r.b1,
   );
   const fl = $derived(filterArgs(filters, "compare-periods"));
 
@@ -58,7 +73,8 @@
 
   const win = (from: string, to: string) => ["--from", from, "--to", to];
   const utc = (d: string) => new Date(`${d}T00:00:00Z`);
-  const fmt = (d: string, o: Intl.DateTimeFormatOptions) => utc(d).toLocaleDateString("en-US", { ...o, timeZone: "UTC" });
+  const fmt = (d: string, o: Intl.DateTimeFormatOptions) =>
+    utc(d).toLocaleDateString("en-US", { ...o, timeZone: "UTC" });
   const short = (d: string) => fmt(d, { month: "short", day: "numeric" });
   const full = (d: string) => fmt(d, { month: "short", day: "numeric", year: "numeric" });
   const rng = (x: { from: string; to: string }) =>
@@ -67,8 +83,10 @@
       : x.from.slice(0, 7) === x.to.slice(0, 7)
         ? `${short(x.from)}–${utc(x.to).getUTCDate()}`
         : `${short(x.from)}–${short(x.to)}`;
-  const dayAt = (d: string, i: number) => short(new Date(utc(d).getTime() + i * 86_400_000).toISOString().slice(0, 10));
-  const len = (a: string, b: string) => Math.round((utc(b).getTime() - utc(a).getTime()) / 86_400_000) + 1;
+  const dayAt = (d: string, i: number) =>
+    short(new Date(utc(d).getTime() + i * 86_400_000).toISOString().slice(0, 10));
+  const len = (a: string, b: string) =>
+    Math.round((utc(b).getTime() - utc(a).getTime()) / 86_400_000) + 1;
   const plural = (n: number) => `${n} ${n === 1 ? "day" : "days"}`;
   const sign = (x: number) => (x < 0 ? "−" : "+");
   const fp = (x: number) => `${sign(x)}${Math.round(Math.abs(x)).toLocaleString("en-US")}%`;
@@ -157,7 +175,8 @@
   </div>
   <p class="sub gap">
     {#if valid}
-      A spans {plural(len(r.a0, r.a1))} · B spans {plural(len(r.b0, r.b1))} · all differences are B − A
+      A spans {plural(len(r.a0, r.a1))} · B spans {plural(len(r.b0, r.b1))} · all differences are B −
+      A
     {:else}
       Enter all four dates, each window from earlier to later.
     {/if}
@@ -166,7 +185,20 @@
 
 {#if valid}
   <Loader
-    args={["compare-periods", "--format", "json", "--from-a", r.a0, "--to-a", r.a1, "--from-b", r.b0, "--to-b", r.b1, ...fl]}
+    args={[
+      "compare-periods",
+      "--format",
+      "json",
+      "--from-a",
+      r.a0,
+      "--to-a",
+      r.a1,
+      "--from-b",
+      r.b0,
+      "--to-b",
+      r.b1,
+      ...fl,
+    ]}
     {refresh}
   >
     {#snippet children(p: PeriodCompare)}
@@ -176,17 +208,27 @@
       {@const cc = ratio(per100(A), per100(B))}
       {@const ss = ratio(A.sessions, B.sessions)}
       {@const wk =
-        p.rangeA.days === 7 && p.rangeB.days === 7 && utc(p.rangeB.from).getTime() - utc(p.rangeA.to).getTime() === 86_400_000}
+        p.rangeA.days === 7 &&
+        p.rangeB.days === 7 &&
+        utc(p.rangeB.from).getTime() - utc(p.rangeA.to).getTime() === 86_400_000}
       {@const who = wk ? `The week of ${short(p.rangeB.from)}` : `Period B (${rng(p.rangeB)})`}
       {@const ref = wk ? "the week before" : `period A (${rng(p.rangeA)})`}
       <section class="card">
         <p class="story">
           {#if ch === null}
-            {who} cost <b>{fmtCost(B.cost)}</b>{B.cost > 0 ? " and period A had no spend." : "; there was no spend in either window."}
+            {who} cost <b>{fmtCost(B.cost)}</b>{B.cost > 0
+              ? " and period A had no spend."
+              : "; there was no spend in either window."}
           {:else}
-            {who}{Math.abs(ch) < 1 ? ` cost about the same as ${ref}` : ` cost ${r0(ch)}% ${ch > 0 ? "more" : "less"} than ${ref}`}:
+            {who}{Math.abs(ch) < 1
+              ? ` cost about the same as ${ref}`
+              : ` cost ${r0(ch)}% ${ch > 0 ? "more" : "less"} than ${ref}`}:
             <b>{fmtCost(B.cost)}</b> versus <b>{fmtCost(A.cost)}</b>.
-            {(ss ?? 0) > 25 ? "Far more sessions" : (ss ?? 0) < -25 ? "Far fewer sessions" : "About the same number of sessions"}, and
+            {(ss ?? 0) > 25
+              ? "Far more sessions"
+              : (ss ?? 0) < -25
+                ? "Far fewer sessions"
+                : "About the same number of sessions"}, and
             {(cc ?? 0) < -5
               ? `cheaper calls: cost per call fell ${r0(cc ?? 0)}%.`
               : (cc ?? 0) > 5
@@ -208,26 +250,42 @@
                 </div>
               </div>
             </div>
-            <div class="n"><span class={tone(B.cost - A.cost)}>{fd(B.cost - A.cost, fmtCost)}{A.cost ? `, ${fp(ch ?? 0)}` : ""}</span></div>
+            <div class="n">
+              <span class={tone(B.cost - A.cost)}
+                >{fd(B.cost - A.cost, fmtCost)}{A.cost ? `, ${fp(ch ?? 0)}` : ""}</span
+              >
+            </div>
           </div>
           <div class="card kpi">
             <div class="k">Cost per 100 calls</div>
             <div class="v">{fmtCost(per100(B))}</div>
             <div class="n">
-              <span class={tone(per100(B) - per100(A))}>{fd(per100(B) - per100(A), fmtCost)}{per100(A) ? `, ${fp(cc ?? 0)}` : ""}</span>
+              <span class={tone(per100(B) - per100(A))}
+                >{fd(per100(B) - per100(A), fmtCost)}{per100(A) ? `, ${fp(cc ?? 0)}` : ""}</span
+              >
             </div>
           </div>
           <div class="card kpi">
             <div class="k">Sessions</div>
             <div class="v">{fmtCount(B.sessions)}</div>
-            <div class="n"><span>{fd(B.sessions - A.sessions, String)}{A.sessions ? `, ${fp(ss ?? 0)}` : ""}</span></div>
+            <div class="n">
+              <span
+                >{fd(B.sessions - A.sessions, String)}{A.sessions ? `, ${fp(ss ?? 0)}` : ""}</span
+              >
+            </div>
           </div>
         </div>
       </section>
 
-      <Loader args={["report", "--format", "json", ...win(p.rangeA.from, p.rangeA.to), ...fl]} {refresh}>
+      <Loader
+        args={["report", "--format", "json", ...win(p.rangeA.from, p.rangeA.to), ...fl]}
+        {refresh}
+      >
         {#snippet children(a: Daily)}
-          <Loader args={["report", "--format", "json", ...win(p.rangeB.from, p.rangeB.to), ...fl]} {refresh}>
+          <Loader
+            args={["report", "--format", "json", ...win(p.rangeB.from, p.rangeB.to), ...fl]}
+            {refresh}
+          >
             {#snippet children(b: Daily)}
               {@const n = Math.max(p.rangeA.days, p.rangeB.days)}
               {@const rows = dayPairs({ A: a.daily, B: b.daily }, p.rangeA.from, p.rangeB.from, n)}
@@ -241,11 +299,20 @@
               <section class="card">
                 <h3 class="label">Cost, day by day, both periods side by side</h3>
                 <ul class="legend">
-                  <li onpointerenter={() => (only = "a")} onpointerleave={() => (only = null)}><span class="dot" style:background="var(--muted)"></span>A · {rng(p.rangeA)}</li>
-                  <li onpointerenter={() => (only = "b")} onpointerleave={() => (only = null)}><span class="dot" style:background="var(--accent)"></span>B · {rng(p.rangeB)}</li>
+                  <li onpointerenter={() => (only = "a")} onpointerleave={() => (only = null)}>
+                    <span class="dot" style:background="var(--muted)"></span>A · {rng(p.rangeA)}
+                  </li>
+                  <li onpointerenter={() => (only = "b")} onpointerleave={() => (only = null)}>
+                    <span class="dot" style:background="var(--accent)"></span>B · {rng(p.rangeB)}
+                  </li>
                 </ul>
                 <div class="chart" bind:clientWidth={cw}>
-                  <svg width={cw} height={H} viewBox={`0 0 ${cw} ${H}`} role="img" aria-label="Daily cost, period A beside period B"
+                  <svg
+                    width={cw}
+                    height={H}
+                    viewBox={`0 0 ${cw} ${H}`}
+                    role="img"
+                    aria-label="Daily cost, period A beside period B"
                     onpointermove={(e) => {
                       const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
                       hi = Math.max(0, Math.min(n - 1, Math.floor((x - L) / slot)));
@@ -253,7 +320,13 @@
                     onpointerleave={() => (hi = null)}
                   >
                     {#if hi !== null}
-                      <rect x={L + hi * slot} y={T} width={slot} height={H - T - BT} style="fill:var(--surface2)" />
+                      <rect
+                        x={L + hi * slot}
+                        y={T}
+                        width={slot}
+                        height={H - T - BT}
+                        style="fill:var(--surface2)"
+                      />
                     {/if}
                     {#each grid as t (t)}
                       <line x1={L} x2={cw - R} y1={y(t)} y2={y(t)} stroke="var(--border)" />
@@ -264,39 +337,80 @@
                     {#each rows as x (x.i)}
                       {@const cx = L + (x.i + 0.5) * slot}
                       {#if x.i < p.rangeA.days}
-                        <rect x={cx - bw - 1} y={y(x.a)} width={bw} height={y(0) - y(x.a)} style="fill:var(--muted)" class:fade={only === "b"} />
+                        <rect
+                          x={cx - bw - 1}
+                          y={y(x.a)}
+                          width={bw}
+                          height={y(0) - y(x.a)}
+                          style="fill:var(--muted)"
+                          class:fade={only === "b"}
+                        />
                       {/if}
                       {#if x.i < p.rangeB.days}
-                        <rect x={cx + 1} y={y(x.b)} width={bw} height={y(0) - y(x.b)} style="fill:var(--accent)" class:fade={only === "a"} />
+                        <rect
+                          x={cx + 1}
+                          y={y(x.b)}
+                          width={bw}
+                          height={y(0) - y(x.b)}
+                          style="fill:var(--accent)"
+                          class:fade={only === "a"}
+                        />
                       {/if}
                       {#if x.i % every === 0}
                         <text x={cx} y={H - 6} text-anchor="middle">Day {x.i + 1}</text>
                       {/if}
                     {/each}
-                    <line x1={L} x2={cw - R} y1={y(mx)} y2={y(mx)} stroke-dasharray="4 3" style="stroke:var(--accent)" />
-                    <text x={cw - R + 6} y={y(mx) + 4} style="fill:var(--accent)">{fmtCost(mx)}</text>
+                    <line
+                      x1={L}
+                      x2={cw - R}
+                      y1={y(mx)}
+                      y2={y(mx)}
+                      stroke-dasharray="4 3"
+                      style="stroke:var(--accent)"
+                    />
+                    <text x={cw - R + 6} y={y(mx) + 4} style="fill:var(--accent)"
+                      >{fmtCost(mx)}</text
+                    >
                   </svg>
                   {#if hi !== null}
                     {@const i = hi}
-                    <div class="tip" style:left={`${Math.max(110, Math.min(cw - 110, L + (i + 0.5) * slot))}px`}>
+                    <div
+                      class="tip"
+                      style:left={`${Math.max(110, Math.min(cw - 110, L + (i + 0.5) * slot))}px`}
+                    >
                       <span>Day {i + 1}</span>
                       {#if i < p.rangeA.days}
-                        <span class="part"><span class="dot" style:background="var(--muted)"></span><span class="muted">{dayAt(p.rangeA.from, i)}</span> <b>{fmtCost(rows[i]?.a ?? 0)}</b></span>
+                        <span class="part"
+                          ><span class="dot" style:background="var(--muted)"></span><span
+                            class="muted">{dayAt(p.rangeA.from, i)}</span
+                          > <b>{fmtCost(rows[i]?.a ?? 0)}</b></span
+                        >
                       {/if}
                       {#if i < p.rangeB.days}
-                        <span class="part"><span class="dot" style:background="var(--accent)"></span><span class="muted">{dayAt(p.rangeB.from, i)}</span> <b>{fmtCost(rows[i]?.b ?? 0)}</b></span>
+                        <span class="part"
+                          ><span class="dot" style:background="var(--accent)"></span><span
+                            class="muted">{dayAt(p.rangeB.from, i)}</span
+                          > <b>{fmtCost(rows[i]?.b ?? 0)}</b></span
+                        >
                       {/if}
                     </div>
                   {/if}
                 </div>
-                <p class="sub">Each pair is one day of A beside the same-numbered day of B. Dashed line marks the peak day.</p>
+                <p class="sub">
+                  Each pair is one day of A beside the same-numbered day of B. Dashed line marks the
+                  peak day.
+                </p>
               </section>
             {/snippet}
           </Loader>
         {/snippet}
       </Loader>
 
-      {@const list = sortMovers(movers(p[by], basis, p.rangeA.days, p.rangeB.days), sort.k, sort.dir)}
+      {@const list = sortMovers(
+        movers(p[by], basis, p.rangeA.days, p.rangeB.days),
+        sort.k,
+        sort.dir,
+      )}
       {@const shown = all ? list : list.slice(0, PREVIEW)}
       {@const cols = [
         ["key", by === "projects" ? "Project" : "Model"],
@@ -346,8 +460,18 @@
               <thead>
                 <tr>
                   {#each cols as [k, h], i (k)}
-                    <th scope="col" class:r={i > 0} aria-sort={sort.k === k ? (sort.dir > 0 ? "ascending" : "descending") : undefined}>
-                      <button type="button" onclick={() => sortBy(k)}>{h}{sort.k === k ? (sort.dir > 0 ? " ↑" : " ↓") : ""}</button>
+                    <th
+                      scope="col"
+                      class:r={i > 0}
+                      aria-sort={sort.k === k
+                        ? sort.dir > 0
+                          ? "ascending"
+                          : "descending"
+                        : undefined}
+                    >
+                      <button type="button" onclick={() => sortBy(k)}
+                        >{h}{sort.k === k ? (sort.dir > 0 ? " ↑" : " ↓") : ""}</button
+                      >
                     </th>
                   {/each}
                 </tr>
@@ -360,7 +484,10 @@
                     <td class="r">{fmtCost(m.b)}</td>
                     <td class="r"><span class={tone(m.diff)}>{fd(m.diff, fmtCost)}</span></td>
                     <td class="r">
-                      {#if m.isNew}<span class="pill">new this period</span>{:else if m.pct === null}—{:else}<span class={tone(m.diff)}>{fp(m.pct)}</span>{/if}
+                      {#if m.isNew}<span class="pill">new this period</span
+                        >{:else if m.pct === null}—{:else}<span class={tone(m.diff)}
+                          >{fp(m.pct)}</span
+                        >{/if}
                     </td>
                   </tr>
                 {/each}
@@ -368,11 +495,18 @@
             </table>
           </div>
         {/if}
-        <p class="sub gap">Projects and models split the same difference two ways. Do not add them together.</p>
+        <p class="sub gap">
+          Projects and models split the same difference two ways. Do not add them together.
+        </p>
       </section>
 
       <section class="card flush">
-        <button type="button" class="pp-dis" aria-expanded={det.metrics} onclick={() => (det.metrics = !det.metrics)}>
+        <button
+          type="button"
+          class="pp-dis"
+          aria-expanded={det.metrics}
+          onclick={() => (det.metrics = !det.metrics)}
+        >
           <span>{det.metrics ? "⌄" : "›"}</span>All metrics
         </button>
         {#if det.metrics}
@@ -380,7 +514,10 @@
             <div class="scroll">
               <table>
                 <thead>
-                  <tr><th>Metric</th><th class="r">A</th><th class="r">B</th><th class="r">Change</th><th class="r">%</th></tr>
+                  <tr
+                    ><th>Metric</th><th class="r">A</th><th class="r">B</th><th class="r">Change</th
+                    ><th class="r">%</th></tr
+                  >
                 </thead>
                 <tbody>
                   {#each metrics(p) as m (m.n)}
@@ -399,7 +536,12 @@
         {/if}
       </section>
       <section class="card flush">
-        <button type="button" class="pp-dis" aria-expanded={det.counted} onclick={() => (det.counted = !det.counted)}>
+        <button
+          type="button"
+          class="pp-dis"
+          aria-expanded={det.counted}
+          onclick={() => (det.counted = !det.counted)}
+        >
           <span>{det.counted ? "⌄" : "›"}</span>What is counted
         </button>
         {#if det.counted}
