@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.2
+
+- macOS: Atlas reads each connector's keychain entry once per launch instead of on every status
+  check and request, so it asks for keychain access far less often.
+
 ## 2.1.1
 
 - Top bar: the status line drops its circle markers; "running" and "needs you" pulse while their

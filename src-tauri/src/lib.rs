@@ -263,7 +263,7 @@ pub fn run() -> std::process::ExitCode {
         .manage(commands::files::DocsWatchers::default())
         .manage(connectors::Connectors::new(
             connectors::registry::Registry::builtin(),
-            Box::new(connectors::keychain::KeyringStore),
+            Box::new(connectors::keychain::KeyringStore::default()),
             connectors::config::ConfigStore::new(dirs::home_dir().map(|h| h.join(".atlas"))),
         ))
         .invoke_handler(tauri::generate_handler![
