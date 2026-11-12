@@ -19,9 +19,7 @@ Mission control for [Claude Code](https://claude.com/claude-code). Run several s
 
 ## Install
 
-### Download
-
-Installers (macOS `.dmg` for Apple silicon and Intel, Windows `.exe`) are attached to each [GitHub release](https://github.com/jakehowden96/Atlas/releases). Release builds are produced by CI; signing and notarization depend on the repository's signing secrets being configured (see [SECURITY.md](SECURITY.md)). Unsigned builds need an explicit "open anyway" on macOS and trigger SmartScreen on Windows.
+No prebuilt installers are published: build Atlas from source as below.
 
 ### Requirements
 

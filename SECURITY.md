@@ -63,22 +63,13 @@ your key in your own copy or in the prompt VS Code shows.
 
 ## Release signing secrets
 
-The release workflow (`.github/workflows/release.yml`) reads these repository secrets by name. None
-have values in the repository.
+No installers are published: users build Atlas from source, so nothing is code-signed. The updater
+key is kept as two repository secrets in case signed builds are published again:
 
 | Secret | Purpose |
 |---|---|
-| `APPLE_CERTIFICATE` | Base64 of the Developer ID Application `.p12` |
-| `APPLE_CERTIFICATE_PASSWORD` | Password for that `.p12` |
-| `APPLE_SIGNING_IDENTITY` | Signing identity, e.g. `Developer ID Application: Name (TEAMID)` |
-| `APPLE_ID` | Apple ID used for notarization |
-| `APPLE_PASSWORD` | App-specific password for that Apple ID |
-| `APPLE_TEAM_ID` | Apple developer team ID |
 | `TAURI_SIGNING_PRIVATE_KEY` | Updater signing private key (contents of the generated `.key` file) |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password for that key, if one was set |
-
-Windows installers are currently not code-signed; SmartScreen will warn on first run. Add a signing
-certificate and its secrets to the workflow to change that.
 
 ### Generating the updater key
 
