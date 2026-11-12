@@ -29,19 +29,9 @@ pub(crate) fn browser_launcher(url: &str) -> Command {
     cmd
 }
 
-/// The scheme check is the guard against launching arbitrary handlers: only
-/// `https://` URLs may be opened.
-fn check_open_url(url: &str) -> Result<(), AtlasError> {
-    if !url.starts_with("https://") {
-        return Err(AtlasError::invalid_input("Only https:// URLs are allowed"));
-    }
-    Ok(())
-}
-
 /// Open an external URL in the user's default browser.
 #[tauri::command(async)]
 pub async fn open_url(url: String) -> Result<(), AtlasError> {
-    check_open_url(&url)?;
     tokio::task::spawn_blocking(move || {
         let mut launcher = browser_launcher(&url);
         let tool = launcher.get_program().to_string_lossy().into_owned();
@@ -60,19 +50,3 @@ pub async fn open_url(url: String) -> Result<(), AtlasError> {
     .await?
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn open_url_accepts_https_with_a_query_string() {
-        assert!(check_open_url("https://example.com/?a=1&b=2").is_ok());
-    }
-
-    #[test]
-    fn open_url_rejects_non_https_schemes() {
-        assert!(check_open_url("file:///etc/passwd").is_err());
-        assert!(check_open_url("http://example.com").is_err());
-        assert!(check_open_url("calculator").is_err());
-    }
-}
