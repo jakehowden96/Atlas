@@ -10,6 +10,8 @@
     align?: Align;
     /** Accessible name, used when the content has controls and the shell becomes a dialog. */
     label?: string;
+    /** Hangs flush off the trigger's bottom edge as a sheet: no gap, top border or top radius. */
+    attached?: boolean;
     children: Snippet;
   }
 
@@ -19,6 +21,7 @@
     side = "bottom",
     align = "start",
     label,
+    attached = false,
     children,
   }: Props = $props();
 
@@ -39,7 +42,7 @@
     const first = node.querySelector<HTMLElement>(FOCUSABLE);
     hasControls = !!first;
     first?.focus();
-    const stop = placeFloating(anchor, node, { side, align });
+    const stop = placeFloating(anchor, node, { side, align, gap: attached ? 0 : undefined });
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") open = false;
     };
@@ -63,6 +66,7 @@
     bind:this={el}
     use:portal
     class="popover"
+    class:attached
     role={hasControls ? "dialog" : undefined}
     aria-label={hasControls ? label : undefined}
   >
@@ -81,5 +85,13 @@
     color: var(--text);
     box-shadow: var(--elev-1);
     font-size: var(--fs-sm);
+  }
+  .attached {
+    padding: 0;
+    /* Keeps flush content from painting over the rounded border. */
+    overflow: hidden;
+    border-top: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
   }
 </style>

@@ -4,7 +4,6 @@
   import Kbd from "../ui/Kbd.svelte";
   import Popover from "../ui/Popover.svelte";
   import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
-  import StatusMark from "../ui/StatusMark.svelte";
   import Tooltip from "../ui/Tooltip.svelte";
   import Badge from "../ui/Badge.svelte";
   import NotificationsPanel, { unreadNotificationCount } from "../ui/NotificationsPanel.svelte";
@@ -61,27 +60,16 @@
   let collapsed = $derived(width < 800);
   let bellCount = $derived($unreadNotificationCount + (collapsed ? $statusChipCount : 0));
 
-  function markState(p: StatusPart) {
-    if (p.kind === "running") return "running";
-    if (p.kind === "needsYou") return "attention";
-    return "idle";
+  // The text itself pulses while its count is non-zero.
+  function live(p: StatusPart) {
+    return (p.kind === "running" && running > 0) || (p.kind === "needsYou" && needsYou > 0);
   }
 </script>
 
-{#snippet line(list: StatusPart[], marks: boolean)}
+{#snippet line(list: StatusPart[])}
   {#each list as p, i (p.kind)}
     {#if i > 0}<span class="sep" aria-hidden="true">·</span>{/if}
-    <span class="part" class:needs={p.kind === "needsYou"}>
-      {#if marks && p.kind !== "spend"}
-        <!-- The live mark pulses only while something runs. -->
-        {#if p.kind === "running" && running === 0}
-          <StatusMark state="idle" />
-        {:else if p.kind === "needsYou" && needsYou === 0}
-          <StatusMark state="idle" />
-        {:else}
-          <StatusMark state={markState(p)} />
-        {/if}
-      {/if}
+    <span class="part" class:needs={p.kind === "needsYou"} class:live={live(p)}>
       {#if p.kind === "spend"}
         <Tooltip text={TODAY_COST_TIP}>{p.text}</Tooltip>
       {:else}
@@ -117,17 +105,17 @@
       aria-label="Session status"
       onclick={() => (chipOpen = !chipOpen)}
     >
-      {@render line(parts, true)}
+      {@render line(parts)}
     </button>
     <Popover bind:open={chipOpen} trigger={chip} align="end" label="Session status">
-      <div class="pop">{@render line(allParts, true)}</div>
+      <div class="pop">{@render line(allParts)}</div>
     </Popover>
   {:else}
-    <span class="status">{@render line(parts, true)}</span>
+    <span class="status">{@render line(parts)}</span>
   {/if}
 
-  <div class="slot bell" data-slot="bell">
-    <span bind:this={bell} class="bell-anchor">
+  <div bind:this={bell} class="slot bell" data-slot="bell">
+    <span class="bell-anchor">
       <IconButton
         icon="notifications"
         label={bellCount > 0 ? `Notifications, ${bellCount} new` : "Notifications"}
@@ -137,9 +125,9 @@
       />
       {#if bellCount > 0}<span class="bell-badge"><Badge count={bellCount} alert /></span>{/if}
     </span>
-    <Popover bind:open={bellOpen} trigger={bell} align="end" label="Notifications">
+    <Popover bind:open={bellOpen} trigger={bell} align="end" attached label="Notifications">
       <div class="bell-pop">
-        {#if collapsed}<StatusChips />{/if}
+        {#if collapsed}<div class="bell-chips"><StatusChips /></div>{/if}
         <NotificationsPanel />
       </div>
     </Popover>
@@ -199,6 +187,13 @@
     gap: var(--sp-2);
   }
 
+  /* Full bar height, so the attached menu hangs from the bar's bottom edge. */
+  .slot.bell {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+  }
+
   .bell-anchor {
     position: relative;
     display: inline-flex;
@@ -214,8 +209,13 @@
   .bell-pop {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
+  }
+
+  .bell-chips {
+    display: flex;
     gap: var(--sp-2);
+    padding: var(--sp-4) var(--sp-5) 0;
   }
 
   .status,
@@ -254,6 +254,10 @@
 
   .part.needs {
     color: var(--warn);
+  }
+
+  .part.live {
+    animation: var(--pulse);
   }
 
   .sep {

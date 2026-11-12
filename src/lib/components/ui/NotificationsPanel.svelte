@@ -62,11 +62,10 @@
 <section class="panel" aria-label="Notifications">
   <header>
     <h2>Notifications</h2>
-    <Button size="sm" variant="ghost" onclick={markAllRead}>Mark all read</Button>
-    <Button size="sm" variant="ghost" onclick={clearLog}>Clear all, cannot be undone</Button>
+    <Button size="sm" variant="ghost" onclick={clearLog}>Clear</Button>
   </header>
   {#if items.length === 0}
-    <EmptyState compact icon="notifications" title="No notifications" />
+    <div class="empty"><EmptyState compact icon="notifications" title="No notifications" /></div>
   {:else}
     <ul role="list">
       {#each items as e (e.id)}
@@ -110,8 +109,11 @@
     display: flex;
     align-items: center;
     gap: var(--sp-2);
-    padding: var(--sp-3);
+    padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-5);
     border-bottom: 1px solid var(--border2);
+  }
+  .empty {
+    padding: var(--sp-5);
   }
   h2 {
     flex: 1;
@@ -129,8 +131,11 @@
     display: flex;
     gap: var(--sp-3);
     align-items: flex-start;
-    padding: var(--sp-3);
+    padding: var(--sp-4) var(--sp-5);
     border-bottom: 1px solid var(--border2);
+  }
+  .row:last-child {
+    border-bottom: 0;
   }
   .tone {
     display: inline-flex;

@@ -65,19 +65,9 @@
   }
 
   let tab = $state("overview");
-  let hist = $state(["overview"]);
-  let histAt = $state(0);
   function open(id: string) {
     settings = false;
-    if (id === tab) return;
-    hist = [...hist.slice(0, histAt + 1), id];
-    histAt = hist.length - 1;
     tab = id;
-  }
-  function go(d: number) {
-    histAt = Math.max(0, Math.min(hist.length - 1, histAt + d));
-    tab = hist[histAt] ?? "overview";
-    settings = false;
   }
   let settings = $state(false);
   let cmpModel = $state("");
@@ -184,20 +174,6 @@
     </div>
 
     <div class="range-bar">
-      <IconButton
-        icon="arrow_back"
-        label="Back"
-        size="sm"
-        disabled={histAt === 0}
-        onclick={() => go(-1)}
-      />
-      <IconButton
-        icon="chevron_right"
-        label="Forward"
-        size="sm"
-        disabled={histAt >= hist.length - 1}
-        onclick={() => go(1)}
-      />
       <div class="spacer"></div>
       <button type="button" class="live" onclick={doRefresh}>refreshed {ago}s ago ↻</button>
       <div class="sel">

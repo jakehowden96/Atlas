@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 2.1.1
+
+- Top bar: the status line drops its circle markers; "running" and "needs you" pulse while their
+  count is non-zero.
+- Notifications menu hangs flush from the top bar, with roomier spacing and a single **Clear** button
+  (opening the menu already marks everything read).
+- Stats: removed the Back/Forward tab-history buttons.
+
+## 2.1.0
 
 ### Stats on codeburn
 

@@ -42,12 +42,10 @@ describe("NotificationsPanel", () => {
     expect(get(unreadNotificationCount)).toBe(0);
   });
 
-  it("marks all read and clears on request", async () => {
+  it("clears on request", async () => {
     const user = userEvent.setup();
     render(NotificationsPanel);
-    await user.click(screen.getByRole("button", { name: "Mark all read" }));
-    expect(get(unreadNotificationCount)).toBe(0);
-    await user.click(screen.getByRole("button", { name: /^Clear all/ }));
+    await user.click(screen.getByRole("button", { name: "Clear" }));
     expect(get(notificationLog)).toEqual([]);
     expect(screen.getByText("No notifications")).toBeTruthy();
   });
