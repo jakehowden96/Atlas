@@ -51,7 +51,7 @@ fn setup(token_url: String) -> (Connectors, Arc<AtomicUsize>, tempfile::TempDir)
         Box::new(MemoryStore::default()),
         ConfigStore::new(Some(dir.path().to_path_buf())),
     );
-    c.link("fake", "me", "r1").unwrap();
+    c.link("fake", "me", "r1", false).unwrap();
     let events = Arc::new(AtomicUsize::new(0));
     let n = events.clone();
     c.set_emitter(Box::new(move |_| {
@@ -201,4 +201,17 @@ async fn authorized_client_refreshes_once_after_a_401() {
         .await
         .unwrap();
     assert_eq!(v["n"], 1);
+}
+
+#[tokio::test]
+async fn pasted_api_keys_are_used_as_is_without_refresh() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ok("a1", "r2"))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let (c, _, _d) = setup(format!("{}/token", server.uri()));
+    c.link("fake", "me", "lin_api_k", true).unwrap();
+    assert_eq!(c.access_token("fake").await.unwrap(), "lin_api_k");
 }

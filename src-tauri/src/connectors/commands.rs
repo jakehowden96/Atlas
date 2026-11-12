@@ -91,7 +91,33 @@ pub async fn connector_connect(
     // GitHub device tokens carry no refresh token: the access token is stored whole.
     let secret = tokens.refresh.as_ref().unwrap_or(&tokens.access);
     let account = p.viewer(&tokens.access).await?.login;
-    c.link(&id, &account, secret)
+    c.link(&id, &account, secret, false)
+}
+
+/// Link `id` with a key the user pasted, for workspaces that block OAuth apps.
+#[tauri::command]
+pub async fn connector_link_api_key(
+    id: String,
+    key: String,
+    c: State<'_, Connectors>,
+) -> Result<(), AtlasError> {
+    let p = Arc::clone(provider(&c, &id)?);
+    let key = key.trim();
+    if key.is_empty() {
+        return Err(AtlasError::InvalidInput {
+            message: "Paste an API key".into(),
+        });
+    }
+    let account = match p.viewer(key).await {
+        Ok(v) => v.login,
+        Err(AtlasError::ConnectorReconnectNeeded { .. }) => {
+            return Err(AtlasError::InvalidInput {
+                message: format!("{} rejected that key", p.info().name),
+            })
+        }
+        Err(e) => return Err(e),
+    };
+    c.link(&id, &account, key, true)
 }
 
 fn progress_end(app: &AppHandle, payload: serde_json::Value) -> Result<(), AtlasError> {

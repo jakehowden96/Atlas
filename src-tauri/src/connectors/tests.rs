@@ -79,7 +79,7 @@ fn link_then_disconnect_moves_status_and_clears_the_store() {
     let (c, dir) = setup("abc");
     assert_eq!(c.status("fake").unwrap(), ConnectorStatus::NotLinked);
 
-    c.link("fake", "me@example.test", "refresh").unwrap();
+    c.link("fake", "me@example.test", "refresh", false).unwrap();
     assert_eq!(
         c.status("fake").unwrap(),
         ConnectorStatus::Linked {
@@ -97,7 +97,7 @@ fn link_then_disconnect_moves_status_and_clears_the_store() {
 #[test]
 fn a_missing_token_means_reconnect_needed() {
     let (c, _dir) = setup("abc");
-    c.link("fake", "me", "refresh").unwrap();
+    c.link("fake", "me", "refresh", false).unwrap();
     c.tokens.delete("fake").unwrap();
     assert!(matches!(
         c.status("fake").unwrap(),

@@ -160,6 +160,11 @@ export async function connectorConnect(id: string): Promise<void> {
   return call("connector_connect", { id });
 }
 
+/** Link with a key the user pasted; rejects if the service refuses it. */
+export async function connectorLinkApiKey(id: string, key: string): Promise<void> {
+  return call("connector_link_api_key", { id, key });
+}
+
 export async function connectorCancel(id: string): Promise<void> {
   return call("connector_cancel", { id });
 }

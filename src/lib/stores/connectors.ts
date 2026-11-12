@@ -5,6 +5,7 @@ import {
   connectorCancel,
   connectorConnect,
   connectorDisconnect,
+  connectorLinkApiKey,
   connectorList,
   onConnectorDeviceCode,
   onConnectorProgress,
@@ -81,6 +82,11 @@ export async function cancel(id: string): Promise<void> {
   } catch (e) {
     log.warn("connectors", `cancel failed: ${e}`);
   }
+}
+
+export async function linkApiKey(id: string, key: string): Promise<void> {
+  await connectorLinkApiKey(id, key);
+  await refresh();
 }
 
 export async function disconnect(id: string): Promise<void> {

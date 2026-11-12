@@ -36,7 +36,15 @@ pub async fn post(
 ) -> Result<Value, AtlasError> {
     let resp = client
         .post(url)
-        .bearer_auth(token)
+        // Linear takes personal API keys bare and OAuth tokens as Bearer.
+        .header(
+            reqwest::header::AUTHORIZATION,
+            if token.starts_with("lin_api_") {
+                token.to_string()
+            } else {
+                format!("Bearer {token}")
+            },
+        )
         .json(&json!({ "query": query, "variables": variables }))
         .send()
         .await

@@ -13,6 +13,9 @@ const SERVICE: &str = "atlas";
 pub struct StoredToken {
     pub refresh_token: String,
     pub account: String,
+    /// A key the user pasted: used as-is, never refreshed.
+    #[serde(default)]
+    pub api_key: bool,
 }
 
 pub trait TokenStore: Send + Sync {

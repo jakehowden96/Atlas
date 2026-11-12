@@ -1,4 +1,6 @@
-use super::diff::{count_diff_stats, discover_diff, fit_to_budget, DiffPart, MAX_PANEL_DIFF_SIZE};
+use super::diff::{
+    count_diff_stats, diff_since_fork, discover_diff, fit_to_budget, DiffPart, MAX_PANEL_DIFF_SIZE,
+};
 use super::git::{git_cmd, nested_worktrees, should_skip_dir};
 use super::validate::{validate_cwd, validate_session_id};
 use crate::atomic_write::write_atomic;
@@ -299,10 +301,15 @@ fn worktree_parts(git_root: &str, prefix: &str) -> Vec<(String, DiffPart)> {
     let Ok(root) = fs::canonicalize(git_root) else {
         return Vec::new();
     };
+    let parent_head = git_cmd(git_root, &["rev-parse", "HEAD"]).ok();
     let mut parts = Vec::new();
     for path in nested_worktrees(git_root) {
-        let bundle = discover_diff(&path.to_string_lossy());
-        if bundle.full.text.is_empty() {
+        let path_str = path.to_string_lossy();
+        let part = match &parent_head {
+            Some(head) => diff_since_fork(&path_str, head),
+            None => discover_diff(&path_str).full,
+        };
+        if part.text.is_empty() {
             continue;
         }
         let Ok(relative) = path.strip_prefix(&root) else {
@@ -314,7 +321,7 @@ fn worktree_parts(git_root: &str, prefix: &str) -> Vec<(String, DiffPart)> {
         } else {
             format!("{prefix}/{relative}")
         };
-        parts.push((name, bundle.full));
+        parts.push((name, part));
     }
     parts
 }
@@ -753,6 +760,32 @@ mod tests {
             .unwrap();
         assert!(diff.projects.is_none());
         assert!(!diff.raw.is_empty());
+    }
+
+    /// A worktree forked from a feature branch counts only its own work, not
+    /// the feature branch's commits over `main` (which every sibling repeats).
+    #[test]
+    fn a_worktree_counts_only_its_work_since_it_forked() {
+        let repo = init_repo();
+        let dir = repo.path();
+        fs::write(dir.join("a.txt"), "one\n").unwrap();
+        commit_all(dir, "init");
+        super::super::git::test_support::git(dir, &["checkout", "-q", "-b", "feat"]);
+        fs::write(dir.join("big.txt"), "x\n".repeat(500)).unwrap();
+        commit_all(dir, "feature work");
+        let wt = add_worktree(dir, ".claude/worktrees/agent");
+        fs::write(wt.join("a.txt"), "two\n").unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let panel = panel_file(state.path());
+
+        let diff = build_panel_single("wt-fork", dir.to_str().unwrap(), &panel)
+            .unwrap()
+            .unwrap()
+            .diff
+            .unwrap();
+        let wt_part = &diff.projects.as_ref().unwrap()[1];
+        assert_eq!(wt_part.name, ".claude/worktrees/agent");
+        assert_eq!((wt_part.lines_added, wt_part.lines_removed), (1, 1));
     }
 
     #[test]

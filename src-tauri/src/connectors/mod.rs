@@ -77,12 +77,19 @@ impl Connectors {
     }
 
     /// Record a finished sign-in. Called by the flows added in later phases.
-    pub fn link(&self, id: &str, account: &str, refresh_token: &str) -> Result<(), AtlasError> {
+    pub fn link(
+        &self,
+        id: &str,
+        account: &str,
+        refresh_token: &str,
+        api_key: bool,
+    ) -> Result<(), AtlasError> {
         self.tokens.set(
             id,
             &StoredToken {
                 refresh_token: refresh_token.to_string(),
                 account: account.to_string(),
+                api_key,
             },
         )?;
         self.config.update(|c| {
