@@ -115,7 +115,7 @@ impl Connectors {
                 message: format!("{} is not connected", provider.info().name),
             })?;
         // shortcut: device-flow tokens (GitHub) do not expire and are stored whole, so there is nothing to refresh; revisit if a device-flow provider issues refresh tokens.
-        if provider.info().flow == AuthFlow::DeviceCode {
+        if stored.api_key || provider.info().flow == AuthFlow::DeviceCode {
             return Ok(stored.refresh_token);
         }
         let cfg = provider.auth_config();
@@ -174,6 +174,7 @@ impl Connectors {
                 &StoredToken {
                     refresh_token: next,
                     account: stored.account,
+                    api_key: false,
                 },
             )?;
         }

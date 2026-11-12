@@ -2,6 +2,7 @@
   import "./shared.css";
   import { cancel, connect, connectors, disconnect, signIn } from "../../../stores/connectors";
   import { confirmAction } from "../../ui/ConfirmDialog.svelte";
+  import ApiKeyForm from "./connectors/ApiKeyForm.svelte";
   import BrowserSignInDialog from "./connectors/BrowserSignInDialog.svelte";
   import ConnectorRow from "./connectors/ConnectorRow.svelte";
   import DeviceCodeDialog from "./connectors/DeviceCodeDialog.svelte";
@@ -43,6 +44,7 @@
       onConnect={() => start(c.info.id)}
       onDisconnect={() => void remove(c.info.id, c.info.name)}
     />
+    {#if c.info.kind === "tickets" && c.status.kind !== "linked"}<ApiKeyForm connector={c.info} />{/if}
     {#if c.info.kind === "pullRequests"}<WatchedRepos />{/if}
   {/each}
 </div>

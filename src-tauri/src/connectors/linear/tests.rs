@@ -114,3 +114,16 @@ async fn viewer_labels_the_account() {
         ("jake", Some("Jake H"))
     );
 }
+
+#[tokio::test]
+async fn personal_api_keys_are_sent_without_bearer() {
+    let s = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(header("authorization", "lin_api_k"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(issue("started", "In Progress")))
+        .expect(1)
+        .mount(&s)
+        .await;
+    let p = LinearProvider::with_api_url(&s.uri());
+    assert_eq!(p.get_ticket("lin_api_k", "ENG-482").await.unwrap().id, "ENG-482");
+}
