@@ -4,9 +4,10 @@ These steps need the repository owner's accounts. No client id is committed for 
 done, the feature it enables stays inert.
 
 The updater signing key is already set up: the public key is in `src-tauri/tauri.conf.json` and the
-`TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets are set. To
-publish a release, bump the version, update `CHANGELOG.md` and push a tag `vX.Y.Z`; the release
-workflow publishes the installers and `latest.json`.
+`TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets are set.
+There is no release pipeline: a release is a tag `vX.Y.Z` plus a GitHub release with source only,
+and users build the app themselves as the README describes. Bump the version and update
+`CHANGELOG.md` first.
 
 ## 1. Linear OAuth app
 
@@ -33,11 +34,3 @@ Inert until done: **Connect is disabled** for GitHub; the Pull requests screen h
 3. After creating it, tick **Enable Device Flow**.
 4. Copy the client id into `GITHUB_CLIENT_ID` in `src-tauri/src/connectors/clients.rs`. Do not
    generate a client secret.
-
-## 3. Optional: code signing
-
-Inert until done: Windows shows a SmartScreen warning; macOS needs "open anyway".
-
-- macOS: add the `APPLE_*` secrets listed in [../SECURITY.md](../SECURITY.md).
-- Windows: buy a code-signing certificate and add its signing step and secrets to
-  `.github/workflows/release.yml`.
