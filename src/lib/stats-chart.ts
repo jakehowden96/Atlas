@@ -38,21 +38,6 @@ export function visibleLabels(n: number): Set<number> {
   return new Set([0, Math.floor((n - 1) / 2), n - 1]);
 }
 
-/** Heatmap step 0..4 for a value against the busiest cell. */
-export function heatStep(v: number, max: number): number {
-  if (!(v > 0) || !(max > 0)) return 0;
-  return Math.min(4, Math.ceil((v / max) * 4));
-}
-
-export const heatColor = (step: number): string =>
-  `color-mix(in srgb, var(--accent) ${step * 25}%, var(--surface3))`;
-
-/** Legend labels per step: "0", then the lowest count that lands in each step. */
-export function heatLegend(max: number): string[] {
-  const low = [1, 2, 3, 4].map((k) => (max > 0 ? Math.floor(((k - 1) * max) / 4) + 1 : 1));
-  return ["0", ...low.map((n) => `${n}+`)];
-}
-
 export function median(values: number[]): number {
   if (values.length === 0) return 0;
   const s = [...values].sort((a, b) => a - b);
@@ -64,12 +49,6 @@ export function median(values: number[]): number {
 export function medianText(value: number, values: number[]): string {
   const m = median(values);
   return m > 0 ? `${(value / m).toFixed(1)}× the median` : "";
-}
-
-/** "+12% vs last week". */
-export function deltaText(pct: number, versus: string): string {
-  const r = Math.round(pct);
-  return `${r > 0 ? "+" : r < 0 ? "−" : ""}${Math.abs(r)}% vs ${versus}`;
 }
 
 export function pointText(p: Point, unit: Unit): string {

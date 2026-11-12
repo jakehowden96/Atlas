@@ -1,6 +1,7 @@
 import type { Overview, Timeline } from "../../../../types/codeburn";
 import { localDayKey } from "../../../stats-derive";
 import type { Point } from "../../../stats-chart";
+import { modelColor } from "./compare-derive";
 
 export type Metric = "cost" | "tokens";
 
@@ -16,23 +17,6 @@ export interface TrendDay {
   total: number;
   parts: Record<string, number>;
 }
-
-const FAMILIES = ["opus", "sonnet", "haiku"] as const;
-
-/** Atlas's fixed model colours; a second model of one family is a paler mix. */
-function modelColors(labels: string[]): string[] {
-  const seen: Record<string, number> = {};
-  return labels.map((label) => {
-    const fam = FAMILIES.find((f) => label.toLowerCase().includes(f));
-    if (!fam) return "var(--muted)";
-    const n = (seen[fam] = (seen[fam] ?? -1) + 1);
-    const base = `var(--model-${fam})`;
-    return n === 0 ? base : `color-mix(in srgb, ${base} ${n === 1 ? 60 : 38}%, var(--surface))`;
-  });
-}
-
-/** Colour for one model name, by family. */
-export const modelColor = (label: string) => modelColors([label])[0]!;
 
 const dayLabel = (d: Date, hourly: boolean) =>
   hourly
@@ -52,8 +36,8 @@ export function trend(
   const used = timeline.modelSeries
     .filter((s) => (totals.get(s.id) ?? 0) > 0)
     .sort((a, b) => (totals.get(b.id) ?? 0) - (totals.get(a.id) ?? 0));
-  const colors = modelColors(used.map((s) => s.label));
-  const series = used.map((s, i) => ({ id: s.id, label: s.label, color: colors[i]! }));
+  const labels = used.map((s) => s.label);
+  const series = used.map((s) => ({ id: s.id, label: s.label, color: modelColor(s.label, labels) }));
   const days = timeline.points.map((p) => ({
     key: p.timestamp,
     label: dayLabel(new Date(p.timestamp), hourly),

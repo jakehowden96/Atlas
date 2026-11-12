@@ -15,6 +15,7 @@
   import { tooltip } from "../../../ui/tooltip";
   import Card from "./Card.svelte";
   import Loader from "./Loader.svelte";
+  import { modelColor } from "./compare-derive";
   import { byCostDesc, isUnpriced } from "./models-derive";
   import {
     activityCells,
@@ -22,7 +23,6 @@
     efficiencyScore,
     fmtMs,
     fmtPct,
-    modelColor,
     monthCumulative,
     monthWindows,
     pace,
@@ -328,6 +328,8 @@
           <Card title="Models this period" note="Sorted by cost">
             <Loader args={["models", "--format", "json", ...filterArgs(filters, "models"), "--min-cost", "0"]} {refresh}>
               {#snippet children(rows: ModelRow[])}
+                {@const top = byCostDesc(rows).slice(0, 5)}
+                {@const names = top.map((r) => r.modelDisplayName)}
                 <div class="scroll">
                   <table>
                     <thead>
@@ -337,10 +339,10 @@
                       </tr>
                     </thead>
                     <tbody>
-                      {#each byCostDesc(rows).slice(0, 5) as m (m.providerDisplayName + m.modelDisplayName)}
+                      {#each top as m (m.providerDisplayName + m.modelDisplayName)}
                         <tr>
                           <td>
-                            <span class="dot" style:background={modelColor(m.modelDisplayName)}></span>
+                            <span class="dot" style:background={modelColor(m.modelDisplayName, names)}></span>
                             <button type="button" class="link" onclick={() => onNavigate?.("models")}>{m.modelDisplayName}</button>
                           </td>
                           <td class="r">{fmtTokens(m.inputTokens)}</td>

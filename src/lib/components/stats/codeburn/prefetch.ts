@@ -1,5 +1,5 @@
 import { filterArgs, type Filters } from "../../../../types/codeburn";
-import { codeburn, peekCodeburn } from "../../../stores/codeburn";
+import { peekCodeburn, warmCodeburn } from "../../../stores/codeburn";
 
 /** Each Stats tab's own queries, warmed so opening a tab finds them cached.
  *  Keep in step with the Loader args in the tab components. */
@@ -19,6 +19,11 @@ export const whyArgs = (sessionId: string) => ["sessions", "--id", sessionId, "-
 
 const generations = new Map<string, number>();
 
+/** Stop any prefetch running on `channel`. */
+export function cancelPrefetch(channel: string): void {
+  generations.set(channel, (generations.get(channel) ?? 0) + 1);
+}
+
 /**
  * Load `queries` into the codeburn cache one at a time, skipping any already
  * cached (the background refresh keeps those current). A newer call on the
@@ -30,6 +35,6 @@ export async function prefetch(channel: string, queries: string[][]): Promise<vo
   for (const args of queries) {
     if (generations.get(channel) !== mine) return;
     if (peekCodeburn(args) !== undefined) continue;
-    await codeburn(args).catch(() => {});
+    await warmCodeburn(args).catch(() => {});
   }
 }

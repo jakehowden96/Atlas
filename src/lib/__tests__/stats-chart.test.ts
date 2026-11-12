@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  deltaText,
   formatValue,
-  heatLegend,
-  heatStep,
   medianText,
   niceTicks,
   toCsv,
@@ -34,16 +31,9 @@ describe("stats-chart helpers", () => {
     expect([...visibleLabels(30)]).toEqual([0, 14, 29]);
   });
 
-  it("heat steps and legend", () => {
-    expect([0, 1, 3, 5, 8].map((v) => heatStep(v, 8))).toEqual([0, 1, 2, 3, 4]);
-    expect(heatLegend(8)).toEqual(["0", "1+", "3+", "5+", "7+"]);
-  });
-
-  it("median and delta text", () => {
+  it("median text", () => {
     expect(medianText(20, [5, 10, 20])).toBe("2.0× the median");
     expect(medianText(1, [0, 0])).toBe("");
-    expect(deltaText(12.4, "last week")).toBe("+12% vs last week");
-    expect(deltaText(-5, "last week")).toBe("−5% vs last week");
   });
 
   it("toCsv quotes", () => {

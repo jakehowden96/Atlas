@@ -26,6 +26,8 @@ export type SignInState =
 
 export const connectors = writable<ConnectorState[]>([]);
 export const signIn = writable<SignInState>({ kind: "idle" });
+/** The connector `signIn` belongs to, so Settings can show its dialog wherever the sign-in started. */
+export const signingIn = writable<string | null>(null);
 /** When connectivity was lost, or null while online. */
 export const offlineSince = writable<number | null>(null);
 export const online = derived(offlineSince, ($s) => $s === null);
@@ -61,6 +63,7 @@ export async function refresh(): Promise<void> {
 }
 
 export async function connect(id: string): Promise<void> {
+  signingIn.set(id);
   signIn.set({ kind: "starting" });
   try {
     await connectorConnect(id);

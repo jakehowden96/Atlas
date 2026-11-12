@@ -19,7 +19,7 @@ vi.mock("../logger", () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(
 
 import { connectorConnect, connectorDisconnect, connectorLinkCli } from "../ipc";
 import Connectors from "../components/settings/sections/Connectors.svelte";
-import { connectors, signIn } from "../stores/connectors";
+import { connect, connectors, signIn } from "../stores/connectors";
 import type { AuthMethod } from "../../types/generated/AuthMethod";
 import type { ConnectorState } from "../../types/generated/ConnectorState";
 
@@ -128,6 +128,13 @@ describe("sign-in dialogs", () => {
     expect(await screen.findByText("Finish in your browser")).toBeTruthy();
   });
 
+  it("shows the dialog for a sign-in started elsewhere (a status chip's reconnect)", async () => {
+    connectors.set([mk("a", "tickets", "browser")]);
+    render(Connectors);
+    void connect("a");
+    expect(await screen.findByText("Finish in your browser")).toBeTruthy();
+  });
+
   it("counts down in the device dialog and warns under a minute", async () => {
     connectors.set([mk("a", "pullRequests", "deviceCode")]);
     render(Connectors);
@@ -169,7 +176,7 @@ describe("sign-in dialogs", () => {
 
 describe("disconnect", () => {
   it("asks before disconnecting", async () => {
-    connectors.set([mk("a", "tickets", "browser", { kind: "linked", account: "me" })]);
+    connectors.set([mk("a", "pullRequests", "browser", { kind: "linked", account: "me" })]);
     render(Connectors);
     await fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
     expect(await screen.findByText(/watched repositories are kept/i)).toBeTruthy();

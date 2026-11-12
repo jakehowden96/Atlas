@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -216,15 +217,22 @@ fn run(args: &[String], timeout: Duration) -> Result<Vec<u8>, AtlasError> {
 struct Serve {
     child: Child,
     stdin: ChildStdin,
-    pending: Arc<Mutex<HashMap<u64, mpsc::Sender<serde_json::Value>>>>,
+    pending: Pending,
+    /// Cleared when the reader thread stops, e.g. after an oversized reply.
+    alive: Arc<AtomicBool>,
     next: u64,
 }
+
+type Pending = Arc<Mutex<HashMap<u64, mpsc::Sender<serde_json::Value>>>>;
 
 impl Drop for Serve {
     fn drop(&mut self) {
         let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
+
+const START_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Each server answers one request at a time, so the slow scans (seconds
 /// each) get a second server (~200MB) and never hold up the quick queries.
@@ -246,16 +254,25 @@ fn start_serve() -> Option<Serve> {
     let mut child = command.spawn().ok()?;
     let stdin = child.stdin.take()?;
     let mut stdout = BufReader::new(child.stdout.take()?);
-    let mut first = String::new();
-    if stdout.read_line(&mut first).ok()? == 0 || !first.contains("\"ready\"") {
-        let _ = child.kill();
-        return None;
-    }
-    let pending: Arc<Mutex<HashMap<u64, mpsc::Sender<serde_json::Value>>>> = Arc::default();
-    let routes = pending.clone();
+    let pending: Pending = Arc::default();
+    let alive = Arc::new(AtomicBool::new(true));
+    let (routes, running) = (pending.clone(), alive.clone());
+    let (ready_tx, ready_rx) = mpsc::channel();
     std::thread::spawn(move || {
-        for line in stdout.lines() {
-            let Ok(line) = line else { break };
+        let mut line = String::new();
+        let ready = matches!(stdout.read_line(&mut line), Ok(n) if n > 0 && line.contains("\"ready\""));
+        let _ = ready_tx.send(ready);
+        if !ready {
+            return;
+        }
+        loop {
+            line.clear();
+            match (&mut stdout).take(MAX_STDOUT).read_line(&mut line) {
+                Ok(0) | Err(_) => break,
+                // A reply this big is refused; dropping the server sends waiters to the fallback.
+                Ok(n) if n as u64 >= MAX_STDOUT => break,
+                Ok(_) => {}
+            }
             let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
             if msg.get("progress").is_some() {
                 continue;
@@ -266,11 +283,18 @@ fn start_serve() -> Option<Serve> {
             }
         }
         // The server is gone: dropping the senders sends waiters to the fallback.
+        running.store(false, Ordering::Relaxed);
         if let Ok(mut p) = routes.lock() {
             p.clear();
         }
     });
-    Some(Serve { child, stdin, pending, next: 0 })
+    if ready_rx.recv_timeout(START_TIMEOUT) != Ok(true) {
+        log::warn!("codeburn serve did not start; using one-off runs");
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
+    }
+    Some(Serve { child, stdin, pending, alive, next: 0 })
 }
 
 /// A serve reply as stdout, or `None` when it refused the command.
@@ -291,12 +315,12 @@ fn serve_reply(args: &[String], msg: &serde_json::Value) -> Option<Result<Vec<u8
 
 /// Ask the warm server; `None` means run a fresh process instead.
 fn serve_run(args: &[String]) -> Option<Result<Vec<u8>, AtlasError>> {
-    let rx = {
-        let mut guard = SERVE[lane_for(args)].lock().ok()?;
-        if guard
-            .as_mut()
-            .is_some_and(|s| !matches!(s.child.try_wait(), Ok(None)))
-        {
+    let lane = &SERVE[lane_for(args)];
+    let (rx, id, mine) = {
+        let mut guard = lane.lock().ok()?;
+        if guard.as_mut().is_some_and(|s| {
+            !s.alive.load(Ordering::Relaxed) || !matches!(s.child.try_wait(), Ok(None))
+        }) {
             *guard = None;
         }
         if guard.is_none() {
@@ -315,18 +339,30 @@ fn serve_run(args: &[String]) -> Option<Result<Vec<u8>, AtlasError>> {
             *guard = None;
             return None;
         }
-        rx
+        (rx, id, serve.pending.clone())
     };
     match rx.recv_timeout(RUN_TIMEOUT) {
         Ok(msg) => serve_reply(args, &msg),
-        Err(mpsc::RecvTimeoutError::Timeout) => Some(Err(AtlasError::timeout(
-            TOOL,
-            format!(
-                "codeburn {} did not finish in {}s",
-                args[0],
-                RUN_TIMEOUT.as_secs()
-            ),
-        ))),
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            // The server answers one request at a time, so a hung scan would
+            // stall every later one: drop it (unless already replaced).
+            if let Ok(mut p) = mine.lock() {
+                p.remove(&id);
+            }
+            if let Ok(mut guard) = lane.lock() {
+                if guard.as_ref().is_some_and(|s| Arc::ptr_eq(&s.pending, &mine)) {
+                    *guard = None;
+                }
+            }
+            Some(Err(AtlasError::timeout(
+                TOOL,
+                format!(
+                    "codeburn {} did not finish in {}s",
+                    args[0],
+                    RUN_TIMEOUT.as_secs()
+                ),
+            )))
+        }
         Err(mpsc::RecvTimeoutError::Disconnected) => None,
     }
 }

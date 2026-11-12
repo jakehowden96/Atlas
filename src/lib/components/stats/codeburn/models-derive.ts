@@ -23,7 +23,7 @@ export function sortRows(rows: ModelRow[], s: { k: SortKey; dir: 1 | -1 }): Mode
   });
 }
 
-export type PricingStatus = "priced" | "estimated" | "unpriced";
+type PricingStatus = "priced" | "estimated" | "unpriced";
 
 export function pricingStatus(m: ModelRow): PricingStatus {
   return isUnpriced(m) ? "unpriced" : m.isEstimated ? "estimated" : "priced";

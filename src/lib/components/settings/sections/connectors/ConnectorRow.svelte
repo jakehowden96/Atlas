@@ -59,7 +59,7 @@
   // Picking a method is choosing to use it: act at once where nothing more is
   // needed from the user. An API key still has to be pasted.
   function pick(m: AuthMethod) {
-    if (m === choice) return;
+    if (m === choice || busy) return; // one sign-in at a time
     picked = m;
     cliError = null;
     if (m === "cli") void useCli();
@@ -165,7 +165,7 @@
     font-size: var(--fs-xs);
     color: var(--muted);
   }
-  /* Indented past the logo, in line with the watched repositories below. */
+  /* Indented past the logo. */
   .signin {
     display: flex;
     flex-direction: column;

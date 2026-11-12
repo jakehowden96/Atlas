@@ -16,6 +16,8 @@ const KEEP_WARM_MS = 30 * 60_000;
 /** Saved results not viewed for this long are dropped. */
 const KEEP_SAVED_MS = 3 * 24 * 60 * 60_000;
 const STORAGE_KEY = "atlas.codeburnCache.v1";
+/** Only the most recently viewed results are saved, which also bounds the launch refresh. */
+const MAX_SAVED = 50;
 
 interface Entry {
   value?: unknown;
@@ -45,6 +47,8 @@ function save() {
     const out = Object.fromEntries(
       [...cache]
         .filter(([, e]) => e.value !== undefined)
+        .sort(([, a], [, b]) => b.usedAt - a.usedAt)
+        .slice(0, MAX_SAVED)
         .map(([key, e]) => [key, { value: e.value, at: e.at, usedAt: e.usedAt }]),
     );
     try {
@@ -57,8 +61,8 @@ function save() {
 
 const keyOf = (args: string[]) => args.join(" ");
 
-function fetchInto<T>(key: string, args: string[]): Promise<T> {
-  const entry = cache.get(key) ?? { at: 0, usedAt: Date.now() };
+function fetchInto<T>(key: string, args: string[], usedAt = Date.now()): Promise<T> {
+  const entry = cache.get(key) ?? { at: 0, usedAt };
   if (entry.pending) return entry.pending as Promise<T>;
   const pending = codeburnRun<T>(args)
     .then((value) => {
@@ -84,7 +88,18 @@ export function onCodeburn<T>(args: string[], fn: (value: T) => void): () => voi
   const set = listeners.get(key) ?? new Set();
   set.add(fn as (value: unknown) => void);
   listeners.set(key, set);
-  return () => set.delete(fn as (value: unknown) => void);
+  return () => {
+    set.delete(fn as (value: unknown) => void);
+    if (!set.size) listeners.delete(key);
+  };
+}
+
+/**
+ * Load `args` into the cache ahead of a view. It does not count as viewed,
+ * so it is not kept warm unless someone opens it.
+ */
+export function warmCodeburn(args: string[]): Promise<unknown> {
+  return fetchInto(keyOf(args), args, Date.now() - KEEP_WARM_MS);
 }
 
 /**

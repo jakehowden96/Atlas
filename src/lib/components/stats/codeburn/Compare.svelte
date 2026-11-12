@@ -30,7 +30,6 @@
     fmt: (v: number) => string;
   }
   const p0 = (v: number) => `${Math.round(v)}%`;
-  const d2 = (v: number) => fmtCost(v);
   const n2 = (v: number) => v.toFixed(2);
   // Delegation, planning, tools/turn and fast mode are not in codeburn compare: always "—".
   const none = () => null;
@@ -41,8 +40,8 @@
     { label: "Self-correction", get: (_r, m) => m.selfCorr, dir: -1, fmt: (v) => `${Math.floor(v)}%` },
   ];
   const efficiency: Row[] = [
-    { label: "Cost / call", get: (_r, m) => m.costPerCall, dir: -1, fmt: d2 },
-    { label: "Cost / edit", get: (_r, m) => m.costPerEdit, dir: -1, fmt: d2 },
+    { label: "Cost / call", get: (_r, m) => m.costPerCall, dir: -1, fmt: fmtCost },
+    { label: "Cost / edit", get: (_r, m) => m.costPerEdit, dir: -1, fmt: fmtCost },
     { label: "Output tok / call", get: (_r, m) => m.outPerCall, dir: -1, fmt: (v) => String(Math.round(v)) },
     { label: "Cache hit rate", get: (_r, m) => m.cache, dir: 1, fmt: p0 },
   ];
@@ -51,7 +50,7 @@
   );
   const context: Row[] = [
     { label: "Calls", get: (r) => r.calls, dir: 0, fmt: fmtCount },
-    { label: "Total cost", get: (r) => r.cost, dir: 0, fmt: d2 },
+    { label: "Total cost", get: (r) => r.cost, dir: 0, fmt: fmtCost },
     { label: "Input tokens", get: (r) => r.inputTokens, dir: 0, fmt: fmtTokens },
     { label: "Output tokens", get: (r) => r.outputTokens, dir: 0, fmt: fmtTokens },
     { label: "Edit turns", get: (r) => r.editTurns, dir: 0, fmt: String },

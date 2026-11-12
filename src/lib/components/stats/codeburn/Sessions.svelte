@@ -9,7 +9,7 @@
   import EmptyState from "../../ui/EmptyState.svelte";
   import Loader from "./Loader.svelte";
   import { codeburn } from "../../../stores/codeburn";
-  import { prefetch, whyArgs } from "./prefetch";
+  import { cancelPrefetch, prefetch, whyArgs } from "./prefetch";
   import { type SortKey, sortSessions } from "./sessions-sort";
 
   let { filters, refresh }: { filters: Filters; refresh: number } = $props();
@@ -59,9 +59,16 @@
     const argv = ["sessions", "--format", "json", ...filterArgs(filters, "sessions"), "--contributions"];
     void key;
     void provider;
+    let live = true;
     codeburn<SessionRow[]>(argv)
-      .then((rows) => prefetch("why", visible(rows).slice(0, 5).map((r) => whyArgs(r.sessionId))))
+      .then((rows) => {
+        if (live) return prefetch("why", visible(rows).slice(0, 5).map((r) => whyArgs(r.sessionId)));
+      })
       .catch(() => {});
+    return () => {
+      live = false;
+      cancelPrefetch("why");
+    };
   });
 
   const day = (iso: string) =>

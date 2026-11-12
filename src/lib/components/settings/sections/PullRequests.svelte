@@ -7,6 +7,7 @@
     setAutoAddReposFromWorkspaces,
     setPrRefreshMinutes,
     setWatchedRepos,
+    validateRepo,
     watchedRepos,
   } from "../../../stores/settings";
   import ChipInput from "../../ui/ChipInput.svelte";
@@ -14,8 +15,6 @@
   import Toggle from "../../ui/Toggle.svelte";
 
   const REFRESH: Segment[] = PR_REFRESH_CHOICES.map((m) => ({ id: String(m), label: `${m}m` }));
-
-  const validate = (v: string) => (/^[\w.-]+\/[\w.-]+$/.test(v) ? null : "Use the form owner/name");
 </script>
 
 <div class="rows sec">
@@ -30,7 +29,7 @@
       label="Watched repositories"
       placeholder="owner/name"
       value={$watchedRepos}
-      {validate}
+      validate={validateRepo}
       onChange={(v) => void setWatchedRepos(v)}
     />
   </div>

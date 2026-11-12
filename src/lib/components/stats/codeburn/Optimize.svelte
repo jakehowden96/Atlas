@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { filterArgs, type Filters } from "../../../../types/codeburn";
   import type { OptimizeReport } from "../../../../types/codeburn-optimize";
   import type { Yield, YieldCategory } from "../../../../types/codeburn-yield";
@@ -22,12 +23,14 @@
 
   // Reverts / Abandoned come from `codeburn yield`; a failure just leaves them at $0.00.
   let yieldData = $state<Yield | null>(null);
+  let seen = untrack(() => refresh + local);
   $effect(() => {
     const argv = ["yield", "--format", "json", ...filterArgs(filters, "yield")];
-    void refresh;
-    void local;
+    // Refresh and apply/undo skip the cache, as the Loaders below do.
+    const fresh = refresh + local !== seen;
+    seen = refresh + local;
     let live = true;
-    codeburn<Yield>(argv)
+    codeburn<Yield>(argv, fresh)
       .then((y) => {
         if (live) yieldData = y;
       })

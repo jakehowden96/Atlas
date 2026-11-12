@@ -4,7 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const run = vi.fn();
 vi.mock("../ipc", () => ({ codeburnRun: (args: string[]) => run(args), codeburnInfo: vi.fn() }));
 
-const { codeburn, FRESH_MS, onCodeburn, peekCodeburn } = await import("../stores/codeburn");
+const { codeburn, FRESH_MS, onCodeburn, peekCodeburn, refreshWarm, warmCodeburn } = await import(
+  "../stores/codeburn"
+);
 
 afterEach(() => {
   vi.useRealTimers();
@@ -39,6 +41,21 @@ describe("codeburn cache", () => {
     run.mockRejectedValueOnce(new Error("boom"));
     await expect(codeburn(args, true)).rejects.toThrow("boom");
     expect(peekCodeburn(args)).toBe("b");
+  });
+
+  it("keeps viewed results warm but not prefetched ones", async () => {
+    vi.useFakeTimers();
+    const viewed = ["status", "--format", "json", "--period", "t4"];
+    const warmed = ["status", "--format", "json", "--period", "t5"];
+    run.mockResolvedValue("x");
+    await codeburn(viewed);
+    await warmCodeburn(warmed);
+    run.mockClear();
+    vi.setSystemTime(Date.now() + FRESH_MS + 1);
+    await refreshWarm();
+    // Earlier tests' entries share the module cache, so look only at these two.
+    const mine = run.mock.calls.map((c) => c[0]).filter((a) => /t[45]$/.test(a.join(" ")));
+    expect(mine).toEqual([viewed]);
   });
 });
 

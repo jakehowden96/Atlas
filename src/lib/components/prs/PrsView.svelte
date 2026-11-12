@@ -22,6 +22,7 @@
     prRefreshMinutes,
     setWatchedRepos,
     openSettings,
+    validateRepo,
     watchedRepos,
   } from "../../stores/settings";
   import { visibleWorkspaces } from "../../stores/workspace";
@@ -106,9 +107,6 @@
       ),
     ].filter((slug) => !$watchedRepos.includes(slug)),
   );
-
-  const validateRepo = (v: string) =>
-    /^[\w.-]+\/[\w.-]+$/.test(v) ? null : "Use the form owner/name";
 
   /**
    * The workspace a repo card belongs to, for its colour dot and name. The

@@ -251,14 +251,9 @@ impl ConnectorProvider for GithubProvider {
     }
 
     async fn cli_token(&self) -> Result<String, AtlasError> {
-        let run = tokio::task::spawn_blocking(gh_token);
-        match tokio::time::timeout(CLI_TIMEOUT, run).await {
-            Ok(joined) => joined.map_err(|e| AtlasError::internal(e.to_string()))?,
-            Err(_) => Err(AtlasError::tool_failed(
-                "gh",
-                "The GitHub CLI did not answer. Run `gh auth status` in a terminal.",
-            )),
-        }
+        tokio::task::spawn_blocking(gh_token)
+            .await
+            .map_err(|e| AtlasError::internal(e.to_string()))?
     }
 
     fn pull_requests(&self) -> Option<&dyn PullRequestProvider> {
@@ -293,20 +288,45 @@ impl PullRequestProvider for GithubProvider {
     }
 }
 
-/// The token `gh auth token` prints for github.com.
+/// The token `gh auth token` prints for github.com. `gh` is killed after
+/// `CLI_TIMEOUT` (it can hang on a keychain prompt) rather than left running.
 fn gh_token() -> Result<String, AtlasError> {
-    let mut cmd = std::process::Command::new("gh");
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    let mut cmd = Command::new("gh");
     cmd.args(["auth", "token", "--hostname", "github.com"])
-        .stdin(std::process::Stdio::null());
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
     crate::commands::proc::no_window(&mut cmd);
-    let out = cmd.output().map_err(|e| match e.kind() {
+    let mut child = cmd.spawn().map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => AtlasError::ConnectorReconnectNeeded {
             message: "The GitHub CLI is not installed. Install it from cli.github.com.".into(),
         },
         _ => AtlasError::tool_failed("gh", format!("Could not run the GitHub CLI: {e}")),
     })?;
-    let token = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if !out.status.success() || token.is_empty() {
+    let deadline = std::time::Instant::now() + CLI_TIMEOUT;
+    // The token is far smaller than a pipe buffer, so polling cannot deadlock.
+    let status = loop {
+        match child.try_wait().map_err(AtlasError::io)? {
+            Some(status) => break status,
+            None if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(AtlasError::tool_failed(
+                    "gh",
+                    "The GitHub CLI did not answer. Run `gh auth status` in a terminal.",
+                ));
+            }
+            None => std::thread::sleep(Duration::from_millis(25)),
+        }
+    };
+    let mut stdout = String::new();
+    if let Some(mut out) = child.stdout.take() {
+        let _ = out.read_to_string(&mut stdout);
+    }
+    let token = stdout.trim().to_string();
+    if !status.success() || token.is_empty() {
         return Err(AtlasError::ConnectorReconnectNeeded {
             message: "The GitHub CLI is not signed in. Run `gh auth login`, then try again.".into(),
         });
