@@ -1,108 +1,123 @@
 <script lang="ts">
-  import Icon from "../../ui/Icon.svelte";
-
   export interface RankItem {
     key: string;
     title: string;
     sub?: string;
-    value: string;
+    value?: string;
   }
 
   interface Props {
     items: RankItem[];
     label: string;
     emptyText?: string;
-    /** Makes rows buttons and shows the chevron. */
+    /** Makes rows buttons with a chevron. */
     onselect?: (key: string) => void;
+    /** Key of the pressed row. */
+    active?: string;
   }
 
-  let { items, label, emptyText = "No data", onselect }: Props = $props();
+  let { items, label, emptyText = "No data", onselect, active }: Props = $props();
 </script>
 
 {#snippet body(it: RankItem, i: number)}
-  <span class="idx">{String(i + 1).padStart(2, "0")}</span>
-  <span class="main">
-    <span class="title">{it.title}</span>
-    {#if it.sub}<span class="sub">{it.sub}</span>{/if}
+  <span class="i">{String(i + 1).padStart(2, "0")}</span>
+  <span class="b">
+    <b>{it.title}</b>
+    {#if it.sub}<span>{it.sub}</span>{/if}
   </span>
-  <span class="val">{it.value}</span>
+  <span class="v"
+    >{it.value ?? ""}{#if onselect}<i class="chev">›</i>{/if}</span
+  >
 {/snippet}
 
 {#if items.length === 0}
   <p class="empty">{emptyText}</p>
 {:else}
-  <ol aria-label={label}>
+  <div aria-label={label} role="group">
     {#each items as it, i (it.key)}
-      <li>
-        {#if onselect}
-          <button type="button" class="row" onclick={() => onselect(it.key)}>
-            {@render body(it, i)}
-            <Icon name="chevron_right" size={16} />
-          </button>
-        {:else}
-          <div class="row">{@render body(it, i)}</div>
-        {/if}
-      </li>
+      {#if onselect}
+        <button
+          type="button"
+          class="lrow"
+          class:on={active === it.key}
+          aria-pressed={active === it.key}
+          onclick={() => onselect(it.key)}
+        >
+          {@render body(it, i)}
+        </button>
+      {:else}
+        <div class="lrow">{@render body(it, i)}</div>
+      {/if}
     {/each}
-  </ol>
+  </div>
 {/if}
 
 <style>
-  ol {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  li + li {
-    border-top: 1px solid var(--border);
-  }
-  .row {
+  .lrow {
     display: flex;
     align-items: center;
-    gap: var(--sp-3);
+    gap: var(--sp-4);
     width: 100%;
-    padding: var(--sp-2) 0;
+    padding: var(--sp-3) 0;
     border: 0;
+    border-bottom: 1px solid var(--border);
     background: none;
     color: var(--text);
     font: inherit;
+    font-size: var(--fs-xs);
     text-align: left;
   }
-  button.row {
+  .lrow:last-child {
+    border-bottom: 0;
+  }
+  div.lrow:hover,
+  button.lrow:hover,
+  .on {
+    background: var(--surface2);
+  }
+  button.lrow {
     cursor: pointer;
   }
-  button.row:hover .title {
+  .on .b b {
     color: var(--accent);
   }
-  .idx {
+  .i {
+    flex-shrink: 0;
+    width: 22px;
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
   }
-  .main {
-    display: flex;
+  .b {
     flex: 1;
-    flex-direction: column;
     min-width: 0;
   }
-  .title {
+  .b b {
+    display: block;
     overflow: hidden;
-    font-size: var(--fs-xs);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semi);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .sub {
+  .b span {
     color: var(--muted);
-    font-size: var(--fs-2xs);
   }
-  .val {
+  .v {
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-    font-variant-numeric: tabular-nums;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
+    white-space: nowrap;
+  }
+  .chev {
+    margin-left: var(--sp-3);
+    color: var(--muted);
+    font-style: normal;
   }
   .empty {
     margin: 0;
+    padding: var(--sp-7) 0;
     color: var(--muted);
     font-size: var(--fs-xs);
+    text-align: center;
   }
 </style>

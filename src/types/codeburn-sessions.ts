@@ -37,9 +37,10 @@ export interface WhyFinding {
   id: string;
   kind: string;
   turn?: number;
-  usd: number;
-  share: number;
-  alt?: { model: string; cost: number };
+  /** null when codeburn can't price the finding (e.g. a failed tool call). */
+  usd: number | null;
+  share: number | null;
+  alt?: { model: string; cost: number } | null;
 }
 
 export interface SessionWhy {

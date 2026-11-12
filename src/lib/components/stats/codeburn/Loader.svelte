@@ -1,7 +1,7 @@
 <script lang="ts" generics="T">
   import { untrack, type Snippet } from "svelte";
   import { errorMessage } from "../../../ipc-error";
-  import { codeburn } from "../../../stores/codeburn";
+  import { codeburn, onCodeburn, peekCodeburn } from "../../../stores/codeburn";
   import Banner from "../../ui/Banner.svelte";
   import Button from "../../ui/Button.svelte";
   import Skeleton from "../../ui/Skeleton.svelte";
@@ -23,15 +23,21 @@
   let seenRefresh = untrack(() => refresh);
   let seenRetries = 0;
 
-  // The previous result stays on screen while the next one loads.
+  // A cached result shows at once; the previous one stays on screen while the next loads.
   $effect(() => {
     const argv = args;
     const fresh = refresh !== seenRefresh || retries !== seenRetries;
     seenRefresh = refresh;
     seenRetries = retries;
     let live = true;
-    loading = true;
+    const cached = peekCodeburn<T>(argv);
+    if (cached !== undefined && !fresh) data = cached;
+    loading = cached === undefined || fresh;
     error = null;
+    // Background refreshes land here too.
+    const stop = onCodeburn<T>(argv, (value) => {
+      if (live) data = value;
+    });
     codeburn<T>(argv, fresh)
       .then((value) => {
         if (live) data = value;
@@ -44,6 +50,7 @@
       });
     return () => {
       live = false;
+      stop();
     };
   });
 </script>

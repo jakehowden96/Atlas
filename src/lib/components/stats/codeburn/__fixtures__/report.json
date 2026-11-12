@@ -1,722 +1,722 @@
 {
- "generated": "2026-11-05T16:42:29.317Z",
- "currency": "USD",
- "period": "Last 30 Days",
- "periodKey": "30days",
- "overview": {
-  "cost": 315.3088798999999,
-  "proxiedCost": 0,
-  "netCost": 315.3088798999999,
-  "savings": 0,
-  "estimatedCost": 0,
-  "calls": 8640,
-  "sessions": 313,
-  "sessionCountBasis": "partial",
-  "cacheHitPercent": 100,
-  "tokens": {
-   "input": 18529,
-   "output": 4723270,
-   "cacheRead": 913905599,
-   "cacheWrite": 29144195
-  }
- },
- "daily": [
-  {
-   "date": "2026-10-06",
-   "cost": 52.88114800000006,
-   "savings": 0,
-   "calls": 526,
-   "turns": 51,
-   "editTurns": 21,
-   "oneShotTurns": 13,
-   "oneShotRate": 61.9
-  },
-  {
-   "date": "2026-10-13",
-   "cost": 6.0639026000000005,
-   "savings": 0,
-   "calls": 77,
-   "turns": 7,
-   "editTurns": 3,
-   "oneShotTurns": 2,
-   "oneShotRate": 66.7
-  },
-  {
-   "date": "2026-10-17",
-   "cost": 82.18915339999981,
-   "savings": 0,
-   "calls": 1370,
-   "turns": 203,
-   "editTurns": 19,
-   "oneShotTurns": 12,
-   "oneShotRate": 63.2
-  },
-  {
-   "date": "2026-10-18",
-   "cost": 19.785026200000022,
-   "savings": 0,
-   "calls": 604,
-   "turns": 74,
-   "editTurns": 13,
-   "oneShotTurns": 13,
-   "oneShotRate": 100
-  },
-  {
-   "date": "2026-10-19",
-   "cost": 5.3951043,
-   "savings": 0,
-   "calls": 118,
-   "turns": 8,
-   "editTurns": 4,
-   "oneShotTurns": 3,
-   "oneShotRate": 75
-  },
-  {
-   "date": "2026-10-20",
-   "cost": 1.0340904999999998,
-   "savings": 0,
-   "calls": 25,
-   "turns": 4,
-   "editTurns": 0,
-   "oneShotTurns": 0,
-   "oneShotRate": null
-  },
-  {
-   "date": "2026-10-22",
-   "cost": 4.023301199999999,
-   "savings": 0,
-   "calls": 103,
-   "turns": 12,
-   "editTurns": 0,
-   "oneShotTurns": 0,
-   "oneShotRate": null
-  },
-  {
-   "date": "2026-10-24",
-   "cost": 0.788403,
-   "savings": 0,
-   "calls": 38,
-   "turns": 5,
-   "editTurns": 0,
-   "oneShotTurns": 0,
-   "oneShotRate": null
-  },
-  {
-   "date": "2026-10-28",
-   "cost": 1.9104038000000003,
-   "savings": 0,
-   "calls": 84,
-   "turns": 18,
-   "editTurns": 4,
-   "oneShotTurns": 4,
-   "oneShotRate": 100
-  },
-  {
-   "date": "2026-10-31",
-   "cost": 3.9494524999999987,
-   "savings": 0,
-   "calls": 56,
-   "turns": 8,
-   "editTurns": 3,
-   "oneShotTurns": 3,
-   "oneShotRate": 100
-  },
-  {
-   "date": "2026-11-01",
-   "cost": 12.973047799999998,
-   "savings": 0,
-   "calls": 293,
-   "turns": 63,
-   "editTurns": 8,
-   "oneShotTurns": 7,
-   "oneShotRate": 87.5
-  },
-  {
-   "date": "2026-11-02",
-   "cost": 72.79709850000002,
-   "savings": 0,
-   "calls": 3458,
-   "turns": 461,
-   "editTurns": 59,
-   "oneShotTurns": 56,
-   "oneShotRate": 94.9
-  },
-  {
-   "date": "2026-11-03",
-   "cost": 30.558351799999997,
-   "savings": 0,
-   "calls": 1392,
-   "turns": 136,
-   "editTurns": 22,
-   "oneShotTurns": 20,
-   "oneShotRate": 90.9
-  },
-  {
-   "date": "2026-11-04",
-   "cost": 2.9010475,
-   "savings": 0,
-   "calls": 59,
-   "turns": 6,
-   "editTurns": 2,
-   "oneShotTurns": 2,
-   "oneShotRate": 100
-  },
-  {
-   "date": "2026-11-05",
-   "cost": 18.0593488,
-   "savings": 0,
-   "calls": 437,
-   "turns": 60,
-   "editTurns": 18,
-   "oneShotTurns": 17,
-   "oneShotRate": 94.4
-  }
- ],
- "projects": [
-  {
-   "name": "fashion-app",
-   "path": "e:/projects/fashion-app",
-   "cost": 68.49346299999998,
-   "savings": 0,
-   "calls": 1076,
-   "sessions": 112,
-   "sessionCountBasis": "partial"
-  },
-  {
-   "name": "atlas",
-   "path": "e:/github/atlas",
-   "cost": 42.8909037,
-   "savings": 0,
-   "calls": 1043,
-   "sessions": 22,
-   "sessionCountBasis": "partial",
-   "checkouts": [
-    {
-     "path": "e:/github/atlas",
-     "cost": 41.439788
-    },
-    {
-     "path": "e:/github/atlas/.claude/worktrees/agent-a4721cdd9df848171",
-     "cost": 1.0459707999999999
-    },
-    {
-     "path": "e:/github/atlas/.claude/worktrees/agent-a520662e993256ef0",
-     "cost": 0.4051449
+  "generated": "2026-11-05T16:42:29.317Z",
+  "currency": "USD",
+  "period": "Last 30 Days",
+  "periodKey": "30days",
+  "overview": {
+    "cost": 315.3088798999999,
+    "proxiedCost": 0,
+    "netCost": 315.3088798999999,
+    "savings": 0,
+    "estimatedCost": 0,
+    "calls": 8640,
+    "sessions": 313,
+    "sessionCountBasis": "partial",
+    "cacheHitPercent": 100,
+    "tokens": {
+      "input": 18529,
+      "output": 4723270,
+      "cacheRead": 913905599,
+      "cacheWrite": 29144195
     }
-   ],
-   "checkoutCount": 3
   },
-  {
-   "name": "jakeh",
-   "path": "c:/users/jakeh",
-   "cost": 31.08038530000001,
-   "savings": 0,
-   "calls": 559,
-   "sessions": 25,
-   "sessionCountBasis": "partial"
-  },
-  {
-   "name": "source/wholesomenfl.com",
-   "path": "c:/users/jakeh/source/wholesomenfl.com",
-   "cost": 19.9708295,
-   "savings": 0,
-   "calls": 79,
-   "sessions": 1,
-   "sessionCountBasis": "partial"
-  },
-  {
-   "name": "wholesomenfl.com",
-   "path": "e:/github/wholesomenfl.com",
-   "cost": 15.4675972,
-   "savings": 0,
-   "calls": 256,
-   "sessions": 7,
-   "sessionCountBasis": "partial",
-   "checkouts": [
+  "daily": [
     {
-     "path": "e:/github/wholesomenfl.com",
-     "cost": 13.136621000000002
+      "date": "2026-10-06",
+      "cost": 52.88114800000006,
+      "savings": 0,
+      "calls": 526,
+      "turns": 51,
+      "editTurns": 21,
+      "oneShotTurns": 13,
+      "oneShotRate": 61.9
     },
     {
-     "path": "e:/github/wholesomenfl.com/.claude/worktrees/agent-a6a6e10e88a16259e",
-     "cost": 2.3309761999999994
+      "date": "2026-10-13",
+      "cost": 6.0639026000000005,
+      "savings": 0,
+      "calls": 77,
+      "turns": 7,
+      "editTurns": 3,
+      "oneShotTurns": 2,
+      "oneShotRate": 66.7
+    },
+    {
+      "date": "2026-10-17",
+      "cost": 82.18915339999981,
+      "savings": 0,
+      "calls": 1370,
+      "turns": 203,
+      "editTurns": 19,
+      "oneShotTurns": 12,
+      "oneShotRate": 63.2
+    },
+    {
+      "date": "2026-10-18",
+      "cost": 19.785026200000022,
+      "savings": 0,
+      "calls": 604,
+      "turns": 74,
+      "editTurns": 13,
+      "oneShotTurns": 13,
+      "oneShotRate": 100
+    },
+    {
+      "date": "2026-10-19",
+      "cost": 5.3951043,
+      "savings": 0,
+      "calls": 118,
+      "turns": 8,
+      "editTurns": 4,
+      "oneShotTurns": 3,
+      "oneShotRate": 75
+    },
+    {
+      "date": "2026-10-20",
+      "cost": 1.0340904999999998,
+      "savings": 0,
+      "calls": 25,
+      "turns": 4,
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null
+    },
+    {
+      "date": "2026-10-22",
+      "cost": 4.023301199999999,
+      "savings": 0,
+      "calls": 103,
+      "turns": 12,
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null
+    },
+    {
+      "date": "2026-10-24",
+      "cost": 0.788403,
+      "savings": 0,
+      "calls": 38,
+      "turns": 5,
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null
+    },
+    {
+      "date": "2026-10-28",
+      "cost": 1.9104038000000003,
+      "savings": 0,
+      "calls": 84,
+      "turns": 18,
+      "editTurns": 4,
+      "oneShotTurns": 4,
+      "oneShotRate": 100
+    },
+    {
+      "date": "2026-10-31",
+      "cost": 3.9494524999999987,
+      "savings": 0,
+      "calls": 56,
+      "turns": 8,
+      "editTurns": 3,
+      "oneShotTurns": 3,
+      "oneShotRate": 100
+    },
+    {
+      "date": "2026-11-01",
+      "cost": 12.973047799999998,
+      "savings": 0,
+      "calls": 293,
+      "turns": 63,
+      "editTurns": 8,
+      "oneShotTurns": 7,
+      "oneShotRate": 87.5
+    },
+    {
+      "date": "2026-11-02",
+      "cost": 72.79709850000002,
+      "savings": 0,
+      "calls": 3458,
+      "turns": 461,
+      "editTurns": 59,
+      "oneShotTurns": 56,
+      "oneShotRate": 94.9
+    },
+    {
+      "date": "2026-11-03",
+      "cost": 30.558351799999997,
+      "savings": 0,
+      "calls": 1392,
+      "turns": 136,
+      "editTurns": 22,
+      "oneShotTurns": 20,
+      "oneShotRate": 90.9
+    },
+    {
+      "date": "2026-11-04",
+      "cost": 2.9010475,
+      "savings": 0,
+      "calls": 59,
+      "turns": 6,
+      "editTurns": 2,
+      "oneShotTurns": 2,
+      "oneShotRate": 100
+    },
+    {
+      "date": "2026-11-05",
+      "cost": 18.0593488,
+      "savings": 0,
+      "calls": 437,
+      "turns": 60,
+      "editTurns": 18,
+      "oneShotTurns": 17,
+      "oneShotRate": 94.4
     }
-   ],
-   "checkoutCount": 2
-  }
- ],
- "models": [
-  {
-   "name": "Sonnet 5.5",
-   "calls": 6351,
-   "inputTokens": 13988,
-   "outputTokens": 3219871,
-   "cacheReadTokens": 654451180,
-   "cacheWriteTokens": 20764645,
-   "cost": 158.61078550000002,
-   "savings": 0,
-   "estimatedCost": 0,
-   "savingsBaselineModel": "",
-   "editTurns": 123,
-   "oneShotTurns": 116,
-   "oneShotRate": 94.3,
-   "retriesPerEdit": 0.1,
-   "costPerEdit": 0.6246297869918701
-  },
-  {
-   "name": "Opus 5.5",
-   "calls": 2046,
-   "inputTokens": 4189,
-   "outputTokens": 1287008,
-   "cacheReadTokens": 208901149,
-   "cacheWriteTokens": 7784703,
-   "cost": 120.20088879999982,
-   "savings": 0,
-   "estimatedCost": 0,
-   "savingsBaselineModel": "",
-   "editTurns": 45,
-   "oneShotTurns": 34,
-   "oneShotRate": 75.6,
-   "retriesPerEdit": 0.3,
-   "costPerEdit": 1.8018616866666661
-  },
-  {
-   "name": "Opus 5",
-   "calls": 170,
-   "inputTokens": 340,
-   "outputTokens": 215019,
-   "cacheReadTokens": 50528310,
-   "cacheWriteTokens": 585303,
-   "cost": 36.49435999999997,
-   "savings": 0,
-   "estimatedCost": 0,
-   "savingsBaselineModel": "",
-   "editTurns": 8,
-   "oneShotTurns": 2,
-   "oneShotRate": 25,
-   "retriesPerEdit": 0.8,
-   "costPerEdit": 2.883115
-  },
-  {
-   "name": "Haiku 5.5",
-   "calls": 6,
-   "inputTokens": 12,
-   "outputTokens": 1372,
-   "cacheReadTokens": 24960,
-   "cacheWriteTokens": 9544,
-   "cost": 0.0028455999999999998,
-   "savings": 0,
-   "estimatedCost": 0,
-   "savingsBaselineModel": "",
-   "editTurns": 0,
-   "oneShotTurns": 0,
-   "oneShotRate": null,
-   "retriesPerEdit": null,
-   "costPerEdit": null
-  },
-  {
-   "name": "<synthetic>",
-   "calls": 67,
-   "inputTokens": 0,
-   "outputTokens": 0,
-   "cacheReadTokens": 0,
-   "cacheWriteTokens": 0,
-   "cost": 0,
-   "savings": 0,
-   "estimatedCost": 0,
-   "savingsBaselineModel": "",
-   "editTurns": 0,
-   "oneShotTurns": 0,
-   "oneShotRate": null,
-   "retriesPerEdit": null,
-   "costPerEdit": null
-  }
- ],
- "unpricedModels": [],
- "activities": [
-  {
-   "category": "Coding",
-   "rawCategory": "coding",
-   "cost": 163.71805639999994,
-   "savings": 0,
-   "turns": 243,
-   "editTurns": 142,
-   "oneShotTurns": 122,
-   "oneShotRate": 85.9
-  },
-  {
-   "category": "Exploration",
-   "rawCategory": "exploration",
-   "cost": 60.78011449999998,
-   "savings": 0,
-   "turns": 303,
-   "editTurns": 0,
-   "oneShotTurns": 0,
-   "oneShotRate": null
-  },
-  {
-   "category": "Feature Dev",
-   "rawCategory": "feature",
-   "cost": 35.5749395,
-   "savings": 0,
-   "turns": 69,
-   "editTurns": 23,
-   "oneShotTurns": 19,
-   "oneShotRate": 82.6
-  },
-  {
-   "category": "Debugging",
-   "rawCategory": "debugging",
-   "cost": 16.009260499999996,
-   "savings": 0,
-   "turns": 68,
-   "editTurns": 5,
-   "oneShotTurns": 5,
-   "oneShotRate": 100
-  },
-  {
-   "category": "Delegation",
-   "rawCategory": "delegation",
-   "cost": 14.372856800000001,
-   "savings": 0,
-   "turns": 48,
-   "editTurns": 6,
-   "oneShotTurns": 6,
-   "oneShotRate": 100
-  },
-  {
-   "category": "Conversation",
-   "rawCategory": "conversation",
-   "cost": 11.259461300000002,
-   "savings": 0,
-   "turns": 283,
-   "editTurns": 0,
-   "oneShotTurns": 0,
-   "oneShotRate": null
-  },
-  {
-   "category": "Testing",
-   "rawCategory": "testing",
-   "cost": 10.4006933,
-   "savings": 0,
-   "turns": 74,
-   "editTurns": 0,
-   "oneShotTurns": 0,
-   "oneShotRate": null
-  },
-  {
-   "category": "Build/Deploy",
-   "rawCategory": "build/deploy",
-   "cost": 1.2903212000000002,
-   "savings": 0,
-   "turns": 7,
-   "editTurns": 0,
-   "oneShotTurns": 0,
-   "oneShotRate": null
-  },
-  {
-   "category": "Brainstorming",
-   "rawCategory": "brainstorming",
-   "cost": 0.7415347000000002,
-   "savings": 0,
-   "turns": 8,
-   "editTurns": 0,
-   "oneShotTurns": 0,
-   "oneShotRate": null
-  },
-  {
-   "category": "General",
-   "rawCategory": "general",
-   "cost": 0.5844131000000001,
-   "savings": 0,
-   "turns": 7,
-   "editTurns": 0,
-   "oneShotTurns": 0,
-   "oneShotRate": null
-  },
-  {
-   "category": "Git Ops",
-   "rawCategory": "git",
-   "cost": 0.30102969999999996,
-   "savings": 0,
-   "turns": 2,
-   "editTurns": 0,
-   "oneShotTurns": 0,
-   "oneShotRate": null
-  },
-  {
-   "category": "Refactoring",
-   "rawCategory": "refactoring",
-   "cost": 0.18483280000000002,
-   "savings": 0,
-   "turns": 3,
-   "editTurns": 0,
-   "oneShotTurns": 0,
-   "oneShotRate": null
-  },
-  {
-   "category": "Planning",
-   "rawCategory": "planning",
-   "cost": 0.0913661,
-   "savings": 0,
-   "turns": 2,
-   "editTurns": 0,
-   "oneShotTurns": 0,
-   "oneShotRate": null
-  }
- ],
- "tools": [
-  {
-   "name": "Bash",
-   "calls": 3737
-  },
-  {
-   "name": "PowerShell",
-   "calls": 979
-  },
-  {
-   "name": "Read",
-   "calls": 758
-  },
-  {
-   "name": "Monitor",
-   "calls": 715
-  },
-  {
-   "name": "Write",
-   "calls": 340
-  },
-  {
-   "name": "Grep",
-   "calls": 239
-  },
-  {
-   "name": "Edit",
-   "calls": 217
-  },
-  {
-   "name": "SubagentHandback",
-   "calls": 182
-  },
-  {
-   "name": "WebFetch",
-   "calls": 129
-  },
-  {
-   "name": "ToolSearch",
-   "calls": 84
-  },
-  {
-   "name": "WebSearch",
-   "calls": 66
-  },
-  {
-   "name": "Agent",
-   "calls": 57
-  },
-  {
-   "name": "TaskStop",
-   "calls": 54
-  },
-  {
-   "name": "AskUserQuestion",
-   "calls": 32
-  },
-  {
-   "name": "Glob",
-   "calls": 23
-  },
-  {
-   "name": "Artifact",
-   "calls": 18
-  },
-  {
-   "name": "SendMessage",
-   "calls": 17
-  },
-  {
-   "name": "Skill",
-   "calls": 13
-  },
-  {
-   "name": "ExitPlanMode",
-   "calls": 11
-  },
-  {
-   "name": "DesignSync",
-   "calls": 11
-  },
-  {
-   "name": "SendUserFile",
-   "calls": 1
-  }
- ],
- "mcpServers": [
-  {
-   "name": "claude-in-chrome",
-   "calls": 67
-  },
-  {
-   "name": "claude_ai_Claude_Docs",
-   "calls": 10
-  }
- ],
- "shellCommands": [
-  {
-   "name": "grep",
-   "calls": 2104
-  },
-  {
-   "name": "head",
-   "calls": 2006
-  },
-  {
-   "name": "tail",
-   "calls": 1492
-  },
-  {
-   "name": "git",
-   "calls": 1299
-  },
-  {
-   "name": "cat",
-   "calls": 1136
-  }
- ],
- "skills": [
-  {
-   "name": "phase-plan",
-   "turns": 6,
-   "cost": 1.6580493,
-   "savings": 0
-  },
-  {
-   "name": "dataviz",
-   "turns": 2,
-   "cost": 1.0063111999999999,
-   "savings": 0
-  },
-  {
-   "name": "artifact-design",
-   "turns": 1,
-   "cost": 0.4575363000000001,
-   "savings": 0
-  },
-  {
-   "name": "claude-api",
-   "turns": 1,
-   "cost": 0.23417540000000003,
-   "savings": 0
-  },
-  {
-   "name": "phase-grill",
-   "turns": 1,
-   "cost": 0.1443182,
-   "savings": 0
-  },
-  {
-   "name": "gm",
-   "turns": 1,
-   "cost": 0.029040399999999997,
-   "savings": 0
-  },
-  {
-   "name": "design-sync",
-   "turns": 1,
-   "cost": 0.0202506,
-   "savings": 0
-  }
- ],
- "subagents": [
-  {
-   "name": "general-purpose",
-   "calls": 54,
-   "cost": 3.0215315,
-   "savings": 0
-  },
-  {
-   "name": "Explore",
-   "calls": 2,
-   "cost": 0.223106,
-   "savings": 0
-  },
-  {
-   "name": "fork",
-   "calls": 1,
-   "cost": 0.0363266,
-   "savings": 0
-  }
- ],
- "claudeAgentTypes": [
-  {
-   "name": "general-purpose",
-   "calls": 5775,
-   "cost": 136.94497289999993,
-   "savings": 0
-  },
-  {
-   "name": "Explore",
-   "calls": 75,
-   "cost": 4.1054548,
-   "savings": 0
-  },
-  {
-   "name": "fork",
-   "calls": 1,
-   "cost": 0.021821800000000002,
-   "savings": 0
-  }
- ],
- "topSessions": [
-  {
-   "project": "E--GitHub-Atlas",
-   "sessionId": "ffe704e0-5958-453b-9860-484a01d6e47d",
-   "provider": "claude",
-   "projectKey": "E--GitHub-Atlas",
-   "date": "2026-11-01",
-   "cost": 106.04113510000003,
-   "savings": 0,
-   "calls": 4968
-  },
-  {
-   "project": "E--Projects-fashion-app",
-   "sessionId": "0ed4a733-c810-4470-a0bd-d128efaae0be",
-   "provider": "claude",
-   "projectKey": "E--Projects-fashion-app",
-   "date": "2026-10-17",
-   "cost": 54.07237739999997,
-   "savings": 0,
-   "calls": 964
-  },
-  {
-   "project": "C--Users-jakeh-source-wholesomenfl-com",
-   "sessionId": "5dd443a2-dda3-45cf-ba6b-f85d01c418f7",
-   "provider": "claude",
-   "projectKey": "C--Users-jakeh-source-wholesomenfl-com",
-   "date": "2026-10-06",
-   "cost": 36.49435999999998,
-   "savings": 0,
-   "calls": 170
-  },
-  {
-   "project": "E--GitHub-wholesomenfl-com",
-   "sessionId": "7ad2dd05-f856-4f77-80ce-6b0af44a85cf",
-   "provider": "claude",
-   "projectKey": "E--GitHub-wholesomenfl-com",
-   "date": "2026-10-06",
-   "cost": 16.118912199999997,
-   "savings": 0,
-   "calls": 349
-  },
-  {
-   "project": "E--Projects-fashion-app",
-   "sessionId": "70cd088f-e868-4f31-a3c2-ca485e3eee90",
-   "provider": "claude",
-   "projectKey": "E--Projects-fashion-app",
-   "date": "2026-10-18",
-   "cost": 10.921094699999998,
-   "savings": 0,
-   "calls": 384
-  }
- ]
+  ],
+  "projects": [
+    {
+      "name": "fashion-app",
+      "path": "e:/projects/fashion-app",
+      "cost": 68.49346299999998,
+      "savings": 0,
+      "calls": 1076,
+      "sessions": 112,
+      "sessionCountBasis": "partial"
+    },
+    {
+      "name": "atlas",
+      "path": "e:/github/atlas",
+      "cost": 42.8909037,
+      "savings": 0,
+      "calls": 1043,
+      "sessions": 22,
+      "sessionCountBasis": "partial",
+      "checkouts": [
+        {
+          "path": "e:/github/atlas",
+          "cost": 41.439788
+        },
+        {
+          "path": "e:/github/atlas/.claude/worktrees/agent-a4721cdd9df848171",
+          "cost": 1.0459707999999999
+        },
+        {
+          "path": "e:/github/atlas/.claude/worktrees/agent-a520662e993256ef0",
+          "cost": 0.4051449
+        }
+      ],
+      "checkoutCount": 3
+    },
+    {
+      "name": "jakeh",
+      "path": "c:/users/jakeh",
+      "cost": 31.08038530000001,
+      "savings": 0,
+      "calls": 559,
+      "sessions": 25,
+      "sessionCountBasis": "partial"
+    },
+    {
+      "name": "source/wholesomenfl.com",
+      "path": "c:/users/jakeh/source/wholesomenfl.com",
+      "cost": 19.9708295,
+      "savings": 0,
+      "calls": 79,
+      "sessions": 1,
+      "sessionCountBasis": "partial"
+    },
+    {
+      "name": "wholesomenfl.com",
+      "path": "e:/github/wholesomenfl.com",
+      "cost": 15.4675972,
+      "savings": 0,
+      "calls": 256,
+      "sessions": 7,
+      "sessionCountBasis": "partial",
+      "checkouts": [
+        {
+          "path": "e:/github/wholesomenfl.com",
+          "cost": 13.136621000000002
+        },
+        {
+          "path": "e:/github/wholesomenfl.com/.claude/worktrees/agent-a6a6e10e88a16259e",
+          "cost": 2.3309761999999994
+        }
+      ],
+      "checkoutCount": 2
+    }
+  ],
+  "models": [
+    {
+      "name": "Sonnet 5.5",
+      "calls": 6351,
+      "inputTokens": 13988,
+      "outputTokens": 3219871,
+      "cacheReadTokens": 654451180,
+      "cacheWriteTokens": 20764645,
+      "cost": 158.61078550000002,
+      "savings": 0,
+      "estimatedCost": 0,
+      "savingsBaselineModel": "",
+      "editTurns": 123,
+      "oneShotTurns": 116,
+      "oneShotRate": 94.3,
+      "retriesPerEdit": 0.1,
+      "costPerEdit": 0.6246297869918701
+    },
+    {
+      "name": "Opus 5.5",
+      "calls": 2046,
+      "inputTokens": 4189,
+      "outputTokens": 1287008,
+      "cacheReadTokens": 208901149,
+      "cacheWriteTokens": 7784703,
+      "cost": 120.20088879999982,
+      "savings": 0,
+      "estimatedCost": 0,
+      "savingsBaselineModel": "",
+      "editTurns": 45,
+      "oneShotTurns": 34,
+      "oneShotRate": 75.6,
+      "retriesPerEdit": 0.3,
+      "costPerEdit": 1.8018616866666661
+    },
+    {
+      "name": "Opus 5",
+      "calls": 170,
+      "inputTokens": 340,
+      "outputTokens": 215019,
+      "cacheReadTokens": 50528310,
+      "cacheWriteTokens": 585303,
+      "cost": 36.49435999999997,
+      "savings": 0,
+      "estimatedCost": 0,
+      "savingsBaselineModel": "",
+      "editTurns": 8,
+      "oneShotTurns": 2,
+      "oneShotRate": 25,
+      "retriesPerEdit": 0.8,
+      "costPerEdit": 2.883115
+    },
+    {
+      "name": "Haiku 5.5",
+      "calls": 6,
+      "inputTokens": 12,
+      "outputTokens": 1372,
+      "cacheReadTokens": 24960,
+      "cacheWriteTokens": 9544,
+      "cost": 0.0028455999999999998,
+      "savings": 0,
+      "estimatedCost": 0,
+      "savingsBaselineModel": "",
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null,
+      "retriesPerEdit": null,
+      "costPerEdit": null
+    },
+    {
+      "name": "<synthetic>",
+      "calls": 67,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 0,
+      "cost": 0,
+      "savings": 0,
+      "estimatedCost": 0,
+      "savingsBaselineModel": "",
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null,
+      "retriesPerEdit": null,
+      "costPerEdit": null
+    }
+  ],
+  "unpricedModels": [],
+  "activities": [
+    {
+      "category": "Coding",
+      "rawCategory": "coding",
+      "cost": 163.71805639999994,
+      "savings": 0,
+      "turns": 243,
+      "editTurns": 142,
+      "oneShotTurns": 122,
+      "oneShotRate": 85.9
+    },
+    {
+      "category": "Exploration",
+      "rawCategory": "exploration",
+      "cost": 60.78011449999998,
+      "savings": 0,
+      "turns": 303,
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null
+    },
+    {
+      "category": "Feature Dev",
+      "rawCategory": "feature",
+      "cost": 35.5749395,
+      "savings": 0,
+      "turns": 69,
+      "editTurns": 23,
+      "oneShotTurns": 19,
+      "oneShotRate": 82.6
+    },
+    {
+      "category": "Debugging",
+      "rawCategory": "debugging",
+      "cost": 16.009260499999996,
+      "savings": 0,
+      "turns": 68,
+      "editTurns": 5,
+      "oneShotTurns": 5,
+      "oneShotRate": 100
+    },
+    {
+      "category": "Delegation",
+      "rawCategory": "delegation",
+      "cost": 14.372856800000001,
+      "savings": 0,
+      "turns": 48,
+      "editTurns": 6,
+      "oneShotTurns": 6,
+      "oneShotRate": 100
+    },
+    {
+      "category": "Conversation",
+      "rawCategory": "conversation",
+      "cost": 11.259461300000002,
+      "savings": 0,
+      "turns": 283,
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null
+    },
+    {
+      "category": "Testing",
+      "rawCategory": "testing",
+      "cost": 10.4006933,
+      "savings": 0,
+      "turns": 74,
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null
+    },
+    {
+      "category": "Build/Deploy",
+      "rawCategory": "build/deploy",
+      "cost": 1.2903212000000002,
+      "savings": 0,
+      "turns": 7,
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null
+    },
+    {
+      "category": "Brainstorming",
+      "rawCategory": "brainstorming",
+      "cost": 0.7415347000000002,
+      "savings": 0,
+      "turns": 8,
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null
+    },
+    {
+      "category": "General",
+      "rawCategory": "general",
+      "cost": 0.5844131000000001,
+      "savings": 0,
+      "turns": 7,
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null
+    },
+    {
+      "category": "Git Ops",
+      "rawCategory": "git",
+      "cost": 0.30102969999999996,
+      "savings": 0,
+      "turns": 2,
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null
+    },
+    {
+      "category": "Refactoring",
+      "rawCategory": "refactoring",
+      "cost": 0.18483280000000002,
+      "savings": 0,
+      "turns": 3,
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null
+    },
+    {
+      "category": "Planning",
+      "rawCategory": "planning",
+      "cost": 0.0913661,
+      "savings": 0,
+      "turns": 2,
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null
+    }
+  ],
+  "tools": [
+    {
+      "name": "Bash",
+      "calls": 3737
+    },
+    {
+      "name": "PowerShell",
+      "calls": 979
+    },
+    {
+      "name": "Read",
+      "calls": 758
+    },
+    {
+      "name": "Monitor",
+      "calls": 715
+    },
+    {
+      "name": "Write",
+      "calls": 340
+    },
+    {
+      "name": "Grep",
+      "calls": 239
+    },
+    {
+      "name": "Edit",
+      "calls": 217
+    },
+    {
+      "name": "SubagentHandback",
+      "calls": 182
+    },
+    {
+      "name": "WebFetch",
+      "calls": 129
+    },
+    {
+      "name": "ToolSearch",
+      "calls": 84
+    },
+    {
+      "name": "WebSearch",
+      "calls": 66
+    },
+    {
+      "name": "Agent",
+      "calls": 57
+    },
+    {
+      "name": "TaskStop",
+      "calls": 54
+    },
+    {
+      "name": "AskUserQuestion",
+      "calls": 32
+    },
+    {
+      "name": "Glob",
+      "calls": 23
+    },
+    {
+      "name": "Artifact",
+      "calls": 18
+    },
+    {
+      "name": "SendMessage",
+      "calls": 17
+    },
+    {
+      "name": "Skill",
+      "calls": 13
+    },
+    {
+      "name": "ExitPlanMode",
+      "calls": 11
+    },
+    {
+      "name": "DesignSync",
+      "calls": 11
+    },
+    {
+      "name": "SendUserFile",
+      "calls": 1
+    }
+  ],
+  "mcpServers": [
+    {
+      "name": "claude-in-chrome",
+      "calls": 67
+    },
+    {
+      "name": "claude_ai_Claude_Docs",
+      "calls": 10
+    }
+  ],
+  "shellCommands": [
+    {
+      "name": "grep",
+      "calls": 2104
+    },
+    {
+      "name": "head",
+      "calls": 2006
+    },
+    {
+      "name": "tail",
+      "calls": 1492
+    },
+    {
+      "name": "git",
+      "calls": 1299
+    },
+    {
+      "name": "cat",
+      "calls": 1136
+    }
+  ],
+  "skills": [
+    {
+      "name": "phase-plan",
+      "turns": 6,
+      "cost": 1.6580493,
+      "savings": 0
+    },
+    {
+      "name": "dataviz",
+      "turns": 2,
+      "cost": 1.0063111999999999,
+      "savings": 0
+    },
+    {
+      "name": "artifact-design",
+      "turns": 1,
+      "cost": 0.4575363000000001,
+      "savings": 0
+    },
+    {
+      "name": "claude-api",
+      "turns": 1,
+      "cost": 0.23417540000000003,
+      "savings": 0
+    },
+    {
+      "name": "phase-grill",
+      "turns": 1,
+      "cost": 0.1443182,
+      "savings": 0
+    },
+    {
+      "name": "gm",
+      "turns": 1,
+      "cost": 0.029040399999999997,
+      "savings": 0
+    },
+    {
+      "name": "design-sync",
+      "turns": 1,
+      "cost": 0.0202506,
+      "savings": 0
+    }
+  ],
+  "subagents": [
+    {
+      "name": "general-purpose",
+      "calls": 54,
+      "cost": 3.0215315,
+      "savings": 0
+    },
+    {
+      "name": "Explore",
+      "calls": 2,
+      "cost": 0.223106,
+      "savings": 0
+    },
+    {
+      "name": "fork",
+      "calls": 1,
+      "cost": 0.0363266,
+      "savings": 0
+    }
+  ],
+  "claudeAgentTypes": [
+    {
+      "name": "general-purpose",
+      "calls": 5775,
+      "cost": 136.94497289999993,
+      "savings": 0
+    },
+    {
+      "name": "Explore",
+      "calls": 75,
+      "cost": 4.1054548,
+      "savings": 0
+    },
+    {
+      "name": "fork",
+      "calls": 1,
+      "cost": 0.021821800000000002,
+      "savings": 0
+    }
+  ],
+  "topSessions": [
+    {
+      "project": "E--GitHub-Atlas",
+      "sessionId": "ffe704e0-5958-453b-9860-484a01d6e47d",
+      "provider": "claude",
+      "projectKey": "E--GitHub-Atlas",
+      "date": "2026-11-01",
+      "cost": 106.04113510000003,
+      "savings": 0,
+      "calls": 4968
+    },
+    {
+      "project": "E--Projects-fashion-app",
+      "sessionId": "0ed4a733-c810-4470-a0bd-d128efaae0be",
+      "provider": "claude",
+      "projectKey": "E--Projects-fashion-app",
+      "date": "2026-10-17",
+      "cost": 54.07237739999997,
+      "savings": 0,
+      "calls": 964
+    },
+    {
+      "project": "C--Users-jakeh-source-wholesomenfl-com",
+      "sessionId": "5dd443a2-dda3-45cf-ba6b-f85d01c418f7",
+      "provider": "claude",
+      "projectKey": "C--Users-jakeh-source-wholesomenfl-com",
+      "date": "2026-10-06",
+      "cost": 36.49435999999998,
+      "savings": 0,
+      "calls": 170
+    },
+    {
+      "project": "E--GitHub-wholesomenfl-com",
+      "sessionId": "7ad2dd05-f856-4f77-80ce-6b0af44a85cf",
+      "provider": "claude",
+      "projectKey": "E--GitHub-wholesomenfl-com",
+      "date": "2026-10-06",
+      "cost": 16.118912199999997,
+      "savings": 0,
+      "calls": 349
+    },
+    {
+      "project": "E--Projects-fashion-app",
+      "sessionId": "70cd088f-e868-4f31-a3c2-ca485e3eee90",
+      "provider": "claude",
+      "projectKey": "E--Projects-fashion-app",
+      "date": "2026-10-18",
+      "cost": 10.921094699999998,
+      "savings": 0,
+      "calls": 384
+    }
+  ]
 }

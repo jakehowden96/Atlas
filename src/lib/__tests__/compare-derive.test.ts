@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ModelCompareRow } from "../../types/codeburn-compare";
-import { cohortRows, modelStats, shortKey, verdict, win } from "../components/stats/codeburn/compare-derive";
+import {
+  cohortRows,
+  modelStats,
+  shortKey,
+  verdict,
+  win,
+} from "../components/stats/codeburn/compare-derive";
 
 const row = (o: Partial<ModelCompareRow>): ModelCompareRow => ({
   model: "m",
@@ -63,7 +69,12 @@ describe("cohortRows", () => {
       oneShot,
     });
     const rows = cohortRows([o("x", true), o("x", false)], [o("y", true)], "category");
-    expect(rows[0]).toMatchObject({ key: "x", minN: 0, a: { n: 2, rate: 50, cost: 2 }, b: { n: 0, rate: null } });
+    expect(rows[0]).toMatchObject({
+      key: "x",
+      minN: 0,
+      a: { n: 2, rate: 50, cost: 2 },
+      b: { n: 0, rate: null },
+    });
     expect(rows[1]?.a.rate).toBeNull();
   });
 });

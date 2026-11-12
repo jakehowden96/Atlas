@@ -1,5 +1,4 @@
 ﻿<script lang="ts">
-  import AtlasMark from "../ui/AtlasMark.svelte";
   import Button from "../ui/Button.svelte";
   import IconButton from "../ui/IconButton.svelte";
   import Kbd from "../ui/Kbd.svelte";
@@ -93,10 +92,6 @@
 {/snippet}
 
 <header class="topbar" class:mac data-tauri-drag-region bind:clientWidth={width}>
-  <span class="brand">
-    <AtlasMark size={20} />
-    <span class="wordmark">Atlas</span>
-  </span>
   <!-- Session is a detail view Sessions opens in place, not a tab of its own,
        so Sessions stays lit while it is showing. -->
   <SegmentedControl
@@ -187,18 +182,6 @@
 
   .topbar.mac {
     padding-left: 76px;
-  }
-
-  .brand {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--sp-2);
-    margin-right: var(--sp-3);
-  }
-
-  .wordmark {
-    font-size: var(--fs-sm);
-    font-weight: 600;
   }
 
   .spacer {

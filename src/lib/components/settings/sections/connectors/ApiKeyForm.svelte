@@ -5,7 +5,7 @@
   import InlineAlert from "../../../ui/InlineAlert.svelte";
   import Input from "../../../ui/Input.svelte";
 
-  let { connector }: { connector: ConnectorInfo } = $props();
+  let { connector, onLinked }: { connector: ConnectorInfo; onLinked?: () => void } = $props();
 
   let key = $state("");
   let busy = $state(false);
@@ -18,6 +18,7 @@
     try {
       await linkApiKey(connector.id, key);
       key = "";
+      onLinked?.();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -31,7 +32,7 @@
     type="password"
     mono
     bind:value={key}
-    placeholder="Or paste a personal API key"
+    placeholder="Paste a personal API key"
     aria-label={`${connector.name} API key`}
     autocomplete="off"
     invalid={!!error}

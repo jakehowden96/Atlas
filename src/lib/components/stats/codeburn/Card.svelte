@@ -3,54 +3,61 @@
 
   interface Props {
     title: string;
+    /** Right-aligned muted text, or a snippet (pill, chips) for richer content. */
     note?: string | Snippet;
+    /** The design's `.card.flush`: header rule and an inset body with no card padding. */
+    flush?: boolean;
     children: Snippet;
   }
 
-  let { title, note, children }: Props = $props();
+  let { title, note, flush = false, children }: Props = $props();
 </script>
 
-<section class="card">
-  <header>
-    <h3>{title}</h3>
+<section class="card" class:flush>
+  <h3 class="label">
+    <span>{title}</span>
     {#if typeof note === "string"}
-      <span>{note}</span>
+      <small>{note}</small>
     {:else if note}
-      <span>{@render note()}</span>
+      <small>{@render note()}</small>
     {/if}
-  </header>
+  </h3>
   <div class="body">{@render children()}</div>
 </section>
 
 <style>
   .card {
     min-width: 0;
+    padding: var(--sp-5);
     border: 1px solid var(--border);
     border-radius: var(--r-card);
     background: var(--surface);
-    overflow: hidden;
   }
-  header {
+  .label {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: var(--sp-3);
-    padding: var(--sp-3) var(--sp-5);
-    border-bottom: 1px solid var(--border);
-    background: color-mix(in srgb, var(--surface) 90%, black);
-  }
-  h3 {
-    margin: 0;
+    margin: 0 0 var(--sp-3);
     color: var(--text);
     font-size: var(--fs-sm);
     font-weight: var(--fw-semi);
   }
-  header span {
+  .label small {
     color: var(--muted);
     font-size: var(--fs-2xs);
-    text-align: right;
+    font-weight: var(--fw-body);
   }
-  .body {
+  .flush {
+    padding: 0;
+    overflow: hidden;
+  }
+  .flush .label {
+    margin: 0;
+    padding: var(--sp-4) var(--sp-5);
+    border-bottom: 1px solid var(--border);
+  }
+  .flush .body {
     padding: var(--sp-4) var(--sp-5);
   }
 </style>

@@ -13,42 +13,25 @@ const PR_FIELDS: &str =
 comments{totalCount} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} \
 author{login} headRefName isCrossRepository reviewDecision \
 reviewThreads(first:100){nodes{isResolved}} \
-commits(last:1){nodes{commit{statusCheckRollup{state contexts(first:100){pageInfo{hasNextPage} \
+commits(last:1){nodes{commit{statusCheckRollup{state contexts(first:100){\
 nodes{__typename ... on CheckRun{name status conclusion detailsUrl} \
 ... on StatusContext{context state targetUrl}}}}}}}}";
 
 pub const VIEWER_QUERY: &str = "{ viewer { login name } }";
 
-/// One request for several repos, aliased `r0`, `r1`, ... `pr_args` is the
-/// `pullRequests(...)` argument list; `extra_var` declares any extra variable.
-fn repos_query(count: usize, extra_var: &str, pr_args: &str) -> String {
+/// Open pull requests of `count` repos in one request, aliased `r0`, `r1`, ...
+pub fn open_prs_query(count: usize) -> String {
     let decls: String = (0..count)
         .map(|i| format!("$o{i}:String!,$n{i}:String!,"))
         .collect();
     let body: String = (0..count)
         .map(|i| {
             format!(
-                "r{i}:repository(owner:$o{i},name:$n{i}){{pullRequests({pr_args}){{nodes{{...PrFields}}}}}} "
+                "r{i}:repository(owner:$o{i},name:$n{i}){{pullRequests(states:OPEN,first:30,orderBy:{{field:UPDATED_AT,direction:DESC}}){{nodes{{...PrFields}}}}}} "
             )
         })
         .collect();
-    format!("query({decls}{extra_var}){{ {body} rateLimit{{remaining resetAt}} }} {PR_FIELDS}")
-}
-
-pub fn open_prs_query(count: usize) -> String {
-    repos_query(
-        count,
-        "",
-        "states:OPEN,first:30,orderBy:{field:UPDATED_AT,direction:DESC}",
-    )
-}
-
-pub fn branch_pr_query() -> String {
-    repos_query(
-        1,
-        "$h:String!",
-        "headRefName:$h,states:[OPEN,MERGED],first:1,orderBy:{field:CREATED_AT,direction:DESC}",
-    )
+    format!("query({decls}){{ {body} rateLimit{{remaining resetAt}} }} {PR_FIELDS}")
 }
 
 pub fn repo_variables(repos: &[(&str, &str)]) -> serde_json::Map<String, Value> {
@@ -175,14 +158,7 @@ pub struct Rollup {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Contexts {
-    pub page_info: PageInfo,
     pub nodes: Vec<Context>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PageInfo {
-    pub has_next_page: bool,
 }
 
 /// A `CheckRun` (name, status, conclusion, detailsUrl) or a `StatusContext`

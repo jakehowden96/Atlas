@@ -8,6 +8,8 @@
   import ConnectorLogo from "../../ui/ConnectorLogo.svelte";
   import EmptyState from "../../ui/EmptyState.svelte";
   import Loader from "./Loader.svelte";
+  import { codeburn } from "../../../stores/codeburn";
+  import { cancelPrefetch, prefetch, whyArgs } from "./prefetch";
   import { type SortKey, sortSessions } from "./sessions-sort";
 
   let { filters, refresh }: { filters: Filters; refresh: number } = $props();
@@ -46,141 +48,231 @@
     return sortSessions(
       inTab(rows).filter(
         (r) =>
-          !q || `${r.title} ${r.project} ${r.sessionId} ${r.models.join(" ")}`.toLowerCase().includes(q),
+          !q ||
+          `${r.title} ${r.project} ${r.sessionId} ${r.models.join(" ")}`.toLowerCase().includes(q),
       ),
       key,
       true,
     );
   };
+  // Opening a session's detail spawns codeburn (~2.5s), so warm the top few.
+  $effect(() => {
+    const argv = [
+      "sessions",
+      "--format",
+      "json",
+      ...filterArgs(filters, "sessions"),
+      "--contributions",
+    ];
+    void key;
+    void provider;
+    let live = true;
+    codeburn<SessionRow[]>(argv)
+      .then((rows) => {
+        if (live)
+          return prefetch(
+            "why",
+            visible(rows)
+              .slice(0, 5)
+              .map((r) => whyArgs(r.sessionId)),
+          );
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+      cancelPrefetch("why");
+    };
+  });
+
   const day = (iso: string) =>
-    new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 </script>
 
-<Loader args={["sessions", "--format", "json", ...filterArgs(filters, "sessions"), "--contributions"]} {refresh}>
+<Loader
+  args={["sessions", "--format", "json", ...filterArgs(filters, "sessions"), "--contributions"]}
+  {refresh}
+>
   {#snippet children(rows: SessionRow[])}
     {#if rows.length === 0}
       <EmptyState icon="folder" title="No sessions in this period" />
     {:else}
       {@const list = visible(rows)}
       <div class="wrap">
-        <div class="tabs" role="radiogroup" aria-label="Provider">
+        <div class="seg" role="radiogroup" aria-label="Provider">
           {#each ["all", ...providers(rows)] as id (id)}
             <button
               type="button"
               role="radio"
               aria-checked={provider === id}
-              class:on={provider === id}
               onclick={() => (provider = id)}
             >
               {#if id !== "all"}<ConnectorLogo connector={id} size={16} />{/if}
               <span class="cap">{id === "all" ? "All" : id}</span>
-              <span class="n">{id === "all" ? rows.length : rows.filter((r) => r.provider === id).length}</span>
+              <span class="se-n"
+                >{id === "all" ? rows.length : rows.filter((r) => r.provider === id).length}</span
+              >
             </button>
           {/each}
         </div>
         <div class="bar">
           <input
+            class="search"
             type="search"
             placeholder="Search project, model, or id…"
             aria-label="Search sessions"
             bind:value={query}
           />
-          <div class="sorts" role="group" aria-label="Sort">
+          <div class="se-sort" role="group" aria-label="Sort">
             {#each SORTS as s (s.key)}
-              <button type="button" aria-pressed={key === s.key} onclick={() => (key = s.key)}>{s.label}</button>
+              <button type="button" aria-pressed={key === s.key} onclick={() => (key = s.key)}
+                >{s.label}</button
+              >
             {/each}
           </div>
-          <button type="button" class="pill" aria-pressed={group} onclick={() => (group = !group)}>
+          <button
+            type="button"
+            class="btn"
+            class:primary={group}
+            aria-pressed={group}
+            onclick={() => (group = !group)}
+          >
             Group by provider
           </button>
         </div>
-        <p class="sub">
-          {plural(list.length, "session")}{rows.some((r) => r.helperCount !== undefined)
-            ? ` + ${plural(sum(list, (r) => r.helperCount ?? 0), "subagent")}`
-            : ""}
-          · {fmtCost(sum(list, (r) => r.cost))} · {fmtTokens(sum(list, (r) => r.outputTokens))} tokens
-        </p>
-        {#if list.length === 0}
+        <div class="list">
           <p class="sub">
-            No sessions match{query ? ` “${query}”` : ""}.
-            {#if query}<button type="button" class="link" onclick={() => (query = "")}>Clear search</button>{/if}
+            {plural(list.length, "session")}{rows.some((r) => r.helperCount !== undefined)
+              ? ` + ${plural(
+                  sum(list, (r) => r.helperCount ?? 0),
+                  "subagent",
+                )}`
+              : ""}
+            · {fmtCost(sum(list, (r) => r.cost))} · {fmtTokens(sum(list, (r) => r.outputTokens))} tokens
           </p>
-        {:else}
-          <div class="list">
+          {#if list.length === 0}
+            <p class="empty">
+              No sessions match{query ? ` “${query}”` : ""}.
+              {#if query}<button type="button" class="link" onclick={() => (query = "")}
+                  >Clear search</button
+                >{/if}
+            </p>
+          {:else}
+            <div class="cols">
+              <span></span><span>Session</span>
+              <button
+                type="button"
+                aria-pressed={key === "startedAt"}
+                onclick={() => (key = "startedAt")}>Date</button
+              >
+              <span>Model</span>
+              <button
+                type="button"
+                class="r"
+                aria-pressed={key === "turns"}
+                onclick={() => (key = "turns")}>Turns</button
+              >
+              <button
+                type="button"
+                class="r"
+                aria-pressed={key === "cost"}
+                onclick={() => (key = "cost")}>Cost</button
+              >
+              <button
+                type="button"
+                class="r"
+                aria-pressed={key === "outputTokens"}
+                onclick={() => (key = "outputTokens")}>Tokens</button
+              >
+            </div>
             {#each group ? providers(list) : [null] as g (g ?? "")}
               {@const rs = g ? list.filter((r) => r.provider === g) : list}
-              {#if g}
-                <div class="ghead">
-                  <span class="gname"><ConnectorLogo connector={g} size={16} />{g}</span>
-                  <span>{plural(rs.length, "session").toUpperCase()}</span>
-                  <span>{fmtCost(sum(rs, (r) => r.cost))}</span>
-                </div>
-              {/if}
-              {#each rs as r (r.sessionId)}
-                <div class="sess">
-                  <button
-                    type="button"
-                    class="row"
-                    aria-expanded={open === r.sessionId}
-                    onclick={() => (open = open === r.sessionId ? null : r.sessionId)}
-                  >
-                    <span class="chev" class:open={open === r.sessionId} aria-hidden="true">›</span>
-                    <span class="t">
-                      <b>{r.title || r.sessionId.slice(0, 8)}</b>
-                      <span class="id">
-                        {r.sessionId}{r.helperCount ? ` · ${plural(r.helperCount, "subagent")}` : ""}
+              <section class="card">
+                {#if g}
+                  <div class="ghead">
+                    <span class="gname"><ConnectorLogo connector={g} size={16} />{g}</span>
+                    <span>{plural(rs.length, "session")} · {fmtCost(sum(rs, (r) => r.cost))}</span>
+                  </div>
+                {/if}
+                {#each rs as r (r.sessionId)}
+                  <div class="sess">
+                    <button
+                      type="button"
+                      class="row"
+                      aria-expanded={open === r.sessionId}
+                      onclick={() => (open = open === r.sessionId ? null : r.sessionId)}
+                    >
+                      <span class="chev" class:open={open === r.sessionId} aria-hidden="true"
+                        >›</span
+                      >
+                      <span class="t">
+                        <b>{r.title || r.sessionId.slice(0, 8)}</b>
+                        <span class="id">
+                          {#if !group}<ConnectorLogo
+                              connector={r.provider}
+                              size={16}
+                            />{/if}{r.sessionId}{r.helperCount
+                            ? ` · ${plural(r.helperCount, "subagent")}`
+                            : ""}
+                        </span>
                       </span>
-                    </span>
-                    <span class="muted">{day(r.startedAt)}</span>
-                    <span>{r.models[0] ?? "—"}</span>
-                    <span class="num">{fmtCount(r.turns)}</span>
-                    <span class="num">{fmtCost(r.cost)}</span>
-                    <span class="num">{fmtTokens(r.outputTokens)}</span>
-                  </button>
-                  {#if open === r.sessionId}
-                    <div class="why">
-                      <Loader args={["sessions", "--id", r.sessionId, "--why", "--format", "json"]} {refresh}>
-                        {#snippet children(why: SessionWhy)}
-                          <p class="sub">
-                            Subagents ·
-                            {why.helperCount
-                              ? `${plural(why.helperCount, "run")}, ${fmtCost(why.helperCost ?? 0)} of ${fmtCost(why.cost)}`
-                              : "—"}
-                          </p>
-                          {#each why.findings ?? [] as f (f.id)}
-                            <div class="kv">
-                              <span>{f.kind}{f.turn ? ` (turn ${f.turn})` : ""}</span>
-                              <span>
-                                {fmtCost(f.usd)} · {Math.round(f.share * 100)}%{f.alt
-                                  ? ` · ${f.alt.model} would be ${fmtCost(f.alt.cost)}`
-                                  : ""}
-                              </span>
-                            </div>
-                          {/each}
-                          <p class="sub gap">Why it cost this: biggest turns</p>
-                          {#each [...why.turns].sort((a, b) => b.cost - a.cost).slice(0, 5) as t (t.i)}
-                            <div class="kv">
-                              <span>{t.prompt?.text.slice(0, 80) ?? "(no prompt)"}</span>
-                              <span>{fmtCost(t.cost)} · {plural(t.calls, "call")}</span>
-                            </div>
-                          {/each}
-                          <Button
-                            size="sm"
-                            onclick={() =>
-                              openNewSession({ workspacePath: why.project, resumeSessionId: why.sessionId })}
-                          >
-                            Resume session
-                          </Button>
-                        {/snippet}
-                      </Loader>
-                    </div>
-                  {/if}
-                </div>
-              {/each}
+                      <span class="hide muted">{day(r.startedAt)}</span>
+                      <span class="hide">{r.models[0] ?? "—"}</span>
+                      <span class="hide num">{fmtCount(r.turns)}</span>
+                      <span class="num">{fmtCost(r.cost)}</span>
+                      <span class="hide num">{fmtTokens(r.outputTokens)}</span>
+                    </button>
+                    {#if open === r.sessionId}
+                      <div class="why">
+                        <Loader args={whyArgs(r.sessionId)} {refresh}>
+                          {#snippet children(why: SessionWhy)}
+                            <p class="sub gapb">
+                              Subagents ·
+                              {why.helperCount
+                                ? `${plural(why.helperCount, "run")}, ${fmtCost(why.helperCost ?? 0)} of ${fmtCost(why.cost)}`
+                                : "—"}
+                            </p>
+                            {#each why.findings ?? [] as f (f.id)}
+                              <div class="kv">
+                                <span>{f.kind}{f.turn ? ` (turn ${f.turn})` : ""}</span>
+                                <span>
+                                  {f.usd == null ? "—" : fmtCost(f.usd)}{f.share == null
+                                    ? ""
+                                    : ` · ${Math.round(f.share * 100)}%`}{f.alt
+                                    ? ` · ${f.alt.model} would be ${fmtCost(f.alt.cost)}`
+                                    : ""}
+                                </span>
+                              </div>
+                            {/each}
+                            <p class="sub gap">Why it cost this: biggest turns</p>
+                            {#each [...why.turns]
+                              .sort((a, b) => b.cost - a.cost)
+                              .slice(0, 5) as t (t.i)}
+                              <div class="kv">
+                                <span>{t.prompt?.text.slice(0, 80) ?? "(no prompt)"}</span>
+                                <span>{fmtCost(t.cost)} · {plural(t.calls, "call")}</span>
+                              </div>
+                            {/each}
+                            <Button
+                              size="sm"
+                              onclick={() =>
+                                openNewSession({
+                                  workspacePath: why.project,
+                                  resumeSessionId: why.sessionId,
+                                })}
+                            >
+                              Resume session
+                            </Button>
+                          {/snippet}
+                        </Loader>
+                      </div>
+                    {/if}
+                  </div>
+                {/each}
+              </section>
             {/each}
-          </div>
-        {/if}
-        <p class="sub">Showing {list.length} of {inTab(rows).length} top-level sessions</p>
+          {/if}
+          <p class="sub">Showing {list.length} of {inTab(rows).length} top-level sessions</p>
+        </div>
       </div>
     {/if}
   {/snippet}
@@ -188,153 +280,268 @@
 
 <style>
   .wrap {
+    --g: 16px minmax(0, 1fr) 70px 110px 40px 72px 70px;
     display: flex;
     flex-direction: column;
-    gap: var(--sp-3);
+    gap: var(--sp-4);
     max-width: 1000px;
     margin: 0 auto;
   }
-  .tabs,
-  .bar,
-  .sorts {
+  .bar {
     display: flex;
     align-items: center;
-    gap: var(--sp-2);
-  }
-  .bar {
-    gap: var(--sp-3);
+    gap: var(--sp-4);
+    flex-wrap: wrap;
   }
   button {
-    all: unset;
-    box-sizing: border-box;
-    cursor: pointer;
+    font: inherit;
   }
-  .tabs button {
+  .seg {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    max-width: 100%;
+    overflow-x: auto;
+    align-self: flex-start;
+  }
+  .seg button {
     display: inline-flex;
     align-items: center;
     gap: var(--sp-1);
-    padding: var(--sp-1) var(--sp-2);
-    border-bottom: 2px solid transparent;
+    height: var(--h-sm);
+    padding: 0 var(--sp-4);
+    border: 1px solid transparent;
+    border-radius: var(--r-sm);
+    background: none;
     color: var(--muted);
     font-size: var(--fs-xs);
+    font-weight: var(--fw-medium);
+    white-space: nowrap;
+    cursor: pointer;
   }
-  .tabs button.on {
-    border-bottom-color: var(--accent);
+  .seg button:hover {
     color: var(--text);
-    font-weight: var(--fw-semi);
+  }
+  .seg button[aria-checked="true"] {
+    background: var(--surface);
+    border-color: var(--border2);
+    color: var(--text);
   }
   .cap {
     text-transform: capitalize;
   }
-  .n {
-    color: var(--muted);
+  .se-n {
+    margin-left: var(--sp-2);
+    font-family: var(--font-mono);
     font-size: var(--fs-2xs);
+    color: var(--muted);
   }
-  input {
-    min-width: 220px;
-    padding: var(--sp-1) var(--sp-2);
-    border: 1px solid var(--border);
-    border-radius: var(--r-card);
+  .search {
+    height: var(--h-md);
+    width: 240px;
+    max-width: 100%;
+    padding: 0 var(--sp-4);
+    border: 1px solid var(--border2);
+    border-radius: var(--r-md);
     background: var(--surface);
-    color: inherit;
+    color: var(--text);
     font: inherit;
     font-size: var(--fs-xs);
   }
-  .sorts button {
-    padding: var(--sp-1) var(--sp-2);
+  .search:focus-visible {
+    outline: 2px solid var(--text);
+    outline-offset: 2px;
+  }
+  .se-sort {
+    display: inline-flex;
+    gap: var(--sp-4);
+  }
+  .se-sort button {
+    height: var(--h-md);
+    padding: 0 var(--sp-1);
+    border: 0;
     border-bottom: 2px solid transparent;
+    background: none;
     color: var(--muted);
     font-size: var(--fs-xs);
+    font-weight: var(--fw-medium);
+    cursor: pointer;
   }
-  .sorts button[aria-pressed="true"] {
-    border-bottom-color: var(--accent);
+  .se-sort button:hover {
     color: var(--text);
   }
-  .pill {
-    padding: var(--sp-1) var(--sp-3);
-    border: 1px solid var(--border);
-    border-radius: var(--r-pill);
-    font-size: var(--fs-xs);
+  .se-sort button[aria-pressed="true"] {
+    color: var(--text);
+    border-bottom-color: var(--accent);
   }
-  .pill[aria-pressed="true"] {
-    border-color: var(--accent);
+  .btn {
+    height: var(--h-sm);
+    padding: 0 var(--sp-4);
+    border: 1px solid var(--border2);
+    border-radius: var(--r-pill);
+    background: var(--surface);
+    color: var(--text);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-medium);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn:hover {
+    background: var(--surface2);
+  }
+  .btn.primary {
+    background: var(--ink, var(--accent));
+    border-color: var(--ink, var(--accent));
+    color: var(--ink-text, var(--accent-ink));
   }
   .sub {
     margin: 0;
     color: var(--muted);
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
   }
   .gap {
     margin-top: var(--sp-3);
   }
+  .gapb {
+    margin-bottom: var(--sp-2);
+  }
+  .empty {
+    margin: 0;
+    padding: var(--sp-6) 0;
+    text-align: center;
+    color: var(--muted);
+    font-size: var(--fs-xs);
+  }
   .link {
+    border: 0;
+    background: none;
+    padding: 0;
     color: var(--accent);
+    font-weight: var(--fw-semi);
+    font-size: var(--fs-xs);
+    cursor: pointer;
+  }
+  .link:hover {
     text-decoration: underline;
   }
   .list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+  .cols {
+    display: grid;
+    grid-template-columns: var(--g);
+    align-items: center;
+    gap: var(--sp-3);
+    padding: 0 calc(var(--sp-4) + 1px);
+    font-size: var(--fs-2xs);
+    font-weight: var(--fw-semi);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .cols button {
+    all: unset;
+    cursor: pointer;
+  }
+  .cols button:hover,
+  .cols button[aria-pressed="true"] {
+    color: var(--text);
+  }
+  .cols button:focus-visible {
+    outline: 2px solid var(--text);
+    outline-offset: 2px;
+  }
+  .cols .r {
+    text-align: right;
+  }
+  .card {
+    min-width: 0;
+    overflow: hidden;
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--r-card);
-    background: var(--surface);
-    overflow: hidden;
   }
   .ghead {
     display: flex;
-    gap: var(--sp-4);
-    padding: var(--sp-2) var(--sp-4);
-    background: color-mix(in srgb, var(--surface) 90%, black);
-    color: var(--muted);
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--sp-3) var(--sp-4);
+    background: var(--surface2);
     font-size: var(--fs-2xs);
     font-weight: var(--fw-semi);
-    letter-spacing: 0.05em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .ghead span:last-child {
+    font-family: var(--font-mono);
   }
   .gname {
     display: inline-flex;
     align-items: center;
-    gap: var(--sp-1);
-    margin-right: auto;
-    text-transform: uppercase;
+    gap: var(--sp-2);
   }
-  .sess + .sess,
-  .ghead + .sess {
-    border-top: 1px solid var(--border);
+  .sess {
+    border-bottom: 1px solid var(--border);
+  }
+  .sess:last-child {
+    border-bottom: 0;
   }
   .row {
-    display: grid;
-    grid-template-columns: 16px minmax(0, 1fr) 64px 110px 40px 64px 64px;
-    gap: var(--sp-3);
-    align-items: center;
     width: 100%;
-    padding: var(--sp-2) var(--sp-4);
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: var(--g);
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+    border: 0;
+    background: none;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
     font-size: var(--fs-xs);
   }
   .row:hover {
-    background: var(--surface2, var(--surface));
+    background: var(--surface2);
   }
   .t {
-    display: flex;
-    flex-direction: column;
     min-width: 0;
   }
   .t b {
-    font-family: var(--font-mono);
+    display: block;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semi);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .id,
-  .muted {
+  .id {
     color: var(--muted);
     font-family: var(--font-mono);
     font-size: var(--fs-2xs);
   }
+  .id :global(svg),
+  .id :global(img) {
+    margin-right: var(--sp-2);
+    vertical-align: -2px;
+  }
+  .muted {
+    color: var(--muted);
+  }
   .num {
     font-family: var(--font-mono);
     text-align: right;
-    font-variant-numeric: tabular-nums;
   }
   .chev {
+    display: inline-block;
     color: var(--muted);
-    transition: transform 0.1s;
+    transition: transform 0.12s;
   }
   .chev.open {
     transform: rotate(90deg);
@@ -342,20 +549,34 @@
   .why {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-1);
-    align-items: flex-start;
-    padding: var(--sp-2) var(--sp-4) var(--sp-3) calc(var(--sp-4) + 16px + var(--sp-3));
-    font-size: var(--fs-xs);
+    padding: 0 var(--sp-5) var(--sp-4) 40px;
   }
   .kv {
     display: flex;
     justify-content: space-between;
     gap: var(--sp-4);
-    width: 100%;
+    padding: var(--sp-2) 0;
+    font-size: var(--fs-xs);
   }
-  .kv span:last-child {
+  .kv > :first-child {
     color: var(--muted);
+  }
+  .kv > :last-child {
     font-family: var(--font-mono);
+    font-weight: var(--fw-medium);
     white-space: nowrap;
+  }
+  .why :global(button) {
+    align-self: flex-start;
+    margin-top: var(--sp-3);
+  }
+  @media (max-width: 760px) {
+    .wrap {
+      --g: 16px minmax(0, 1fr) 72px;
+    }
+    .cols,
+    .hide {
+      display: none;
+    }
   }
 </style>

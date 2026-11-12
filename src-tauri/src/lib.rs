@@ -271,6 +271,7 @@ pub fn run() -> std::process::ExitCode {
             connectors::commands::connector_list,
             connectors::commands::connector_connect,
             connectors::commands::connector_link_api_key,
+            connectors::commands::connector_link_cli,
             connectors::commands::connector_cancel,
             connectors::commands::connector_disconnect,
             connectors::commands::connector_get_ticket,

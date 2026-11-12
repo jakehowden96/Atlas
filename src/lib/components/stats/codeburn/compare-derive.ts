@@ -55,7 +55,8 @@ export function verdict(a: ModelCompareRow, b: ModelCompareRow): string | null {
   const aCheap = ma.costPerEdit <= mb.costPerEdit;
   const cheap = aCheap ? a : b;
   const ratio = Math.max(ma.costPerEdit, mb.costPerEdit) / Math.min(ma.costPerEdit, mb.costPerEdit);
-  const cost = ratio === 1 ? "Same cost per edit" : `${cheap.model} is ${ratio.toFixed(1)}x cheaper per edit`;
+  const cost =
+    ratio === 1 ? "Same cost per edit" : `${cheap.model} is ${ratio.toFixed(1)}x cheaper per edit`;
   const gap = Math.round(Math.abs(ma.oneShot - mb.oneShot));
   if (!gap) return `${cost}.`;
   const best = ma.oneShot >= mb.oneShot ? a : b;
@@ -101,4 +102,13 @@ export function cohortRows(
 /** Last path segment, so worktree keys stay readable. */
 export function shortKey(key: string): string {
   return key.split(/[\\/]/).filter(Boolean).pop() ?? key;
+}
+
+/** Series colour for a model: its family token, mixed toward the surface for later models of one family. */
+export function modelColor(model: string, all: string[]): string {
+  const fam = ["sonnet", "opus", "haiku"].find((f) => model.toLowerCase().includes(f));
+  if (!fam) return "var(--muted)";
+  const n = all.filter((m) => m.toLowerCase().includes(fam)).indexOf(model);
+  const base = `var(--model-${fam})`;
+  return n <= 0 ? base : `color-mix(in srgb, ${base} ${n === 1 ? 60 : 38}%, var(--surface))`;
 }

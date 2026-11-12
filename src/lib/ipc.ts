@@ -165,6 +165,11 @@ export async function connectorLinkApiKey(id: string, key: string): Promise<void
   return call("connector_link_api_key", { id, key });
 }
 
+/** Link through the provider's CLI on this machine (e.g. `gh`). */
+export async function connectorLinkCli(id: string): Promise<void> {
+  return call("connector_link_cli", { id });
+}
+
 export async function connectorCancel(id: string): Promise<void> {
   return call("connector_cancel", { id });
 }

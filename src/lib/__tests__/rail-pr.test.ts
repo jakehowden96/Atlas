@@ -129,8 +129,16 @@ describe("prPollLine", () => {
 
 describe("PrTile polling", () => {
   const linked: ConnectorState = {
-    info: { id: "gh", name: "GitHub", kind: "pullRequests", flow: "browser", configured: true },
+    info: {
+      id: "gh",
+      name: "GitHub",
+      kind: "pullRequests",
+      flow: "browser",
+      methods: ["oauth"],
+      configured: true,
+    },
     status: { kind: "linked", account: "me" },
+    method: "oauth",
   };
   const full: Pr = {
     number: 482,

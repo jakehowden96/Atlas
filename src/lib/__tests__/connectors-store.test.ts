@@ -10,6 +10,7 @@ const ipc = vi.hoisted(() => ({
   connectorConnect: vi.fn(),
   connectorCancel: vi.fn(),
   connectorDisconnect: vi.fn(),
+  connectorLinkCli: vi.fn(),
   onConnectorStatus: vi.fn(async (cb: Handler) => {
     handlers.status = cb;
     return () => {};
@@ -33,6 +34,7 @@ import {
   connect,
   connectors,
   disconnect,
+  reconnect,
   needsReconnect,
   offlineSince,
   online,
@@ -50,9 +52,11 @@ const state = (
     name: id === "github" ? "GitHub" : "Linear",
     kind,
     flow: "browser",
+    methods: ["oauth"],
     configured: true,
   },
   status,
+  method: status.kind === "notLinked" ? null : "oauth",
 });
 const linear = state("linear", "tickets", { kind: "linked", account: "a" });
 const github = state("github", "pullRequests", { kind: "notLinked" });
@@ -141,6 +145,19 @@ describe("connectors store", () => {
     await cancel("linear");
     expect(get(signIn).kind).toBe("idle");
     expect(ipc.connectorCancel).toHaveBeenCalledWith("linear");
+  });
+
+  it("reconnects each connector the way it was linked", async () => {
+    ipc.connectorConnect.mockResolvedValue(undefined);
+    ipc.connectorLinkCli.mockResolvedValue(undefined);
+    const expired = { kind: "reconnectNeeded", reason: "x" } as const;
+    await reconnect({ ...github, status: expired, method: "cli" });
+    expect(ipc.connectorLinkCli).toHaveBeenCalledWith("github");
+    expect(ipc.connectorConnect).not.toHaveBeenCalled();
+    await reconnect({ ...github, status: expired, method: "apiKey" });
+    expect(ipc.connectorConnect).not.toHaveBeenCalled();
+    await reconnect({ ...github, status: expired, method: "oauth" });
+    expect(ipc.connectorConnect).toHaveBeenCalledWith("github");
   });
 
   it("disconnect refreshes the list", async () => {

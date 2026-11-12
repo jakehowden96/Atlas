@@ -593,8 +593,8 @@ export class TerminalSession {
   }
 
   /** A link clicked in the terminal goes through `open_url`, which only opens
-   *  https URLs, rather than the addon's default `window.open`. Anything it
-   *  refuses (`http://localhost:…`, say) is reported instead of silently doing
+   *  http(s) and mailto links, rather than the addon's default `window.open`.
+   *  Anything it refuses (`file:…`, say) is reported instead of silently doing
    *  nothing. */
   private openLink(uri: string) {
     openUrl(uri).catch((e) => {

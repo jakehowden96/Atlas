@@ -1,1 +1,75 @@
-{"period":{"label":"2026-10-06 to 2026-11-05","start":"2026-10-05T23:00:00.000Z","end":"2026-11-05T23:59:59.999Z"},"models":[{"id":"Sonnet 5.5","label":"Sonnet 5.5","cost":158.61078550000005},{"id":"Opus 5.5","label":"Opus 5.5","cost":120.20088879999987},{"id":"Opus 5","label":"Opus 5","cost":36.49435999999999},{"id":"Haiku 5.5","label":"Haiku 5.5","cost":0.0028455999999999998}],"projects":[{"id":"e:/projects/fashion-app","label":"fashion-app","cost":68.49346299999999},{"id":"e:/github/atlas","label":"atlas","cost":41.43978799999999},{"id":"c:/users/jakeh","label":"jakeh","cost":31.0803853},{"id":"c:/users/jakeh/source/wholesomenfl.com","label":"source/wholesomenfl.com","cost":19.9708295},{"id":"e:/github/wholesomenfl.com","label":"github/wholesomenfl.com","cost":13.136621000000002},{"id":"e:/projects/fashion-app/.claude/worktrees/agent-a4abd5557b2a98db9","label":"agent-a4abd5557b2a98db9","cost":6.099791799999997},{"id":"e:/projects/fashion-app/.claude/worktrees/agent-a50d5345e23e332e7","label":"agent-a50d5345e23e332e7","cost":5.5286551999999975},{"id":"c:/users/jakeh/appdata/local/temp/claude/c--users-jakeh/5dd443a2-dda3-45cf-ba6b-f85d01c418f7/scratchpad","label":"scratchpad","cost":5.476634},{"id":"__other__","label":"Other","cost":124.08271210000002}],"links":[{"model":"Sonnet 5.5","project":"e:/projects/fashion-app","cost":15.104971800000001},{"model":"Sonnet 5.5","project":"e:/github/atlas","cost":35.0058438},{"model":"Sonnet 5.5","project":"c:/users/jakeh","cost":18.494555799999993},{"model":"Sonnet 5.5","project":"__other__","cost":90.00541410000002},{"model":"Opus 5.5","project":"e:/projects/fashion-app","cost":53.38586219999999},{"model":"Opus 5.5","project":"e:/github/atlas","cost":6.433944199999999},{"model":"Opus 5.5","project":"c:/users/jakeh","cost":2.857691},{"model":"Opus 5.5","project":"e:/github/wholesomenfl.com","cost":13.136621000000002},{"model":"Opus 5.5","project":"e:/projects/fashion-app/.claude/worktrees/agent-a4abd5557b2a98db9","cost":6.099791799999997},{"model":"Opus 5.5","project":"e:/projects/fashion-app/.claude/worktrees/agent-a50d5345e23e332e7","cost":5.5286551999999975},{"model":"Opus 5.5","project":"__other__","cost":32.7583234},{"model":"Opus 5","project":"c:/users/jakeh","cost":9.728138500000002},{"model":"Opus 5","project":"c:/users/jakeh/source/wholesomenfl.com","cost":19.9708295},{"model":"Opus 5","project":"c:/users/jakeh/appdata/local/temp/claude/c--users-jakeh/5dd443a2-dda3-45cf-ba6b-f85d01c418f7/scratchpad","cost":5.476634},{"model":"Opus 5","project":"__other__","cost":1.3187579999999999},{"model":"Haiku 5.5","project":"e:/projects/fashion-app","cost":0.002629},{"model":"Haiku 5.5","project":"__other__","cost":0.0002166}]}
+{
+  "period": {
+    "label": "2026-10-06 to 2026-11-05",
+    "start": "2026-10-05T23:00:00.000Z",
+    "end": "2026-11-05T23:59:59.999Z"
+  },
+  "models": [
+    { "id": "Sonnet 5.5", "label": "Sonnet 5.5", "cost": 158.61078550000005 },
+    { "id": "Opus 5.5", "label": "Opus 5.5", "cost": 120.20088879999987 },
+    { "id": "Opus 5", "label": "Opus 5", "cost": 36.49435999999999 },
+    { "id": "Haiku 5.5", "label": "Haiku 5.5", "cost": 0.0028455999999999998 }
+  ],
+  "projects": [
+    { "id": "e:/projects/fashion-app", "label": "fashion-app", "cost": 68.49346299999999 },
+    { "id": "e:/github/atlas", "label": "atlas", "cost": 41.43978799999999 },
+    { "id": "c:/users/jakeh", "label": "jakeh", "cost": 31.0803853 },
+    {
+      "id": "c:/users/jakeh/source/wholesomenfl.com",
+      "label": "source/wholesomenfl.com",
+      "cost": 19.9708295
+    },
+    {
+      "id": "e:/github/wholesomenfl.com",
+      "label": "github/wholesomenfl.com",
+      "cost": 13.136621000000002
+    },
+    {
+      "id": "e:/projects/fashion-app/.claude/worktrees/agent-a4abd5557b2a98db9",
+      "label": "agent-a4abd5557b2a98db9",
+      "cost": 6.099791799999997
+    },
+    {
+      "id": "e:/projects/fashion-app/.claude/worktrees/agent-a50d5345e23e332e7",
+      "label": "agent-a50d5345e23e332e7",
+      "cost": 5.5286551999999975
+    },
+    {
+      "id": "c:/users/jakeh/appdata/local/temp/claude/c--users-jakeh/5dd443a2-dda3-45cf-ba6b-f85d01c418f7/scratchpad",
+      "label": "scratchpad",
+      "cost": 5.476634
+    },
+    { "id": "__other__", "label": "Other", "cost": 124.08271210000002 }
+  ],
+  "links": [
+    { "model": "Sonnet 5.5", "project": "e:/projects/fashion-app", "cost": 15.104971800000001 },
+    { "model": "Sonnet 5.5", "project": "e:/github/atlas", "cost": 35.0058438 },
+    { "model": "Sonnet 5.5", "project": "c:/users/jakeh", "cost": 18.494555799999993 },
+    { "model": "Sonnet 5.5", "project": "__other__", "cost": 90.00541410000002 },
+    { "model": "Opus 5.5", "project": "e:/projects/fashion-app", "cost": 53.38586219999999 },
+    { "model": "Opus 5.5", "project": "e:/github/atlas", "cost": 6.433944199999999 },
+    { "model": "Opus 5.5", "project": "c:/users/jakeh", "cost": 2.857691 },
+    { "model": "Opus 5.5", "project": "e:/github/wholesomenfl.com", "cost": 13.136621000000002 },
+    {
+      "model": "Opus 5.5",
+      "project": "e:/projects/fashion-app/.claude/worktrees/agent-a4abd5557b2a98db9",
+      "cost": 6.099791799999997
+    },
+    {
+      "model": "Opus 5.5",
+      "project": "e:/projects/fashion-app/.claude/worktrees/agent-a50d5345e23e332e7",
+      "cost": 5.5286551999999975
+    },
+    { "model": "Opus 5.5", "project": "__other__", "cost": 32.7583234 },
+    { "model": "Opus 5", "project": "c:/users/jakeh", "cost": 9.728138500000002 },
+    { "model": "Opus 5", "project": "c:/users/jakeh/source/wholesomenfl.com", "cost": 19.9708295 },
+    {
+      "model": "Opus 5",
+      "project": "c:/users/jakeh/appdata/local/temp/claude/c--users-jakeh/5dd443a2-dda3-45cf-ba6b-f85d01c418f7/scratchpad",
+      "cost": 5.476634
+    },
+    { "model": "Opus 5", "project": "__other__", "cost": 1.3187579999999999 },
+    { "model": "Haiku 5.5", "project": "e:/projects/fashion-app", "cost": 0.002629 },
+    { "model": "Haiku 5.5", "project": "__other__", "cost": 0.0002166 }
+  ]
+}

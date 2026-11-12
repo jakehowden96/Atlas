@@ -1,5 +1,12 @@
 export type SectionId =
-  "general" | "keyboard" | "workspaces" | "connectors" | "harnesses" | "claude" | "about";
+  | "general"
+  | "keyboard"
+  | "workspaces"
+  | "connectors"
+  | "pullRequests"
+  | "harnesses"
+  | "claude"
+  | "about";
 
 export interface SettingEntry {
   section: SectionId;
@@ -60,12 +67,24 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   },
   {
     section: "connectors",
+    title: "Sign-in method",
+    description: "Sign each connector in with its app, its CLI or an API key",
+    keywords: ["github", "gh", "cli", "linear", "api key", "token", "oauth"],
+  },
+  {
+    section: "pullRequests",
+    title: "Watched repositories",
+    description: "Repositories whose open pull requests Atlas lists",
+    keywords: ["github", "repos", "watch", "owner/name"],
+  },
+  {
+    section: "pullRequests",
     title: "Auto-add repos from workspaces",
     description: "Watch every workspace's GitHub remote",
     keywords: ["github", "pull requests", "remote"],
   },
   {
-    section: "connectors",
+    section: "pullRequests",
     title: "Refresh interval",
     description: "How often pull requests are re-polled",
     keywords: ["poll", "minutes", "github"],

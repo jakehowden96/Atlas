@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayPairs, movers, presetRanges } from "./compare-periods-derive";
+import { dayPairs, movers, presetRanges, sortMovers } from "./compare-periods-derive";
 
 const row = (key: string, costA: number, costB: number, callsA = 10, callsB = 10) => ({
   key,
@@ -42,5 +42,11 @@ describe("compare-periods-derive", () => {
       { i: 0, a: 1, b: 0 },
       { i: 1, a: 0, b: 2 },
     ]);
+  });
+  it("sorts movers by column, a missing % counting as 0", () => {
+    const m = movers([row("b", 10, 11), row("a", 0, 5), row("c", 10, 2)], "raw", 7, 7);
+    expect(sortMovers(m, "key", 1).map((r) => r.key)).toEqual(["a", "b", "c"]);
+    expect(sortMovers(m, "pct", -1).map((r) => r.key)).toEqual(["b", "a", "c"]);
+    expect(sortMovers(m, "ad", -1).map((r) => r.key)).toEqual(["c", "a", "b"]);
   });
 });

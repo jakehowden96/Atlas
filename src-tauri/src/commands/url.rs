@@ -29,13 +29,20 @@ pub(crate) fn browser_launcher(url: &str) -> Command {
     cmd
 }
 
-/// The scheme check is the guard against launching arbitrary handlers: only
-/// `https://` URLs may be opened.
+/// The scheme check is the guard against launching arbitrary OS handlers
+/// (`file:`, `ms-msdt:`, `search-ms:` ...) from a clicked link.
 fn check_open_url(url: &str) -> Result<(), AtlasError> {
-    if !url.starts_with("https://") {
-        return Err(AtlasError::invalid_input("Only https:// URLs are allowed"));
+    let lower = url.to_ascii_lowercase();
+    if ["https://", "http://", "mailto:"]
+        .iter()
+        .any(|s| lower.starts_with(s))
+    {
+        Ok(())
+    } else {
+        Err(AtlasError::invalid_input(
+            "Only http, https and mailto links can be opened",
+        ))
     }
-    Ok(())
 }
 
 /// Open an external URL in the user's default browser.
@@ -65,14 +72,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn open_url_accepts_https_with_a_query_string() {
+    fn open_url_accepts_web_and_mail_links() {
         assert!(check_open_url("https://example.com/?a=1&b=2").is_ok());
+        assert!(check_open_url("http://localhost:5173").is_ok());
+        assert!(check_open_url("mailto:someone@example.com").is_ok());
     }
 
     #[test]
-    fn open_url_rejects_non_https_schemes() {
+    fn open_url_rejects_other_schemes() {
         assert!(check_open_url("file:///etc/passwd").is_err());
-        assert!(check_open_url("http://example.com").is_err());
+        assert!(check_open_url("ms-msdt:/id PCWDiagnostic").is_err());
+        assert!(check_open_url("search-ms:query=x").is_err());
         assert!(check_open_url("calculator").is_err());
     }
 }

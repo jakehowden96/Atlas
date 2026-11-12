@@ -144,7 +144,12 @@
         {#if vertical && t.group && t.group !== visible[i - 1]?.group}
           <div class="heading" role="presentation">{t.group}</div>
         {/if}
-        <div class="item" class:sel={t.id === value} class:divider={t.divider && !vertical} data-tab={t.id}>
+        <div
+          class="item"
+          class:sel={t.id === value}
+          class:divider={t.divider && !vertical}
+          data-tab={t.id}
+        >
           <button
             type="button"
             role="tab"
@@ -266,10 +271,23 @@
   .item:focus-within .dot {
     display: none;
   }
+  /* Styled like ShortcutSheet's group titles so a group reads as a label,
+     not as one more item. */
   .heading {
-    padding: var(--sp-4) var(--sp-3) var(--sp-1);
-    color: var(--muted);
-    font-size: var(--fs-sm);
+    margin-top: var(--sp-4);
+    padding: var(--sp-4) var(--sp-3) var(--sp-2);
+    border-top: 1px solid var(--border);
+    color: var(--text);
+    font-size: var(--fs-2xs);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  /* A rule above every group but the first separates the groups. */
+  .heading:first-child {
+    margin-top: 0;
+    padding-top: var(--sp-1);
+    border-top: 0;
   }
   .vertical .list {
     flex-direction: column;

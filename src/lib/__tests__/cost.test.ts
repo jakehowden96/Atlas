@@ -41,13 +41,27 @@ describe("filterArgs", () => {
   const range = { period: { from: "2026-10-01", to: "2026-10-31" } };
 
   it("emits every supported flag", () => {
-    expect(filterArgs(f, "report")).toEqual(["--period", "week", "--project", "app", "--provider", "claude"]);
+    expect(filterArgs(f, "report")).toEqual([
+      "--period",
+      "week",
+      "--project",
+      "app",
+      "--provider",
+      "claude",
+    ]);
     expect(filterArgs(range, "sessions")).toEqual(["--from", "2026-10-01", "--to", "2026-10-31"]);
   });
 
   it("respects per-command support", () => {
     expect(filterArgs(range, "yield")).toEqual([]);
-    expect(filterArgs(f, "yield")).toEqual(["--period", "week", "--project", "app", "--provider", "claude"]);
+    expect(filterArgs(f, "yield")).toEqual([
+      "--period",
+      "week",
+      "--project",
+      "app",
+      "--provider",
+      "claude",
+    ]);
     expect(filterArgs(f, "compare-periods")).toEqual(["--project", "app", "--provider", "claude"]);
     expect(filterArgs(f, "plan")).toEqual(["--provider", "claude"]);
     expect(filterArgs(f, "quota")).toEqual([]);

@@ -16,8 +16,6 @@
     tabindex: 0 | -1;
     /** Unsaved-changes dot. */
     unsaved?: boolean;
-    onclick?: () => void;
-    ontwisty?: () => void;
   }
 
   let {
@@ -30,8 +28,6 @@
     selected = false,
     tabindex,
     unsaved = false,
-    onclick,
-    ontwisty,
   }: Props = $props();
 
   // shortcut: folder_open is not in the subset icon font, so open folders keep `folder`; add the glyph to icon-names.txt to upgrade.
@@ -56,17 +52,13 @@
   aria-selected={selected}
   {tabindex}
   style:padding-left="calc({level - 1} * 20px + var(--sp-2))"
-  {onclick}
 >
   <span
     class="twisty"
     class:open={expanded}
     class:hidden={!expandable}
     aria-hidden="true"
-    onclick={(e) => {
-      e.stopPropagation();
-      ontwisty?.();
-    }}><Icon name="chevron_right" /></span
+    data-twisty><Icon name="chevron_right" /></span
   >
   <Icon name={icon} />
   <span class="label">{label}</span>

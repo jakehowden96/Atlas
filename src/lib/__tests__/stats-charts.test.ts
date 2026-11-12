@@ -3,7 +3,6 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import BarChart from "../components/stats/charts/BarChart.svelte";
 import ChartCard from "../components/stats/charts/ChartCard.svelte";
-import Heatmap from "../components/stats/charts/Heatmap.svelte";
 import type { Point } from "../stats-chart";
 
 const pts: Point[] = [
@@ -33,16 +32,6 @@ describe("stats charts", () => {
   it("draws the empty message inside the plot", () => {
     render(BarChart, { points: [], unit: "usd", label: "Spend", emptyText: "No sessions" });
     expect(screen.getByText("No sessions")).toBeTruthy();
-  });
-
-  it("heatmap cells carry their value in aria-label", () => {
-    render(Heatmap, {
-      cells: [{ key: "x", label: "Tue 14 Oct", value: 6 }],
-      noun: "session",
-      label: "Sessions",
-      emptyText: "None",
-    });
-    expect(screen.getByLabelText("Tue 14 Oct, 6 sessions")).toBeTruthy();
   });
 
   it("table mode shows the same data", async () => {

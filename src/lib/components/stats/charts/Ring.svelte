@@ -1,39 +1,57 @@
 <script lang="ts">
+  import { tooltip } from "../../../ui/tooltip";
+
   interface Props {
     /** 0..100 */
     value: number;
+    /** Letter shown in the pill under the ring. */
+    grade?: string;
     /** Names the ring for screen readers, e.g. "Efficiency score". */
     label: string;
-    size?: number;
+    /** Extra line in the hover tooltip. */
+    hint?: string;
   }
 
-  let { value, label, size = 84 }: Props = $props();
+  let { value, grade, label, hint }: Props = $props();
 
-  const STROKE = 7;
-  const r = $derived((size - STROKE) / 2);
-  const c = $derived(2 * Math.PI * r);
+  const R = 36;
+  const C = 2 * Math.PI * R;
   const pct = $derived(Math.max(0, Math.min(100, value)));
 </script>
 
-<div class="ring" style:width={`${size}px`} style:height={`${size}px`}>
-  <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${label}: ${Math.round(pct)} of 100`}>
-    <circle class="track" cx={size / 2} cy={size / 2} {r} />
-    <circle
-      class="arc"
-      cx={size / 2}
-      cy={size / 2}
-      {r}
-      stroke-dasharray={`${(pct / 100) * c} ${c}`}
-      transform={`rotate(-90 ${size / 2} ${size / 2})`}
-    />
+<div
+  class="ring"
+  use:tooltip={{
+    text: `${label}: ${Math.round(pct)} of 100${hint ? ` · ${hint}` : ""}`,
+    delay: 0,
+    side: "top",
+  }}
+>
+  <svg
+    width="84"
+    height="84"
+    viewBox="0 0 84 84"
+    role="img"
+    aria-label={`${label}: ${Math.round(pct)} of 100`}
+  >
+    <circle class="track" cx="42" cy="42" r={R} />
+    <circle class="arc" cx="42" cy="42" r={R} stroke-dasharray={`${(C * pct) / 100} ${C}`} />
   </svg>
-  <span class="num"><b>{Math.round(pct)}</b><i>/100</i></span>
+  <div class="n">{Math.round(pct)}<small>/100</small></div>
+  {#if grade}<span class="g">{grade}</span>{/if}
 </div>
 
 <style>
   .ring {
     position: relative;
     flex-shrink: 0;
+    width: 84px;
+    margin-bottom: var(--sp-3);
+    cursor: default;
+  }
+  svg {
+    display: block;
+    transform: rotate(-90deg);
   }
   circle {
     fill: none;
@@ -46,23 +64,38 @@
     stroke: var(--accent);
     stroke-linecap: round;
   }
-  .num {
+  .n {
     position: absolute;
     inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    display: grid;
+    place-content: center;
+    text-align: center;
     font-family: var(--font-mono);
-    line-height: 1.1;
-  }
-  b {
     font-size: var(--fs-xl);
-    font-weight: var(--fw-semi);
+    font-weight: var(--fw-bold);
+    line-height: 1;
   }
-  i {
+  .n small {
     color: var(--muted);
     font-size: var(--fs-2xs);
-    font-style: normal;
+    font-weight: var(--fw-body);
+  }
+  .g {
+    position: absolute;
+    left: 50%;
+    bottom: -11px;
+    transform: translateX(-50%);
+    display: inline-flex;
+    align-items: center;
+    height: var(--h-xs);
+    padding: 0 var(--sp-3);
+    border: 2px solid var(--surface);
+    border-radius: var(--r-pill);
+    background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: var(--fs-2xs);
+    font-weight: var(--fw-medium);
+    box-sizing: border-box;
   }
 </style>

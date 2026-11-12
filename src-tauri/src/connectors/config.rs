@@ -9,14 +9,15 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
+use super::provider::AuthMethod;
 use crate::error::AtlasError;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ConnectorEntry {
     pub account: String,
-    /// Per-connector settings, e.g. watched repos.
-    pub settings: serde_json::Map<String, serde_json::Value>,
+    /// `None` in files written before methods existed; see `Connectors::method`.
+    pub method: Option<AuthMethod>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -22,6 +22,7 @@
     prRefreshMinutes,
     setWatchedRepos,
     openSettings,
+    validateRepo,
     watchedRepos,
   } from "../../stores/settings";
   import { visibleWorkspaces } from "../../stores/workspace";
@@ -107,9 +108,6 @@
     ].filter((slug) => !$watchedRepos.includes(slug)),
   );
 
-  const validateRepo = (v: string) =>
-    /^[\w.-]+\/[\w.-]+$/.test(v) ? null : "Use the form owner/name";
-
   /**
    * The workspace a repo card belongs to, for its colour dot and name. The
    * session itself starts in the repo's own directory, not here — see
@@ -145,13 +143,15 @@
         aria-label="Search pull requests"
       />
     </div>
-    <Select
-      size="sm"
-      aria-label="Sort pull requests"
-      options={SORT_OPTIONS}
-      value={sort}
-      onChange={(id) => (sort = id as PrSort)}
-    />
+    <div class="sort">
+      <Select
+        size="sm"
+        aria-label="Sort pull requests"
+        options={SORT_OPTIONS}
+        value={sort}
+        onChange={(id) => (sort = id as PrSort)}
+      />
+    </div>
     <div class="spacer"></div>
     <span class="meta" use:tooltip={{ text: `Refreshes every ${$prRefreshMinutes} minutes` }}>
       {$prsLoading ? "Updating" : updatedLabel($prsLastUpdated, now)}
@@ -160,7 +160,7 @@
       {#snippet leading()}<Icon name="refresh" size={16} />{/snippet}
       Refresh
     </Button>
-    <Button size="sm" onclick={() => openSettings("connectors")}>Watched repos</Button>
+    <Button size="sm" onclick={() => openSettings("pullRequests")}>Watched repos</Button>
   </div>
 
   <div class="cards">
@@ -296,6 +296,10 @@
 
   .search {
     width: 240px;
+  }
+
+  .sort {
+    width: 170px;
   }
 
   .spacer {

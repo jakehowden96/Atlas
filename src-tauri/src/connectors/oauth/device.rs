@@ -130,15 +130,21 @@ async fn run_with(
     })?;
     let client = reqwest::Client::new();
     let scope = cfg.scopes.join(" ");
-    let code: CodeResponse = serde_json::from_value(
-        post_form(
-            &client,
-            url,
-            &[("client_id", &cfg.client_id), ("scope", &scope)],
-        )
-        .await?,
+    let res = post_form(
+        &client,
+        url,
+        &[("client_id", &cfg.client_id), ("scope", &scope)],
     )
-    .map_err(|e| unexpected("device code", e))?;
+    .await?;
+    // A refused request (flow disabled, rate limited) is an OAuth error body, not a code.
+    if let Some(error) = res.get("error").and_then(Value::as_str) {
+        let detail = res.get("error_description").and_then(Value::as_str);
+        return Ok(DeviceOutcome::Failed {
+            message: detail.unwrap_or(error).to_string(),
+        });
+    }
+    let code: CodeResponse =
+        serde_json::from_value(res).map_err(|e| unexpected("device code", e))?;
 
     let mut interval = Duration::from_secs(code.interval.unwrap_or(DEFAULT_INTERVAL));
     let deadline = Instant::now() + Duration::from_secs(code.expires_in);
@@ -249,6 +255,35 @@ mod tests {
             ["connector://device-code", "connector://progress"]
         );
         out
+    }
+
+    #[tokio::test]
+    async fn refused_code_request_reports_the_provider_message() {
+        let s = MockServer::start().await;
+        Mock::given(path("/code"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+                "error": "device_flow_disabled",
+                "error_description": "Device Flow must be explicitly enabled for this App"
+            })))
+            .mount(&s)
+            .await;
+        let cfg = AuthConfig {
+            client_id: "cid".into(),
+            scopes: vec![],
+            auth_url: String::new(),
+            token_url: String::new(),
+            redirect_ports: vec![],
+            device_auth_url: Some(format!("{}/code", s.uri())),
+        };
+        let out = run_with(&cfg, &|_, _| {}, &Notify::new(), Duration::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(
+            out,
+            DeviceOutcome::Failed {
+                message: "Device Flow must be explicitly enabled for this App".into()
+            }
+        );
     }
 
     #[tokio::test]

@@ -3,8 +3,7 @@ import type { RepoPrs } from "./stores/prs";
 
 /** Why the Pull requests screen cannot show data, as the connector sees it. */
 export type PrSetupProblem =
-  | { kind: "noConnector" | "reconnect" | "offline" | "error" }
-  | { kind: "rateLimited"; retryAt: number };
+  { kind: "noConnector" | "reconnect" | "offline" } | { kind: "rateLimited"; retryAt: number };
 
 /** What the screen tells the user about a connector problem. */
 export interface PrSetupHint {
@@ -26,7 +25,6 @@ export function setupProblem(
   const prs = connectors.filter((c) => c.info.kind === "pullRequests");
   if (connectors.length > 0) {
     if (prs.some((c) => c.status.kind === "reconnectNeeded")) return { kind: "reconnect" };
-    if (prs.some((c) => c.status.kind === "error")) return { kind: "error" };
     if (!prs.some((c) => c.status.kind === "linked")) return { kind: "noConnector" };
   }
   for (const { error } of repos ?? []) {
@@ -66,12 +64,6 @@ export function setupHint(problem: PrSetupProblem): PrSetupHint {
         title: "Rate limit reached",
         detail: "The service is limiting requests. Pull requests refresh once the limit resets.",
         action: null,
-      };
-    case "error":
-      return {
-        title: "The pull request service has a problem",
-        detail: "Check the connector in Settings, then refresh.",
-        action: "retry",
       };
   }
 }

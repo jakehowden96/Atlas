@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { get } from "svelte/store";
 
 vi.mock("../ipc", () => ({
   connectorList: vi.fn(async () => []),
+  connectorLinkCli: vi.fn(async () => {}),
+  connectorLinkApiKey: vi.fn(async () => {}),
   connectorConnect: vi.fn(() => new Promise(() => {})),
   connectorCancel: vi.fn(async () => {}),
   connectorDisconnect: vi.fn(async () => {}),
@@ -16,10 +17,10 @@ vi.mock("../ipc", () => ({
 }));
 vi.mock("../logger", () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
-import { connectorConnect, connectorDisconnect } from "../ipc";
+import { connectorConnect, connectorDisconnect, connectorLinkCli } from "../ipc";
 import Connectors from "../components/settings/sections/Connectors.svelte";
-import { connectors, signIn } from "../stores/connectors";
-import { watchedRepos } from "../stores/settings";
+import { connect, connectors, signIn } from "../stores/connectors";
+import type { AuthMethod } from "../../types/generated/AuthMethod";
 import type { ConnectorState } from "../../types/generated/ConnectorState";
 
 const mk = (
@@ -28,12 +29,17 @@ const mk = (
   flow: "browser" | "deviceCode",
   status: ConnectorState["status"] = { kind: "notLinked" },
   configured = true,
-): ConnectorState => ({ info: { id, name: `Name ${id}`, kind, flow, configured }, status });
+  methods: AuthMethod[] = ["oauth"],
+  method: AuthMethod | null = status.kind === "notLinked" ? null : "oauth",
+): ConnectorState => ({
+  info: { id, name: `Name ${id}`, kind, flow, methods, configured },
+  status,
+  method,
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
   signIn.set({ kind: "idle" });
-  watchedRepos.set([]);
 });
 afterEach(() => {
   cleanup();
@@ -46,19 +52,70 @@ describe("connector rows", () => {
       mk("a", "tickets", "browser"),
       mk("b", "tickets", "browser", { kind: "linked", account: "me" }),
       mk("c", "tickets", "browser", { kind: "reconnectNeeded", reason: "expired" }),
-      mk("d", "tickets", "browser", { kind: "error", message: "boom" }),
       mk("e", "tickets", "browser", { kind: "notLinked" }, false),
     ]);
     render(Connectors);
     expect(screen.getByText("Linked as me")).toBeTruthy();
     expect(screen.getByText("Reconnect needed")).toBeTruthy();
-    expect(screen.getByText("Error: boom")).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "Disconnect" })).toHaveLength(3);
+    expect(screen.getByText("expired")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Disconnect" })).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Reconnect" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     expect(screen.getByText("Not configured in this build")).toBeTruthy();
     const connect = screen.getAllByRole("button", { name: "Connect" }) as HTMLButtonElement[];
     expect(connect.map((b) => b.disabled)).toEqual([false, true]);
+  });
+});
+
+describe("sign-in methods", () => {
+  const both: AuthMethod[] = ["oauth", "cli"];
+
+  it("offers a picker only when there is a choice", () => {
+    connectors.set([mk("a", "tickets", "browser")]);
+    render(Connectors);
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+  });
+
+  it("links through the CLI as soon as it is picked, and names it once linked", async () => {
+    connectors.set([mk("g", "pullRequests", "deviceCode", undefined, true, both)]);
+    render(Connectors);
+    await fireEvent.click(screen.getByRole("radio", { name: "Name g CLI" }));
+    expect(connectorLinkCli).toHaveBeenCalledWith("g");
+    expect(connectorConnect).not.toHaveBeenCalled();
+
+    cleanup();
+    connectors.set([
+      mk("g", "pullRequests", "deviceCode", { kind: "linked", account: "me" }, true, both, "cli"),
+    ]);
+    render(Connectors);
+    expect(screen.getByText("Linked as me · Name g CLI")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Use|Reconnect/ })).toBeNull();
+  });
+
+  it("starts the app sign-in when it is picked over a CLI link", async () => {
+    connectors.set([
+      mk("g", "pullRequests", "deviceCode", { kind: "linked", account: "me" }, true, both, "cli"),
+    ]);
+    render(Connectors);
+    await fireEvent.click(screen.getByRole("radio", { name: "Sign in with Name g" }));
+    expect(connectorConnect).toHaveBeenCalledWith("g");
+  });
+
+  it("shows the CLI's reason when it cannot link", async () => {
+    vi.mocked(connectorLinkCli).mockRejectedValueOnce(new Error("Run gh auth login"));
+    connectors.set([mk("g", "pullRequests", "deviceCode", undefined, true, both)]);
+    render(Connectors);
+    await fireEvent.click(screen.getByRole("radio", { name: "Name g CLI" }));
+    expect(await screen.findByText("Run gh auth login")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+
+  it("asks for a key only when API key is picked", async () => {
+    connectors.set([mk("l", "tickets", "browser", undefined, true, ["oauth", "apiKey"])]);
+    render(Connectors);
+    expect(screen.queryByLabelText("Name l API key")).toBeNull();
+    await fireEvent.click(screen.getByRole("radio", { name: "API key" }));
+    expect(screen.getByLabelText("Name l API key")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
   });
 });
 
@@ -68,6 +125,13 @@ describe("sign-in dialogs", () => {
     render(Connectors);
     await fireEvent.click(screen.getByRole("button", { name: "Connect" }));
     expect(connectorConnect).toHaveBeenCalledWith("a");
+    expect(await screen.findByText("Finish in your browser")).toBeTruthy();
+  });
+
+  it("shows the dialog for a sign-in started elsewhere (a status chip's reconnect)", async () => {
+    connectors.set([mk("a", "tickets", "browser")]);
+    render(Connectors);
+    void connect("a");
     expect(await screen.findByText("Finish in your browser")).toBeTruthy();
   });
 
@@ -112,7 +176,7 @@ describe("sign-in dialogs", () => {
 
 describe("disconnect", () => {
   it("asks before disconnecting", async () => {
-    connectors.set([mk("a", "tickets", "browser", { kind: "linked", account: "me" })]);
+    connectors.set([mk("a", "pullRequests", "browser", { kind: "linked", account: "me" })]);
     render(Connectors);
     await fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
     expect(await screen.findByText(/watched repositories are kept/i)).toBeTruthy();
@@ -120,21 +184,5 @@ describe("disconnect", () => {
     const all = screen.getAllByRole("button", { name: "Disconnect" });
     await fireEvent.click(all[all.length - 1] as HTMLElement);
     await vi.waitFor(() => expect(connectorDisconnect).toHaveBeenCalledWith("a"));
-  });
-});
-
-describe("watched repositories", () => {
-  it("accepts owner/name and rejects anything else", async () => {
-    connectors.set([mk("p", "pullRequests", "browser", { kind: "linked", account: "me" })]);
-    render(Connectors);
-    const input = screen.getByLabelText("Watched repositories", {
-      selector: "input",
-    }) as HTMLInputElement;
-    await fireEvent.input(input, { target: { value: "nope" } });
-    await fireEvent.keyDown(input, { key: "Enter" });
-    expect(get(watchedRepos)).toEqual([]);
-    await fireEvent.input(input, { target: { value: "acme/web" } });
-    await fireEvent.keyDown(input, { key: "Enter" });
-    await vi.waitFor(() => expect(get(watchedRepos)).toEqual(["acme/web"]));
   });
 });

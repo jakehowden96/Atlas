@@ -11,11 +11,14 @@ const SERVICE: &str = "atlas";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredToken {
+    /// The refresh token, or the access token / key itself when the method
+    /// has nothing to refresh.
     pub refresh_token: String,
     pub account: String,
-    /// A key the user pasted: used as-is, never refreshed.
-    #[serde(default)]
-    pub api_key: bool,
+    /// Read only, to recover the method of links made before
+    /// `ConnectorEntry::method` existed.
+    #[serde(default, rename = "api_key", skip_serializing)]
+    pub legacy_api_key: bool,
 }
 
 pub trait TokenStore: Send + Sync {

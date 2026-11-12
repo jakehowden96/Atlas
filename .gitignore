@@ -13,3 +13,4 @@ src-tauri/gen/
 coverage/
 .idea/
 *.log
+.design-sync/

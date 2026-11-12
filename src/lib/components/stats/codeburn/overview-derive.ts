@@ -1,6 +1,7 @@
 import type { Overview, Timeline } from "../../../../types/codeburn";
 import { localDayKey } from "../../../stats-derive";
 import type { Point } from "../../../stats-chart";
+import { modelColor } from "./compare-derive";
 
 export type Metric = "cost" | "tokens";
 
@@ -15,20 +16,6 @@ export interface TrendDay {
   label: string;
   total: number;
   parts: Record<string, number>;
-}
-
-const FAMILIES = ["opus", "sonnet", "haiku"] as const;
-
-/** Atlas's fixed model colours; a second model of one family is a paler mix. */
-function modelColors(labels: string[]): string[] {
-  const seen: Record<string, number> = {};
-  return labels.map((label) => {
-    const fam = FAMILIES.find((f) => label.toLowerCase().includes(f));
-    if (!fam) return "var(--muted)";
-    const n = (seen[fam] = (seen[fam] ?? -1) + 1);
-    const base = `var(--model-${fam})`;
-    return n === 0 ? base : `color-mix(in srgb, ${base} ${n === 1 ? 60 : 38}%, var(--surface))`;
-  });
 }
 
 const dayLabel = (d: Date, hourly: boolean) =>
@@ -49,8 +36,12 @@ export function trend(
   const used = timeline.modelSeries
     .filter((s) => (totals.get(s.id) ?? 0) > 0)
     .sort((a, b) => (totals.get(b.id) ?? 0) - (totals.get(a.id) ?? 0));
-  const colors = modelColors(used.map((s) => s.label));
-  const series = used.map((s, i) => ({ id: s.id, label: s.label, color: colors[i]! }));
+  const labels = used.map((s) => s.label);
+  const series = used.map((s) => ({
+    id: s.id,
+    label: s.label,
+    color: modelColor(s.label, labels),
+  }));
   const days = timeline.points.map((p) => ({
     key: p.timestamp,
     label: dayLabel(new Date(p.timestamp), hourly),
@@ -107,6 +98,28 @@ export function efficiencyRows(c: Overview["current"]): EffRow[] {
     { label: "Cache hit", pct: c.cacheHitPercent, good: "high" },
     { label: "Retry tax", pct: retry, good: "low" },
   ];
+}
+
+/** Efficiency ring, ported 1:1 from the CodeBurn desktop app's renderer (components BT and LT). */
+export function efficiencyScore(c: Overview["current"]): { score: number; grade: string } {
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
+  const oneShot = c.oneShotRate ?? 0.6;
+  const cache = clamp(c.cacheHitPercent / 100);
+  const retry = clamp(((c.retryTax?.totalUSD ?? 0) / Math.max(c.cost, 1e-9)) * 4);
+  const score = 100 * (0.45 * oneShot + 0.3 * cache + 0.25 * (1 - retry));
+  const grade =
+    score >= 93
+      ? "A+"
+      : score >= 85
+        ? "A"
+        : score >= 75
+          ? "B"
+          : score >= 65
+            ? "C"
+            : score >= 55
+              ? "D"
+              : "F";
+  return { score: Math.round(score), grade };
 }
 
 /** "4m 12s" for the median time to first edit. */

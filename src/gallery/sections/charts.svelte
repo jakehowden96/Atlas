@@ -1,9 +1,7 @@
 <script lang="ts">
   import BarChart from "../../lib/components/stats/charts/BarChart.svelte";
   import ChartCard from "../../lib/components/stats/charts/ChartCard.svelte";
-  import Heatmap from "../../lib/components/stats/charts/Heatmap.svelte";
   import HBarList from "../../lib/components/stats/charts/HBarList.svelte";
-  import Kpi from "../../lib/components/stats/charts/Kpi.svelte";
   import StackedBars from "../../lib/components/stats/charts/StackedBars.svelte";
   import type { Point } from "../../lib/stats-chart";
   import GallerySection from "../GallerySection.svelte";
@@ -25,20 +23,11 @@
     { key: "edit", label: "Edit", value: 130 },
     { key: "bash", label: "Bash", value: 90 },
   ];
-  const cells: Point[] = Array.from({ length: 28 }, (_, i) => ({
-    key: `d${i}`,
-    label: `${days[i % 7]} ${i + 1} Oct`,
-    value: (i * 7) % 9,
-  }));
   const none = "No sessions between 1 and 7 Oct";
 </script>
 
 <GallerySection title="Stats charts" states={["data", "empty range", "loading", "table"]}>
   <div class="col">
-    <div class="kpis">
-      <Kpi label="Spend" value="$45.40" delta={12} spark={[1, 3, 2, 5, 4]} />
-      <Kpi label="Sessions" value="31" delta={-40} />
-    </div>
     <ChartCard
       id="g-spend"
       title="Spend by day"
@@ -85,15 +74,6 @@
     >
       <HBarList points={tools} unit="count" label="Tool calls" emptyText="No tool calls" />
     </ChartCard>
-    <ChartCard
-      id="g-heat"
-      title="Sessions by day"
-      summary="Busiest on Tuesdays"
-      rows={cells}
-      unit="count"
-    >
-      <Heatmap {cells} noun="session" label="Sessions by day" emptyText="No sessions" />
-    </ChartCard>
   </div>
 </GallerySection>
 
@@ -102,9 +82,5 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-5);
-  }
-  .kpis {
-    display: flex;
-    gap: var(--sp-8);
   }
 </style>

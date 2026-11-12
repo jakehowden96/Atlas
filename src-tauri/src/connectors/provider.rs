@@ -22,6 +22,20 @@ pub enum AuthFlow {
     DeviceCode,
 }
 
+/// How a connector signs in. The user picks one per connector in Settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub enum AuthMethod {
+    /// Atlas's own OAuth app; `ConnectorInfo::flow` says which flow.
+    #[serde(rename = "oauth")]
+    OAuth,
+    /// The provider's CLI on this machine (e.g. `gh`), asked for a token per use.
+    Cli,
+    /// A key the user pasted, used as-is.
+    ApiKey,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +44,9 @@ pub struct ConnectorInfo {
     pub name: String,
     pub kind: ConnectorKind,
     pub flow: AuthFlow,
+    /// The methods this connector offers, the default first.
+    pub methods: Vec<AuthMethod>,
+    /// Whether the OAuth app has a client id in this build.
     pub configured: bool,
 }
 
@@ -40,7 +57,6 @@ pub enum ConnectorStatus {
     NotLinked,
     Linked { account: String },
     ReconnectNeeded { reason: String },
-    Error { message: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -49,6 +65,8 @@ pub enum ConnectorStatus {
 pub struct ConnectorState {
     pub info: ConnectorInfo,
     pub status: ConnectorStatus,
+    /// The method the connector was linked with; `None` when not linked.
+    pub method: Option<AuthMethod>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -167,6 +185,13 @@ pub trait ConnectorProvider: Send + Sync {
     fn info(&self) -> ConnectorInfo;
     fn auth_config(&self) -> AuthConfig;
     async fn viewer(&self, token: &str) -> Result<Viewer, AtlasError>;
+    /// A token from the provider's CLI, for `AuthMethod::Cli`.
+    async fn cli_token(&self) -> Result<String, AtlasError> {
+        Err(AtlasError::invalid_input(format!(
+            "{} has no CLI sign-in",
+            self.info().name
+        )))
+    }
     fn tickets(&self) -> Option<&dyn TicketProvider> {
         None
     }
@@ -187,11 +212,4 @@ pub trait PullRequestProvider: Send + Sync {
         token: &str,
         repos: &[RepoRef],
     ) -> Result<Vec<PullRequest>, AtlasError>;
-    /// The git ref to fetch to check out pull request `number` of `repo`.
-    async fn checkout_ref(
-        &self,
-        token: &str,
-        repo: &RepoRef,
-        number: u32,
-    ) -> Result<String, AtlasError>;
 }
