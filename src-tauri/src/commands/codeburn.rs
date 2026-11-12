@@ -260,7 +260,8 @@ fn start_serve() -> Option<Serve> {
     let (ready_tx, ready_rx) = mpsc::channel();
     std::thread::spawn(move || {
         let mut line = String::new();
-        let ready = matches!(stdout.read_line(&mut line), Ok(n) if n > 0 && line.contains("\"ready\""));
+        let ready =
+            matches!(stdout.read_line(&mut line), Ok(n) if n > 0 && line.contains("\"ready\""));
         let _ = ready_tx.send(ready);
         if !ready {
             return;
@@ -273,11 +274,15 @@ fn start_serve() -> Option<Serve> {
                 Ok(n) if n as u64 >= MAX_STDOUT => break,
                 Ok(_) => {}
             }
-            let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+            let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) else {
+                continue;
+            };
             if msg.get("progress").is_some() {
                 continue;
             }
-            let Some(id) = msg.get("id").and_then(|v| v.as_u64()) else { continue };
+            let Some(id) = msg.get("id").and_then(|v| v.as_u64()) else {
+                continue;
+            };
             if let Some(tx) = routes.lock().ok().and_then(|mut p| p.remove(&id)) {
                 let _ = tx.send(msg);
             }
@@ -294,19 +299,31 @@ fn start_serve() -> Option<Serve> {
         let _ = child.wait();
         return None;
     }
-    Some(Serve { child, stdin, pending, alive, next: 0 })
+    Some(Serve {
+        child,
+        stdin,
+        pending,
+        alive,
+        next: 0,
+    })
 }
 
 /// A serve reply as stdout, or `None` when it refused the command.
 fn serve_reply(args: &[String], msg: &serde_json::Value) -> Option<Result<Vec<u8>, AtlasError>> {
     if msg.get("ok").and_then(|v| v.as_bool()) == Some(true) {
-        let out = msg.get("output").and_then(|v| v.as_str()).unwrap_or_default();
+        let out = msg
+            .get("output")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
         return Some(Ok(out.as_bytes().to_vec()));
     }
     if msg.get("refused").and_then(|v| v.as_bool()) == Some(true) {
         return None;
     }
-    let error = msg.get("error").and_then(|v| v.as_str()).unwrap_or("failed");
+    let error = msg
+        .get("error")
+        .and_then(|v| v.as_str())
+        .unwrap_or("failed");
     Some(Err(AtlasError::tool_failed(
         TOOL,
         format!("codeburn {} {error}", args[0]),
@@ -350,7 +367,10 @@ fn serve_run(args: &[String]) -> Option<Result<Vec<u8>, AtlasError>> {
                 p.remove(&id);
             }
             if let Ok(mut guard) = lane.lock() {
-                if guard.as_ref().is_some_and(|s| Arc::ptr_eq(&s.pending, &mine)) {
+                if guard
+                    .as_ref()
+                    .is_some_and(|s| Arc::ptr_eq(&s.pending, &mine))
+                {
                     *guard = None;
                 }
             }
@@ -446,7 +466,10 @@ mod tests {
         let ok = serde_json::json!({ "id": 1, "ok": true, "output": "{}" });
         assert_eq!(serve_reply(&args, &ok).unwrap().unwrap(), b"{}");
         let refused = serde_json::json!({ "id": 1, "ok": false, "refused": true, "error": "command not served" });
-        assert!(serve_reply(&args, &refused).is_none(), "refused falls back to a fresh run");
+        assert!(
+            serve_reply(&args, &refused).is_none(),
+            "refused falls back to a fresh run"
+        );
         let failed = serde_json::json!({ "id": 1, "ok": false, "error": "exit 1" });
         assert!(serve_reply(&args, &failed).unwrap().is_err());
     }
@@ -458,7 +481,10 @@ mod tests {
         let served = v(&["status", "--format", "json"]);
         let out = serve_run(&served).expect("status is served").unwrap();
         serde_json::from_slice::<serde_json::Value>(&out).expect("valid JSON");
-        assert!(serve_run(&v(&["quota", "--format", "json"])).is_none(), "quota is not served");
+        assert!(
+            serve_run(&v(&["quota", "--format", "json"])).is_none(),
+            "quota is not served"
+        );
     }
 
     #[test]

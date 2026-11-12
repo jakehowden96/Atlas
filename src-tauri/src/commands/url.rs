@@ -33,7 +33,10 @@ pub(crate) fn browser_launcher(url: &str) -> Command {
 /// (`file:`, `ms-msdt:`, `search-ms:` ...) from a clicked link.
 fn check_open_url(url: &str) -> Result<(), AtlasError> {
     let lower = url.to_ascii_lowercase();
-    if ["https://", "http://", "mailto:"].iter().any(|s| lower.starts_with(s)) {
+    if ["https://", "http://", "mailto:"]
+        .iter()
+        .any(|s| lower.starts_with(s))
+    {
         Ok(())
     } else {
         Err(AtlasError::invalid_input(
