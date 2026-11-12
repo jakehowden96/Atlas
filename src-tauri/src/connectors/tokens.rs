@@ -189,7 +189,7 @@ impl Connectors {
     }
 
     /// Flag `id` as needing a sign-in; emits once per transition.
-    fn mark_reconnect(&self, id: &str, reason: &str) -> Result<AtlasError, AtlasError> {
+    pub(crate) fn mark_reconnect(&self, id: &str, reason: &str) -> Result<AtlasError, AtlasError> {
         self.access.forget(id)?;
         let first = self
             .access

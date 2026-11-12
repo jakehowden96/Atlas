@@ -49,6 +49,15 @@ fn linked<'a>(c: &'a Connectors, id: &str) -> Result<&'a Arc<dyn ConnectorProvid
     }
 }
 
+/// A provider that rejects the saved sign-in flags the connector, so Settings
+/// shows the same reconnect state as the screen that hit the 401.
+fn flag_rejected<T>(c: &Connectors, id: &str, r: Result<T, AtlasError>) -> Result<T, AtlasError> {
+    if let Err(AtlasError::ConnectorReconnectNeeded { message }) = &r {
+        c.mark_reconnect(id, message)?;
+    }
+    r
+}
+
 fn unsupported(p: &Arc<dyn ConnectorProvider>) -> AtlasError {
     AtlasError::not_found(format!("{} does not support this", p.info().name))
 }
@@ -185,7 +194,11 @@ pub async fn connector_get_ticket(
     let p = Arc::clone(linked(&c, &connector_id)?);
     let tickets = p.tickets().ok_or_else(|| unsupported(&p))?;
     let token = c.access_token(&connector_id).await?;
-    tickets.get_ticket(&token, &ticket_id).await
+    flag_rejected(
+        &c,
+        &connector_id,
+        tickets.get_ticket(&token, &ticket_id).await,
+    )
 }
 
 #[tauri::command]
@@ -197,7 +210,11 @@ pub async fn connector_list_pull_requests(
     let p = Arc::clone(linked(&c, &connector_id)?);
     let prs = p.pull_requests().ok_or_else(|| unsupported(&p))?;
     let token = c.access_token(&connector_id).await?;
-    prs.list_pull_requests(&token, &repos).await
+    flag_rejected(
+        &c,
+        &connector_id,
+        prs.list_pull_requests(&token, &repos).await,
+    )
 }
 
 /// Check out pull request `number` of `repo` in `cwd` with the user's own git.
@@ -212,9 +229,12 @@ pub async fn connector_checkout_pull_request(
     let p = Arc::clone(linked(&c, &connector_id)?);
     let prs = p.pull_requests().ok_or_else(|| unsupported(&p))?;
     let token = c.access_token(&connector_id).await?;
-    let listed = prs
-        .list_pull_requests(&token, &[RepoRef { slug: repo.clone() }])
-        .await?;
+    let listed = flag_rejected(
+        &c,
+        &connector_id,
+        prs.list_pull_requests(&token, &[RepoRef { slug: repo.clone() }])
+            .await,
+    )?;
     // A PR missing from the open list is treated as a fork: no upstream is set.
     let (head, cross) = listed
         .iter()
