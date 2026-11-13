@@ -164,6 +164,10 @@ pub struct LiveSession {
     pub turn_ended_at: Option<String>,
     /// How long the last turn ran, from its `turn_duration` system line.
     pub turn_duration_ms: Option<u64>,
+    /// Newest pull request URL a tool printed on a line of its own, as
+    /// `gh pr create` and `gh pr edit` do. Lets the PR tile find the session's
+    /// PR when the cwd's branch can't (a folder holding several repos).
+    pub pr_url: Option<String>,
 }
 
 impl LiveSession {
@@ -191,6 +195,7 @@ impl LiveSession {
             last_reply: None,
             turn_ended_at: None,
             turn_duration_ms: None,
+            pr_url: None,
         }
     }
 }
@@ -726,7 +731,13 @@ impl SessionTail {
             } else {
                 LineRole::Tool
             };
-            let text = format!("  {}", excerpt(&result_text(result.content)));
+            let full = result_text(result.content);
+            if !result.is_error {
+                if let Some(url) = printed_pr_url(&full) {
+                    self.session.pr_url = Some(url.to_string());
+                }
+            }
+            let text = format!("  {}", excerpt(&full));
             self.push_line(role, text, timestamp.clone());
         }
     }
@@ -1189,6 +1200,21 @@ pub(super) fn result_text(content: &Value) -> Cow<'_, str> {
     }
 }
 
+/// The last line that is nothing but `https://<host>/<owner>/<repo>/pull/<n>`.
+/// A whole line only: `gh pr view` prefixes it with `url:`, and git push's
+/// `pull/new/<branch>` hint is not a number, so neither counts.
+fn printed_pr_url(text: &str) -> Option<&str> {
+    text.lines().rev().map(str::trim).find(|line| {
+        let Some(rest) = line.strip_prefix("https://") else {
+            return false;
+        };
+        let parts: Vec<&str> = rest.split('/').collect();
+        matches!(parts.as_slice(), [host, owner, repo, "pull", n]
+            if !host.is_empty() && !owner.is_empty() && !repo.is_empty()
+                && !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+    })
+}
+
 /// The most identifying field of a tool's input, for `* Bash pnpm test`.
 pub(super) fn input_summary(input: &Value) -> String {
     for key in [
@@ -1632,6 +1658,46 @@ mod tests {
                 .iter()
                 .any(|l| l.text == "> run the tests please"),
             "real user messages are kept, prefixed"
+        );
+    }
+
+    #[test]
+    fn printed_pr_url_takes_a_whole_line_pr_link_only() {
+        let created = "Warning: 1 uncommitted change\nhttps://github.com/acme/web/pull/423\n";
+        assert_eq!(
+            printed_pr_url(created),
+            Some("https://github.com/acme/web/pull/423")
+        );
+        assert_eq!(
+            printed_pr_url("url:\thttps://github.com/acme/web/pull/4"),
+            None
+        );
+        assert_eq!(
+            printed_pr_url("remote:   https://github.com/acme/web/pull/new/feat"),
+            None
+        );
+        assert_eq!(
+            printed_pr_url("https://github.com/acme/web/pull/new/feat"),
+            None
+        );
+        assert_eq!(printed_pr_url("https://github.com/acme/web/issues/9"), None);
+    }
+
+    #[test]
+    fn tool_output_with_a_pr_link_sets_pr_url() {
+        let reply = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"https://github.com/acme/web/pull/423\n","is_error":false}]},"timestamp":"2026-09-07T21:50:01.000Z"}"#;
+        let (_dir, mut tail) = tail_with(&[
+            tool_call(
+                "t1",
+                "Bash",
+                r#"{"command":"cd web && gh pr create --fill"}"#,
+            ),
+            reply.to_string(),
+        ]);
+        tail.poll();
+        assert_eq!(
+            tail.session().pr_url.as_deref(),
+            Some("https://github.com/acme/web/pull/423")
         );
     }
 

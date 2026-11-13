@@ -19,11 +19,19 @@
   interface Props {
     workspacePath: string | undefined;
     branch: string;
+    /** A PR URL the session printed (`gh pr create`); wins over `branch`. */
+    prUrl?: string | null;
     /** `Date.now()`, ticked once a second by the view. */
     now: number;
   }
 
-  let { workspacePath, branch, now }: Props = $props();
+  let { workspacePath, branch, prUrl = null, now }: Props = $props();
+
+  // `https://host/owner/repo/pull/N` → its slug and number.
+  let printed = $derived.by(() => {
+    const m = prUrl?.match(/^https:\/\/[^/]+\/([^/]+\/[^/]+)\/pull\/(\d+)$/);
+    return m ? { slug: m[1]!, number: Number(m[2]) } : null;
+  });
 
   const POLL_MS = 60_000;
 
@@ -32,6 +40,7 @@
   });
 
   let slug = $derived.by(() => {
+    if (printed) return printed.slug;
     const repos = workspacePath ? ($reposByWorkspace[workspacePath] ?? []) : [];
     return (repos.find((r) => r.path === workspacePath) ?? repos[0])?.slug ?? null;
   });
@@ -43,7 +52,11 @@
   let entry = $derived(
     slug ? ($prRepos?.find((r) => r.repo.toLowerCase() === slug.toLowerCase()) ?? null) : null,
   );
-  let fresh = $derived(entry?.prs.find((p) => p.headRefName === branch) ?? null);
+  let fresh = $derived(
+    entry?.prs.find((p) =>
+      printed ? p.number === printed.number : p.headRefName === branch,
+    ) ?? null,
+  );
 
   // The last good answer outlives a failed refresh, so the tile can dim it
   // instead of going blank.
@@ -58,6 +71,7 @@
   // A different branch's PR is not a stale answer for this one.
   $effect.pre(() => {
     void branch;
+    void prUrl;
     lastGood = null;
     lastOk = null;
   });

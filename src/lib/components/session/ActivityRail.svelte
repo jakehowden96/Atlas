@@ -97,7 +97,12 @@
         <div class="tiles">
           <PlanTile {plan} workspacePath={tile?.workspacePath} />
           <AgentsTile {agents} worktree={live?.worktree ?? null} {now} />
-          <PrTile workspacePath={tile?.workspacePath} branch={tile?.branch ?? ""} {now} />
+          <PrTile
+            workspacePath={tile?.workspacePath}
+            branch={tile?.branch ?? ""}
+            prUrl={live?.prUrl ?? null}
+            {now}
+          />
         </div>
       </div>
     {/if}

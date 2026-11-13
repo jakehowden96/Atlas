@@ -11,14 +11,15 @@
 
   interface Props {
     flatFiles: FlatFile[];
+    repos?: string[];
     viewedFiles: Set<string>;
     onSelectFile: (key: string) => void;
     onToggleViewed: (key: string) => void;
   }
 
-  let { flatFiles, viewedFiles, onSelectFile, onToggleViewed }: Props = $props();
+  let { flatFiles, repos = [], viewedFiles, onSelectFile, onToggleViewed }: Props = $props();
 
-  let tree = $derived(buildTree(flatFiles));
+  let tree = $derived(buildTree(flatFiles, repos));
 
   // `TreeNode` carries no counts (diff-view.ts is shared and stays untouched),
   // so the design's trailing "+N" is looked up from the flat list instead.
@@ -68,7 +69,9 @@
     <button
       type="button"
       class="row dir"
+      class:repo={node.repo}
       style="padding-left: {6 + depth * 10}px"
+      use:tooltip={{ text: node.path }}
       onclick={() => toggleDir(node.path)}
     >
       <span class="chev" class:open={!collapsed}>›</span>
@@ -88,8 +91,12 @@
   .tree {
     display: flex;
     flex-direction: column;
-    flex: 0 0 190px;
-    width: 190px;
+    flex: 0 0 auto;
+    width: 300px;
+    min-width: 180px;
+    max-width: 60%;
+    /* Drag the bottom-right corner to widen it for deep trees. */
+    resize: horizontal;
     padding: 8px;
     overflow-y: auto;
     overflow-x: hidden;
@@ -200,5 +207,17 @@
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* Repo rows wrap instead of truncating: the name is what tells repos apart. */
+  .repo {
+    margin-top: 4px;
+    background: var(--surface2);
+  }
+
+  .repo .dir-name {
+    font-weight: 600;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 </style>

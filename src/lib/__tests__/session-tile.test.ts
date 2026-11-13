@@ -58,6 +58,7 @@ function makeTile(over: Partial<Tile> = {}, live: Partial<LiveSession> = {}): Ti
       lastReply: null,
       turnEndedAt: null,
       turnDurationMs: null,
+      prUrl: null,
       ...live,
     } as LiveSession,
     diff: null,

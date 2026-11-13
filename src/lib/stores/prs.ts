@@ -76,6 +76,19 @@ export function needsMyReview(pr: Pr, viewer: string | null): boolean {
   return pr.reviewRequestLogins.includes(viewer);
 }
 
+/**
+ * Watched PRs whose title or branch names ticket `id` (`ENG-42` matches
+ * `eng-42-retry` but not `ENG-421`).
+ */
+export function prsForTicket(repos: RepoPrs[] | null, id: string): { repo: string; pr: Pr }[] {
+  if (!id.trim()) return [];
+  const escaped = id.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`(^|[^a-z0-9])${escaped}(?![a-z0-9])`, "i");
+  return (repos ?? []).flatMap((r) =>
+    r.prs.filter((pr) => re.test(pr.title) || re.test(pr.headRefName)).map((pr) => ({ repo: r.repo, pr })),
+  );
+}
+
 export function matchesFilter(pr: Pr, filter: PrFilter, viewer: string | null): boolean {
   switch (filter) {
     case "mine":

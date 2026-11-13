@@ -210,6 +210,19 @@ describe("PrTile polling", () => {
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
 
+  it("follows a PR URL the session printed, in another repo and branch", () => {
+    prRepos.set([{ repo: "acme/web", prs: [{ ...full, headRefName: "other" }], error: null }]);
+    render(PrTile, {
+      workspacePath: "/w",
+      branch: "",
+      prUrl: "https://github.com/acme/web/pull/482",
+      now: 0,
+    });
+    flushSync();
+    expect(refresh).toHaveBeenCalledWith("acme/web", "");
+    expect(screen.getByText("#482 open")).toBeTruthy();
+  });
+
   it("says when the branch has no PR and when rate limited", () => {
     prRepos.set([{ repo: "o/r", prs: [], error: null }]);
     render(PrTile, { workspacePath: "/w", branch: "feat", now: 0 });

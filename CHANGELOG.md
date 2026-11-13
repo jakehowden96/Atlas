@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.1.3
+
+- Changes drawer: the file tree is wider and can be resized by dragging its corner. Each repo is
+  one labelled row, and chains of single folders collapse into one row (`apps/web/src`), so deep
+  files stay readable.
+- Agents tile: long commands and worktree names wrap inside the tile instead of spilling past it.
+- PR tile: a PR the session opened or edited with `gh` now shows even when the session started in
+  a folder holding several repos.
+- Ticket: a linked ticket lists the PRs in your watched repos that name its ID in their title or
+  branch.
+
 ## 2.1.2
 
 - macOS: Atlas reads each connector's keychain entry once per launch instead of on every status

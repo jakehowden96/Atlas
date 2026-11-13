@@ -34,6 +34,7 @@ function session(sessionUuid: string, overrides: Partial<LiveSession> = {}): Liv
     lastReply: null,
     turnEndedAt: null,
     turnDurationMs: null,
+    prUrl: null,
     ...overrides,
   };
 }

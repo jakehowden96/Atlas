@@ -29,7 +29,8 @@
 <style>
   .row {
     display: grid;
-    grid-template-columns: 10px 1fr;
+    /* minmax(0, …) so long unbroken text can't widen the row past the tile. */
+    grid-template-columns: 10px minmax(0, 1fr);
     column-gap: 10px;
   }
 
@@ -93,17 +94,29 @@
     line-height: 18px;
   }
 
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 6px;
+  }
+
   .chip {
-    margin-left: 6px;
+    max-width: 100%;
     padding: 0 5px;
     border: 1px solid var(--border2);
     border-radius: var(--r-xs);
     line-height: 16px;
+    overflow-wrap: anywhere;
   }
 
+  /* Wrap paths and commands over a few lines rather than cutting them to one. */
   .action {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
 </style>

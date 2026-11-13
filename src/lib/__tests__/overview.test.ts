@@ -54,6 +54,7 @@ function live(sessionUuid: string, overrides: Partial<LiveSession> = {}): LiveSe
     lastReply: null,
     turnEndedAt: null,
     turnDurationMs: null,
+    prUrl: null,
     ...overrides,
   };
 }
@@ -517,6 +518,7 @@ describe("activity", () => {
       state: "idle",
       turnEndedAt: null,
       turnDurationMs: null,
+      prUrl: null,
       lastActivity: "2026-01-01T00:00:00.000Z",
     });
     expect(activity(session, clock)).toEqual({ running: false, text: "Finished 11:04" });

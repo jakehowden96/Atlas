@@ -131,6 +131,7 @@ function pendingLive(row: WorkspaceSession): LiveSession {
     lastReply: null,
     turnEndedAt: null,
     turnDurationMs: null,
+    prUrl: null,
   };
 }
 

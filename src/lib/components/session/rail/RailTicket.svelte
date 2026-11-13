@@ -2,6 +2,7 @@
   import { tick } from "svelte";
   import { openUrl } from "../../../ipc";
   import { connectors } from "../../../stores/connectors";
+  import { prRepos, prsForTicket } from "../../../stores/prs";
   import { openSettings } from "../../../stores/settings";
   import { retry, tickets, unlinkTicket } from "../../../stores/tickets";
   import Button from "../../ui/Button.svelte";
@@ -29,6 +30,8 @@
   const shown = $derived(st.kind === "ready" ? st.ticket : (entry?.last ?? null));
   const stale = $derived(!!shown && st.kind !== "ready" && st.kind !== "loading");
   const unlinked = $derived(!entry?.link && connector?.status.kind !== "linked");
+  // PRs in watched repos that already name this ticket.
+  const ticketPrs = $derived(prsForTicket($prRepos, shown?.id ?? entry?.link?.id ?? ""));
 
   const items = $derived([
     { id: "change", label: "Change", shortcut: "E" },
@@ -83,6 +86,18 @@
       </span>
     </div>
     <div class="title" class:dim={stale}>{shown.title}</div>
+    {#if ticketPrs.length > 0}
+      <ul class="prs" aria-label="Pull requests for {shown.id}">
+        {#each ticketPrs as { repo, pr } (pr.url)}
+          <li>
+            <Button variant="link" onclick={() => void openUrl(pr.url)}
+              >{repo}#{pr.number}</Button
+            >
+            <span class="pr-title">{pr.title}</span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
     {#if stale}
       <div class="note">
         couldn't refresh · <Button variant="link" onclick={() => void retry(sessionId)}
@@ -130,6 +145,25 @@
   }
   .menu {
     margin-left: auto;
+  }
+  .prs {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--fs-xs);
+  }
+  .prs li {
+    display: flex;
+    gap: 6px;
+    min-width: 0;
+  }
+  .pr-title {
+    overflow: hidden;
+    color: var(--muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .chip {
     padding: 0 8px;

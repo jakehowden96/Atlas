@@ -365,6 +365,7 @@
       {:else}
         <DiffFileTree
           {flatFiles}
+          repos={projectFlat.map((pf) => pf.name)}
           {viewedFiles}
           onSelectFile={scrollToFile}
           onToggleViewed={toggleViewed}

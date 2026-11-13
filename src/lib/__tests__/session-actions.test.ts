@@ -161,6 +161,7 @@ function live(sessionUuid: string): LiveSession {
     lastReply: null,
     turnEndedAt: null,
     turnDurationMs: null,
+    prUrl: null,
   };
 }
 

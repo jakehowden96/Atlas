@@ -61,4 +61,10 @@ turnEndedAt: string | null,
 /**
  * How long the last turn ran, from its `turn_duration` system line.
  */
-turnDurationMs: number | null, };
+turnDurationMs: number | null, 
+/**
+ * Newest pull request URL a tool printed on a line of its own, as
+ * `gh pr create` and `gh pr edit` do. Lets the PR tile find the session's
+ * PR when the cwd's branch can't (a folder holding several repos).
+ */
+prUrl: string | null, };

@@ -80,6 +80,26 @@ describe("buildTree", () => {
     const tree = buildTree(items);
     expect(tree.children.get("a.ts")!.changeType).toBe("added");
   });
+
+  it("compacts single-child folder chains", () => {
+    const tree = buildTree([toFlat(makeFile("a/b/c/x.ts"), "a/b/c/x.ts")]);
+    const a = tree.children.get("a")!;
+    expect(a.name).toBe("a/b/c");
+    expect(a.path).toBe("a/b/c");
+    expect(a.children.get("x.ts")!.fileKey).toBe("a/b/c/x.ts");
+  });
+
+  it("keeps a slashed repo name as one node and compacts below it", () => {
+    const repo = "app/.claude/worktrees/fix";
+    const key = `${repo}/src/lib/x.ts`;
+    const tree = buildTree([toFlat(makeFile("src/lib/x.ts"), key)], [repo]);
+    const r = tree.children.get(repo)!;
+    expect(r.repo).toBe(true);
+    expect(r.name).toBe(repo);
+    const dir = r.children.get("src")!;
+    expect(dir.name).toBe("src/lib");
+    expect(dir.children.get("x.ts")!.fileKey).toBe(key);
+  });
 });
 
 describe("matchesFilter", () => {

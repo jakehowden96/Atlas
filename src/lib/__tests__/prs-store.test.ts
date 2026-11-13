@@ -14,6 +14,7 @@ import { connectors } from "../stores/connectors";
 import {
   isMine,
   matchesFilter,
+  prsForTicket,
   loadWorkspaceRepos,
   matchRepo,
   needsAttention,
@@ -122,6 +123,25 @@ describe("prs filters", () => {
 
     it("is false with no viewer", () => {
       expect(needsMyReview(pr({ reviewRequestLogins: ["octocat"] }), null)).toBe(false);
+    });
+  });
+
+  describe("prsForTicket", () => {
+    const byBranch = pr({ number: 1, title: "Retry", headRefName: "jake/eng-42-retry" });
+    const byTitle = pr({ number: 2, title: "[ENG-42] Fix", headRefName: "fix" });
+    const near = pr({ number: 3, title: "ENG-421 other", headRefName: "eng-4210" });
+
+    it("matches the id in branch or title, whole id only, across repos", () => {
+      const repos = [
+        { repo: "o/a", prs: [byBranch, near], error: null },
+        { repo: "o/b", prs: [byTitle], error: null },
+      ];
+      expect(prsForTicket(repos, "ENG-42").map((m) => `${m.repo}#${m.pr.number}`)).toEqual([
+        "o/a#1",
+        "o/b#2",
+      ]);
+      expect(prsForTicket(repos, "")).toEqual([]);
+      expect(prsForTicket(null, "ENG-42")).toEqual([]);
     });
   });
 

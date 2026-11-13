@@ -42,12 +42,18 @@ export type TreeNode = {
   children: Map<string, TreeNode>;
   fileKey?: string;
   changeType?: DiffFile["changeType"];
+  repo?: boolean;
 };
 
-export function buildTree(items: FlatFile[]): TreeNode {
+// `repos` are the multi-repo project names that prefix each key. They can hold
+// slashes (worktrees under `.claude/worktrees/…`), so each stays one node.
+export function buildTree(items: FlatFile[], repos: string[] = []): TreeNode {
   const root: TreeNode = { name: "", path: "", children: new Map() };
   for (const item of items) {
-    const parts = item.key.split("/");
+    const repo = repos.find((r) => item.key.startsWith(`${r}/`));
+    const parts = repo
+      ? [repo, ...item.key.slice(repo.length + 1).split("/")]
+      : item.key.split("/");
     let node = root;
     let acc = "";
     for (const [i, part] of parts.entries()) {
@@ -57,6 +63,7 @@ export function buildTree(items: FlatFile[]): TreeNode {
         child = { name: part, path: acc, children: new Map() };
         node.children.set(part, child);
       }
+      if (repo && i === 0) child.repo = true;
       if (i === parts.length - 1) {
         child.fileKey = item.key;
         child.changeType = item.file.changeType;
@@ -64,7 +71,23 @@ export function buildTree(items: FlatFile[]): TreeNode {
       node = child;
     }
   }
+  compactDirs(root);
   return root;
+}
+
+// Merge chains of single-child folders into one row ("apps/web/src"), like
+// VS Code's compact folders, so deep trees don't indent file names away.
+function compactDirs(node: TreeNode): void {
+  for (const [key, child] of node.children) {
+    let c = child;
+    while (!c.fileKey && !c.repo && c.children.size === 1) {
+      const only = c.children.values().next().value!;
+      if (only.fileKey || only.repo) break;
+      c = { ...only, name: `${c.name}/${only.name}` };
+    }
+    node.children.set(key, c);
+    compactDirs(c);
+  }
 }
 
 export function matchesFilter(node: TreeNode, filter: string): boolean {
