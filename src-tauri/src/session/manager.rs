@@ -29,6 +29,11 @@ use ts_rs::TS;
 /// burst of appends within one Claude turn collapses into one update.
 const DEBOUNCE: Duration = Duration::from_millis(250);
 
+/// How often every tracked transcript is re-checked without a file event.
+/// macOS has been seen to stop reporting a transcript's writes with no watcher
+/// error (#41); the check is a `metadata` call per session when nothing grew.
+const SWEEP: Duration = Duration::from_secs(5);
+
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct SessionUpdateEvent {
@@ -132,6 +137,13 @@ impl LiveSessionManager {
             .lock()
             .map(|p| p.contains(session_uuid))
             .unwrap_or(false)
+    }
+
+    fn tracked_uuids(&self) -> Vec<String> {
+        self.tails
+            .lock()
+            .map(|tails| tails.keys().cloned().collect())
+            .unwrap_or_default()
     }
 
     /// True while `session_uuid` has a tail.
@@ -292,12 +304,15 @@ pub fn start_live_watcher(
     let manager_watch = manager.watch.clone();
     std::thread::spawn(move || {
         let mut throttle = Throttle::default();
+        let mut next_sweep = Instant::now() + SWEEP;
+        // Sessions the sweep already logged as missed by the watcher.
+        let mut missed: HashSet<String> = HashSet::new();
 
         loop {
-            let received = match throttle.next_due(Instant::now()) {
-                None => rx.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected),
-                Some(at) => rx.recv_timeout(at.saturating_duration_since(Instant::now())),
-            };
+            let wake = throttle
+                .next_due(Instant::now())
+                .map_or(next_sweep, |at| at.min(next_sweep));
+            let received = rx.recv_timeout(wake.saturating_duration_since(Instant::now()));
             match received {
                 Ok(event) if matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) => {
                     for path in &event.paths {
@@ -327,6 +342,29 @@ pub fn start_live_watcher(
                     }
                     None if !manager.is_tracked(&uuid) => throttle.forget(&uuid),
                     None => {}
+                }
+            }
+
+            if Instant::now() >= next_sweep {
+                next_sweep = Instant::now() + SWEEP;
+                for uuid in manager.tracked_uuids() {
+                    // An event already reported it; the throttle will flush it.
+                    if throttle.dirty.contains(&uuid) {
+                        continue;
+                    }
+                    let Some(session) = manager.poll(&uuid) else {
+                        continue;
+                    };
+                    if missed.insert(uuid.clone()) {
+                        log::warn!("live tail {uuid} grew with no file event; caught up by sweep");
+                    }
+                    let _ = app_handle.emit(
+                        "session-update",
+                        SessionUpdateEvent {
+                            session_uuid: uuid,
+                            session,
+                        },
+                    );
                 }
             }
         }

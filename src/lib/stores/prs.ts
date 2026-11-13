@@ -85,7 +85,9 @@ export function prsForTicket(repos: RepoPrs[] | null, id: string): { repo: strin
   const escaped = id.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const re = new RegExp(`(^|[^a-z0-9])${escaped}(?![a-z0-9])`, "i");
   return (repos ?? []).flatMap((r) =>
-    r.prs.filter((pr) => re.test(pr.title) || re.test(pr.headRefName)).map((pr) => ({ repo: r.repo, pr })),
+    r.prs
+      .filter((pr) => re.test(pr.title) || re.test(pr.headRefName))
+      .map((pr) => ({ repo: r.repo, pr })),
   );
 }
 

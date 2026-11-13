@@ -90,9 +90,7 @@
       <ul class="prs" aria-label="Pull requests for {shown.id}">
         {#each ticketPrs as { repo, pr } (pr.url)}
           <li>
-            <Button variant="link" onclick={() => void openUrl(pr.url)}
-              >{repo}#{pr.number}</Button
-            >
+            <Button variant="link" onclick={() => void openUrl(pr.url)}>{repo}#{pr.number}</Button>
             <span class="pr-title">{pr.title}</span>
           </li>
         {/each}

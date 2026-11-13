@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.4
+
+- Live sessions: Atlas re-checks every running session's transcript every few seconds, so a session
+  no longer freezes with "Transcript stopped updating" when macOS stops reporting file changes.
+- Top bar: the notification count sits on the bell's corner with a solid backing instead of over
+  the icon.
+
 ## 2.1.3
 
 - Changes drawer: the file tree is wider and can be resized by dragging its corner. Each repo is

@@ -199,10 +199,16 @@
     display: inline-flex;
   }
 
+  /* The alert badge is see-through, so it gets the bar's fill behind it and
+     sits out on the corner; otherwise the bell glyph shows through the digits. */
   .bell-badge {
     position: absolute;
-    top: calc(var(--sp-1) * -1);
-    right: calc(var(--sp-1) * -1);
+    top: 0;
+    right: 0;
+    display: inline-flex;
+    border-radius: var(--r-pill);
+    background: var(--surface);
+    transform: translate(45%, -35%);
     pointer-events: none;
   }
 

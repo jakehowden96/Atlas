@@ -53,9 +53,8 @@
     slug ? ($prRepos?.find((r) => r.repo.toLowerCase() === slug.toLowerCase()) ?? null) : null,
   );
   let fresh = $derived(
-    entry?.prs.find((p) =>
-      printed ? p.number === printed.number : p.headRefName === branch,
-    ) ?? null,
+    entry?.prs.find((p) => (printed ? p.number === printed.number : p.headRefName === branch)) ??
+      null,
   );
 
   // The last good answer outlives a failed refresh, so the tile can dim it
