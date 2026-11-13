@@ -21,4 +21,4 @@ lines_added: number, lines_removed: number,
  * hold the same diff, so a consumer that already parsed one has nothing
  * new to parse.
  */
-fingerprint: string, truncated?: Truncation | null, projects?: Array<ProjectDiff> | null, local_raw?: string | null, local_truncated?: Truncation | null, };
+fingerprint: string, truncated?: Truncation | null, projects?: Array<ProjectDiff> | null, };

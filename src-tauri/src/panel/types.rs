@@ -55,10 +55,6 @@ pub struct DiffData {
     pub truncated: Option<Truncation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub projects: Option<Vec<ProjectDiff>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local_raw: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local_truncated: Option<Truncation>,
 }
 
 impl DiffData {

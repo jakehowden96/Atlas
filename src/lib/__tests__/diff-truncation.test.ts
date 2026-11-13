@@ -18,27 +18,14 @@ function diff(over: Partial<DiffData>): DiffData {
 
 describe("truncationNotice", () => {
   it("is silent for a diff that was not cut", () => {
-    expect(truncationNotice(diff({ raw: "diff --git a/a b/a\n" }), "main")).toBeNull();
-    expect(truncationNotice(null, "main")).toBeNull();
+    expect(truncationNotice(diff({ raw: "diff --git a/a b/a\n" }))).toBeNull();
+    expect(truncationNotice(null)).toBeNull();
   });
 
   it("says how much of the diff is shown", () => {
-    expect(truncationNotice(diff({ truncated: CUT }), "main")).toBe(
+    expect(truncationNotice(diff({ truncated: CUT }))).toBe(
       "diff truncated - 2 of 9 files (2.0 KB shown)",
     );
-  });
-
-  it("follows the Working tree / vs main toggle, since each side is capped on its own", () => {
-    const both = diff({
-      raw: "x",
-      local_raw: "y",
-      truncated: CUT,
-      local_truncated: { shown_files: 1, total_files: 1, shown_bytes: 10 },
-    });
-    expect(truncationNotice(both, "main")).toContain("2 of 9");
-    expect(truncationNotice(both, "working")).toContain("1 of 1");
-    // No separate working-tree diff: both toggles show `raw`.
-    expect(truncationNotice(diff({ raw: "x", truncated: CUT }), "working")).toContain("2 of 9");
   });
 
   it("adds up a multi-repo panel, counting repos that were not cut in full", () => {
@@ -55,14 +42,14 @@ describe("truncationNotice", () => {
         },
       ],
     });
-    expect(truncationNotice(multi, "main")).toBe("diff truncated - 1 of 9 files (4 B shown)");
+    expect(truncationNotice(multi)).toBe("diff truncated - 1 of 9 files (4 B shown)");
   });
 
   it("is silent for a multi-repo panel where no repo was cut", () => {
     const multi = diff({
       projects: [{ name: "api", raw: "abcd", files_changed: 1, lines_added: 0, lines_removed: 0 }],
     });
-    expect(truncationNotice(multi, "main")).toBeNull();
+    expect(truncationNotice(multi)).toBeNull();
   });
 });
 

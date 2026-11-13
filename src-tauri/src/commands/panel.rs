@@ -1,6 +1,4 @@
-use super::diff::{
-    count_diff_stats, diff_since_fork, discover_diff, fit_to_budget, DiffPart, MAX_PANEL_DIFF_SIZE,
-};
+use super::diff::{count_diff_stats, discover_diff, fit_to_budget, DiffPart, MAX_PANEL_DIFF_SIZE};
 use super::git::{git_cmd, nested_worktrees, should_skip_dir};
 use super::validate::{validate_cwd, validate_session_id};
 use crate::atomic_write::write_atomic;
@@ -103,14 +101,14 @@ fn build_panel_single(
     git_root: &str,
     panel_path: &std::path::Path,
 ) -> Result<Option<PanelData>, AtlasError> {
-    let bundle = discover_diff(git_root);
+    let part = discover_diff(git_root);
     let worktrees = worktree_parts(git_root, "");
 
     if !worktrees.is_empty() {
         let mut projects = Vec::new();
         let mut budget = MAX_PANEL_DIFF_SIZE;
-        if !bundle.full.text.is_empty() {
-            push_project(&mut projects, ".".to_string(), bundle.full, &mut budget);
+        if !part.text.is_empty() {
+            push_project(&mut projects, ".".to_string(), part, &mut budget);
         }
         for (name, part) in worktrees {
             push_project(&mut projects, name, part, &mut budget);
@@ -126,7 +124,7 @@ fn build_panel_single(
         return Ok(Some(data));
     }
 
-    if bundle.full.text.is_empty() {
+    if part.text.is_empty() {
         // Write the cleared state rather than deleting the file: a deletion
         // raises no `panel-update`, so other sessions' badges kept showing the
         // changes after they were committed.
@@ -141,16 +139,8 @@ fn build_panel_single(
         return Ok(Some(cleared));
     }
 
-    let (shown_files, lines_added, lines_removed) = count_diff_stats(&bundle.full.text);
-    let files_changed = bundle.full.truncated.map_or(shown_files, |t| t.total_files);
-
-    // Only populate local_raw when local differs from full (i.e. full includes upstream/branch changes)
-    let (local_raw, local_truncated) =
-        if !bundle.local.text.is_empty() && bundle.local.text != bundle.full.text {
-            (Some(bundle.local.text), bundle.local.truncated)
-        } else {
-            (None, None)
-        };
+    let (shown_files, lines_added, lines_removed) = count_diff_stats(&part.text);
+    let files_changed = part.truncated.map_or(shown_files, |t| t.total_files);
 
     let data = PanelData {
         version: 1,
@@ -158,15 +148,13 @@ fn build_panel_single(
         cwd: git_root.to_string(),
         diff: Some(
             DiffData {
-                raw: bundle.full.text,
+                raw: part.text,
                 files_changed,
                 lines_added,
                 lines_removed,
                 fingerprint: String::new(),
-                truncated: bundle.full.truncated,
+                truncated: part.truncated,
                 projects: None,
-                local_raw,
-                local_truncated,
             }
             .sealed(),
         ),
@@ -214,14 +202,9 @@ fn build_panel_multi(
 
         found_any_repo = true;
 
-        let bundle = discover_diff(&child_str);
-        if !bundle.full.text.is_empty() {
-            push_project(
-                &mut projects,
-                name_str.to_string(),
-                bundle.full,
-                &mut budget,
-            );
+        let part = discover_diff(&child_str);
+        if !part.text.is_empty() {
+            push_project(&mut projects, name_str.to_string(), part, &mut budget);
         }
         for (name, part) in worktree_parts(&child_str, &name_str) {
             push_project(&mut projects, name, part, &mut budget);
@@ -289,8 +272,6 @@ fn projects_diff(projects: Vec<ProjectDiff>) -> DiffData {
         fingerprint: String::new(),
         truncated: None,
         projects: Some(projects),
-        local_raw: None,
-        local_truncated: None,
     }
     .sealed()
 }
@@ -301,14 +282,10 @@ fn worktree_parts(git_root: &str, prefix: &str) -> Vec<(String, DiffPart)> {
     let Ok(root) = fs::canonicalize(git_root) else {
         return Vec::new();
     };
-    let parent_head = git_cmd(git_root, &["rev-parse", "HEAD"]).ok();
     let mut parts = Vec::new();
     for path in nested_worktrees(git_root) {
         let path_str = path.to_string_lossy();
-        let part = match &parent_head {
-            Some(head) => diff_since_fork(&path_str, head),
-            None => discover_diff(&path_str).full,
-        };
+        let part = discover_diff(&path_str);
         if part.text.is_empty() {
             continue;
         }
@@ -762,10 +739,10 @@ mod tests {
         assert!(!diff.raw.is_empty());
     }
 
-    /// A worktree forked from a feature branch counts only its own work, not
-    /// the feature branch's commits over `main` (which every sibling repeats).
+    /// Only uncommitted work shows: the feature branch's commits appear neither
+    /// for the clean main checkout nor inside the worktree forked from it.
     #[test]
-    fn a_worktree_counts_only_its_work_since_it_forked() {
+    fn a_worktree_counts_only_its_uncommitted_work() {
         let repo = init_repo();
         let dir = repo.path();
         fs::write(dir.join("a.txt"), "one\n").unwrap();
@@ -783,7 +760,9 @@ mod tests {
             .unwrap()
             .diff
             .unwrap();
-        let wt_part = &diff.projects.as_ref().unwrap()[1];
+        let projects = diff.projects.as_ref().unwrap();
+        assert_eq!(projects.len(), 1);
+        let wt_part = &projects[0];
         assert_eq!(wt_part.name, ".claude/worktrees/agent");
         assert_eq!((wt_part.lines_added, wt_part.lines_removed), (1, 1));
     }

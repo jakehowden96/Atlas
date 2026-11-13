@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.6
+
+- Changes drawer: shows only uncommitted work, `git diff HEAD` plus untracked files, per repo and
+  worktree, like VS Code's Source Control panel. Committed branch work no longer appears, and the
+  Working tree / vs main switch is gone.
+
 ## 2.1.5
 
 - Shortcuts: ⌘W (Ctrl+W on Windows and Linux) closes the session you are viewing, like closing a

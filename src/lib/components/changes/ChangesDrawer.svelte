@@ -10,7 +10,7 @@
     TOTAL_LINE_BUDGET,
     type FlatFile,
   } from "../../diff-view";
-  import { truncationNotice, type BaseView } from "../../diff-truncation";
+  import { truncationNotice } from "../../diff-truncation";
   import { refreshPanel } from "../../ipc";
   import { log } from "../../logger";
   import { enterLabel, isMacPlatform } from "../../platform";
@@ -28,7 +28,6 @@
   import { activeTabId, tabs } from "../../stores/terminal";
   import { showToast } from "../../stores/toast";
   import { diffOpen } from "../../stores/view";
-  import { tooltip } from "../../ui/tooltip";
   import Banner from "../ui/Banner.svelte";
   import Button from "../ui/Button.svelte";
   import { confirmAction } from "../ui/ConfirmDialog.svelte";
@@ -79,36 +78,20 @@
       });
   });
 
-  // ── Working tree / vs main ────────────────────────────────────────────────
-  // The backend's `discover_diff` already ships both sides: `local_raw` is the
-  // working tree against HEAD, `raw` is the working tree against the branch
-  // base (upstream merge-base, else merge-base with main/master). It only fills
-  // `local_raw` in when the two differ, so with nothing committed on top of the
-  // base both segments resolve to the same diff — which is the truth.
-  const BASE_OPTIONS: Segment<BaseView>[] = [
-    { id: "working", label: "Working tree" },
-    { id: "main", label: "vs main" },
-  ];
+  // `raw` is `git diff HEAD` plus untracked files: uncommitted work only, as
+  // VS Code's Source Control panel shows it.
   const MODE_OPTIONS: Segment<"split" | "unified">[] = [
     { id: "unified", label: "Unified" },
     { id: "split", label: "Split" },
   ];
 
-  let base = $state<BaseView>("working");
   let data = $derived($panelData?.diff);
-  let hasSeparateBase = $derived(!!data?.local_raw && data.local_raw !== data.raw);
-  let activeRaw = $derived(hasSeparateBase && base === "working" ? data!.local_raw! : data?.raw);
-  let baseHint = $derived(
-    hasSeparateBase
-      ? "Working tree = uncommitted changes. vs main = everything since this branch left its base."
-      : "Nothing is committed on top of this branch's base, so both views show the same diff.",
-  );
 
   // ── Parsing (memoised, exactly as the old DiffViewer did) ─────────────────
   let lastRaw = "";
   let lastFiles: DiffFile[] = [];
   let files = $derived.by(() => {
-    const raw = activeRaw ?? "";
+    const raw = data?.raw ?? "";
     if (raw === lastRaw) return lastFiles;
     lastRaw = raw;
     lastFiles = raw ? parseDiff(raw) : [];
@@ -152,10 +135,9 @@
       : dedupeKeys(files.map((f) => toFlat(f, f.newName))),
   );
 
-  let truncation = $derived(truncationNotice(data, base));
+  let truncation = $derived(truncationNotice(data));
 
-  // Header counts come from what is actually rendered, so they stay honest
-  // across the Working tree / vs main toggle.
+  // Header counts come from what is actually rendered.
   let addedTotal = $derived(flatFiles.reduce((n, f) => n + f.addedCount, 0));
   let removedTotal = $derived(flatFiles.reduce((n, f) => n + f.removedCount, 0));
 
@@ -310,17 +292,6 @@
         <span class="added">+{addedTotal}</span>
         <span class="removed">−{removedTotal}</span>
       </span>
-      <span class="seg" use:tooltip={{ text: baseHint }}>
-        <SegmentedControl
-          size="sm"
-          role="radiogroup"
-          label="Diff base"
-          options={BASE_OPTIONS}
-          value={base}
-          onChange={(id) => (base = id)}
-        />
-      </span>
-
       <div class="spacer"></div>
 
       <SegmentedControl
@@ -465,11 +436,6 @@
 
   .removed {
     color: var(--danger);
-  }
-
-  .seg {
-    display: flex;
-    min-width: 0;
   }
 
   .spacer {

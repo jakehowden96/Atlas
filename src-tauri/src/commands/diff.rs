@@ -1,4 +1,4 @@
-use super::git::{git_cmd, git_raw, git_raw_capped};
+use super::git::{git_raw, git_raw_capped};
 use crate::error::AtlasError;
 use crate::panel::types::Truncation;
 use std::fs;
@@ -10,13 +10,6 @@ use std::io::Read;
 pub(crate) struct DiffPart {
     pub text: String,
     pub truncated: Option<Truncation>,
-}
-
-pub(crate) struct DiffBundle {
-    /// Local working tree changes (Tier 1 only)
-    pub local: DiffPart,
-    /// Best available diff across all tiers (current behavior)
-    pub full: DiffPart,
 }
 
 /// Synthetic diffs of untracked files, and how many were not examined because
@@ -206,23 +199,18 @@ fn assemble(tracked: &TrackedDiff, untracked: Option<&UntrackedDiffs>) -> DiffPa
     DiffPart { text, truncated }
 }
 
-/// 3-tier diff discovery matching sift's extractBestDiff.
-/// Returns both local-only changes and the full (best-tier) diff.
-pub(crate) fn discover_diff(git_root: &str) -> DiffBundle {
+/// What `git diff HEAD` shows, plus untracked files: the uncommitted work, as
+/// VS Code's Source Control panel lists it. Committed work never appears.
+pub(crate) fn discover_diff(git_root: &str) -> DiffPart {
     let untracked = generate_untracked_diffs(git_root);
-
-    // Tier 1: Working tree changes (staged + unstaged vs HEAD). An empty
-    // result is final: with a HEAD, the unstaged and staged-only queries
-    // below can only be empty too, so they run only when HEAD is missing.
-    let local_tracked = match git_diff(git_root, &["HEAD", "--"]) {
+    let tracked = match git_diff(git_root, &["HEAD", "--"]) {
         Ok(diff) => diff,
         Err(_) => {
-            // Tier 1b: HEAD doesn't exist (initial commit) — unstaged changes
+            // No HEAD yet (before the first commit): unstaged, else staged.
             let mut diff = git_diff(git_root, &["--"]).unwrap_or_else(|_| TrackedDiff {
                 text: String::new(),
                 total_files: None,
             });
-            // Tier 1c: Staged-only changes
             if diff.text.is_empty() {
                 if let Ok(staged) = git_diff(git_root, &["--cached", "--"]) {
                     diff = staged;
@@ -231,78 +219,7 @@ pub(crate) fn discover_diff(git_root: &str) -> DiffBundle {
             diff
         }
     };
-    let local = assemble(&local_tracked, Some(&untracked));
-
-    // Check for upstream/branch base ref to diff working tree against
-    let mut base_ref: Option<String> = None;
-
-    // Tier 2: Upstream tracking branch (use merge-base so we only show
-    // local work, not incoming remote changes when upstream is ahead)
-    if let Ok(upstream) = git_cmd(
-        git_root,
-        &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
-    ) {
-        if !upstream.is_empty() {
-            if let Ok(mb) = git_cmd(git_root, &["merge-base", &upstream, "HEAD"]) {
-                if !mb.is_empty() {
-                    base_ref = Some(mb);
-                }
-            }
-        }
-    }
-
-    // Tier 3: Merge-base with main/master (only if Tier 2 found nothing)
-    if base_ref.is_none() {
-        let base_branch = if git_cmd(git_root, &["rev-parse", "--verify", "main"]).is_ok() {
-            Some("main")
-        } else if git_cmd(git_root, &["rev-parse", "--verify", "master"]).is_ok() {
-            Some("master")
-        } else {
-            None
-        };
-
-        if let Some(base) = base_branch {
-            if let Ok(merge_base) = git_cmd(git_root, &["merge-base", base, "HEAD"]) {
-                if !merge_base.is_empty() {
-                    base_ref = Some(merge_base);
-                }
-            }
-        }
-    }
-
-    // Build `full` diff: working tree vs upstream/base (includes both local and
-    // committed changes). A base-ref diff carries no untracked files, so they
-    // are appended; the fallback to `local` already has them.
-    let full = match &base_ref {
-        Some(base) => match git_diff(git_root, &[base, "--"]) {
-            Ok(diff) if !diff.text.is_empty() => assemble(&diff, Some(&untracked)),
-            Ok(_) => {
-                log::debug!("diff against base {base} is empty; falling back to local diff");
-                local.clone()
-            }
-            Err(e) => {
-                log::warn!("diff against base {base} failed ({e}); falling back to local diff");
-                local.clone()
-            }
-        },
-        None => local.clone(),
-    };
-
-    DiffBundle { local, full }
-}
-
-/// A linked worktree's changes since it forked from `parent_head`: its own
-/// commits plus its working tree. `discover_diff` would diff it against
-/// `main`, so a worktree forked from a feature branch would also carry every
-/// commit that branch has over `main`, repeated once per worktree.
-pub(crate) fn diff_since_fork(git_root: &str, parent_head: &str) -> DiffPart {
-    let fork = git_cmd(git_root, &["merge-base", parent_head, "HEAD"]).unwrap_or_default();
-    match git_diff(git_root, &[&fork, "--"]) {
-        Ok(tracked) if !fork.is_empty() => {
-            assemble(&tracked, Some(&generate_untracked_diffs(git_root)))
-        }
-        _ => discover_diff(git_root).full,
-    }
+    assemble(&tracked, Some(&untracked))
 }
 
 /// The account for `shown`, cut from a diff that touches `total_files`.
@@ -544,13 +461,10 @@ rename to new";
         git(dir, &["config", "diff.noprefix", "true"]);
         std::fs::write(dir.join("a.txt"), "two\n").unwrap();
 
-        let bundle = discover_diff(dir.to_str().unwrap());
-        assert!(bundle
-            .local
-            .text
-            .starts_with("diff --git a/a.txt b/a.txt\n"));
-        assert!(!bundle.local.text.contains('\x1b'));
-        assert_eq!(count_diff_stats(&bundle.local.text), (1, 1, 1));
+        let part = discover_diff(dir.to_str().unwrap());
+        assert!(part.text.starts_with("diff --git a/a.txt b/a.txt\n"));
+        assert!(!part.text.contains('\x1b'));
+        assert_eq!(count_diff_stats(&part.text), (1, 1, 1));
     }
 
     #[test]
@@ -561,14 +475,10 @@ rename to new";
         commit_all(dir, "init");
         std::fs::write(dir.join("a.txt"), "two\n\n").unwrap();
 
-        let bundle = discover_diff(dir.to_str().unwrap());
+        let part = discover_diff(dir.to_str().unwrap());
         // The hunk header promises 2 old / 2 new lines; trimming the final
         // ` \n` context line would leave it one short.
-        assert!(
-            bundle.local.text.ends_with("\n \n"),
-            "{:?}",
-            bundle.local.text
-        );
+        assert!(part.text.ends_with("\n \n"), "{:?}", part.text);
     }
 
     #[test]
@@ -578,9 +488,40 @@ rename to new";
         std::fs::write(dir.join("a.txt"), "one\n").unwrap();
         commit_all(dir, "init");
 
-        let bundle = discover_diff(dir.to_str().unwrap());
-        assert!(bundle.local.text.is_empty());
-        assert!(bundle.full.text.is_empty());
+        let part = discover_diff(dir.to_str().unwrap());
+        assert!(part.text.is_empty());
+    }
+
+    #[test]
+    fn committed_branch_work_is_not_shown() {
+        let repo = init_repo();
+        let dir = repo.path();
+        std::fs::write(
+            dir.join("a.txt"),
+            "one
+",
+        )
+        .unwrap();
+        commit_all(dir, "init");
+        git(dir, &["branch", "-M", "main"]);
+        git(dir, &["checkout", "-q", "-b", "feat"]);
+        std::fs::write(
+            dir.join("b.txt"),
+            "committed
+",
+        )
+        .unwrap();
+        commit_all(dir, "branch work");
+        std::fs::write(
+            dir.join("a.txt"),
+            "two
+",
+        )
+        .unwrap();
+
+        let part = discover_diff(dir.to_str().unwrap());
+        assert_eq!(count_diff_stats(&part.text), (1, 1, 1), "{}", part.text);
+        assert!(!part.text.contains("b.txt"));
     }
 
     #[test]
@@ -591,13 +532,8 @@ rename to new";
         commit_all(dir, "init");
         std::fs::write(dir.join("new.txt"), "new\n").unwrap();
 
-        let bundle = discover_diff(dir.to_str().unwrap());
-        assert_eq!(
-            count_diff_stats(&bundle.full.text).0,
-            1,
-            "{}",
-            bundle.full.text
-        );
+        let part = discover_diff(dir.to_str().unwrap());
+        assert_eq!(count_diff_stats(&part.text).0, 1, "{}", part.text);
     }
 
     #[test]
@@ -607,8 +543,8 @@ rename to new";
         std::fs::write(dir.join("a.txt"), "one\n").unwrap();
         git(dir, &["add", "a.txt"]);
 
-        let bundle = discover_diff(dir.to_str().unwrap());
-        assert_eq!(count_diff_stats(&bundle.local.text), (1, 1, 0));
+        let part = discover_diff(dir.to_str().unwrap());
+        assert_eq!(count_diff_stats(&part.text), (1, 1, 0));
     }
 
     // --- truncation ---
@@ -653,13 +589,13 @@ rename to new";
             std::fs::write(dir.join(name), "new\n".repeat(200_000)).unwrap();
         }
 
-        let bundle = discover_diff(dir.to_str().unwrap());
-        let truncated = bundle.full.truncated.expect("diff is over the cap");
+        let part = discover_diff(dir.to_str().unwrap());
+        let truncated = part.truncated.expect("diff is over the cap");
         assert_eq!(truncated.total_files, 3);
         assert!(truncated.shown_files < 3, "{truncated:?}");
-        assert!(bundle.full.text.len() <= MAX_DIFF_SIZE);
-        assert_eq!(truncated.shown_bytes as usize, bundle.full.text.len());
-        assert_eq!(truncated.shown_files, count_diff_stats(&bundle.full.text).0);
+        assert!(part.text.len() <= MAX_DIFF_SIZE);
+        assert_eq!(truncated.shown_bytes as usize, part.text.len());
+        assert_eq!(truncated.shown_files, count_diff_stats(&part.text).0);
     }
 
     #[test]
@@ -670,9 +606,8 @@ rename to new";
         commit_all(dir, "init");
         std::fs::write(dir.join("a.txt"), "two\n").unwrap();
 
-        let bundle = discover_diff(dir.to_str().unwrap());
-        assert_eq!(bundle.full.truncated, None);
-        assert_eq!(bundle.local.truncated, None);
+        let part = discover_diff(dir.to_str().unwrap());
+        assert_eq!(part.truncated, None);
     }
 
     #[test]
