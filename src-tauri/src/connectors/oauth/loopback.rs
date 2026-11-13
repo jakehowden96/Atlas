@@ -25,6 +25,8 @@ pub struct Listener {
 pub async fn bind(ports: &[u16]) -> Result<Listener, AtlasError> {
     for &port in ports {
         if let Ok(listener) = TcpListener::bind(("127.0.0.1", port)).await {
+            // The bound port, so port 0 (tests) reports the one the OS picked.
+            let port = listener.local_addr().map_or(port, |a| a.port());
             return Ok(Listener { listener, port });
         }
     }
@@ -146,35 +148,26 @@ mod tests {
         out
     }
 
-    async fn free_port() -> u16 {
-        TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port()
-    }
-
     fn keep_open() -> (oneshot::Sender<()>, oneshot::Receiver<()>) {
         oneshot::channel()
     }
 
     #[tokio::test]
     async fn returns_the_code_and_closes() {
-        let l = bind(&[free_port().await]).await.unwrap();
+        let l = bind(&[0]).await.unwrap();
         let port = l.port;
         let (_tx, rx) = keep_open();
         let task = tokio::spawn(l.wait("s1", TIMEOUT, rx));
         let page = get(port, "/callback?code=abc&state=s1").await;
         assert!(page.contains("close this tab"));
         assert_eq!(task.await.unwrap().unwrap(), "abc");
-        // a second callback finds nothing listening
-        assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
+        // No "port is closed now" check: `wait(self)` drops the listener, and a
+        // parallel test can be handed the freed port, which flaked on Windows CI.
     }
 
     #[tokio::test]
     async fn other_paths_are_ignored() {
-        let l = bind(&[free_port().await]).await.unwrap();
+        let l = bind(&[0]).await.unwrap();
         let port = l.port;
         let (_tx, rx) = keep_open();
         let task = tokio::spawn(l.wait("s", TIMEOUT, rx));
@@ -185,7 +178,7 @@ mod tests {
 
     #[tokio::test]
     async fn wrong_state_is_rejected() {
-        let l = bind(&[free_port().await]).await.unwrap();
+        let l = bind(&[0]).await.unwrap();
         let port = l.port;
         let (_tx, rx) = keep_open();
         let task = tokio::spawn(l.wait("good", TIMEOUT, rx));
@@ -195,7 +188,7 @@ mod tests {
 
     #[tokio::test]
     async fn denied_is_typed() {
-        let l = bind(&[free_port().await]).await.unwrap();
+        let l = bind(&[0]).await.unwrap();
         let port = l.port;
         let (_tx, rx) = keep_open();
         let task = tokio::spawn(l.wait("s", TIMEOUT, rx));
@@ -210,8 +203,8 @@ mod tests {
     async fn busy_port_falls_back_and_all_busy_errors() {
         let held = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let busy = held.local_addr().unwrap().port();
-        let spare = free_port().await;
-        assert_eq!(bind(&[busy, spare]).await.unwrap().port, spare);
+        let port = bind(&[busy, 0]).await.unwrap().port;
+        assert!(port != busy && port != 0);
         assert!(matches!(
             bind(&[busy]).await,
             Err(AtlasError::ConnectorPortBusy { .. })
@@ -220,7 +213,7 @@ mod tests {
 
     #[tokio::test]
     async fn times_out() {
-        let l = bind(&[free_port().await]).await.unwrap();
+        let l = bind(&[0]).await.unwrap();
         let (_tx, rx) = keep_open();
         let r = l.wait("s", Duration::from_millis(50), rx).await;
         assert!(matches!(r, Err(AtlasError::Timeout { .. })));
@@ -228,7 +221,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancel_stops_the_wait() {
-        let l = bind(&[free_port().await]).await.unwrap();
+        let l = bind(&[0]).await.unwrap();
         let (tx, rx) = keep_open();
         let task = tokio::spawn(l.wait("s", TIMEOUT, rx));
         tx.send(()).unwrap();

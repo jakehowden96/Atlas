@@ -81,7 +81,7 @@
         { keys: "⇧F10 / Menu", label: "Open the context menu" },
         { keys: "← →", label: "Move between open file tabs" },
         { keys: "Home / End", label: "First / last file tab" },
-        // Only while a tab has focus, so it never meets Close session (⌘⇧W).
+        // Only on Files with a tab focused; Close session (⌘W) only fires on a session.
         { keys: chord("W"), label: "Close the focused file tab" },
         { keys: ENTER, label: "Follow the focused link in the preview" },
       ],

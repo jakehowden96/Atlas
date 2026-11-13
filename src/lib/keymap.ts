@@ -103,10 +103,10 @@ export const DEFAULT_KEYMAP: Keymap = {
     { mod: true, shift: false, key: "Escape" },
     { mod: true, shift: false, key: "." },
   ],
-  /* Ends the focused session and returns to Sessions. ⇧ is what keeps this
-     off ⌘W, which `Menu::default` binds to Close Window on macOS — the OS
-     would take the window down before the webview saw the key. */
-  closeSession: [{ mod: true, shift: true, key: "w" }],
+  /* Ends the focused session and returns to Sessions, like ⌘W closes a browser
+     tab. The macOS menu's Close Window item is removed in `lib.rs` so AppKit
+     does not take ⌘W first. */
+  closeSession: [{ mod: true, shift: false, key: "w" }],
   /* The shortcut sheet. A bare `?` is the usual chord for it, but every binding
      here is dispatched off `svelte:window` with no is-typing guard, so a
      modifierless key would swallow the character everywhere text is entered —
@@ -219,15 +219,12 @@ export function formatChord(bindings: Binding[], isMac: boolean = IS_MAC): strin
 }
 
 /** Chords the OS or a focused text field already uses: clipboard, select all,
- *  undo, and the macOS quit/hide/minimise/close-window menu items. Binding one
- *  would make the global handler swallow it everywhere, paste included. */
+ *  undo, and the macOS quit/hide/minimise menu items. Binding one would make
+ *  the global handler swallow it everywhere, paste included. */
 const RESERVED_KEYS = new Set(["c", "v", "x", "a", "z", "q", "h", "m", "tab"]);
 
 function isReserved(e: KeyboardEvent): boolean {
-  const key = e.key.toLowerCase();
-  // ⇧⌘W is Atlas's own close-session default; plain ⌘W is the window's.
-  if (key === "w") return !e.shiftKey;
-  return RESERVED_KEYS.has(key);
+  return RESERVED_KEYS.has(e.key.toLowerCase());
 }
 
 /**

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.5
+
+- Shortcuts: ⌘W (Ctrl+W on Windows and Linux) closes the session you are viewing, like closing a
+  browser tab. On macOS the menu's Close Window item no longer takes ⌘W first.
+- CI: the OAuth callback tests bind port 0 instead of guessing a free port, fixing the flaky
+  test that failed v2.1.4's Windows build.
+
 ## 2.1.4
 
 - Live sessions: Atlas re-checks every running session's transcript every few seconds, so a session

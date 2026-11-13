@@ -236,6 +236,21 @@ pub fn run() -> std::process::ExitCode {
         // shortcut — only fires while Atlas is the frontmost app.
         .menu(|app_handle| {
             let menu = Menu::default(app_handle)?;
+            // ⌘W closes a session (keymap `closeSession`), as it closes a tab in a
+            // browser. The default Close Window item would take it first on macOS.
+            #[cfg(target_os = "macos")]
+            for item in menu.items()? {
+                if let Some(submenu) = item.as_submenu() {
+                    for child in submenu.items()? {
+                        let close = child.as_predefined_menuitem().is_some_and(|p| {
+                            p.text().is_ok_and(|t| t.replace('&', "") == "Close Window")
+                        });
+                        if close {
+                            submenu.remove(&child)?;
+                        }
+                    }
+                }
+            }
             let back_to_sessions = MenuItemBuilder::new("Back to Sessions")
                 .id(BACK_TO_SESSIONS_MENU_ID)
                 .accelerator("CmdOrCtrl+Escape")

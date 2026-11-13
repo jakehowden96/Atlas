@@ -168,13 +168,15 @@ describe("parseBindingFromEvent", () => {
   });
 
   it("refuses chords the OS or the text fields need for clipboard, undo and window control", () => {
-    for (const key of ["c", "v", "x", "a", "z", "q", "w", "h", "m", "Tab"]) {
+    for (const key of ["c", "v", "x", "a", "z", "q", "h", "m", "Tab"]) {
       expect(parseBindingFromEvent(makeKeyEvent({ metaKey: true, key }))).toBeNull();
     }
-    // ⇧⌘W is Atlas's own default for closing a session, so it stays recordable.
-    expect(
-      parseBindingFromEvent(makeKeyEvent({ metaKey: true, shiftKey: true, key: "w" })),
-    ).toEqual({ mod: true, shift: true, key: "w" });
+    // ⌘W is Atlas's own default for closing a session, so it stays recordable.
+    expect(parseBindingFromEvent(makeKeyEvent({ metaKey: true, key: "w" }))).toEqual({
+      mod: true,
+      shift: false,
+      key: "w",
+    });
   });
 
   it("rejects bare modifiers, AltGr and chords without ⌘/Ctrl", () => {
