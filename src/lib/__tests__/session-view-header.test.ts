@@ -81,13 +81,11 @@ describe("session view header", () => {
     expect(get(focusedSessionId)).toBe("s2");
   });
 
-  it("footer has no totals", () => {
+  it("has no footer status bar", () => {
     (liveTiles as unknown as Writable<unknown>).set([tile(1, "running")]);
     activeTabId.set("t1");
     const { container } = render(SessionView);
-    const foot = container.querySelector("footer")!;
-    expect(foot.textContent).toContain("Edit");
-    expect(foot.textContent).not.toMatch(/tools|ctx|\$/);
+    expect(container.querySelector("footer")).toBeNull();
   });
 });
 

@@ -15,17 +15,12 @@ export const focusedSessionId = writable<string>("");
 /** Session view's right-hand Changes drawer. */
 export const diffOpen = writable(false);
 
-/** Session view's activity rail. Open by default. */
-export const railOpen = writable(true);
-
-/** How wide the rail is while it is open: the full 300px or the 48px state. */
+/** Session view's activity rail is always on screen: the full 300px or the 48px state. */
 export type RailWidth = "expanded" | "thin";
 export const railWidth = writable<RailWidth>("expanded");
 
-/** The header button's step: expanded, then thin, then hidden, then expanded again. */
-export function cycleRail(open: boolean, width: RailWidth): { open: boolean; width: RailWidth } {
-  if (!open) return { open: true, width: "expanded" };
-  return width === "expanded" ? { open: true, width: "thin" } : { open: false, width };
+export function toggleRail() {
+  railWidth.update((w) => (w === "expanded" ? "thin" : "expanded"));
 }
 
 /** Files view's own right-hand rail — outline, properties, links. */

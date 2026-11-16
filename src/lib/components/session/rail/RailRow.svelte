@@ -34,6 +34,12 @@
     column-gap: 10px;
   }
 
+  /* Each line of a row on its own, with room between them. */
+  .text {
+    display: grid;
+    gap: 4px;
+  }
+
   .mark {
     display: flex;
     align-items: center;

@@ -196,7 +196,7 @@
   }
 
   .phrase {
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
 
   .strong {
@@ -217,7 +217,8 @@
 
   .stack {
     display: grid;
-    gap: 14px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
   }
 
   .dim {
@@ -227,7 +228,8 @@
   .title {
     font-size: var(--fs-sm);
     font-weight: 500;
-    line-height: 20px;
+    line-height: 22px;
+    overflow-wrap: anywhere;
   }
 
   .mono {

@@ -12,15 +12,7 @@
   import { liveTiles } from "../../stores/liveTiles";
   import { panelData } from "../../stores/panel";
   import { activeTabId, tabs } from "../../stores/terminal";
-  import {
-    activeView,
-    cycleRail,
-    diffOpen,
-    focusedSessionId,
-    railOpen,
-    railWidth,
-    showView,
-  } from "../../stores/view";
+  import { activeView, diffOpen, focusedSessionId, showView } from "../../stores/view";
   import { workspaces } from "../../stores/workspace";
   import ChangesDrawer from "../changes/ChangesDrawer.svelte";
   import TerminalContainer from "../terminal/TerminalContainer.svelte";
@@ -175,19 +167,6 @@
         {/if}
       </Button>
 
-      <Tooltip text="Toggle activity rail" shortcut={$chords.toggleRail}>
-        <IconButton
-          icon={$railOpen ? "right_panel_close" : "right_panel_open"}
-          label="Toggle activity rail"
-          aria-pressed={$railOpen}
-          onclick={() => {
-            const next = cycleRail($railOpen, $railWidth);
-            railWidth.set(next.width);
-            railOpen.set(next.open);
-          }}
-        />
-      </Tooltip>
-
       <Tooltip text="Close session" shortcut={$chords.closeSession}>
         <IconButton icon="close" label="Close session" onclick={endSession} />
       </Tooltip>
@@ -200,15 +179,9 @@
     <div class="pane">
       <TerminalContainer {visibleTabId} />
     </div>
-
-    <footer class="foot">
-      <span class="last-tool">{tile?.live.lastTool ?? "No tool calls yet"}</span>
-      <div class="spacer"></div>
-      <span>{tile ? "Transcript live" : "No transcript"}</span>
-    </footer>
   </div>
 
-  <ActivityRail open={$railOpen} {tile} {now} />
+  <ActivityRail {tile} {now} />
 
   <!-- Slides over the whole view, so it is a sibling of `.main` and the rail.
        The header button above toggles `diffOpen`; Esc closes it first
@@ -318,25 +291,5 @@
     flex: 1;
     min-height: 0;
     background: var(--term-bg);
-  }
-
-  /* ── Footer status bar ─────────────────────────────────────────────────── */
-  .foot {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-    gap: 14px;
-    height: var(--h-lg);
-    padding: 0 16px;
-    border-top: 1px solid var(--border);
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-  }
-
-  .last-tool {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 </style>

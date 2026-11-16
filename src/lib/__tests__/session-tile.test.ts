@@ -21,6 +21,7 @@ vi.mock("../stores/terminal", async (importOriginal) => ({
 
 import SessionTile from "../components/sessions/SessionTile.svelte";
 import type { SessionTile as Tile } from "../overview";
+import { tickets } from "../stores/tickets";
 import { focusedSessionId } from "../stores/view";
 import type { LiveSession } from "../../types/generated/LiveSession";
 
@@ -108,14 +109,29 @@ describe("SessionTile", () => {
     expect(get(focusedSessionId)).toBe("row-1");
   });
 
-  it("hides the diff delta when there is no diff", () => {
-    const { container, unmount } = renderTile();
-    expect(container.querySelector(".diff")).toBeNull();
-    unmount();
-    const { container: c2 } = renderTile(
-      makeTile({ diff: { linesAdded: 3, linesRemoved: 1 } as Tile["diff"] }),
+  it("shows the linked ticket ID and context, not branch or diff", () => {
+    const { container, unmount } = renderTile(
+      makeTile(
+        { diff: { linesAdded: 3, linesRemoved: 1 } as Tile["diff"] },
+        { contextTokens: 181_000 },
+      ),
     );
-    expect(c2.querySelector(".diff")?.textContent).toContain("+3");
+    const meta = container.querySelector(".row2")!.textContent ?? "";
+    expect(meta).toContain("181k ctx");
+    expect(meta).not.toContain("main");
+    expect(meta).not.toContain("+3");
+    expect(container.querySelector(".ticket")).toBeNull();
+    unmount();
+    tickets.set({
+      "row-1": {
+        link: { connectorId: "linear", id: "ENG-482" },
+        state: { kind: "none" },
+        last: null,
+      },
+    });
+    const { container: c2 } = renderTile();
+    expect(c2.querySelector(".ticket")?.textContent).toBe("ENG-482");
+    tickets.set({});
   });
 
   it("draws the global focus ring when focus is visible", () => {

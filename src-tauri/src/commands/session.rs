@@ -1,5 +1,6 @@
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::process::Command;
+use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
@@ -90,9 +91,10 @@ pub struct ClaudeInfo {
 /// a console program would flash a console window each time, so it is created
 /// without one. [UNVERIFIED on Windows]
 pub(crate) fn probe(program: impl AsRef<OsStr>) -> Command {
-    // `mut` is only needed on Windows, where the creation flag is set.
-    #[allow(unused_mut)]
     let mut command = Command::new(program);
+    if let Some(path) = REFRESHED_PATH.lock().ok().and_then(|p| p.clone()) {
+        command.env("PATH", path);
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -116,16 +118,96 @@ pub(crate) fn first_line(mut command: Command) -> Option<String> {
         .map(str::to_string)
 }
 
-fn which_claude() -> Option<String> {
-    #[cfg(target_os = "windows")]
-    let lookup = "where";
-    #[cfg(not(target_os = "windows"))]
-    let lookup = "which";
+/// PATH for probes once a lookup has missed: the startup PATH plus the tool
+/// directories that exist now and the login shell's PATH. Kept here and passed
+/// to each probe, because changing the process environment while other threads
+/// spawn is unsound.
+static REFRESHED_PATH: Mutex<Option<OsString>> = Mutex::new(None);
 
-    let mut command = probe(lookup);
-    command.arg("claude");
-    // `where` can print several matches; the first is the one that would run.
-    first_line(command)
+/// Where `name` resolves, taking the first `which`/`where` line that `keep`
+/// accepts (`where` can print several; the first is the one that would run).
+/// A tool installed after Atlas launched can land in a directory the startup
+/// PATH lacks (a new nvm version, a custom npm prefix), so a miss refreshes
+/// PATH and looks once more: that is what makes "Check again" work.
+pub(crate) fn which_tool(name: &str, keep: fn(&str) -> bool) -> Option<String> {
+    let lookup = || {
+        let mut command = probe(if cfg!(windows) { "where" } else { "which" });
+        command.arg(name);
+        let output = command.output().ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty() && keep(line))
+            .map(str::to_string)
+    };
+    lookup().or_else(|| {
+        refresh_path();
+        lookup()
+    })
+}
+
+fn refresh_path() {
+    let current = std::env::var_os("PATH").unwrap_or_default();
+    let mut extra = crate::gui_path_additions(dirs::home_dir().as_deref());
+    if let Some(shell) = login_shell_path() {
+        extra.extend(std::env::split_paths(&shell));
+    }
+    if let Some(joined) = crate::extended_path(&current, extra) {
+        if let Ok(mut slot) = REFRESHED_PATH.lock() {
+            *slot = Some(joined);
+        }
+    }
+}
+
+#[cfg(unix)]
+const LOGIN_SHELL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// PATH as the user's login shell sets it, which is what their terminal sees.
+/// A GUI launch never runs the rc files that set it.
+#[cfg(unix)]
+fn login_shell_path() -> Option<OsString> {
+    use std::io::Read;
+    use std::process::Stdio;
+    let shell = std::env::var_os("SHELL").unwrap_or_else(|| "/bin/sh".into());
+    let mut child = Command::new(shell)
+        .args(["-lc", "printf '\n%s' \"$PATH\""])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let deadline = std::time::Instant::now() + LOGIN_SHELL_TIMEOUT;
+    // shortcut: an rc file printing more than a pipe buffer before exit would stall until the timeout.
+    while child.try_wait().ok()?.is_none() {
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    let mut out = String::new();
+    child.stdout.take()?.read_to_string(&mut out).ok()?;
+    // The last line, past anything an rc file printed.
+    let path = out.lines().next_back()?.trim();
+    if path.is_empty() {
+        None
+    } else {
+        Some(path.into())
+    }
+}
+
+// shortcut: Windows has no login shell; a PATH change made after launch (registry) is not picked up until restart.
+#[cfg(not(unix))]
+fn login_shell_path() -> Option<OsString> {
+    None
+}
+
+fn which_claude() -> Option<String> {
+    which_tool("claude", |_| true)
 }
 
 /// Asked of the path `which_claude` found rather than of the bare name, so an

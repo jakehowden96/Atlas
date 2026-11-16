@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.1.7
+
+- Sessions grid: at most two tiles per row; more sessions start a new row and the page scrolls.
+  Tile height follows the window (70%, never under 360px). One tile per row below 960px wide.
+- Session tiles: the header shows the linked ticket ID and context in K instead of branch,
+  elapsed time and diff. The footer is gone.
+- Session view: the footer status bar and the "Transcript stopped updating" warning are gone.
+- Activity rail: always on screen, expanded or thin; its toggle moved from the header into the
+  rail. A saved "hidden" rail opens thin. With no ticket linked, the ticket area is one slim row
+  with the branch and a ticket icon button.
+- Activity rail: long PR headlines and check names wrap inside the tile instead of overflowing,
+  and Plan, Agents and PR rows have more room between lines.
+- Tooltips draw above the title bar, so the close button's tooltip is no longer hidden.
+- Stats: "Check again" finds a codeburn installed after Atlas launched, by refreshing PATH from
+  the login shell, and shows Checking… / Still not found. The claude check uses the same lookup.
+
 ## 2.1.6
 
 - Changes drawer: shows only uncommitted work, `git diff HEAD` plus untracked files, per repo and

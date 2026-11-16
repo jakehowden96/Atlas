@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use ts_rs::TS;
 
-use super::session::{first_line, probe};
+use super::session::{first_line, probe, which_tool};
 use crate::error::AtlasError;
 
 const TOOL: &str = "codeburn";
@@ -118,30 +118,15 @@ fn validate_action(args: &[String]) -> Result<(), AtlasError> {
 /// The runnable `codeburn`. On Windows `where` also lists npm's extensionless
 /// shell shim, which cannot be spawned, so only exe/cmd/bat matches count.
 fn which_codeburn() -> Option<String> {
-    #[cfg(windows)]
-    let lookup = "where";
-    #[cfg(not(windows))]
-    let lookup = "which";
-
-    let mut command = probe(lookup);
-    command.arg(TOOL);
-    let output = command.output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(str::trim)
-        .find(|line| {
-            if !cfg!(windows) {
-                return !line.is_empty();
-            }
-            let lower = line.to_ascii_lowercase();
-            [".exe", ".cmd", ".bat"]
-                .iter()
-                .any(|ext| lower.ends_with(ext))
-        })
-        .map(str::to_string)
+    which_tool(TOOL, |line| {
+        if !cfg!(windows) {
+            return true;
+        }
+        let lower = line.to_ascii_lowercase();
+        [".exe", ".cmd", ".bat"]
+            .iter()
+            .any(|ext| lower.ends_with(ext))
+    })
 }
 
 /// Read up to `cap` bytes, then keep draining so the child never blocks on a

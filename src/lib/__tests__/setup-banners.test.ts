@@ -2,7 +2,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import SetupBanners from "../components/shell/SetupBanners.svelte";
-import { tailStaleMinutes } from "../components/session/rail/TailingNote.svelte";
 import { claudeHookStale } from "../stores/claude";
 import { claudeHook, tailTranscripts } from "../stores/settings";
 
@@ -54,19 +53,5 @@ describe("out-of-date hook banner", () => {
     render(SetupBanners);
     await waitFor(() => expect(h.info).toHaveBeenCalled());
     expect(screen.queryByRole("button", { name: "Update" })).toBeNull();
-  });
-});
-
-describe("tailStaleMinutes", () => {
-  const now = Date.parse("2026-01-01T00:10:00Z");
-  it("is null for fresh, non-running or unknown activity", () => {
-    expect(tailStaleMinutes("running", "2026-01-01T00:09:30Z", now)).toBeNull();
-    expect(tailStaleMinutes("idle", "2026-01-01T00:00:00Z", now)).toBeNull();
-    expect(tailStaleMinutes("needsYou", "2026-01-01T00:00:00Z", now)).toBeNull();
-    expect(tailStaleMinutes("running", null, now)).toBeNull();
-  });
-  it("counts whole minutes for a quiet running session", () => {
-    expect(tailStaleMinutes("running", "2026-01-01T00:07:00Z", now)).toBe(3);
-    expect(tailStaleMinutes("running", "2026-01-01T00:07:50Z", now)).toBe(2);
   });
 });

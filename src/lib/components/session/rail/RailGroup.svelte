@@ -52,7 +52,8 @@
 <style>
   .group {
     display: grid;
-    gap: 10px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
   }
 
   .toggle,

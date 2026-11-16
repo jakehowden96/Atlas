@@ -38,6 +38,7 @@
     "progress_activity",
     "key",
     "arrow_upward",
+    "confirmation_number",
   ] as const;
   export type IconName = (typeof ICONS)[number];
 </script>

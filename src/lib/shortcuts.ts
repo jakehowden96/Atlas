@@ -10,10 +10,10 @@ import {
   newSessionOpen,
   openDialogOpen,
   openNewSession,
-  railOpen,
   shortcutsOpen,
   showView,
   TAB_VIEWS,
+  toggleRail,
   type View,
 } from "./stores/view";
 
@@ -24,7 +24,7 @@ const RUN: Record<Action, () => void> = {
   settings: () => settingsOpen.set(true),
   saveFile: () => void saveActiveFile(),
   openFile: () => openDialogOpen.set(true),
-  toggleRail: () => railOpen.update((v) => !v),
+  toggleRail: () => toggleRail(),
   tab1: () => showView(TAB_VIEWS[0]),
   tab2: () => showView(TAB_VIEWS[1]),
   tab3: () => showView(TAB_VIEWS[2]),

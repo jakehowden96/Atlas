@@ -30,6 +30,19 @@
 
   const INSTALL = "npm i -g codeburn";
 
+  // Feedback for "Check again", so a probe that still misses doesn't look like a dead button.
+  let checking = $state(false);
+  let rechecked = $state(false);
+  async function recheck() {
+    checking = true;
+    try {
+      await checkCodeburn();
+    } finally {
+      checking = false;
+      rechecked = true;
+    }
+  }
+
   type Range = Period | "6m" | "since";
   const ranges: Segment<Range>[] = [
     { id: "today", label: "Today" },
@@ -165,7 +178,10 @@
       {#snippet action()}
         <code>{INSTALL}</code>
         <CopyButton value={INSTALL} label="Copy install command" size="sm" />
-        <Button size="sm" onclick={() => void checkCodeburn()}>Check again</Button>
+        <Button size="sm" disabled={checking} onclick={() => void recheck()}
+          >{checking ? "Checking…" : "Check again"}</Button
+        >
+        {#if rechecked && !checking}<span class="still" role="status">Still not found</span>{/if}
       {/snippet}
     </EmptyState>
   {:else}
@@ -295,6 +311,11 @@
 </div>
 
 <style>
+  .still {
+    color: var(--muted);
+    font-size: var(--fs-xs);
+  }
+
   .stats-view {
     display: flex;
     flex-direction: column;

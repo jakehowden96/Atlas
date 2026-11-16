@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import { chords } from "../../stores/settings";
   import type { SessionTile } from "../../overview";
   import {
     agentsHeadline,
@@ -8,8 +9,9 @@
     planHeadline,
     planState,
   } from "../../session-view";
-  import { railWidth } from "../../stores/view";
-  import { closeWith } from "../ui/Modal.svelte";
+  import { railWidth, toggleRail } from "../../stores/view";
+  import IconButton from "../ui/IconButton.svelte";
+  import Tooltip from "../ui/Tooltip.svelte";
   import AgentsTile from "./rail/AgentsTile.svelte";
   import PlanTile from "./rail/PlanTile.svelte";
   import PrTile from "./rail/PrTile.svelte";
@@ -17,39 +19,13 @@
   import ThinRail, { type ThinMark } from "./rail/ThinRail.svelte";
 
   interface Props {
-    /** Bound to `railOpen`. The rail unmounts itself once the exit run ends. */
-    open: boolean;
     /** The focused session, or null before its first `session-update`. */
     tile: SessionTile | null;
     /** `Date.now()`, ticked once a second by the view, for the elapsed clocks. */
     now: number;
   }
 
-  let { open, tile, now }: Props = $props();
-
-  const EXIT_MS = 200;
-
-  // Same delayed-unmount shape as Modal: `visible` lags `open` so the slide-out
-  // keyframes finish painting before the node leaves the DOM.
-  let visible = $state(false);
-  let closing = $state(false);
-  /** The pending unmount. A reopen inside the exit window must cancel it, or it
-   *  would fire later and hide a panel that is meant to be open. */
-  let exitTimer: ReturnType<typeof setTimeout> | undefined;
-
-  $effect(() => {
-    if (open) {
-      clearTimeout(exitTimer);
-      visible = true;
-      closing = false;
-    } else if (visible && !closing) {
-      closing = true;
-      exitTimer = closeWith(() => {
-        visible = false;
-        closing = false;
-      }, EXIT_MS);
-    }
-  });
+  let { tile, now }: Props = $props();
 
   let live = $derived(tile?.live ?? null);
   let plan = $derived(live?.plan ?? []);
@@ -85,29 +61,46 @@
   }
 </script>
 
-{#if visible}
-  <aside class="rail" class:closing class:thin aria-label="Activity rail">
-    {#if thin}
-      <div class="fade thin-wrap">
-        <ThinRail {marks} waiting={tile?.state === "needsYou"} ticketId="" onexpand={expandTo} />
+{#snippet toggle()}
+  <div class="bar">
+    <Tooltip
+      text={thin ? "Expand activity rail" : "Collapse activity rail"}
+      shortcut={$chords.toggleRail}
+      side="left"
+    >
+      <IconButton
+        icon={thin ? "right_panel_open" : "right_panel_close"}
+        size="sm"
+        label={thin ? "Expand activity rail" : "Collapse activity rail"}
+        onclick={toggleRail}
+      />
+    </Tooltip>
+  </div>
+{/snippet}
+
+<aside class="rail" class:thin aria-label="Activity rail">
+  {#if thin}
+    <div class="fade thin-wrap">
+      {@render toggle()}
+      <ThinRail {marks} waiting={tile?.state === "needsYou"} ticketId="" onexpand={expandTo} />
+    </div>
+  {:else}
+    <div class="fade full">
+      {@render toggle()}
+      <RailHeader {tile} {now} />
+      <div class="tiles">
+        <PlanTile {plan} workspacePath={tile?.workspacePath} />
+        <AgentsTile {agents} worktree={live?.worktree ?? null} {now} />
+        <PrTile
+          workspacePath={tile?.workspacePath}
+          branch={tile?.branch ?? ""}
+          prUrl={live?.prUrl ?? null}
+          {now}
+        />
       </div>
-    {:else}
-      <div class="fade full">
-        <RailHeader {tile} {now} />
-        <div class="tiles">
-          <PlanTile {plan} workspacePath={tile?.workspacePath} />
-          <AgentsTile {agents} worktree={live?.worktree ?? null} {now} />
-          <PrTile
-            workspacePath={tile?.workspacePath}
-            branch={tile?.branch ?? ""}
-            prUrl={live?.prUrl ?? null}
-            {now}
-          />
-        </div>
-      </div>
-    {/if}
-  </aside>
-{/if}
+    </div>
+  {/if}
+</aside>
 
 <style>
   .rail {
@@ -125,10 +118,6 @@
     width: 48px;
   }
 
-  .rail.closing {
-    animation: atlasSlideOut 0.2s ease both;
-  }
-
   /* The content keeps its own width so it fades in rather than reflowing while
      the rail animates between 300 and 48. */
   .fade {
@@ -144,17 +133,31 @@
   }
 
   .thin-wrap {
+    display: flex;
+    flex-direction: column;
     flex-shrink: 0;
     width: 48px;
+  }
+
+  .bar {
+    display: flex;
+    flex-shrink: 0;
+    justify-content: flex-end;
+    padding: 4px 8px 0;
+  }
+
+  .thin .bar {
+    justify-content: center;
+    padding: 4px 0 0;
   }
 
   .tiles {
     display: flex;
     flex: 1;
     flex-direction: column;
-    gap: 8px;
+    gap: 12px;
     min-height: 0;
-    padding: 8px;
+    padding: 12px 8px;
     overflow-x: hidden;
     overflow-y: auto;
   }

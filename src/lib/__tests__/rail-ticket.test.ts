@@ -58,10 +58,12 @@ afterEach(() => {
 });
 
 describe("RailTicket", () => {
-  it("shows the empty state with a link button", () => {
-    render(RailTicket, props);
-    expect(screen.getByText("No ticket linked")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Link ticket" })).toBeTruthy();
+  it("shows one slim row with a link icon button when no ticket is linked", async () => {
+    const { container } = render(RailTicket, props);
+    expect(container.querySelector(".ticket.compact")).toBeTruthy();
+    expect(screen.queryByText("No ticket linked")).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Link ticket" }));
+    expect(screen.getByRole("form", { name: "Link ticket" })).toBeTruthy();
   });
 
   it("shows a linked ticket with a text status chip and a menu", () => {
@@ -76,8 +78,7 @@ describe("RailTicket", () => {
   it("names the provider from the connector when none is linked", async () => {
     connectors.set([conn({ kind: "notLinked" })]);
     render(RailTicket, props);
-    expect(screen.getByText("Link Linear to show tickets")).toBeTruthy();
-    await fireEvent.click(screen.getByRole("button", { name: "Link →" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Connect Linear to link tickets" }));
     expect(get(settingsOpen)).toBe(true);
   });
 

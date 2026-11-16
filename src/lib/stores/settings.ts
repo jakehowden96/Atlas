@@ -17,7 +17,7 @@ import { themeMode, type ThemeMode } from "../theme";
 import { openFiles, sources } from "./file-tabs";
 import { liveSessions } from "./liveSessions";
 import { workspaces } from "./workspace";
-import { railOpen, railWidth, type RailWidth } from "./view";
+import { railWidth, type RailWidth } from "./view";
 import { errorMessage } from "../ipc-error";
 import { showToast } from "./toast";
 
@@ -269,12 +269,9 @@ export async function loadSettings() {
     if (typeof data.autoCheckUpdates === "boolean") autoCheckUpdates.set(data.autoCheckUpdates);
     if (typeof data.claudeBinaryPath === "string") claudeBinaryPath.set(data.claudeBinaryPath);
     firstRunDismissed.set(data.firstRunDismissed === true);
-    if (data.railMode === "expanded" || data.railMode === "thin") {
-      railOpen.set(true);
-      railWidth.set(data.railMode);
-    } else if (data.railMode === "hidden") {
-      railOpen.set(false);
-    }
+    if (data.railMode === "expanded" || data.railMode === "thin") railWidth.set(data.railMode);
+    // The rail can no longer be hidden; a saved "hidden" comes back thin.
+    else if (data.railMode === "hidden") railWidth.set("thin");
     if (data.railTiles && typeof data.railTiles === "object") {
       const stored = data.railTiles as Record<string, unknown>;
       const tiles: RailTiles = {};
@@ -340,7 +337,7 @@ const persister = createStatePersister(
     claudeBinaryPath: get(claudeBinaryPath),
     firstRunDismissed: get(firstRunDismissed),
     keymap: get(keymap),
-    railMode: get(railOpen) ? get(railWidth) : "hidden",
+    railMode: get(railWidth),
     railTiles: get(railTiles),
   }),
   (e) => {
@@ -355,15 +352,13 @@ function persistSettings(): Promise<void> {
   return persister.request();
 }
 
-// The ⌘\ chord and the rail's own controls change these stores directly, so the
-// saved mode follows them here. The first call is the store's initial value.
-for (const store of [railOpen, railWidth]) {
-  let first = true;
-  store.subscribe(() => {
-    if (first) first = false;
-    else void persistSettings();
-  });
-}
+// The ⌘\ chord and the rail's own controls change this store directly, so the
+// saved mode follows it here. The first call is the store's initial value.
+let firstRailWidth = true;
+railWidth.subscribe(() => {
+  if (firstRailWidth) firstRailWidth = false;
+  else void persistSettings();
+});
 
 /** Remember a tile's open or closed state, overriding its automatic one. */
 export async function setRailTile(key: keyof RailTiles, open: boolean) {

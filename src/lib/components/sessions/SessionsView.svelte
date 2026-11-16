@@ -346,12 +346,21 @@
   .grid {
     display: grid;
     flex: 1;
-    grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
-    grid-auto-rows: minmax(300px, 1fr);
+    /* Two tiles per row at most; further sessions start a new row and the grid scrolls. */
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    /* Rows scale with the window, with a floor so a short window stays readable. */
+    grid-auto-rows: max(360px, 70vh);
     gap: 14px;
     min-height: 0;
     padding: 14px 16px 16px;
     overflow: auto;
+  }
+
+  /* Too narrow for two readable tiles: one per row. */
+  @media (max-width: 960px) {
+    .grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
   /* ── Empty state ─────────────────────────────────────────────────────── */

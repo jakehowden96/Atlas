@@ -6,7 +6,6 @@
   import {
     activity,
     feedItems,
-    formatElapsed,
     openQuestion,
     pinKey,
     plainText,
@@ -17,9 +16,8 @@
   } from "../../overview";
   import { allowPendingTool, closeSession, denyPendingTool } from "../../session-actions";
   import { subagentMeta } from "../../session-view";
-  import { costTodayLine, fmtCost } from "../../format-cost";
-  import { sessionCosts } from "../../stores/cost";
   import { togglePinnedSession } from "../../stores/settings";
+  import { tickets } from "../../stores/tickets";
   import {
     activeTabId,
     canAnswerPermission,
@@ -33,7 +31,6 @@
   import Kbd from "../ui/Kbd.svelte";
   import StatePill, { type PillState } from "../ui/StatePill.svelte";
   import StatusMark from "../ui/StatusMark.svelte";
-  import { tailStaleMinutes } from "../session/rail/TailingNote.svelte";
 
   interface Props {
     tile: SessionTile;
@@ -65,10 +62,8 @@
   };
 
   let live = $derived(tile.live);
-  let cost = $derived($sessionCosts?.get(live.sessionUuid));
   let needsYou = $derived(tile.state === "needsYou");
-  let elapsed = $derived(formatElapsed(live.startedAt, now));
-  let staleMin = $derived(tailing ? tailStaleMinutes(tile.state, live.lastActivity, now) : null);
+  let ticketId = $derived($tickets[tile.atlasSessionId]?.link?.id ?? "");
 
   /** A permission prompt the hook flagged and the terminal screen really
       shows, as opposed to needs-you off a question — a closing one or an
@@ -202,8 +197,7 @@
   onclick={onCardClick}
   onkeydown={onKeydown}
 >
-  <!-- Same fields as the Session view's header, so the two screens read
-       alike: which session, which project, which branch, how long. -->
+  <!-- Which session, which project, which ticket, how full its context is. -->
   <div class="head">
     <div class="row1">
       <button type="button" class="label" tabindex="-1" onclick={open}>{tile.label}</button>
@@ -222,14 +216,10 @@
         <span class="swatch" style="background: {tile.workspaceColour}"></span>
         <span class="ws-name">{tile.workspaceName}</span>
       </span>
-      {#if tile.branch}<span class="branch">{tile.branch}</span>{/if}
-      <span class="elapsed">{elapsed}</span>
-      {#if tile.diff && (tile.diff.linesAdded > 0 || tile.diff.linesRemoved > 0)}
-        <span class="diff">
-          <span class="added">+{tile.diff.linesAdded}</span>
-          <span class="removed">−{tile.diff.linesRemoved}</span>
-        </span>
-      {/if}
+      <span class="meta">
+        {#if ticketId}<span class="ticket">{ticketId}</span>{/if}
+        <span>{formatTokens(live.contextTokens)} ctx</span>
+      </span>
     </div>
   </div>
 
@@ -323,25 +313,6 @@
       <span>{act.text}</span>
     </div>
   {/if}
-
-  {#if staleMin !== null}
-    <div class="ask">
-      <StatusMark state="attention" /><span class="wants"
-        >Transcript stopped updating · {staleMin}m</span
-      >
-    </div>
-  {/if}
-
-  <!-- The Session view's footer, field for field. -->
-  <div class="foot">
-    <span class="last-tool">{shortToolName(live.pendingTool?.name ?? live.lastTool)}</span>
-    <span class="stats"
-      >{live.toolCalls} tools · {formatTokens(live.contextTokens)} ctx · {cost
-        ? fmtCost(cost.total)
-        : "—"}{#if costTodayLine(cost)}
-        · {costTodayLine(cost)}{/if}</span
-    >
-  </div>
 </article>
 
 <style>
@@ -409,16 +380,6 @@
     cursor: pointer;
   }
 
-  .branch {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-  }
-
   .ws {
     display: inline-flex;
     align-items: center;
@@ -442,22 +403,19 @@
     white-space: nowrap;
   }
 
-  .elapsed,
-  .diff {
+  .meta {
+    display: inline-flex;
     flex-shrink: 0;
+    gap: 10px;
+    margin-left: auto;
     color: var(--muted);
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
     font-variant-numeric: tabular-nums;
   }
 
-  .added {
-    color: var(--accent);
-  }
-
-  .removed {
-    margin-left: 4px;
-    color: var(--danger);
+  .ticket {
+    color: var(--text);
   }
 
   /* A pin is state, not just an action — it stays lit once set. */
@@ -714,34 +672,5 @@
     to {
       transform: rotate(360deg);
     }
-  }
-
-  /* ── Footer ──────────────────────────────────────────────────────────── */
-  .foot {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-    gap: 10px;
-    padding: 8px 14px;
-    border-top: 1px solid var(--border);
-    white-space: nowrap;
-    min-width: 0;
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-  }
-
-  .last-tool {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    color: var(--text);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .stats {
-    flex-shrink: 0;
-    font-variant-numeric: tabular-nums;
   }
 </style>

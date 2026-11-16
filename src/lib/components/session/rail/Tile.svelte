@@ -67,7 +67,8 @@
 
   .head {
     display: grid;
-    grid-template-columns: 10px 1fr auto 16px;
+    /* minmax(0, …) so a long headline wraps instead of widening the tile. */
+    grid-template-columns: 10px minmax(0, 1fr) auto 16px;
     column-gap: 10px;
     align-items: start;
     width: 100%;
@@ -78,7 +79,7 @@
     color: var(--text);
     font-family: var(--font-ui);
     font-size: var(--fs-sm);
-    line-height: 20px;
+    line-height: 22px;
     text-align: left;
     cursor: pointer;
   }
@@ -125,7 +126,8 @@
 
   .body {
     display: grid;
-    gap: 14px;
-    padding: 0 14px 14px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    padding: 4px 16px 16px;
   }
 </style>

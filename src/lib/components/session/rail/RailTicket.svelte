@@ -7,8 +7,10 @@
   import { retry, tickets, unlinkTicket } from "../../../stores/tickets";
   import Button from "../../ui/Button.svelte";
   import ConnectorLogo from "../../ui/ConnectorLogo.svelte";
+  import IconButton from "../../ui/IconButton.svelte";
   import MenuButton from "../../ui/MenuButton.svelte";
   import Spinner from "../../ui/Spinner.svelte";
+  import Tooltip from "../../ui/Tooltip.svelte";
   import TicketEditor from "./TicketEditor.svelte";
 
   let {
@@ -30,6 +32,9 @@
   const shown = $derived(st.kind === "ready" ? st.ticket : (entry?.last ?? null));
   const stale = $derived(!!shown && st.kind !== "ready" && st.kind !== "loading");
   const unlinked = $derived(!entry?.link && connector?.status.kind !== "linked");
+  // Nothing to show: one slim row with a button instead of the full card.
+  const compact = $derived(!editing && !shown && st.kind !== "loading" && !entry?.link);
+  const noService = $derived(unlinked || st.kind === "noConnector");
   // PRs in watched repos that already name this ticket.
   const ticketPrs = $derived(prsForTicket($prRepos, shown?.id ?? entry?.link?.id ?? ""));
 
@@ -68,7 +73,7 @@
 
 <svelte:window onkeydown={onwindowkeydown} />
 
-<div class="ticket" class:stale bind:this={root}>
+<div class="ticket" class:stale class:compact bind:this={root}>
   {#if editing}
     <TicketEditor
       {sessionId}
@@ -105,18 +110,25 @@
     {/if}
   {:else if st.kind === "loading"}
     <Spinner label="Loading ticket" />
-  {:else if unlinked || st.kind === "noConnector"}
-    <div class="none">Link {providerName} to show tickets</div>
-    <Button size="sm" onclick={() => openSettings("connectors")}>Link →</Button>
   {:else if entry?.link}
     <div class="head"><span class="id">{entry.link.id}</span></div>
     <div class="none">Couldn't load this ticket</div>
     <Button size="sm" onclick={() => void retry(sessionId)}>Retry</Button>
-  {:else}
-    <div class="none">No ticket linked</div>
-    <Button size="sm" data-trigger onclick={() => (editing = true)}>Link ticket</Button>
   {/if}
-  {#if branchLine}<div class="branch">{branchLine}</div>{/if}
+  {#if compact}
+    <div class="row">
+      <span class="branch">{branchLine}</span>
+      <Tooltip text={noService ? `Connect ${providerName} to link tickets` : "Link ticket"}>
+        <IconButton
+          icon="confirmation_number"
+          size="sm"
+          data-trigger
+          label={noService ? `Connect ${providerName} to link tickets` : "Link ticket"}
+          onclick={() => (noService ? openSettings("connectors") : (editing = true))}
+        />
+      </Tooltip>
+    </div>
+  {:else if branchLine}<div class="branch">{branchLine}</div>{/if}
 </div>
 
 <style>
@@ -127,6 +139,22 @@
     min-height: 134px;
     padding: 16px 16px 14px;
     background: var(--surface2);
+  }
+  .ticket.compact {
+    min-height: 0;
+    padding: 6px 8px 6px 16px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .row .branch {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .ticket.stale {
     box-shadow: inset 0 0 0 1px var(--warn);

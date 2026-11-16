@@ -157,8 +157,9 @@
   --z-overlay: 30;
   --z-popover: 40;
   --z-toast: 50;
-  --z-tooltip: 60;
   --z-titlebar: 70;
+  /* Above the title bar so a tooltip flipped up from a header button stays visible. */
+  --z-tooltip: 80;
 
   /* Motion */
   --dur-instant: 80ms;

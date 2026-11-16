@@ -21,7 +21,8 @@ import {
   tileOpen,
   waitingSummary,
 } from "../session-view";
-import { cycleRail } from "../stores/view";
+import { toggleRail, railWidth } from "../stores/view";
+import { get } from "svelte/store";
 
 const step = (text: string, status: string): PlanItem => ({ text, status });
 const fourteen = (): PlanItem[] =>
@@ -170,10 +171,12 @@ describe("tile state machine", () => {
   });
 });
 
-describe("cycleRail", () => {
-  it("steps expanded, thin, hidden, expanded", () => {
-    expect(cycleRail(true, "expanded")).toEqual({ open: true, width: "thin" });
-    expect(cycleRail(true, "thin")).toEqual({ open: false, width: "thin" });
-    expect(cycleRail(false, "thin")).toEqual({ open: true, width: "expanded" });
+describe("toggleRail", () => {
+  it("flips between expanded and thin, never hidden", () => {
+    railWidth.set("expanded");
+    toggleRail();
+    expect(get(railWidth)).toBe("thin");
+    toggleRail();
+    expect(get(railWidth)).toBe("expanded");
   });
 });

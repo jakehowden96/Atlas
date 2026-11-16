@@ -1,6 +1,6 @@
 [package]
 name = "atlas"
-version = "2.1.6"
+version = "2.1.7"
 description = "Mission control for Claude Code sessions"
 authors = ["Jake Howden"]
 license = "MIT"

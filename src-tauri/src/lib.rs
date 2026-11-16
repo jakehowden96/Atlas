@@ -160,7 +160,7 @@ fn newest_nvm_bin(home: &std::path::Path) -> Option<std::path::PathBuf> {
 }
 
 /// Every well-known tool directory that exists on this machine.
-fn gui_path_additions(home: Option<&std::path::Path>) -> Vec<std::path::PathBuf> {
+pub(crate) fn gui_path_additions(home: Option<&std::path::Path>) -> Vec<std::path::PathBuf> {
     let mut dirs: Vec<std::path::PathBuf> = SYSTEM_BIN_DIRS
         .iter()
         .map(std::path::PathBuf::from)
@@ -175,7 +175,7 @@ fn gui_path_additions(home: Option<&std::path::Path>) -> Vec<std::path::PathBuf>
 
 /// `current` with each of `extra` appended unless already present. Empty
 /// entries are dropped: an empty PATH element means the working directory.
-fn extended_path(
+pub(crate) fn extended_path(
     current: &std::ffi::OsStr,
     extra: Vec<std::path::PathBuf>,
 ) -> Option<std::ffi::OsString> {

@@ -27,7 +27,7 @@ import {
   jumpOpen,
   newSessionOpen,
   openDialogOpen,
-  railOpen,
+  railWidth,
 } from "../stores/view";
 
 function makeKeyEvent(overrides: Partial<KeyboardEvent> = {}): KeyboardEvent {
@@ -48,7 +48,7 @@ describe("handleGlobalKeydown", () => {
     vi.clearAllMocks();
     activeView.set("sessions");
     diffOpen.set(false);
-    railOpen.set(true);
+    railWidth.set("expanded");
     newSessionOpen.set(false);
     jumpOpen.set(false);
     openDialogOpen.set(false);
@@ -126,15 +126,15 @@ describe("handleGlobalKeydown", () => {
   it("⌘\\ toggles the activity rail", () => {
     const e = makeKeyEvent({ metaKey: true, key: "\\" });
     expect(handleGlobalKeydown(e)).toBe(true);
-    expect(get(railOpen)).toBe(false);
+    expect(get(railWidth)).toBe("thin");
     handleGlobalKeydown(makeKeyEvent({ metaKey: true, key: "\\" }));
-    expect(get(railOpen)).toBe(true);
+    expect(get(railWidth)).toBe("expanded");
   });
 
   it("Ctrl+Shift+\\ toggles the activity rail", () => {
     const e = makeKeyEvent({ ctrlKey: true, shiftKey: true, key: "\\" });
     expect(handleGlobalKeydown(e)).toBe(true);
-    expect(get(railOpen)).toBe(false);
+    expect(get(railWidth)).toBe("thin");
   });
 
   it.each([
@@ -183,7 +183,7 @@ describe("handleGlobalKeydown", () => {
     // And `AltGr+ß` types `\`, which must not toggle the rail.
     const backslash = makeKeyEvent({ ctrlKey: true, altKey: true, key: "\\" });
     expect(handleGlobalKeydown(backslash)).toBe(false);
-    expect(get(railOpen)).toBe(true);
+    expect(get(railWidth)).toBe("expanded");
   });
 
   it("Shift+Ctrl+1 is left unhandled", () => {
