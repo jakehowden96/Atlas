@@ -178,3 +178,9 @@ fn provider_is_github_device_code_pull_requests() {
     assert_eq!(info.kind, ConnectorKind::PullRequests);
     assert_eq!(info.methods, [AuthMethod::OAuth, AuthMethod::Cli]);
 }
+
+#[test]
+fn team_reviewer_parses_as_empty_login() {
+    let r: graphql::ReviewRequest = serde_json::from_str(r#"{"requestedReviewer":{}}"#).unwrap();
+    assert_eq!(r.requested_reviewer.unwrap().login, "");
+}

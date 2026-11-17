@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.9
+
+- Pull requests: the page no longer fails with "missing field `login`" when a PR has a team
+  requested as reviewer. Team reviewers are skipped; user reviewers still count toward
+  "Needs my review".
+
 ## 2.1.8
 
 - Icons: icon buttons draw 20px icons (24px on large buttons), the size Material Symbols is

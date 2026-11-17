@@ -94,6 +94,8 @@ pub struct RepoNode {
 
 #[derive(Debug, Deserialize)]
 pub struct Login {
+    /// Empty for a team reviewer: the `... on User` fragment yields `{}`, not null.
+    #[serde(default)]
     pub login: String,
 }
 
@@ -128,7 +130,7 @@ pub struct TotalCount {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewRequest {
-    /// `None` for a team or other non-user reviewer: the inline fragment is empty.
+    /// `{}` (empty login) for a team, `None` for a deleted reviewer.
     pub requested_reviewer: Option<Login>,
 }
 
