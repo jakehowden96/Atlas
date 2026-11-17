@@ -58,9 +58,9 @@ afterEach(() => {
 });
 
 describe("RailTicket", () => {
-  it("shows one slim row with a link icon button when no ticket is linked", async () => {
+  it("shows only a link button in the bar, no card, when no ticket is linked", async () => {
     const { container } = render(RailTicket, props);
-    expect(container.querySelector(".ticket.compact")).toBeTruthy();
+    expect(container.querySelector(".ticket")).toBeNull();
     expect(screen.queryByText("No ticket linked")).toBeNull();
     await fireEvent.click(screen.getByRole("button", { name: "Link ticket" }));
     expect(screen.getByRole("form", { name: "Link ticket" })).toBeTruthy();

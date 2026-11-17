@@ -1,24 +1,27 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import type { SessionTile } from "../../../overview";
   import { branchLine, waitingSummary } from "../../../session-view";
   import MeterStrip from "./MeterStrip.svelte";
   import RailTicket from "./RailTicket.svelte";
 
-  let { tile, now }: { tile: SessionTile | null; now: number } = $props();
+  let { tile, now, actions }: { tile: SessionTile | null; now: number; actions?: Snippet } =
+    $props();
 
   let live = $derived(tile?.live ?? null);
   let waiting = $derived(tile?.state === "needsYou");
 </script>
 
 <div class="header">
-  {#if waiting}
-    <div class="waiting">Waiting for you: {waitingSummary(live?.pendingTool ?? null)}</div>
-  {/if}
   <RailTicket
     sessionId={tile?.atlasSessionId ?? ""}
     branch={tile?.branch || live?.gitBranch || ""}
     branchLine={branchLine(tile?.branch || live?.gitBranch, live?.worktree ?? null)}
+    {actions}
   />
+  {#if waiting}
+    <div class="waiting">Waiting for you: {waitingSummary(live?.pendingTool ?? null)}</div>
+  {/if}
   <MeterStrip {live} {now} />
 </div>
 

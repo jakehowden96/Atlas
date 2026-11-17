@@ -26,7 +26,7 @@
 </script>
 
 <div class="banner {tone}" role={tone === "error" ? "alert" : "status"}>
-  <span class="mark"><Icon name={ICON[tone]} size={18} /></span>
+  <span class="mark"><Icon name={ICON[tone]} size={20} /></span>
   <div class="text">
     <div class="title">{title}</div>
     {#if children}<div class="body">{@render children()}</div>{/if}

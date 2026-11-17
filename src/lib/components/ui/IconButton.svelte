@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { HTMLButtonAttributes } from "svelte/elements";
+  import type { Align, Side } from "../../ui/floating";
   import { tooltip } from "../../ui/tooltip";
   import Icon, { type IconName } from "./Icon.svelte";
 
@@ -9,9 +10,23 @@
     label: string;
     variant?: "primary" | "secondary" | "ghost" | "danger";
     size?: "sm" | "md" | "lg";
+    /** Chord shown in the tooltip next to the label. */
+    shortcut?: string;
+    side?: Side;
+    align?: Align;
   }
 
-  let { icon, label, variant = "ghost", size = "md", type = "button", ...rest }: Props = $props();
+  let {
+    icon,
+    label,
+    variant = "ghost",
+    size = "md",
+    type = "button",
+    shortcut,
+    side,
+    align,
+    ...rest
+  }: Props = $props();
 </script>
 
 <button
@@ -19,9 +34,9 @@
   {type}
   class="ib {variant} {size}"
   aria-label={label}
-  use:tooltip={{ text: label }}
+  use:tooltip={{ text: label, shortcut, side, align }}
 >
-  <Icon name={icon} size={size === "sm" ? 16 : 18} />
+  <Icon name={icon} size={size === "lg" ? 24 : 20} />
 </button>
 
 <style>

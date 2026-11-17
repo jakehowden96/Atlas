@@ -95,7 +95,7 @@
     </ul>
 
     <button class="drop" type="button" onclick={() => void addWorkspaceFolder()}>
-      <Icon name="folder" size={18} />
+      <Icon name="folder" size={20} />
       Drop a folder here
     </button>
 

@@ -11,7 +11,6 @@
   } from "../../session-view";
   import { railWidth, toggleRail } from "../../stores/view";
   import IconButton from "../ui/IconButton.svelte";
-  import Tooltip from "../ui/Tooltip.svelte";
   import AgentsTile from "./rail/AgentsTile.svelte";
   import PlanTile from "./rail/PlanTile.svelte";
   import PrTile from "./rail/PrTile.svelte";
@@ -62,32 +61,24 @@
 </script>
 
 {#snippet toggle()}
-  <div class="bar">
-    <Tooltip
-      text={thin ? "Expand activity rail" : "Collapse activity rail"}
-      shortcut={$chords.toggleRail}
-      side="left"
-    >
-      <IconButton
-        icon={thin ? "right_panel_open" : "right_panel_close"}
-        size="sm"
-        label={thin ? "Expand activity rail" : "Collapse activity rail"}
-        onclick={toggleRail}
-      />
-    </Tooltip>
-  </div>
+  <IconButton
+    icon={thin ? "right_panel_open" : "right_panel_close"}
+    label={thin ? "Expand activity rail" : "Collapse activity rail"}
+    shortcut={$chords.toggleRail}
+    side="left"
+    onclick={toggleRail}
+  />
 {/snippet}
 
 <aside class="rail" class:thin aria-label="Activity rail">
   {#if thin}
     <div class="fade thin-wrap">
-      {@render toggle()}
+      <div class="bar">{@render toggle()}</div>
       <ThinRail {marks} waiting={tile?.state === "needsYou"} ticketId="" onexpand={expandTo} />
     </div>
   {:else}
     <div class="fade full">
-      {@render toggle()}
-      <RailHeader {tile} {now} />
+      <RailHeader {tile} {now} actions={toggle} />
       <div class="tiles">
         <PlanTile {plan} workspacePath={tile?.workspacePath} />
         <AgentsTile {agents} worktree={live?.worktree ?? null} {now} />

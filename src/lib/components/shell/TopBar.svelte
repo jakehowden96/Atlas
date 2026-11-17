@@ -134,9 +134,12 @@
   </div>
 
   {#if tier === "compact"}
-    <Tooltip text="Jump to" shortcut={$chords.jump}>
-      <IconButton icon="search" label="Jump to" onclick={() => jumpOpen.set(true)} />
-    </Tooltip>
+    <IconButton
+      icon="search"
+      label="Jump to"
+      shortcut={$chords.jump}
+      onclick={() => jumpOpen.set(true)}
+    />
   {:else}
     <Button variant="ghost" size="sm" onclick={() => jumpOpen.set(true)}>
       Jump to…
@@ -149,9 +152,13 @@
     {#snippet trailing()}<Kbd onInk>{$chords.newSession}</Kbd>{/snippet}
   </Button>
 
-  <Tooltip text="Settings" shortcut={$chords.settings} align="end">
-    <IconButton icon="settings" label="Settings" onclick={() => settingsOpen.set(true)} />
-  </Tooltip>
+  <IconButton
+    icon="settings"
+    label="Settings"
+    shortcut={$chords.settings}
+    align="end"
+    onclick={() => settingsOpen.set(true)}
+  />
 </header>
 
 <style>

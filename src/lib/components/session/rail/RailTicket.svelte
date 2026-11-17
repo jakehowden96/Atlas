@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, type Snippet } from "svelte";
   import { openUrl } from "../../../ipc";
   import { connectors } from "../../../stores/connectors";
   import { prRepos, prsForTicket } from "../../../stores/prs";
@@ -10,14 +10,14 @@
   import IconButton from "../../ui/IconButton.svelte";
   import MenuButton from "../../ui/MenuButton.svelte";
   import Spinner from "../../ui/Spinner.svelte";
-  import Tooltip from "../../ui/Tooltip.svelte";
   import TicketEditor from "./TicketEditor.svelte";
 
   let {
     sessionId,
     branch = "",
     branchLine,
-  }: { sessionId: string; branch?: string; branchLine: string } = $props();
+    actions,
+  }: { sessionId: string; branch?: string; branchLine: string; actions?: Snippet } = $props();
 
   let editing = $state(false);
   let root = $state<HTMLElement>();
@@ -32,7 +32,7 @@
   const shown = $derived(st.kind === "ready" ? st.ticket : (entry?.last ?? null));
   const stale = $derived(!!shown && st.kind !== "ready" && st.kind !== "loading");
   const unlinked = $derived(!entry?.link && connector?.status.kind !== "linked");
-  // Nothing to show: one slim row with a button instead of the full card.
+  // Nothing to show: only the bar's link button, no card.
   const compact = $derived(!editing && !shown && st.kind !== "loading" && !entry?.link);
   const noService = $derived(unlinked || st.kind === "noConnector");
   // PRs in watched repos that already name this ticket.
@@ -73,62 +73,66 @@
 
 <svelte:window onkeydown={onwindowkeydown} />
 
-<div class="ticket" class:stale class:compact bind:this={root}>
-  {#if editing}
-    <TicketEditor
-      {sessionId}
-      {branch}
-      initial={entry?.link?.id ?? ""}
-      onclose={() => void close()}
-    />
-  {:else if shown}
-    <div class="head">
-      <ConnectorLogo connector={connector?.info.id ?? ""} size={16} />
-      <span class="id">{shown.id}</span>
-      <span class="chip {shown.statusKind}">{shown.status}</span>
-      <span class="menu">
-        <MenuButton icon="more_horiz" label="Ticket actions" {items} {onselect} align="end" />
-      </span>
-    </div>
-    <div class="title" class:dim={stale}>{shown.title}</div>
-    {#if ticketPrs.length > 0}
-      <ul class="prs" aria-label="Pull requests for {shown.id}">
-        {#each ticketPrs as { repo, pr } (pr.url)}
-          <li>
-            <Button variant="link" onclick={() => void openUrl(pr.url)}>{repo}#{pr.number}</Button>
-            <span class="pr-title">{pr.title}</span>
-          </li>
-        {/each}
-      </ul>
+<div bind:this={root}>
+  <div class="bar">
+    <span class="branch">{branchLine}</span>
+    {#if compact}
+      <IconButton
+        icon="confirmation_number"
+        data-trigger
+        label={noService ? `Connect ${providerName} to link tickets` : "Link ticket"}
+        onclick={() => (noService ? openSettings("connectors") : (editing = true))}
+      />
     {/if}
-    {#if stale}
-      <div class="note">
-        couldn't refresh · <Button variant="link" onclick={() => void retry(sessionId)}
-          >Retry</Button
-        >
-      </div>
-    {/if}
-  {:else if st.kind === "loading"}
-    <Spinner label="Loading ticket" />
-  {:else if entry?.link}
-    <div class="head"><span class="id">{entry.link.id}</span></div>
-    <div class="none">Couldn't load this ticket</div>
-    <Button size="sm" onclick={() => void retry(sessionId)}>Retry</Button>
-  {/if}
-  {#if compact}
-    <div class="row">
-      <span class="branch">{branchLine}</span>
-      <Tooltip text={noService ? `Connect ${providerName} to link tickets` : "Link ticket"}>
-        <IconButton
-          icon="confirmation_number"
-          size="sm"
-          data-trigger
-          label={noService ? `Connect ${providerName} to link tickets` : "Link ticket"}
-          onclick={() => (noService ? openSettings("connectors") : (editing = true))}
+    {@render actions?.()}
+  </div>
+  {#if !compact}
+    <div class="ticket" class:stale>
+      {#if editing}
+        <TicketEditor
+          {sessionId}
+          {branch}
+          initial={entry?.link?.id ?? ""}
+          onclose={() => void close()}
         />
-      </Tooltip>
+      {:else if shown}
+        <div class="head">
+          <ConnectorLogo connector={connector?.info.id ?? ""} size={16} />
+          <span class="id">{shown.id}</span>
+          <span class="chip {shown.statusKind}">{shown.status}</span>
+          <span class="menu">
+            <MenuButton icon="more_horiz" label="Ticket actions" {items} {onselect} align="end" />
+          </span>
+        </div>
+        <div class="title" class:dim={stale}>{shown.title}</div>
+        {#if ticketPrs.length > 0}
+          <ul class="prs" aria-label="Pull requests for {shown.id}">
+            {#each ticketPrs as { repo, pr } (pr.url)}
+              <li>
+                <Button variant="link" onclick={() => void openUrl(pr.url)}
+                  >{repo}#{pr.number}</Button
+                >
+                <span class="pr-title">{pr.title}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        {#if stale}
+          <div class="note">
+            couldn't refresh · <Button variant="link" onclick={() => void retry(sessionId)}
+              >Retry</Button
+            >
+          </div>
+        {/if}
+      {:else if st.kind === "loading"}
+        <Spinner label="Loading ticket" />
+      {:else if entry?.link}
+        <div class="head"><span class="id">{entry.link.id}</span></div>
+        <div class="none">Couldn't load this ticket</div>
+        <Button size="sm" onclick={() => void retry(sessionId)}>Retry</Button>
+      {/if}
     </div>
-  {:else if branchLine}<div class="branch">{branchLine}</div>{/if}
+  {/if}
 </div>
 
 <style>
@@ -140,17 +144,14 @@
     padding: 16px 16px 14px;
     background: var(--surface2);
   }
-  .ticket.compact {
-    min-height: 0;
-    padding: 6px 8px 6px 16px;
-  }
-  .row {
+  .bar {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
     min-width: 0;
+    padding: 4px 8px 4px 16px;
   }
-  .row .branch {
+  .bar .branch {
     flex: 1;
     min-width: 0;
     overflow: hidden;

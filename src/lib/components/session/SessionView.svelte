@@ -21,7 +21,6 @@
   import MenuButton from "../ui/MenuButton.svelte";
   import StatePill, { type PillState } from "../ui/StatePill.svelte";
   import Icon from "../ui/Icon.svelte";
-  import Tooltip from "../ui/Tooltip.svelte";
   import { tooltip } from "../../ui/tooltip";
   import ActivityRail from "./ActivityRail.svelte";
 
@@ -120,13 +119,12 @@
 <div class="session">
   <div class="main">
     <header class="head">
-      <Tooltip text="Back to Sessions" shortcut={$chords.backToSessions}>
-        <IconButton
-          icon="arrow_back"
-          label="Back to Sessions"
-          onclick={() => showView("sessions")}
-        />
-      </Tooltip>
+      <IconButton
+        icon="arrow_back"
+        label="Back to Sessions"
+        shortcut={$chords.backToSessions}
+        onclick={() => showView("sessions")}
+      />
 
       {#if tile}
         <StatePill state={PILL[tile.state]} />
@@ -149,13 +147,11 @@
       {/if}
 
       {#if tile}
-        <Tooltip text="Reveal workspace in file manager">
-          <IconButton
-            icon="folder"
-            label="Reveal workspace in file manager"
-            onclick={() => void revealInFileManager(tile.workspacePath)}
-          />
-        </Tooltip>
+        <IconButton
+          icon="folder"
+          label="Reveal workspace in file manager"
+          onclick={() => void revealInFileManager(tile.workspacePath)}
+        />
       {/if}
 
       <Button aria-pressed={$diffOpen} onclick={() => diffOpen.update((v) => !v)}>
@@ -167,9 +163,12 @@
         {/if}
       </Button>
 
-      <Tooltip text="Close session" shortcut={$chords.closeSession}>
-        <IconButton icon="close" label="Close session" onclick={endSession} />
-      </Tooltip>
+      <IconButton
+        icon="close"
+        label="Close session"
+        shortcut={$chords.closeSession}
+        onclick={endSession}
+      />
     </header>
 
     <!-- No permission card over the terminal: Claude Code draws its own prompt

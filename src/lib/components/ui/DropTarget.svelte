@@ -34,7 +34,7 @@
 <div class="drop" class:over class:rejecting aria-hidden={over ? undefined : "true"}>
   {#if over}
     <div class="card" role="status">
-      <Icon name="folder" size={18} />
+      <Icon name="folder" size={20} />
       <p class="title">Drop to add as a workspace</p>
       <p class="hint">{dropHint(current)}</p>
     </div>

@@ -19,7 +19,7 @@
   <p class="compact"><Icon name={icon} />{title}</p>
 {:else}
   <div class="empty">
-    <span class="disc"><Icon name={icon} size={18} /></span>
+    <span class="disc"><Icon name={icon} size={20} /></span>
     <p class="title">{title}</p>
     {#if description}<p class="desc">{description}</p>{/if}
     {#if action}<div class="action">{@render action()}</div>{/if}

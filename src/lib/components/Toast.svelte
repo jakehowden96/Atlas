@@ -70,7 +70,7 @@
       onfocusin={() => pauseToast(toast.id)}
       onfocusout={() => resumeToast(toast.id)}
     >
-      <span class="mark"><Icon name={meta.icon} size={18} /></span>
+      <span class="mark"><Icon name={meta.icon} size={20} /></span>
       <div class="text">
         <div class="title"><span class="word">{meta.word}:</span> {toast.title}</div>
         {#if toast.body}

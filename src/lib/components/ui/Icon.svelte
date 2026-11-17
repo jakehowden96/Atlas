@@ -46,17 +46,28 @@
 <script lang="ts">
   interface Props {
     name: IconName;
-    size?: 16 | 18;
+    /** 16 inline with text; 20 in sm/md buttons (the font's design size); 24 in lg. */
+    size?: 16 | 20 | 24;
     /** Announced name; without it the icon is hidden from assistive tech. */
     label?: string;
   }
 
   let { name, size = 16, label }: Props = $props();
+
+  // Glyphs that draw less ink than their neighbours get whole extra pixels; opsz follows.
+  const OPTICAL: Partial<Record<IconName, number>> = { close: 2 };
+
+  let px = $derived(size + (OPTICAL[name] ?? 0));
+  // opsz bottoms out at 20, so smaller sizes are scaled copies: heavier wght keeps their strokes from thinning.
+  let variation = $derived(
+    `"FILL" 0, "wght" ${px < 20 ? 500 : 400}, "GRAD" 0, "opsz" ${Math.min(48, Math.max(20, px))}`,
+  );
 </script>
 
 <span
   class="material-symbols-outlined"
-  style:font-size="{size}px"
+  style:font-size="{px}px"
+  style:font-variation-settings={variation}
   role={label ? "img" : undefined}
   aria-label={label}
   aria-hidden={label ? undefined : "true"}>{name}</span

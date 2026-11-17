@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.1.8
+
+- Icons: icon buttons draw 20px icons (24px on large buttons), the size Material Symbols is
+  designed at, so glyphs like the ticket's dashed line render sharp. Each icon's optical size
+  follows its font size, 16px inline icons use a heavier weight so their strokes don't thin, and
+  close is 2px larger so it reads the same size as its neighbours. Button heights are unchanged.
+- Activity rail: the expanded rail's collapse button sits in the ticket bar beside the link
+  button instead of in a row of its own. With no ticket linked the bar is the only row.
+- Icon buttons carry their own tooltip and shortcut hint, so the top bar, session header and
+  file tree no longer wrap them in a second tooltip.
+
 ## 2.1.7
 
 - Sessions grid: at most two tiles per row; more sessions start a new row and the page scrolls.

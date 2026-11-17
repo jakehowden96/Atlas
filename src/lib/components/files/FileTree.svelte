@@ -61,7 +61,6 @@
   import Kbd from "../ui/Kbd.svelte";
   import SearchInput from "../ui/SearchInput.svelte";
   import Select from "../ui/Select.svelte";
-  import Tooltip from "../ui/Tooltip.svelte";
   import Tree, { type TreeItem } from "../ui/Tree.svelte";
   import type { TreeKind } from "../ui/TreeRow.svelte";
 
@@ -444,9 +443,7 @@
         onChange={(id) => fileWs.set(id)}
       />
     </div>
-    <Tooltip text="New note">
-      <IconButton icon="add" label="New note" disabled={!$fileWs} onclick={() => newNote()} />
-    </Tooltip>
+    <IconButton icon="add" label="New note" disabled={!$fileWs} onclick={() => newNote()} />
   </div>
 
   <!-- Filters the three sections below by name. No chord hint on the field,
