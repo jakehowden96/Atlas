@@ -16,14 +16,15 @@
   import { showToast } from "../../stores/toast";
   import { addSource, fileWs, openFile } from "../../stores/files";
   import { openDialogOpen } from "../../stores/view";
-  import Button from "../ui/Button.svelte";
-  import Icon from "../ui/Icon.svelte";
-  import IconButton from "../ui/IconButton.svelte";
-  import InlineAlert from "../ui/InlineAlert.svelte";
-  import ListRow from "../ui/ListRow.svelte";
-  import Modal from "../ui/Modal.svelte";
-  import Skeleton from "../ui/Skeleton.svelte";
-  import Tooltip from "../ui/Tooltip.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import Icon from "../ui/icon/icon.svelte";
+  import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import * as Item from "$lib/components/ui/item/index.js";
+  import { activateOnKey } from "../../ui/activate";
+  import * as Dialog from "$lib/components/ui/dialog/index.js";
+  import { Skeleton } from "$lib/components/ui/skeleton/index.js";
+  import * as Tooltip from "$lib/components/ui/tooltip/index.js";
   import { errorMessage } from "../../ipc-error";
 
   let dir = $state("");
@@ -114,15 +115,13 @@
   }
 </script>
 
-<Modal
-  open={$openDialogOpen}
-  onClose={() => openDialogOpen.set(false)}
-  title="Open file"
-  width="620px"
->
+<Dialog.Root open={$openDialogOpen} onOpenChange={(o) => { if (!o) (() => openDialogOpen.set(false))(); }}>
+  <Dialog.Content class="w-[min(620px,calc(100vw-2rem))]">
+    <Dialog.Header><Dialog.Title>Open file</Dialog.Title></Dialog.Header>
+    <Dialog.Body>
   <div class="dialog">
     <div class="bar">
-      <IconButton
+      <TooltipButton
         icon="arrow_upward"
         label="Up one folder"
         size="sm"
@@ -147,10 +146,10 @@
 
     <div class="list">
       {#if error}
-        <InlineAlert>{error}</InlineAlert>
+        <Alert.Root variant="destructive" layout="inline"><Icon name="error" /><Alert.Title>{error}</Alert.Title></Alert.Root>
       {:else if loading}
         {#each [0, 1, 2, 3, 4] as n (n)}
-          <div class="skel"><Skeleton width="{80 - n * 10}%" /></div>
+          <div class="skel"><Skeleton style="width: {80 - n * 10}%" class="rounded-sm" /></div>
         {/each}
       {:else if entries.length === 0}
         <p class="message">This folder is empty</p>
@@ -159,16 +158,14 @@
         <div class="options" role="listbox" aria-label="Folder contents" onkeydown={onListKeydown}>
           {#each entries as entry (entry.path)}
             {@const blocked = !entry.is_dir && !entry.is_text}
-            <ListRow option disabled={blocked} onclick={() => pick(entry)}>
+            <Item.Root role="option" aria-selected={false} data-selected={false} aria-disabled={blocked || undefined} data-disabled={blocked || undefined} tabindex={blocked ? -1 : 0} onclick={() => pick(entry)} onkeydown={activateOnKey}>
               <Icon name={entry.is_dir ? "folder" : "article"} />
               {#if blocked}
-                <Tooltip text="Only Markdown and text files can be opened">
-                  <span class="name">{entry.name}</span>
-                </Tooltip>
+                <Tooltip.Root><Tooltip.Trigger>{#snippet child({ props })}<span {...props} class="inline-flex min-w-0"><span class="name">{entry.name}</span></span>{/snippet}</Tooltip.Trigger><Tooltip.Content>Only Markdown and text files can be opened</Tooltip.Content></Tooltip.Root>
               {:else}
                 <span class="name">{entry.name}</span>
               {/if}
-            </ListRow>
+            </Item.Root>
           {/each}
         </div>
       {/if}
@@ -177,11 +174,11 @@
       {/if}
     </div>
   </div>
-  {#snippet footer()}
-    <span class="note">Markdown &amp; text only</span>
-    <Button onclick={addFolder}>Add folder to Files</Button>
-  {/snippet}
-</Modal>
+    </Dialog.Body>
+    <Dialog.Footer><span class="note">Markdown &amp; text only</span>
+    <Button variant="outline" onclick={addFolder}>Add folder to Files</Button></Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
 
 <style>
   .dialog {
@@ -211,28 +208,28 @@
   .crumb {
     flex-shrink: 0;
     padding: 1px var(--sp-1);
-    border-radius: var(--r-xs);
-    color: var(--muted);
+    border-radius: var(--radius-xs);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     white-space: nowrap;
     cursor: pointer;
   }
 
   .crumb:hover {
-    background: var(--surface2);
-    color: var(--text);
+    background: var(--muted);
+    color: var(--foreground);
   }
 
   .crumb.leaf {
-    color: var(--text);
+    color: var(--foreground);
   }
 
   .sep {
     flex-shrink: 0;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
 
   .list {
@@ -258,8 +255,8 @@
 
   .message {
     margin: var(--sp-2);
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 
   .name {
@@ -272,7 +269,7 @@
   .note {
     margin-right: auto;
     align-self: center;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 </style>

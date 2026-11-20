@@ -67,6 +67,6 @@
     flex-direction: column;
     height: 100vh;
     width: 100vw;
-    background: var(--bg);
+    background: var(--background);
   }
 </style>

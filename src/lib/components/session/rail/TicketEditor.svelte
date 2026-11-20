@@ -1,13 +1,14 @@
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import { onMount } from "svelte";
   import { connectors } from "../../../stores/connectors";
   import { openSettings } from "../../../stores/settings";
   import { linkTicket, retry, tickets } from "../../../stores/tickets";
   import { normalizeTicketId, suggestTicketId } from "../../../tickets";
-  import Button from "../../ui/Button.svelte";
-  import InlineAlert from "../../ui/InlineAlert.svelte";
-  import Input from "../../ui/Input.svelte";
-  import Spinner from "../../ui/Spinner.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import { Input } from "$lib/components/ui/input/index.js";
+  import { Spinner } from "$lib/components/ui/spinner/index.js";
 
   let {
     sessionId,
@@ -59,7 +60,7 @@
     <Input
       bind:value
       mono
-      invalid={invalid || st?.kind === "notFound"}
+      aria-invalid={invalid || st?.kind === "notFound" ? true : undefined}
       placeholder="ABC-123"
       aria-label="Ticket ID"
       disabled={st?.kind === "loading"}
@@ -71,21 +72,21 @@
     </button>
   {/if}
   {#if invalid}
-    <InlineAlert>Use a ticket ID like ABC-123</InlineAlert>
+    <Alert.Root variant="destructive" layout="inline"><Icon name="error" /><Alert.Title>Use a ticket ID like ABC-123</Alert.Title></Alert.Root>
   {:else if st?.kind === "loading"}
-    <Spinner label="Looking up ticket" />
+    <span class="inline-flex items-center gap-2 text-caption text-muted-foreground" role="status"><Spinner />Looking up ticket</span>
   {:else if st?.kind === "notFound"}
-    <InlineAlert>No ticket {normalizeTicketId(value)} found</InlineAlert>
+    <Alert.Root variant="destructive" layout="inline"><Icon name="error" /><Alert.Title>No ticket {normalizeTicketId(value)} found</Alert.Title></Alert.Root>
   {:else if st?.kind === "unauthorized"}
-    <InlineAlert tone="warn">{name} needs you to sign in again</InlineAlert>
+    <Alert.Root variant="warning" layout="inline"><Icon name="warning" /><Alert.Title>{name} needs you to sign in again</Alert.Title></Alert.Root>
     <Button variant="link" onclick={() => openSettings("connectors")}>Reconnect →</Button>
   {:else if st?.kind === "offline"}
-    <InlineAlert tone="warn">You are offline</InlineAlert>
+    <Alert.Root variant="warning" layout="inline"><Icon name="warning" /><Alert.Title>You are offline</Alert.Title></Alert.Root>
     <Button variant="link" onclick={() => void retry(sessionId)}>Retry</Button>
   {:else if st?.kind === "noConnector"}
-    <InlineAlert tone="warn">Link {name} to show tickets</InlineAlert>
+    <Alert.Root variant="warning" layout="inline"><Icon name="warning" /><Alert.Title>Link {name} to show tickets</Alert.Title></Alert.Root>
   {:else if st?.kind === "error"}
-    <InlineAlert>{st.message}</InlineAlert>
+    <Alert.Root variant="destructive" layout="inline"><Icon name="error" /><Alert.Title>{st.message}</Alert.Title></Alert.Root>
   {/if}
   <div class="hint">Enter to link, Esc to cancel</div>
 </form>
@@ -98,20 +99,20 @@
   .suggest {
     justify-self: start;
     padding: 0 var(--sp-2);
-    border: 1px solid var(--border2);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    color: var(--text);
+    border: 1px solid var(--input);
+    border-radius: var(--radius-md);
+    background: var(--card);
+    color: var(--foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     cursor: pointer;
   }
   .suggest span {
-    color: var(--muted);
-    font-family: var(--font-ui);
+    color: var(--muted-foreground);
+    font-family: var(--font-sans);
   }
   .hint {
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 </style>

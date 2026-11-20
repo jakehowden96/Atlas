@@ -37,7 +37,7 @@
     let lo = 0;
     const parts = series.length
       ? series.map((s) => ({ v: d.parts[s.id] ?? 0, color: s.color, id: s.id }))
-      : [{ v: d.total, color: "var(--accent)", id: "" }];
+      : [{ v: d.total, color: "var(--success)", id: "" }];
     return parts.map((p) => {
       const out = { y: y(lo + p.v), h: Math.max(0, y(lo) - y(lo + p.v)), color: p.color, id: p.id };
       lo += p.v;
@@ -116,9 +116,9 @@
     overflow: visible;
   }
   text {
-    fill: var(--muted);
+    fill: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
   }
   rect {
     transition: opacity var(--dur-base) var(--ease-out);
@@ -127,13 +127,13 @@
     opacity: 0.18;
   }
   .peak {
-    stroke: var(--warn);
+    stroke: var(--warning);
     stroke-dasharray: 4 4;
   }
   text.peak {
-    fill: var(--warn);
+    fill: var(--warning);
     stroke: none;
-    font-weight: var(--fw-semi);
+    font-weight: var(--font-weight-semibold);
   }
   .tip {
     position: absolute;
@@ -142,20 +142,20 @@
     display: flex;
     gap: var(--sp-3);
     padding: var(--sp-1) var(--sp-3);
-    border: 1px solid var(--border2);
-    border-radius: var(--r-md);
-    background: var(--surface);
+    border: 1px solid var(--input);
+    border-radius: var(--radius-md);
+    background: var(--card);
     box-shadow: var(--elev-1);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     white-space: nowrap;
     pointer-events: none;
   }
   .tip b {
     font-family: var(--font-mono);
-    font-weight: var(--fw-semi);
+    font-weight: var(--font-weight-semibold);
   }
   .m {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .legend {
     display: flex;
@@ -164,8 +164,8 @@
     margin: var(--sp-3) 0 0;
     padding: 0;
     list-style: none;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
   }
   .legend li {
     display: inline-flex;
@@ -181,8 +181,8 @@
   .empty {
     margin: 0;
     padding: var(--sp-7) 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
     text-align: center;
   }
 </style>

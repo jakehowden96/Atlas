@@ -7,15 +7,16 @@
 </script>
 
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { claudeCheck } from "../../ipc";
   import { errorMessage } from "../../ipc-error";
   import { recheckClaude } from "../../stores/claude";
   import { setClaudeBinaryPath, openSettings } from "../../stores/settings";
-  import Banner from "../ui/Banner.svelte";
-  import Button from "../ui/Button.svelte";
-  import CopyButton from "../ui/CopyButton.svelte";
-  import EmptyState from "../ui/EmptyState.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import CopyButton from "../app/common/CopyButton.svelte";
+  import * as Empty from "$lib/components/ui/empty/index.js";
 
   interface Props {
     /** "panel" replaces the grid; "banner" sits over it. */
@@ -45,27 +46,29 @@
 </script>
 
 {#snippet buttons()}
-  <Button variant="primary" onclick={choose}>Choose executable…</Button>
-  <Button onclick={recheckClaude}>Check again</Button>
+  <Button variant="default" onclick={choose}>Choose executable…</Button>
+  <Button variant="outline" onclick={recheckClaude}>Check again</Button>
   <Button variant="link" onclick={() => openSettings("claude")}>Open Claude Code settings</Button>
 {/snippet}
 
 {#if variant === "banner"}
   <div class="banner">
-    <Banner tone="error" title="Claude Code not found">
-      Sessions can't start until Atlas can run claude. {pickError}
-      {#snippet actions()}{@render buttons()}{/snippet}
-    </Banner>
+    <Alert.Root variant="destructive">
+<Icon name="error" />
+<Alert.Title>Claude Code not found</Alert.Title>
+<Alert.Description>Sessions can't start until Atlas can run claude. {pickError}</Alert.Description>
+<Alert.Action>{@render buttons()}</Alert.Action>
+</Alert.Root>
   </div>
 {:else}
   <div class="panel">
-    <EmptyState
-      icon="error"
-      title="Claude Code not found"
-      description="Atlas can't run claude, so sessions can't start. Install it, then check again"
-    >
-      {#snippet action()}
-        <ul class="cmds">
+    <Empty.Root>
+  <Empty.Header>
+    <Empty.Media variant="icon"><Icon name="error" size={20} /></Empty.Media>
+    <Empty.Title>Claude Code not found</Empty.Title>
+    <Empty.Description>Atlas can't run claude, so sessions can't start. Install it, then check again</Empty.Description>
+  </Empty.Header>
+  <Empty.Content><ul class="cmds">
           {#each INSTALL_COMMANDS as { os, command } (os)}
             <li>
               <span class="os">{os}</span>
@@ -75,9 +78,8 @@
           {/each}
         </ul>
         {#if pickError}<p class="err" role="alert">{pickError}</p>{/if}
-        <div class="row">{@render buttons()}</div>
-      {/snippet}
-    </EmptyState>
+        <div class="row">{@render buttons()}</div></Empty.Content>
+</Empty.Root>
   </div>
 {/if}
 
@@ -108,12 +110,12 @@
   }
   .os {
     min-width: 9rem;
-    font-size: var(--fs-xs);
-    color: var(--muted);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
   }
   code {
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   .row {
     display: flex;
@@ -123,7 +125,7 @@
   }
   .err {
     margin: 0 0 var(--sp-3);
-    font-size: var(--fs-xs);
-    color: var(--danger);
+    font-size: var(--text-caption);
+    color: var(--destructive);
   }
 </style>

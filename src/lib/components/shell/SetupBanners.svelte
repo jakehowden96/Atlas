@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import {
     claudeHook,
     setClaudeHookEnabled,
@@ -8,8 +9,8 @@
   import { errorMessage } from "../../ipc-error";
   import { onMount } from "svelte";
   import { claudeHookStale, refreshHookStale } from "../../stores/claude";
-  import Banner from "../ui/Banner.svelte";
-  import Button from "../ui/Button.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import { Button } from "$lib/components/ui/button/index.js";
 
   // Dismissal lasts until next launch, so it is deliberately not persisted.
   let hooksDismissed = $state(false);
@@ -29,30 +30,30 @@
 </script>
 
 {#if !$claudeHook && !hooksDismissed}
-  <Banner tone="warn" title="Hooks not installed">
-    Needs-you alerts are off until Atlas's hooks are in your Claude settings.{#if error}
-      {error}{/if}
-    {#snippet actions()}
-      <Button size="sm" variant="secondary" onclick={() => (hooksDismissed = true)}>Not now</Button>
-      <Button size="sm" variant="primary" onclick={installHooks}>Install hooks</Button>
-    {/snippet}
-  </Banner>
+  <Alert.Root variant="warning">
+<Icon name="warning" />
+<Alert.Title>Hooks not installed</Alert.Title>
+<Alert.Description>Needs-you alerts are off until Atlas's hooks are in your Claude settings.{#if error}
+      {error}{/if}</Alert.Description>
+<Alert.Action><Button size="sm" variant="outline" onclick={() => (hooksDismissed = true)}>Not now</Button>
+      <Button size="sm" variant="default" onclick={installHooks}>Install hooks</Button></Alert.Action>
+</Alert.Root>
 {/if}
 {#if $claudeHook && $claudeHookStale}
-  <Banner tone="warn" title="Claude hook out of date">
-    Atlas's hooks in your Claude settings are from an older build.{#if error}
-      {error}{/if}
-    {#snippet actions()}
-      <Button size="sm" variant="primary" onclick={installHooks}>Update</Button>
-    {/snippet}
-  </Banner>
+  <Alert.Root variant="warning">
+<Icon name="warning" />
+<Alert.Title>Claude hook out of date</Alert.Title>
+<Alert.Description>Atlas's hooks in your Claude settings are from an older build.{#if error}
+      {error}{/if}</Alert.Description>
+<Alert.Action><Button size="sm" variant="default" onclick={installHooks}>Update</Button></Alert.Action>
+</Alert.Root>
 {/if}
 {#if !$tailTranscripts}
-  <Banner tone="info" title="Transcript tailing is off">
-    Tiles and the session rail will not update from Claude's transcripts.
-    {#snippet actions()}
-      <Button size="sm" variant="secondary" onclick={() => setTailTranscripts(true)}>Turn on</Button
-      >
-    {/snippet}
-  </Banner>
+  <Alert.Root variant="default">
+<Icon name="info" />
+<Alert.Title>Transcript tailing is off</Alert.Title>
+<Alert.Description>Tiles and the session rail will not update from Claude's transcripts.</Alert.Description>
+<Alert.Action><Button size="sm" variant="outline" onclick={() => setTailTranscripts(true)}>Turn on</Button
+      ></Alert.Action>
+</Alert.Root>
 {/if}

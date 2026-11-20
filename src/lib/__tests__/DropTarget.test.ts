@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({}) }));
 vi.mock("../ipc", () => ({ classifyPaths: vi.fn() }));
 
-import DropTarget from "../components/ui/DropTarget.svelte";
+import DropTarget from "../components/app/shell/DropTarget.svelte";
 
 afterEach(cleanup);
 

@@ -1,12 +1,12 @@
 ﻿<script lang="ts">
-  import Button from "../ui/Button.svelte";
-  import IconButton from "../ui/IconButton.svelte";
-  import Kbd from "../ui/Kbd.svelte";
-  import Popover from "../ui/Popover.svelte";
-  import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
-  import Tooltip from "../ui/Tooltip.svelte";
-  import Badge from "../ui/Badge.svelte";
-  import NotificationsPanel, { unreadNotificationCount } from "../ui/NotificationsPanel.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
+  import { Kbd } from "$lib/components/ui/kbd/index.js";
+  import Popover from "../app/common/AnchoredPopover.svelte";
+  import Segmented, { type Segment } from "$lib/components/app/common/Segmented.svelte";
+  import * as Tooltip from "$lib/components/ui/tooltip/index.js";
+  import { Badge } from "$lib/components/ui/badge/index.js";
+  import NotificationsPanel, { unreadNotificationCount } from "../app/shell/NotificationsPanel.svelte";
   import StatusChips, { statusChipCount } from "./StatusChips.svelte";
   import { isMacPlatform } from "../../platform";
   import { TODAY_COST_TIP } from "../../stats-derive";
@@ -71,7 +71,7 @@
     {#if i > 0}<span class="sep" aria-hidden="true">·</span>{/if}
     <span class="part" class:needs={p.kind === "needsYou"} class:live={live(p)}>
       {#if p.kind === "spend"}
-        <Tooltip text={TODAY_COST_TIP}>{p.text}</Tooltip>
+        <Tooltip.Root><Tooltip.Trigger>{#snippet child({ props })}<span {...props} class="inline-flex min-w-0">{p.text}</span>{/snippet}</Tooltip.Trigger><Tooltip.Content>{TODAY_COST_TIP}</Tooltip.Content></Tooltip.Root>
       {:else}
         {p.text}
       {/if}
@@ -82,7 +82,7 @@
 <header class="topbar" class:mac data-tauri-drag-region bind:clientWidth={width}>
   <!-- Session is a detail view Sessions opens in place, not a tab of its own,
        so Sessions stays lit while it is showing. -->
-  <SegmentedControl
+  <Segmented
     options={viewOptions}
     value={$activeView === "session" ? "sessions" : $activeView}
     onChange={(id) => showView(id)}
@@ -116,14 +116,14 @@
 
   <div bind:this={bell} class="slot bell" data-slot="bell">
     <span class="bell-anchor">
-      <IconButton
+      <TooltipButton
         icon="notifications"
         label={bellCount > 0 ? `Notifications, ${bellCount} new` : "Notifications"}
         aria-haspopup="dialog"
         aria-expanded={bellOpen}
         onclick={() => (bellOpen = !bellOpen)}
       />
-      {#if bellCount > 0}<span class="bell-badge"><Badge count={bellCount} alert /></span>{/if}
+      {#if bellCount > 0}<span class="bell-badge"><Badge variant="destructive" size="sm">{bellCount}</Badge></span>{/if}
     </span>
     <Popover bind:open={bellOpen} trigger={bell} align="end" attached label="Notifications">
       <div class="bell-pop">
@@ -134,7 +134,7 @@
   </div>
 
   {#if tier === "compact"}
-    <IconButton
+    <TooltipButton
       icon="search"
       label="Jump to"
       shortcut={$chords.jump}
@@ -143,16 +143,16 @@
   {:else}
     <Button variant="ghost" size="sm" onclick={() => jumpOpen.set(true)}>
       Jump to…
-      {#snippet trailing()}<Kbd>{$chords.jump}</Kbd>{/snippet}
+      <Kbd>{$chords.jump}</Kbd>
     </Button>
   {/if}
 
-  <Button variant="primary" size="sm" onclick={() => openNewSession()}>
+  <Button variant="default" size="sm" onclick={() => openNewSession()}>
     + Session
-    {#snippet trailing()}<Kbd onInk>{$chords.newSession}</Kbd>{/snippet}
+    <Kbd>{$chords.newSession}</Kbd>
   </Button>
 
-  <IconButton
+  <TooltipButton
     icon="settings"
     label="Settings"
     shortcut={$chords.settings}
@@ -172,7 +172,7 @@
     height: 46px;
     padding: 0 16px;
     border-bottom: 1px solid var(--border);
-    background: var(--surface);
+    background: var(--card);
   }
 
   .topbar.mac {
@@ -213,8 +213,8 @@
     top: 0;
     right: 0;
     display: inline-flex;
-    border-radius: var(--r-pill);
-    background: var(--surface);
+    border-radius: var(--radius-full);
+    background: var(--card);
     transform: translate(45%, -35%);
     pointer-events: none;
   }
@@ -236,9 +236,9 @@
     display: flex;
     align-items: center;
     gap: var(--sp-2);
-    color: var(--text);
+    color: var(--foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
     white-space: nowrap;
   }
 
@@ -246,8 +246,8 @@
     height: var(--h-md);
     padding: 0 var(--sp-3);
     border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    background: var(--surface2);
+    border-radius: var(--radius-lg);
+    background: var(--muted);
     cursor: pointer;
   }
 
@@ -256,7 +256,7 @@
     flex-direction: column;
     gap: var(--sp-2);
     font-family: var(--font-mono);
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
   }
 
   .part {
@@ -266,7 +266,7 @@
   }
 
   .part.needs {
-    color: var(--warn);
+    color: var(--warning);
   }
 
   .part.live {
@@ -274,7 +274,7 @@
   }
 
   .sep {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   .pop .sep {

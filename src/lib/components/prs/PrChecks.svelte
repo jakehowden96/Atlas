@@ -5,8 +5,8 @@
   import type { Pr } from "../../stores/prs";
   import { showToast } from "../../stores/toast";
   import type { Check } from "../../../types/generated/Check";
-  import Icon from "../ui/Icon.svelte";
-  import StatusMark from "../ui/StatusMark.svelte";
+  import Icon from "../ui/icon/icon.svelte";
+  import StatusMark from "../app/common/StatusMark.svelte";
 
   interface Props {
     pr: Pr;
@@ -84,8 +84,8 @@
     gap: var(--sp-2);
     padding: var(--sp-3) var(--sp-4) var(--sp-4) var(--sp-8);
     border-top: 1px solid var(--border);
-    background: var(--surface2);
-    font-size: var(--fs-xs);
+    background: var(--muted);
+    font-size: var(--text-caption);
   }
 
   p {
@@ -94,7 +94,7 @@
 
   .review,
   .none {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   ul {
@@ -121,16 +121,16 @@
   }
 
   .word {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   .out,
   .fold {
     padding: 0;
     border: none;
-    border-radius: var(--r-sm);
+    border-radius: var(--radius-sm);
     background: none;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font: inherit;
     cursor: pointer;
   }
@@ -144,10 +144,10 @@
 
   .fold {
     align-self: flex-start;
-    color: var(--accent);
+    color: var(--success);
   }
 
   .out:hover {
-    color: var(--text);
+    color: var(--foreground);
   }
 </style>

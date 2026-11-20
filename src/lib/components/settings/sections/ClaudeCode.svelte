@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import "./shared.css";
   import type { ClaudeInfo } from "../../../../types/generated/ClaudeInfo";
   import { claudeCheck, claudeInfo } from "../../../ipc";
@@ -15,10 +16,10 @@
   } from "../../../stores/settings";
   import { open } from "@tauri-apps/plugin-dialog";
   import type { HookStatus } from "../../../../types/generated/HookStatus";
-  import Button from "../../ui/Button.svelte";
-  import InlineAlert from "../../ui/InlineAlert.svelte";
-  import StatusMark, { type MarkState } from "../../ui/StatusMark.svelte";
-  import Toggle from "../../ui/Toggle.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import StatusMark, { type MarkState } from "../../app/common/StatusMark.svelte";
+  import { Switch } from "$lib/components/ui/switch/index.js";
   import { errorMessage } from "../../../ipc-error";
 
   let claude = $state<ClaudeInfo | null>(null);
@@ -124,7 +125,7 @@
       <div class="row-title">Install hooks</div>
       <div class="row-desc">Flags sessions that need you and follows /clear and /compact</div>
     </div>
-    <Toggle checked={$claudeHook} label="Install hooks" onChange={(v) => void setHook(v)} />
+    <Switch checked={$claudeHook} onCheckedChange={(v) => void setHook(v)} aria-label="Install hooks" />
   </div>
 
   <div class="list">
@@ -136,7 +137,7 @@
         <span class="hook-desc">{hook.desc}</span>
         <span class="hook-status">{LABEL[status]}</span>
         {#if status === "stale"}
-          <Button size="sm" onclick={() => void setHook(true)}>Update</Button>
+          <Button variant="outline" size="sm" onclick={() => void setHook(true)}>Update</Button>
         {/if}
       </div>
     {/each}
@@ -147,11 +148,7 @@
       <div class="row-title">Tail transcripts</div>
       <div class="row-desc">Shows context, tokens, cost and subagents on each session</div>
     </div>
-    <Toggle
-      checked={$tailTranscripts}
-      label="Tail transcripts"
-      onChange={(v) => void setTailTranscripts(v)}
-    />
+    <Switch checked={$tailTranscripts} onCheckedChange={(v) => void setTailTranscripts(v)} aria-label="Tail transcripts" />
   </div>
 
   <div class="row">
@@ -169,10 +166,10 @@
     {#if $claudeBinaryPath}
       <Button size="sm" variant="ghost" onclick={() => void useDefault()}>Use default</Button>
     {/if}
-    <Button size="sm" onclick={() => void choose()}>Choose…</Button>
+    <Button variant="outline" size="sm" onclick={() => void choose()}>Choose…</Button>
   </div>
   {#if pickError}
-    <InlineAlert>{pickError}</InlineAlert>
+    <Alert.Root variant="destructive" layout="inline"><Icon name="error" /><Alert.Title>{pickError}</Alert.Title></Alert.Root>
   {/if}
 </div>
 
@@ -184,13 +181,13 @@
   .hook-name {
     width: 130px;
     font-family: var(--font-mono);
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
     font-weight: 500;
   }
 
   .hook-status {
-    font-family: var(--font-ui);
-    font-size: var(--fs-xs);
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
     white-space: nowrap;
   }
 
@@ -201,8 +198,8 @@
 
   .hook-desc {
     flex: 1;
-    font-family: var(--font-ui);
-    font-size: var(--fs-xs);
-    color: var(--muted);
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
   }
 </style>

@@ -2,11 +2,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
-import ConfirmDialog, { confirmAction } from "../components/ui/ConfirmDialog.svelte";
+import ConfirmDialog, { confirmAction } from "../components/app/common/ConfirmDialog.svelte";
 
 afterEach(cleanup);
 
-// happy-dom does no layout; Modal's tabbables() skips zero-size elements.
+// happy-dom does no layout; focus helpers skip zero-size elements.
 Object.defineProperty(HTMLElement.prototype, "offsetWidth", { configurable: true, get: () => 1 });
 
 const props = {
@@ -19,7 +19,7 @@ const props = {
 describe("ConfirmDialog", () => {
   it("is named by its question and focuses Cancel first", async () => {
     render(ConfirmDialog, { ...props, onConfirm() {}, onCancel() {} });
-    expect(screen.getByRole("dialog", { name: "Delete this session?" })).toBeTruthy();
+    expect(screen.getByRole("alertdialog", { name: "Delete this session?" })).toBeTruthy();
     await waitFor(() => expect(document.activeElement).toBe(screen.getByText("Cancel")));
   });
 
@@ -41,7 +41,7 @@ describe("confirmAction", () => {
     const yes = confirmAction(opts);
     await user.click(await screen.findByRole("button", { name: "Delete" }));
     expect(await yes).toBe(true);
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     const no = confirmAction(opts);
     await user.click(await screen.findByRole("button", { name: "Cancel" }));
     expect(await no).toBe(false);

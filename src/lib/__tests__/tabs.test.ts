@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import Tabs, { partitionTabs, type Tab } from "../components/ui/Tabs.svelte";
+import Tabs, { partitionTabs, type Tab } from "../components/app/common/TabStrip.svelte";
 
 const tabs: Tab[] = [
   { id: "a", label: "One", group: "G1" },

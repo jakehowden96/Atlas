@@ -1,5 +1,6 @@
 import { mount, unmount } from "svelte";
-import Menu, { type MenuItem } from "../components/ui/Menu.svelte";
+import ContextMenuAt from "../components/app/common/ContextMenuAt.svelte";
+import type { MenuItem } from "../components/app/common/menu";
 
 export interface ContextMenuParams {
   items: MenuItem[];
@@ -14,24 +15,21 @@ export function contextMenu(node: HTMLElement, initial: ContextMenuParams) {
   function openAt(trigger: HTMLElement, virtual: boolean) {
     close?.();
     const prev = document.activeElement as HTMLElement | null;
-    const instance = mount(Menu, {
+    const instance = mount(ContextMenuAt, {
       target: document.body,
       props: {
-        open: true,
-        trigger,
+        anchor: trigger,
         items: params.items,
         onselect: params.onselect,
-        // Defer so Popover's own cleanup (focus return) has run before we unmount.
+        // Defer so the menu's own cleanup has run before we unmount.
         onclose: () => queueMicrotask(() => close?.()),
       },
     });
     close = () => {
       close = undefined;
       unmount(instance);
-      if (virtual) {
-        trigger.remove();
-        (prev?.isConnected ? prev : node).focus?.();
-      }
+      if (virtual) trigger.remove();
+      (prev?.isConnected ? prev : node).focus?.();
     };
   }
 

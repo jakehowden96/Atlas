@@ -70,7 +70,8 @@ describe("session view header", () => {
     focusedSessionId.set("s1");
     const user = userEvent.setup();
     render(SessionView);
-    await user.click(screen.getByRole("button", { name: /Other sessions/ }));
+    screen.getByRole("button", { name: /Other sessions/ }).focus();
+    await user.keyboard("{Enter}");
     const rows = screen.getAllByRole("menuitem");
     expect(rows.map((r) => r.textContent)).toEqual([
       expect.stringContaining("Session 2 · needs input"),

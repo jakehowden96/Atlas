@@ -71,14 +71,14 @@
     padding: var(--sp-0) 0;
     border: 0;
     background: transparent;
-    color: var(--text);
+    color: var(--foreground);
     font: inherit;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     text-align: left;
     cursor: pointer;
   }
   .row:focus-visible {
-    outline: var(--focus-width) solid var(--focus);
+    outline: var(--focus-width) solid var(--ring);
     outline-offset: 1px;
   }
   .name {
@@ -88,23 +88,23 @@
   }
   .track {
     height: var(--sp-3);
-    border-bottom: 1px solid var(--border2);
+    border-bottom: 1px solid var(--input);
   }
   .fill {
     display: block;
     height: 100%;
-    background: var(--accent);
-    border-radius: 0 var(--r-xs) var(--r-xs) 0;
+    background: var(--success);
+    border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
   }
   .val {
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
   }
   .empty,
   .pinned {
     margin: 0;
-    font-size: var(--fs-xs);
-    color: var(--muted);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
   }
   .sr {
     position: absolute;

@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import MenuButton from "../../ui/MenuButton.svelte";
-  import SegmentedControl from "../../ui/SegmentedControl.svelte";
-  import Skeleton from "../../ui/Skeleton.svelte";
+  import MenuButton from "../../app/common/MenuButton.svelte";
+  import Segmented from "$lib/components/app/common/Segmented.svelte";
+  import { Skeleton } from "$lib/components/ui/skeleton/index.js";
   import { formatValue, toCsv, type Point, type Unit } from "../../../stats-chart";
 
   interface Props {
@@ -51,7 +51,7 @@
   <figcaption>{summary}</figcaption>
   <header>
     <h3>{title}</h3>
-    <SegmentedControl
+    <Segmented
       role="radiogroup"
       size="sm"
       label={`${title} view`}
@@ -72,7 +72,7 @@
   </header>
   <div class="body">
     {#if loading}
-      <Skeleton height="160px" />
+      <Skeleton style="height: 160px" class="rounded-sm" />
     {:else if view === "table"}
       <table>
         <thead>
@@ -99,9 +99,9 @@
   .card {
     margin: 0;
     padding: var(--sp-5);
-    background: var(--surface);
+    background: var(--card);
     border: 1px solid var(--border);
-    border-radius: var(--r-card);
+    border-radius: var(--radius-lg);
   }
   .card {
     display: flex;
@@ -117,18 +117,18 @@
   h3 {
     flex: 1;
     margin: 0;
-    font-size: var(--fs-sm);
-    font-weight: var(--fw-semi);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-semibold);
   }
   figcaption {
     margin: var(--sp-1) 0 var(--sp-4);
-    font-size: var(--fs-xs);
-    color: var(--muted);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
   }
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   th,
   td {
@@ -149,7 +149,7 @@
     cursor: pointer;
   }
   th button:focus-visible {
-    outline: var(--focus-width) solid var(--focus);
+    outline: var(--focus-width) solid var(--ring);
     outline-offset: 1px;
   }
 </style>

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 /**
  * Guard for the design system. Every rule scans the raw source of every
- * component (and the gallery) so the old patterns cannot creep back in.
+ * component (and every story) so the old patterns cannot creep back in.
  * Each allow-list entry below says why it is an exception.
  */
 const FILES: Record<string, string> = import.meta.glob("../../**/*.svelte", {
@@ -21,14 +21,10 @@ const ALLOW = {
   click: [
     "files/FileEditor.svelte", // rendered markdown; clicks are delegated to links inside, which are focusable
     "sessions/SessionTile.svelte", // roving-tabindex card, keys handled on the same tag via onkeydown
-    "ui/Menu.svelte", // role is computed per item; arrow/enter keys handled by the menu container
-    "ui/Modal.svelte", // backdrop click to close; Escape handled by the dialog
-    "ui/Select.svelte", // role=option; the combobox trigger owns the keys
+    "ui/input-group/input-group-addon.svelte", // shadcn: a click on the addon focuses the input, which owns the keys
   ],
-  /* Gallery pages are documentation of the system itself, not product UI. */
-  gallery: ["/gallery/"],
   /* Icon is the only place the font class may appear. */
-  icon: ["components/ui/Icon.svelte"],
+  icon: ["components/ui/icon/icon.svelte"],
   /* Fixtures only exist to mount components under test. */
   fixture: ["__tests__/"],
 };
@@ -82,7 +78,7 @@ describe("design lint", () => {
   });
 
   it("uses colour tokens, not hex or rgb literals", () => {
-    const skip = [...ALLOW.color, ...ALLOW.gallery];
+    const skip = ALLOW.color;
     expect([
       ...scan(
         "style",
@@ -95,42 +91,38 @@ describe("design lint", () => {
   });
 
   it("uses radius tokens, not px values", () => {
-    expect(scan("style", /border-radius:[^;]*\d+px/, ALLOW.gallery)).toEqual([]);
+    expect(scan("style", /border-radius:[^;]*\d+px/)).toEqual([]);
   });
 
   it("uses --h-* tokens for control heights", () => {
     expect(
-      scan("style", /(?<![\w-])(?:min-)?height:\s*(?:2\d|3\d|4[0-4])px/, ALLOW.gallery),
+      scan("style", /(?<![\w-])(?:min-)?height:\s*(?:2\d|3\d|4[0-4])px/),
     ).toEqual([]);
   });
 
   it("uses z-index tokens, not numbers", () => {
-    expect(scan("style", /z-index:\s*-?\d+/, ALLOW.gallery)).toEqual([]);
+    expect(scan("style", /z-index:\s*-?\d+/)).toEqual([]);
   });
 
   it("uses Tooltip, not title attributes", () => {
-    expect(scan("markup", /<[a-z][\w-]*\b(?:[^<>]|(?<==)>)*?\stitle=/, ALLOW.gallery)).toEqual([]);
+    expect(scan("markup", /<[a-z][\w-]*\b(?:[^<>]|(?<==)>)*?\stitle=/)).toEqual([]);
   });
 
   it("uses Icon, not Unicode glyphs, for button content", () => {
     expect(
-      scan("markup", /<button\b[^>]*>\s*(?:[✕▥↑↗←▸›−+]|›_)\s*<\/button>/, ALLOW.gallery),
+      scan("markup", /<button\b[^>]*>\s*(?:[✕▥↑↗←▸›−+]|›_)\s*<\/button>/),
     ).toEqual([]);
   });
 
   it("keeps the icon font class inside Icon", () => {
     expect(
-      scan("both", /material-symbols-outlined/, [
-        ...ALLOW.icon,
-        ...ALLOW.gallery,
-        "components/ui/Checkbox.svelte" /* styles the glyph of the Icon it renders */,
-      ]),
+      scan("both", /material-symbols-outlined/, ALLOW.icon),
     ).toEqual([]);
   });
 
   it("does not nest buttons or inputs in role=button", () => {
     expect(
-      scan("markup", /<(div|span|li|a)\b[^>]*role="button"[^>]*>/, ALLOW.gallery, (m) => {
+      scan("markup", /<(div|span|li|a)\b[^>]*role="button"[^>]*>/, [], (m) => {
         const source = m.input.slice((m.index ?? 0) + m[0].length);
         const tag = m[1];
         let depth = 1;
@@ -152,7 +144,7 @@ describe("design lint", () => {
       scan(
         "markup",
         /<(?:div|span|li|section|article|p|td|tr)\b(?:[^>]|(?<==)>)*?\sonclick=(?:[^>]|(?<==)>)*>/,
-        [...ALLOW.gallery, ...ALLOW.click],
+        ALLOW.click,
         (m) => {
           const tag = m[0];
           /* Backdrops that only close on a direct click are marked presentation. */
@@ -167,13 +159,19 @@ describe("design lint", () => {
     ).toEqual([]);
   });
 
-  it("uses Select, not native <select>", () => {
-    expect(scan("markup", /<select\b/, [...ALLOW.gallery, "components/ui/Select.svelte"])).toEqual(
-      [],
-    );
+  it("uses Select or NativeSelect, not a raw <select>", () => {
+    expect(
+      scan("markup", /<select\b/, ["components/ui/native-select/"]),
+    ).toEqual([]);
   });
 
   it("uses Atlas dialogs, not window.alert or confirm", () => {
-    expect(scan("both", /\b(?:window\.)?(?:alert|confirm)\(/, ALLOW.gallery)).toEqual([]);
+    expect(scan("both", /\b(?:window\.)?(?:alert|confirm)\(/)).toEqual([]);
+  });
+
+  it("keeps components/ui to shadcn-svelte parts, one folder per component", () => {
+    // Composed, Atlas-specific components live in components/app/<area>/.
+    const loose = Object.keys(FILES).filter((f) => /components\/ui\/[^/]+\.svelte$/.test(f));
+    expect(loose).toEqual([]);
   });
 });

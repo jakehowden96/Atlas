@@ -6,12 +6,12 @@
   import { workOnPr } from "../../session-actions";
   import type { Pr } from "../../stores/prs";
   import { showToast } from "../../stores/toast";
-  import Button from "../ui/Button.svelte";
-  import CopyButton from "../ui/CopyButton.svelte";
-  import Icon from "../ui/Icon.svelte";
-  import IconButton from "../ui/IconButton.svelte";
-  import InlineAlert from "../ui/InlineAlert.svelte";
-  import StatusMark from "../ui/StatusMark.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import CopyButton from "../app/common/CopyButton.svelte";
+  import Icon from "../ui/icon/icon.svelte";
+  import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import StatusMark from "../app/common/StatusMark.svelte";
   import PrChecks from "./PrChecks.svelte";
 
   interface Props {
@@ -79,19 +79,17 @@
         <span class="pill pill-{pill.tone}">{pill.label}</span>
       {/each}
     </div>
-    <Button size="sm" loading={working} onclick={work}>
-      {#snippet leading()}<Icon name="terminal" size={16} />{/snippet}
+    <Button variant="outline" size="sm" loading={working} onclick={work}>
+      <Icon name="terminal" size={16} />
       Work on it
     </Button>
-    <IconButton size="sm" icon="open_in_new" label="Open on {providerName}" onclick={openPr} />
+    <TooltipButton size="sm" icon="open_in_new" label="Open on {providerName}" onclick={openPr} />
   </div>
 
   {#if failed}
     <div class="fail">
-      <InlineAlert>
-        Could not check out #{pr.number}. Try it by hand:
-        <code>{checkoutCommand(pr)}</code>
-      </InlineAlert>
+      <Alert.Root variant="destructive" layout="inline"><Icon name="error" /><Alert.Title>Could not check out #{pr.number}. Try it by hand:
+        <code>{checkoutCommand(pr)}</code></Alert.Title></Alert.Root>
       <CopyButton value={checkoutCommand(pr)} label="Copy command" size="sm" />
       <Button size="sm" variant="ghost" onclick={work}>Retry</Button>
     </div>
@@ -117,7 +115,7 @@
   }
 
   .pr-row:hover {
-    background: var(--hover-bg);
+    background: var(--muted);
   }
 
   .toggle {
@@ -128,9 +126,9 @@
     height: var(--h-sm);
     padding: 0;
     border: none;
-    border-radius: var(--r-md);
+    border-radius: var(--radius-md);
     background: none;
-    color: var(--muted);
+    color: var(--muted-foreground);
     cursor: pointer;
   }
 
@@ -159,39 +157,39 @@
   }
 
   .status {
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
     font-weight: 600;
     white-space: nowrap;
   }
 
   .pr-title {
     overflow: hidden;
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .pr-number {
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
 
   .draft {
     padding: 0 var(--sp-2);
-    border: 1px solid var(--border2);
-    border-radius: var(--r-pill);
-    color: var(--muted);
-    font-size: var(--fs-2xs);
+    border: 1px solid var(--input);
+    border-radius: var(--radius-full);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
     white-space: nowrap;
   }
 
   .pr-sub {
     overflow: hidden;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -207,24 +205,24 @@
     align-items: center;
     height: var(--h-xs);
     padding: 0 var(--sp-3);
-    border-radius: var(--r-pill);
+    border-radius: var(--radius-full);
     background: color-mix(in srgb, currentColor 14%, transparent);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
     font-weight: 600;
     white-space: nowrap;
   }
 
   .pill-accent {
-    color: var(--accent);
+    color: var(--success);
   }
   .pill-danger {
-    color: var(--danger);
+    color: var(--destructive);
   }
   .pill-warn {
-    color: var(--warn);
+    color: var(--warning);
   }
   .pill-muted {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   .fail {

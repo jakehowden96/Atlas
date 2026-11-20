@@ -1,7 +1,7 @@
 <script lang="ts">
-  import MenuButton from "../components/ui/MenuButton.svelte";
+  import MenuButton from "../components/app/common/MenuButton.svelte";
   import { contextMenu } from "../ui/contextmenu";
-  import type { MenuItem } from "../components/ui/Menu.svelte";
+  import type { MenuItem } from "$lib/components/app/common/menu";
 
   let { onselect }: { onselect: (item: MenuItem) => void } = $props();
 

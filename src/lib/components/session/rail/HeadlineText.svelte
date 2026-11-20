@@ -14,10 +14,10 @@
   }
 
   .accent {
-    color: var(--accent);
+    color: var(--success);
   }
 
   .muted {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 </style>

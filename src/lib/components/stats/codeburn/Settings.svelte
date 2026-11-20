@@ -3,8 +3,8 @@
   import { setTheme } from "../../../stores/settings";
   import { codeburnStatus } from "../../../stores/codeburn";
   import { themeMode, type ThemeMode } from "../../../theme";
-  import CopyButton from "../../ui/CopyButton.svelte";
-  import SegmentedControl, { type Segment } from "../../ui/SegmentedControl.svelte";
+  import CopyButton from "../../app/common/CopyButton.svelte";
+  import Segmented, { type Segment } from "$lib/components/app/common/Segmented.svelte";
   import Card from "./Card.svelte";
   import Loader from "./Loader.svelte";
 
@@ -21,7 +21,7 @@
   <Card title="Appearance">
     <div class="bar">
       <span class="sub">Theme</span>
-      <SegmentedControl
+      <Segmented
         options={APPEARANCE}
         value={$themeMode}
         size="sm"
@@ -66,22 +66,22 @@
     gap: var(--sp-4);
   }
   .sub {
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
   .kv {
     display: flex;
     justify-content: space-between;
     gap: var(--sp-4);
     padding: var(--sp-2) 0;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   .kv > :first-child {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .kv > :last-child {
     font-family: var(--font-mono);
-    font-weight: var(--fw-medium);
+    font-weight: var(--font-weight-medium);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
@@ -89,8 +89,8 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: var(--text);
-    font-weight: var(--fw-body);
+    color: var(--foreground);
+    font-weight: var(--font-weight-normal);
   }
   code {
     font-family: var(--font-mono);

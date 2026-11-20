@@ -1,5 +1,5 @@
 ﻿<script lang="ts">
-  import ErrorBoundary from "../ui/ErrorBoundary.svelte";
+  import ErrorBoundary from "../app/shell/ErrorBoundary.svelte";
   import FilesView from "../files/FilesView.svelte";
   import PrsView from "../prs/PrsView.svelte";
   import SessionView from "../session/SessionView.svelte";

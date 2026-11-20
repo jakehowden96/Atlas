@@ -93,18 +93,18 @@
   .track {
     height: 2px;
     margin-top: 2px;
-    background: var(--surface3);
+    background: var(--accent);
   }
 
   .fill {
     display: block;
     height: 100%;
-    background: var(--muted);
+    background: var(--muted-foreground);
   }
 
   .none {
-    color: var(--muted);
-    font-size: var(--fs-sm);
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
   }
 
   .open-plan {
@@ -112,13 +112,13 @@
     padding: 0;
     border: 0;
     background: none;
-    color: var(--muted);
-    font-family: var(--font-ui);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
     cursor: pointer;
   }
 
   .open-plan:hover {
-    color: var(--text);
+    color: var(--foreground);
   }
 </style>

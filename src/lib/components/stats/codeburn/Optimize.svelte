@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { alertTone } from "$lib/components/ui/alert/index.js";
+  import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import { untrack } from "svelte";
   import { filterArgs, type Filters } from "../../../../types/codeburn";
   import type { OptimizeReport } from "../../../../types/codeburn-optimize";
@@ -8,8 +11,8 @@
   import { fmtCost, fmtTokens } from "../../../stats-derive";
   import { codeburn } from "../../../stores/codeburn";
   import { tooltip } from "../../../ui/tooltip";
-  import Banner from "../../ui/Banner.svelte";
-  import { confirmAction } from "../../ui/ConfirmDialog.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import { confirmAction } from "../../app/common/ConfirmDialog.svelte";
   import Card from "./Card.svelte";
   import Loader from "./Loader.svelte";
   import { groupFindings } from "./optimize-groups";
@@ -108,7 +111,11 @@
       {/snippet}
 
       {#if notice}
-        <Banner tone={notice.tone} title={notice.text} ondismiss={() => (notice = null)} />
+        <Alert.Root variant={alertTone[notice.tone].variant}>
+<Icon name={alertTone[notice.tone].icon} />
+<Alert.Title>{notice.text}</Alert.Title>
+<Alert.Action><TooltipButton icon="close" label="Dismiss" size="sm" onclick={() => (notice = null)} /></Alert.Action>
+</Alert.Root>
       {/if}
 
       {#if tab === "waste"}
@@ -255,50 +262,50 @@
     padding: 2px;
     overflow-x: auto;
     border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    background: var(--surface2);
+    border-radius: var(--radius-md);
+    background: var(--muted);
   }
   .seg button {
     height: var(--h-sm);
     padding: 0 var(--sp-4);
     border: 1px solid transparent;
-    border-radius: var(--r-sm);
+    border-radius: var(--radius-sm);
     background: none;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font: inherit;
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-medium);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
     cursor: pointer;
   }
   .seg button:hover {
-    color: var(--text);
+    color: var(--foreground);
   }
   .seg button[aria-selected="true"] {
-    border-color: var(--border2);
-    background: var(--surface);
-    color: var(--text);
+    border-color: var(--input);
+    background: var(--card);
+    color: var(--foreground);
   }
   .sub {
     margin: 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
   .empty {
     padding: var(--sp-7) 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
     text-align: center;
   }
   .mono {
     font-family: var(--font-mono);
   }
   .muted {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .good {
-    color: var(--accent);
-    font-weight: var(--fw-semi);
+    color: var(--success);
+    font-weight: var(--font-weight-semibold);
   }
   .op-sum {
     display: flex;
@@ -313,24 +320,24 @@
     gap: var(--sp-3);
     width: 100%;
     padding: var(--sp-1) 0;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   .hb .t {
     height: 8px;
-    border-bottom: 1px solid var(--border2);
+    border-bottom: 1px solid var(--input);
   }
   .hb .f {
     display: block;
     height: 100%;
-    border-radius: 0 var(--r-xs) var(--r-xs) 0;
-    background: var(--accent);
+    border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
+    background: var(--success);
   }
   .hb .f.warn {
-    background: var(--warn);
+    background: var(--warning);
   }
   .hb .val {
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
     font-variant-numeric: tabular-nums;
     text-align: right;
     white-space: nowrap;
@@ -344,9 +351,9 @@
   }
   h4 {
     margin: 0;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-semi);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-semibold);
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
@@ -357,30 +364,30 @@
   .btn {
     height: var(--h-sm);
     padding: 0 var(--sp-4);
-    border: 1px solid var(--border2);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    color: var(--text);
+    border: 1px solid var(--input);
+    border-radius: var(--radius-md);
+    background: var(--card);
+    color: var(--foreground);
     font: inherit;
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-medium);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
     cursor: pointer;
   }
   .btn:hover:not(:disabled) {
-    background: var(--surface2);
+    background: var(--muted);
   }
   .btn:disabled {
     opacity: 0.5;
     cursor: default;
   }
   .btn.primary {
-    border-color: var(--ink);
-    background: var(--ink);
-    color: var(--ink-text);
+    border-color: var(--primary);
+    background: var(--primary);
+    color: var(--primary-foreground);
   }
   .btn.primary:hover:not(:disabled) {
-    background: var(--ink-hover-bg);
+    background: var(--primary-hover);
   }
   .sess {
     border-bottom: 1px solid var(--border);
@@ -397,30 +404,30 @@
     padding: var(--sp-3) var(--sp-2);
     border: 0;
     background: none;
-    color: var(--text);
+    color: var(--foreground);
     font: inherit;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     text-align: left;
     cursor: pointer;
   }
   .op-r:hover {
-    background: var(--surface2);
+    background: var(--muted);
   }
   .op-r b {
     min-width: 0;
-    font-size: var(--fs-sm);
-    font-weight: var(--fw-semi);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-semibold);
   }
   .op-v {
     display: inline-flex;
     align-items: center;
     gap: var(--sp-3);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
     white-space: nowrap;
   }
   .op-ch {
     display: inline-block;
-    color: var(--muted);
+    color: var(--muted-foreground);
     transition: transform 0.12s;
   }
   .op-r[aria-expanded="true"] .op-ch {
@@ -434,15 +441,15 @@
     justify-content: space-between;
     gap: var(--sp-4);
     padding: var(--sp-2) 0;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   .kv > :first-child {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .kv > :last-child {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-weight: var(--fw-medium);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
   .fixlabel {
@@ -459,10 +466,10 @@
     padding: var(--sp-1) var(--sp-3);
     overflow-wrap: anywhere;
     border: 1px solid var(--border);
-    border-radius: var(--r-sm);
-    background: var(--surface2);
+    border-radius: var(--radius-sm);
+    background: var(--muted);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
   }
   .pill {
     display: inline-flex;
@@ -470,24 +477,24 @@
     justify-self: start;
     height: var(--h-xs);
     padding: 0 var(--sp-3);
-    border-radius: var(--r-pill);
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-    color: var(--accent);
+    border-radius: var(--radius-full);
+    background: color-mix(in srgb, var(--success) 16%, transparent);
+    color: var(--success);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-medium);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
   .pill.warn {
-    background: color-mix(in srgb, var(--warn) 16%, transparent);
-    color: var(--warn);
+    background: color-mix(in srgb, var(--warning) 16%, transparent);
+    color: var(--warning);
   }
   .pill.bad {
-    background: color-mix(in srgb, var(--danger) 16%, transparent);
-    color: var(--danger);
+    background: color-mix(in srgb, var(--destructive) 16%, transparent);
+    color: var(--destructive);
   }
   .pill.neutral {
-    background: var(--surface3);
-    color: var(--muted);
+    background: var(--accent);
+    color: var(--muted-foreground);
   }
 </style>

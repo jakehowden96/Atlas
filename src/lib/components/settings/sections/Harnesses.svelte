@@ -7,11 +7,11 @@
     type HarnessConfig,
   } from "../../../stores/settings";
   import { errorMessage } from "../../../ipc-error";
-  import Button from "../../ui/Button.svelte";
-  import Field from "../../ui/Field.svelte";
-  import Input from "../../ui/Input.svelte";
-  import SegmentedControl, { type Segment } from "../../ui/SegmentedControl.svelte";
-  import Toggle from "../../ui/Toggle.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import * as Field from "$lib/components/ui/field/index.js";
+  import { Input } from "$lib/components/ui/input/index.js";
+  import Segmented, { type Segment } from "$lib/components/app/common/Segmented.svelte";
+  import { Switch } from "$lib/components/ui/switch/index.js";
 
   const READY_MODE: Segment<HarnessConfig["readyMode"]>[] = [
     { id: "altscreen", label: "Alt-screen" },
@@ -67,6 +67,26 @@
   }
 </script>
 
+<!-- A text setting that commits on blur or Enter, with its error and a 2s saved tick. -->
+{#snippet textField(key: string, label: string, value: string, mono: boolean, commit: (v: string) => void)}
+  <Field.Field data-invalid={errors[key] ? true : undefined}>
+    <div class="flex items-center justify-between gap-2">
+      <Field.Label for={key}>{label}</Field.Label>
+      <Field.Saved saved={savedKey === key} />
+    </div>
+    <Input
+      id={key}
+      {mono}
+      {value}
+      aria-invalid={errors[key] ? true : undefined}
+      aria-describedby={errors[key] ? `${key}-error` : undefined}
+      onblur={(e) => commit(e.currentTarget.value)}
+      onkeydown={(e) => e.key === "Enter" && commit(e.currentTarget.value)}
+    />
+    {#if errors[key]}<Field.Error id="{key}-error">{errors[key]}</Field.Error>{/if}
+  </Field.Field>
+{/snippet}
+
 <div class="stack sec">
   <p class="copy">
     What New session can launch. Claude Code is the only one Atlas can resume. Anything else always
@@ -86,12 +106,12 @@
             {h.command || "(nothing typed)"}{h.args.length ? ` ${h.args.join(" ")}` : ""}
           </span>
         </div>
-        <Button size="sm" onclick={() => toggleHarnessEdit(h.id)}>
+        <Button variant="outline" size="sm" onclick={() => toggleHarnessEdit(h.id)}>
           {editingHarnessId === h.id ? "Done" : "Edit"}
         </Button>
         <Button
           size="sm"
-          variant="danger"
+          variant="destructive"
           disabled={$harnesses.length <= 1}
           title={$harnesses.length <= 1 ? "Keep at least one harness" : undefined}
           onclick={() => removeHarness(h.id)}
@@ -101,61 +121,26 @@
       </div>
       {#if editingHarnessId === h.id}
         <div class="list-row harness-form">
-          <Field label="Label" error={errors[`${h.id}:label`]} saved={savedKey === `${h.id}:label`}>
-            {#snippet children(c)}
-              <Input
-                id={c.id}
-                aria-describedby={c["aria-describedby"]}
-                invalid={c.invalid}
-                value={h.label}
-                oncommit={(v) => v !== h.label && updateHarness(h.id, "label", { label: v })}
-              />
-            {/snippet}
-          </Field>
-          <Field
-            label="Command"
-            error={errors[`${h.id}:command`]}
-            saved={savedKey === `${h.id}:command`}
-          >
-            {#snippet children(c)}
-              <Input
-                id={c.id}
-                aria-describedby={c["aria-describedby"]}
-                invalid={c.invalid}
-                mono
-                value={h.command}
-                oncommit={(v) => v !== h.command && updateHarness(h.id, "command", { command: v })}
-              />
-            {/snippet}
-          </Field>
-          <Field label="Args" error={errors[`${h.id}:args`]} saved={savedKey === `${h.id}:args`}>
-            {#snippet children(c)}
-              <Input
-                id={c.id}
-                aria-describedby={c["aria-describedby"]}
-                invalid={c.invalid}
-                mono
-                value={h.args.join(" ")}
-                oncommit={(v) =>
-                  v.trim() !== h.args.join(" ") &&
-                  updateHarness(h.id, "args", { args: parseHarnessArgs(v) })}
-              />
-            {/snippet}
-          </Field>
+          {@render textField(`${h.id}:label`, "Label", h.label, false, (v) => {
+            if (v !== h.label) void updateHarness(h.id, "label", { label: v });
+          })}
+          {@render textField(`${h.id}:command`, "Command", h.command, true, (v) => {
+            if (v !== h.command) void updateHarness(h.id, "command", { command: v });
+          })}
+          {@render textField(`${h.id}:args`, "Args", h.args.join(" "), true, (v) => {
+            if (v.trim() !== h.args.join(" "))
+              void updateHarness(h.id, "args", { args: parseHarnessArgs(v) });
+          })}
           <div class="field">
             <span class="field-label">Resumable</span>
-            <Toggle
-              checked={h.resumable}
-              label="{h.label} resumable"
-              onChange={(v) => updateHarness(h.id, "resumable", { resumable: v })}
-            />
+            <Switch checked={h.resumable} onCheckedChange={(v) => updateHarness(h.id, "resumable", { resumable: v })} aria-label="{h.label} resumable" />
             {#if errors[`${h.id}:resumable`]}<span class="field-err"
                 >{errors[`${h.id}:resumable`]}</span
               >{/if}
           </div>
           <div class="field">
             <span class="field-label">Ready</span>
-            <SegmentedControl
+            <Segmented
               options={READY_MODE}
               value={h.readyMode}
               size="sm"
@@ -191,8 +176,8 @@
   }
 
   .harness-label {
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
     font-weight: 500;
   }
 
@@ -207,7 +192,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: 14px;
-    background: var(--bg);
+    background: var(--background);
   }
 
   .field {
@@ -217,16 +202,16 @@
   }
 
   .field-label {
-    color: var(--muted);
-    font-family: var(--font-ui);
-    font-size: var(--fs-2xs);
+    color: var(--muted-foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
 
   .field-err {
-    color: var(--danger);
-    font-size: var(--fs-2xs);
+    color: var(--destructive);
+    font-size: var(--text-xs);
   }
 </style>

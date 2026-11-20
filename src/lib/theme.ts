@@ -24,7 +24,7 @@
  *
  * The dark palette's coloured slots are held to S≈35% at their existing
  * lightness — WCAG contrast is luminance-only, so saturation is free to pull
- * down. Dark `yellow` is exempt: it is `--warn`, and desaturating it at fixed
+ * down. Dark `yellow` is exempt: it is `--warning`, and desaturating it at fixed
  * lightness would fall to 6.88:1, under the 7:1 floor above.
  *
  * The named slots are only half the story: `terminal-session.ts` sets xterm's
@@ -39,11 +39,11 @@ import { writable } from "svelte/store";
 export const lightXtermTheme = {
   background: "#fafafb", // --term-bg
   foreground: "#2b2e35", // --term-text
-  cursor: "#217457", // --accent
+  cursor: "#217457", // --success
   cursorAccent: "#fafafb",
   selectionBackground: "#cfe8dd",
   selectionForeground: "#17181b",
-  /* --surface3, the same slot dark's `black` takes. Left at #17181b it was
+  /* --accent, the same slot dark's `black` takes. Left at #17181b it was
      near-black ink on a light ground, and Claude Code fills the row behind
      your own messages with `ESC[40m` — so every prompt you typed came back as
      a black bar. `minimumContrastRatio` re-inks whatever the TUI writes on
@@ -55,7 +55,7 @@ export const lightXtermTheme = {
   blue: "#365671",
   magenta: "#803d76",
   cyan: "#234a49",
-  white: "#474a50", // --muted
+  white: "#474a50", // --muted-foreground
   brightBlack: "#52565e",
   brightRed: "#6b3734",
   brightGreen: "#214436",
@@ -70,7 +70,7 @@ export const lightXtermTheme = {
 export const darkXtermTheme = {
   background: "#111214", // --term-bg
   foreground: "#c9cbd1", // --term-text
-  cursor: "#2fa37a", // --accent
+  cursor: "#2fa37a", // --success
   cursorAccent: "#111214",
   selectionBackground: "#2c3b36",
   selectionForeground: "#e6e7ea",
@@ -82,7 +82,7 @@ export const darkXtermTheme = {
   magenta: "#cb93bc",
   cyan: "#60b3ae",
   white: "#c9cbd1",
-  brightBlack: "#acb2bc", // --muted
+  brightBlack: "#acb2bc", // --muted-foreground
   brightRed: "#d8b2af",
   brightGreen: "#80c2a9",
   brightYellow: "#edc06a",
@@ -119,7 +119,7 @@ export function applyTheme(mode: ThemeMode): void {
   }
 }
 
-/** `--bg` per theme; the native window background must match the first frame. */
+/** `--background` per theme; the native window background must match the first frame. */
 export const windowBackground = { light: "#f5f5f7", dark: "#0f1012" } as const;
 
 /** Effective theme from the stored mirror and the OS preference. */

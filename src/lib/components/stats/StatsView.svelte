@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import { onMount } from "svelte";
   import type { Overview as OverviewData, Period } from "../../../types/codeburn";
   import { checkCodeburn, codeburn, codeburnStatus } from "../../stores/codeburn";
@@ -6,13 +7,13 @@
   import { statsFilters } from "../../stores/statsFilters";
   import { localDayKey } from "../../stats-derive";
   import { tooltip } from "../../ui/tooltip";
-  import Button from "../ui/Button.svelte";
-  import CopyButton from "../ui/CopyButton.svelte";
-  import EmptyState from "../ui/EmptyState.svelte";
-  import IconButton from "../ui/IconButton.svelte";
-  import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
-  import Select, { type SelectOption } from "../ui/Select.svelte";
-  import Tabs, { type Tab } from "../ui/Tabs.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import CopyButton from "../app/common/CopyButton.svelte";
+  import * as Empty from "$lib/components/ui/empty/index.js";
+  import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
+  import Segmented, { type Segment } from "$lib/components/app/common/Segmented.svelte";
+  import OptionSelect, { type SelectOption } from "$lib/components/app/common/OptionSelect.svelte";
+  import Tabs, { type Tab } from "../app/common/TabStrip.svelte";
   import "./codeburn/table.css";
   import Compare from "./codeburn/Compare.svelte";
   import ComparePeriods from "./codeburn/ComparePeriods.svelte";
@@ -170,20 +171,19 @@
 
 <div class="stats-view">
   {#if $codeburnStatus && !$codeburnStatus.binary}
-    <EmptyState
-      icon="search"
-      title="Stats need codeburn"
-      description="Atlas shows usage from the codeburn command-line tool, which reads ~/.claude/projects"
-    >
-      {#snippet action()}
-        <code>{INSTALL}</code>
+    <Empty.Root>
+  <Empty.Header>
+    <Empty.Media variant="icon"><Icon name="search" size={20} /></Empty.Media>
+    <Empty.Title>Stats need codeburn</Empty.Title>
+    <Empty.Description>Atlas shows usage from the codeburn command-line tool, which reads ~/.claude/projects</Empty.Description>
+  </Empty.Header>
+  <Empty.Content><code>{INSTALL}</code>
         <CopyButton value={INSTALL} label="Copy install command" size="sm" />
-        <Button size="sm" disabled={checking} onclick={() => void recheck()}
+        <Button variant="outline" size="sm" disabled={checking} onclick={() => void recheck()}
           >{checking ? "Checking…" : "Check again"}</Button
         >
-        {#if rechecked && !checking}<span class="still" role="status">Still not found</span>{/if}
-      {/snippet}
-    </EmptyState>
+        {#if rechecked && !checking}<span class="still" role="status">Still not found</span>{/if}</Empty.Content>
+</Empty.Root>
   {:else}
     <div class="tab-bar">
       <Tabs {tabs} value={settings ? "" : tab} label="Page" onselect={open} />
@@ -193,7 +193,7 @@
       <div class="spacer"></div>
       <button type="button" class="live" onclick={doRefresh}>refreshed {ago}s ago ↻</button>
       <div class="sel">
-        <Select
+        <OptionSelect
           size="sm"
           aria-label="Project"
           options={projects}
@@ -201,7 +201,7 @@
           onChange={setFilter("project")}
         />
       </div>
-      <SegmentedControl
+      <Segmented
         role="radiogroup"
         label="Range"
         options={ranges}
@@ -241,7 +241,7 @@
         onchange={(e) => setSince(e.currentTarget.value)}
       />
       <div class="sel">
-        <Select
+        <OptionSelect
           size="sm"
           aria-label="Provider"
           options={providers}
@@ -259,7 +259,7 @@
           ><span>{Math.round(quotaPct)}%</span></span
         >
       {/if}
-      <IconButton
+      <TooltipButton
         icon="settings"
         label="Settings"
         size="sm"
@@ -312,8 +312,8 @@
 
 <style>
   .still {
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 
   .stats-view {
@@ -323,8 +323,8 @@
     min-height: 0;
     padding: 0 0 var(--sp-6);
     overflow: auto;
-    font-family: var(--font-ui);
-    color: var(--text);
+    font-family: var(--font-sans);
+    color: var(--foreground);
   }
 
   .column {
@@ -375,18 +375,18 @@
     width: var(--h-sm);
     height: var(--h-sm);
     border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    color: var(--muted);
+    border-radius: var(--radius-md);
+    background: var(--card);
+    color: var(--muted-foreground);
     cursor: pointer;
   }
   .cal.on,
   .cal:hover {
-    color: var(--text);
+    color: var(--foreground);
   }
 
   .ring {
-    --c: var(--accent);
+    --c: var(--success);
     position: relative;
     display: grid;
     place-items: center;
@@ -394,34 +394,34 @@
     width: 36px;
     aspect-ratio: 1;
     border-radius: 50%;
-    background: conic-gradient(var(--c) calc(var(--pct) * 1%), var(--surface3) 0);
+    background: conic-gradient(var(--c) calc(var(--pct) * 1%), var(--accent) 0);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
   }
   .ring::before {
     content: "";
     position: absolute;
     inset: 3px;
     border-radius: 50%;
-    background: var(--bg);
+    background: var(--background);
   }
   .ring > span {
     position: relative;
   }
   .ring.warn {
-    --c: var(--warn);
+    --c: var(--warning);
   }
   .ring.bad {
-    --c: var(--danger);
+    --c: var(--destructive);
   }
 
   .live {
     border: 0;
     background: none;
     cursor: pointer;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     white-space: nowrap;
   }
 </style>

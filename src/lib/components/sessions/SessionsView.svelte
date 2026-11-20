@@ -16,11 +16,11 @@
   import { activeView, jumpOpen, newSessionOpen, shortcutsOpen, wsFilter } from "../../stores/view";
   import { visibleWorkspaces } from "../../stores/workspace";
   import SetupBanners from "../shell/SetupBanners.svelte";
-  import AtlasMark from "../ui/AtlasMark.svelte";
-  import Button from "../ui/Button.svelte";
+  import Mark from "../app/common/Mark.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
   import ClaudeMissing from "../shell/ClaudeMissing.svelte";
-  import Chip from "../ui/Chip.svelte";
-  import Kbd from "../ui/Kbd.svelte";
+  import { Badge } from "$lib/components/ui/badge/index.js";
+  import { Kbd } from "$lib/components/ui/kbd/index.js";
   import SessionTile from "./SessionTile.svelte";
 
   // Elapsed is derived from LiveSession.startedAt rather than stored, so the
@@ -245,6 +245,23 @@
   }
 </script>
 
+<!-- Workspace filter: a pressed-state shadcn Button with the workspace colour and a count Badge. -->
+{#snippet chip(label: string, count: number, colour: string | undefined, filter: string)}
+  {@const selected = $wsFilter === filter}
+  <Button
+    variant={selected ? "secondary" : "ghost"}
+    size="sm"
+    class="chip rounded-full"
+    aria-pressed={selected}
+    onclick={() => wsFilter.set(filter)}
+  >
+    {#if colour}<span class="size-2 shrink-0 rounded-full" style:background={colour}></span>{/if}
+    {label}
+    <Badge variant="secondary" size="sm">{count}</Badge>
+  </Button>
+{/snippet}
+
+
 <div class="sessions">
   {#if $claudeMissing && allTiles.length === 0}
     <ClaudeMissing />
@@ -253,20 +270,9 @@
     <SetupBanners />
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="chips" bind:this={chipsEl} onkeydown={onChipsKeydown}>
-      <Chip
-        label="All"
-        count={allTiles.length}
-        selected={$wsFilter === "all"}
-        onClick={() => wsFilter.set("all")}
-      />
+      {@render chip("All", allTiles.length, undefined, "all")}
       {#each activeWorkspaces as ws (ws.path)}
-        <Chip
-          label={ws.name}
-          count={tilesPerWorkspace.get(ws.path) ?? 0}
-          colour={ws.color ?? "var(--surface3)"}
-          selected={$wsFilter === ws.path}
-          onClick={() => wsFilter.set(ws.path)}
-        />
+        {@render chip(ws.name, tilesPerWorkspace.get(ws.path) ?? 0, ws.color ?? "var(--success)", ws.path)}
       {/each}
       <div class="chip-spacer"></div>
       <span class="sorted">{ORDER_LABEL[$overviewOrdering]}</span>
@@ -295,7 +301,7 @@
     {:else}
       <div class="empty">
         <div class="empty-col">
-          <AtlasMark size={40} />
+          <Mark size={40} />
           <div class="empty-title">Nothing running</div>
           <p class="empty-copy">
             Start a Claude session in one of your {$visibleWorkspaces.length}
@@ -303,8 +309,8 @@
             listed here and can be resumed.
           </p>
           <div class="empty-actions">
-            <Button variant="primary" onclick={() => newSessionOpen.set(true)}>New session</Button>
-            <Button variant="secondary" onclick={addWorkspace}>Add workspace folder</Button>
+            <Button variant="default" onclick={() => newSessionOpen.set(true)}>New session</Button>
+            <Button variant="outline" onclick={addWorkspace}>Add workspace folder</Button>
           </div>
           <div class="hints">
             <span><Kbd>{$chords.newSession}</Kbd> new</span>
@@ -338,8 +344,8 @@
   }
 
   .sorted {
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
     white-space: nowrap;
   }
 
@@ -383,14 +389,14 @@
 
   .empty-title {
     margin-top: 6px;
-    font-size: var(--fs-lg);
+    font-size: var(--text-lg);
     font-weight: 600;
   }
 
   .empty-copy {
     margin: 0;
-    color: var(--muted);
-    font-size: var(--fs-sm);
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
     line-height: 1.5;
   }
 
@@ -404,9 +410,9 @@
     display: flex;
     gap: 14px;
     margin-top: 14px;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
 
   .hints span {

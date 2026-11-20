@@ -12,7 +12,7 @@
   import { setupProblem } from "../../../pr-setup";
   import { formatAgo } from "../../../format";
   import { prHeadline, prOpenHeadline, prPollLine, prRows, prState } from "../../../session-view";
-  import Skeleton from "../../ui/Skeleton.svelte";
+  import { Skeleton } from "$lib/components/ui/skeleton/index.js";
   import RailGroup from "./RailGroup.svelte";
   import Tile from "./Tile.svelte";
 
@@ -140,7 +140,7 @@
     {:else if rateLimited}
       <span class="muted">Rate limited, retrying at {retryTime}</span>
     {:else if loading}
-      <Skeleton width="60%" />
+      <Skeleton style="width: 60%" class="rounded-sm" />
     {:else if !pr}
       <span class="muted">No PR for this branch yet</span>
     {:else if open}
@@ -192,7 +192,7 @@
 
 <style>
   .muted {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   .phrase {
@@ -204,15 +204,15 @@
   }
 
   .accent {
-    color: var(--accent);
+    color: var(--success);
   }
 
   .danger {
-    color: var(--danger);
+    color: var(--destructive);
   }
 
   .warn {
-    color: var(--warn);
+    color: var(--warning);
   }
 
   .stack {
@@ -226,7 +226,7 @@
   }
 
   .title {
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
     font-weight: 500;
     line-height: 22px;
     overflow-wrap: anywhere;
@@ -234,38 +234,38 @@
 
   .mono {
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
   }
 
   .poll {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   .poll.warn {
-    color: var(--warn);
+    color: var(--warning);
   }
 
   .link {
     padding: 0;
     border: 0;
     background: none;
-    color: var(--muted);
-    font-family: var(--font-ui);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
     cursor: pointer;
   }
 
   .link.mono {
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
     text-decoration: underline;
   }
 
   .link:hover {
-    color: var(--text);
+    color: var(--foreground);
   }
 
   .link.warn:hover {
-    color: var(--text);
+    color: var(--foreground);
   }
 </style>

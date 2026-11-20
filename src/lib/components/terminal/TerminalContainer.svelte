@@ -1,11 +1,12 @@
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import { onDestroy, onMount } from "svelte";
   import { chords } from "../../stores/settings";
   import { openSession } from "../../session-actions";
   import { workspaces } from "../../stores/workspace";
   import { focusedSessionId } from "../../stores/view";
-  import EmptyState from "../ui/EmptyState.svelte";
-  import Button from "../ui/Button.svelte";
+  import * as Empty from "$lib/components/ui/empty/index.js";
+  import { Button } from "$lib/components/ui/button/index.js";
   import { setTabSpawnError, tabs } from "../../stores/terminal";
   import { activeView } from "../../stores/view";
   import {
@@ -110,23 +111,24 @@
   {#if !$tabs.some((t) => t.id === visibleTabId)}
     <div class="empty-state">
       {#if ended}
-        <EmptyState
-          icon="terminal"
-          title="Session ended"
-          description="Resume to pick the conversation back up"
-        >
-          {#snippet action()}
-            <Button variant="primary" onclick={() => openSession(ended.path, ended.id)}
+        <Empty.Root>
+  <Empty.Header>
+    <Empty.Media variant="icon"><Icon name="terminal" size={20} /></Empty.Media>
+    <Empty.Title>Session ended</Empty.Title>
+    <Empty.Description>Resume to pick the conversation back up</Empty.Description>
+  </Empty.Header>
+  <Empty.Content><Button variant="default" onclick={() => openSession(ended.path, ended.id)}
               >Resume</Button
-            >
-          {/snippet}
-        </EmptyState>
+            ></Empty.Content>
+</Empty.Root>
       {:else}
-        <EmptyState
-          icon="terminal"
-          title="No session open"
-          description={`Start one with ${$chords.newSession}`}
-        />
+        <Empty.Root>
+  <Empty.Header>
+    <Empty.Media variant="icon"><Icon name="terminal" size={20} /></Empty.Media>
+    <Empty.Title>No session open</Empty.Title>
+    <Empty.Description>{`Start one with ${$chords.newSession}`}</Empty.Description>
+  </Empty.Header>
+</Empty.Root>
       {/if}
     </div>
   {/if}

@@ -58,10 +58,10 @@
     stroke-width: 7;
   }
   .track {
-    stroke: var(--surface3);
+    stroke: var(--accent);
   }
   .arc {
-    stroke: var(--accent);
+    stroke: var(--success);
     stroke-linecap: round;
   }
   .n {
@@ -71,14 +71,14 @@
     place-content: center;
     text-align: center;
     font-family: var(--font-mono);
-    font-size: var(--fs-xl);
-    font-weight: var(--fw-bold);
+    font-size: var(--text-xl);
+    font-weight: var(--font-weight-bold);
     line-height: 1;
   }
   .n small {
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-body);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-normal);
   }
   .g {
     position: absolute;
@@ -89,13 +89,13 @@
     align-items: center;
     height: var(--h-xs);
     padding: 0 var(--sp-3);
-    border: 2px solid var(--surface);
-    border-radius: var(--r-pill);
-    background: color-mix(in srgb, var(--accent) 16%, var(--surface));
-    color: var(--accent);
+    border: 2px solid var(--card);
+    border-radius: var(--radius-full);
+    background: color-mix(in srgb, var(--success) 16%, var(--card));
+    color: var(--success);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-medium);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-medium);
     box-sizing: border-box;
   }
 </style>

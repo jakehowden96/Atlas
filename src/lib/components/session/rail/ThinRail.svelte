@@ -13,7 +13,7 @@
 
 <script lang="ts">
   import { tooltip } from "../../../ui/tooltip";
-  import StatusMark from "../../ui/StatusMark.svelte";
+  import StatusMark from "../../app/common/StatusMark.svelte";
 
   interface Props {
     marks: ThinMark[];
@@ -75,13 +75,13 @@
     align-items: center;
     gap: 10px;
     padding: 12px 0;
-    background: var(--surface2);
+    background: var(--muted);
   }
 
   .ticket {
-    color: var(--text);
+    color: var(--foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
     font-weight: 600;
     transform: rotate(180deg);
     white-space: nowrap;
@@ -104,20 +104,20 @@
     width: 40px;
     padding: 6px 0;
     border: 0;
-    border-radius: var(--r-md);
+    border-radius: var(--radius-md);
     background: none;
-    color: var(--muted);
+    color: var(--muted-foreground);
     cursor: pointer;
   }
 
   .mark:hover {
-    background: var(--hover-bg);
-    color: var(--text);
+    background: var(--muted);
+    color: var(--foreground);
   }
 
   .letter {
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
     font-weight: 600;
   }
 </style>

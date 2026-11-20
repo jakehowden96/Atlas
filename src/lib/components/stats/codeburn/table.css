@@ -5,15 +5,15 @@
 }
 .cb-table th {
   padding: var(--sp-1) var(--sp-2);
-  color: var(--muted);
-  font-size: var(--fs-2xs);
-  font-weight: var(--fw-semi);
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
   text-align: left;
 }
 .cb-table td {
   padding: var(--sp-2);
   border-top: 1px solid var(--border);
-  font-size: var(--fs-xs);
+  font-size: var(--text-caption);
 }
 .cb-table .num {
   font-family: var(--font-mono);

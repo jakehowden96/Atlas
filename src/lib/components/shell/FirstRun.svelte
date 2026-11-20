@@ -13,10 +13,10 @@
   } from "../../stores/settings";
   import { showToast } from "../../stores/toast";
   import { visibleWorkspaces } from "../../stores/workspace";
-  import AtlasMark from "../ui/AtlasMark.svelte";
-  import Button from "../ui/Button.svelte";
-  import Icon from "../ui/Icon.svelte";
-  import StatusMark from "../ui/StatusMark.svelte";
+  import Mark from "../app/common/Mark.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import Icon from "../ui/icon/icon.svelte";
+  import StatusMark from "../app/common/StatusMark.svelte";
 
   let claude = $state<ClaudeInfo | null>(null);
   const checklist = $derived(deriveFirstRun(claude, $visibleWorkspaces.length));
@@ -77,7 +77,7 @@
 
 <div class="first-run">
   <div class="col">
-    <AtlasMark size={40} />
+    <Mark size={40} />
     <h1 class="title">Welcome to Atlas</h1>
     <p class="copy">Three things to set up, then you can start your first session</p>
 
@@ -88,7 +88,7 @@
           <span class="label">{item.label}</span>
           <span class="word">{item.done ? "Done" : "To do"}</span>
           {#if !item.done}
-            <Button size="sm" onclick={() => void RUN[item.id]()}>{ACTION[item.id]}</Button>
+            <Button variant="outline" size="sm" onclick={() => void RUN[item.id]()}>{ACTION[item.id]}</Button>
           {/if}
         </li>
       {/each}
@@ -126,14 +126,14 @@
 
   .title {
     margin: var(--sp-2) 0 0;
-    font-size: var(--fs-lg);
+    font-size: var(--text-lg);
     font-weight: 600;
   }
 
   .copy {
     margin: 0;
-    color: var(--muted);
-    font-size: var(--fs-sm);
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
     line-height: 1.5;
   }
 
@@ -154,9 +154,9 @@
     gap: var(--sp-3);
     padding: var(--sp-3) var(--sp-4);
     border: 1px solid var(--border);
-    border-radius: var(--r-card);
-    background: var(--surface);
-    font-size: var(--fs-sm);
+    border-radius: var(--radius-lg);
+    background: var(--card);
+    font-size: var(--text-sm);
   }
 
   .label {
@@ -164,8 +164,8 @@
   }
 
   .word {
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 
   .drop {
@@ -175,17 +175,17 @@
     gap: var(--sp-3);
     width: 100%;
     padding: var(--sp-7) var(--sp-5);
-    border: 2px dashed var(--border2);
-    border-radius: var(--r-card-lg);
+    border: 2px dashed var(--input);
+    border-radius: var(--radius-xl);
     background: transparent;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font: inherit;
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
     cursor: pointer;
   }
 
   .drop:hover {
-    border-color: var(--accent);
-    color: var(--text);
+    border-color: var(--success);
+    color: var(--foreground);
   }
 </style>

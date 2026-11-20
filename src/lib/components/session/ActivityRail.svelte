@@ -10,7 +10,7 @@
     planState,
   } from "../../session-view";
   import { railWidth, toggleRail } from "../../stores/view";
-  import IconButton from "../ui/IconButton.svelte";
+  import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
   import AgentsTile from "./rail/AgentsTile.svelte";
   import PlanTile from "./rail/PlanTile.svelte";
   import PrTile from "./rail/PrTile.svelte";
@@ -61,7 +61,7 @@
 </script>
 
 {#snippet toggle()}
-  <IconButton
+  <TooltipButton
     icon={thin ? "right_panel_open" : "right_panel_close"}
     label={thin ? "Expand activity rail" : "Collapse activity rail"}
     shortcut={$chords.toggleRail}
@@ -100,7 +100,7 @@
     width: 300px;
     overflow: hidden;
     border-left: 1px solid var(--border);
-    background: var(--bg);
+    background: var(--background);
     animation: atlasSlideIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
     transition: width var(--dur-slow) var(--ease-out);
   }

@@ -22,10 +22,10 @@
 </script>
 
 <script lang="ts">
-  import Button from "../ui/Button.svelte";
-  import ConnectorLogo from "../ui/ConnectorLogo.svelte";
-  import Popover from "../ui/Popover.svelte";
-  import StatusMark from "../ui/StatusMark.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import ConnectorLogo from "../app/connectors/ConnectorLogo.svelte";
+  import Popover from "../app/common/AnchoredPopover.svelte";
+  import StatusMark from "../app/common/StatusMark.svelte";
   import { installUpdate } from "../../updater";
   import { reconnect } from "../../stores/connectors";
   import type { ConnectorState } from "../../../types/generated/ConnectorState";
@@ -92,7 +92,7 @@
     label="{c.info.name} needs reconnecting"
   >
     <div class="pop">
-      <Button size="sm" variant="primary" onclick={() => reconnectFrom(c)}>Reconnect</Button>
+      <Button size="sm" variant="default" onclick={() => reconnectFrom(c)}>Reconnect</Button>
       <Button size="sm" variant="ghost" onclick={() => dismiss(c.info.id)}>Dismiss for now</Button>
     </div>
   </Popover>
@@ -113,7 +113,7 @@
     <div class="pop">
       <strong>Version {update.version}</strong>
       {#if update.notes}<p class="notes">{update.notes}</p>{/if}
-      <Button size="sm" variant="primary" loading={installing} onclick={install}>
+      <Button size="sm" variant="default" loading={installing} onclick={install}>
         Install and restart
       </Button>
     </div>
@@ -128,10 +128,10 @@
     height: var(--h-md);
     padding: 0 var(--sp-3);
     border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    background: var(--surface2);
-    color: var(--text);
-    font-size: var(--fs-sm);
+    border-radius: var(--radius-lg);
+    background: var(--muted);
+    color: var(--foreground);
+    font-size: var(--text-sm);
     white-space: nowrap;
   }
 
@@ -149,6 +149,6 @@
   .notes {
     margin: 0;
     white-space: pre-wrap;
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 </style>

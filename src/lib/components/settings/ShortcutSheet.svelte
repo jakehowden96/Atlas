@@ -13,9 +13,9 @@
   import { chord, enterLabel } from "../../platform";
   import { chords } from "../../stores/settings";
   import { shortcutsOpen } from "../../stores/view";
-  import IconButton from "../ui/IconButton.svelte";
-  import Kbd from "../ui/Kbd.svelte";
-  import Modal from "../ui/Modal.svelte";
+  import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
+  import { Kbd } from "$lib/components/ui/kbd/index.js";
+  import * as Dialog from "$lib/components/ui/dialog/index.js";
 
   /** A row is either a keymap action or a chord this screen fixes itself. */
   type Row = { action: Action } | { keys: string; label: string };
@@ -118,16 +118,14 @@
   }
 </script>
 
-<Modal
-  title="Keyboard shortcuts"
-  open={$shortcutsOpen}
-  onClose={() => shortcutsOpen.set(false)}
-  width="720px"
->
+<Dialog.Root open={$shortcutsOpen} onOpenChange={(o) => { if (!o) (() => shortcutsOpen.set(false))(); }}>
+  <Dialog.Content size="lg">
+    <Dialog.Header><Dialog.Title>Keyboard shortcuts</Dialog.Title></Dialog.Header>
+    <Dialog.Body>
   <div class="sheet">
     <div class="head">
       <span class="hint">Rebind the global ones in Settings › Keyboard</span>
-      <IconButton
+      <TooltipButton
         icon="close"
         size="sm"
         label="Close shortcuts"
@@ -149,7 +147,9 @@
       {/each}
     </div>
   </div>
-</Modal>
+    </Dialog.Body>
+  </Dialog.Content>
+</Dialog.Root>
 
 <style>
   .sheet {
@@ -169,8 +169,8 @@
   }
 
   .hint {
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 
   /* Two columns of groups, so the whole sheet is one screenful without a
@@ -189,8 +189,8 @@
 
   .group-title {
     margin-bottom: 5px;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -209,7 +209,7 @@
   }
 
   .what {
-    color: var(--muted);
-    font-size: var(--fs-sm);
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
   }
 </style>

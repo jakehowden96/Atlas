@@ -1,111 +1,99 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { get } from "svelte/store";
+
+const sonner = vi.hoisted(() => {
+  const fn = () => vi.fn();
+  return { success: fn(), info: fn(), warning: fn(), error: fn(), dismiss: fn() };
+});
+vi.mock("svelte-sonner", () => ({ toast: sonner }));
+
 import {
   toasts,
-  visibleToasts,
   notificationLog,
   markAllRead,
   clearLog,
-  pauseToast,
-  resumeToast,
   showToast,
   dismissToast,
   runToastAction,
 } from "../stores/toast";
-import { get } from "svelte/store";
+
+type Opts = {
+  id: string;
+  description?: string;
+  duration: number;
+  action?: { label: string; onClick: () => void };
+  onDismiss: () => void;
+  onAutoClose: () => void;
+};
+const lastCall = (type: keyof typeof sonner) =>
+  sonner[type].mock.calls[sonner[type].mock.calls.length - 1] as unknown as [string, Opts];
 
 describe("toast store", () => {
   beforeEach(() => {
-    // Reset store
     toasts.set([]);
     clearLog();
-    vi.useFakeTimers();
+    for (const f of Object.values(sonner)) f.mockClear();
   });
 
-  it("dismisses a toast by id", () => {
+  it("hands the toast to Sonner with its type, body and id", () => {
+    showToast("Pushed", { type: "success", body: "3 commits" });
+    const [title, opts] = lastCall("success");
+    expect(title).toBe("Pushed");
+    expect(opts.description).toBe("3 commits");
+    expect(opts.id).toBe(get(toasts)[0]!.id);
+  });
+
+  it("defaults to an error that never times out", () => {
+    showToast("Could not save");
+    expect(lastCall("error")[1].duration).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it.each([
+    ["info", false, 5000],
+    ["success", false, 5000],
+    ["warning", false, 8000],
+    ["info", true, 8000],
+  ] as const)("gives a %s toast (action: %s) %ims", (type, withAction, ms) => {
+    showToast("t", { type, action: withAction ? { label: "Undo", run: vi.fn() } : undefined });
+    expect(lastCall(type)[1].duration).toBe(ms);
+  });
+
+  it("dismisses by id in the store and in Sonner", () => {
     showToast("First");
     showToast("Second");
-    const items = get(toasts);
-    dismissToast(items[0]!.id);
-    expect(get(toasts)).toHaveLength(1);
-    expect(get(toasts)[0]!.title).toBe("Second");
-  });
-
-  it("auto-dismisses an info toast after 5s", () => {
-    showToast("Temporary", { type: "info" });
-    expect(get(toasts)).toHaveLength(1);
-    vi.advanceTimersByTime(4999);
-    expect(get(toasts)).toHaveLength(1);
-    vi.advanceTimersByTime(2);
-    expect(get(toasts)).toHaveLength(0);
-  });
-
-  it("cancels auto-dismiss timer on manual dismiss", () => {
-    showToast("Manual dismiss");
-    const items = get(toasts);
-    const id = items[0]!.id;
-
-    // Manually dismiss before timeout
+    const id = get(toasts)[0]!.id;
     dismissToast(id);
-    expect(get(toasts)).toHaveLength(0);
+    expect(get(toasts).map((t) => t.title)).toEqual(["Second"]);
+    expect(sonner.dismiss).toHaveBeenCalledWith(id);
+  });
 
-    // Advance past the auto-dismiss time — should not throw or re-remove
-    vi.advanceTimersByTime(5000);
+  it("forgets a toast Sonner closed on its own", () => {
+    showToast("Temporary", { type: "info" });
+    lastCall("info")[1].onAutoClose();
     expect(get(toasts)).toHaveLength(0);
   });
 
   it("handles dismissing a non-existent toast gracefully", () => {
     showToast("Exists");
-    expect(get(toasts)).toHaveLength(1);
-
-    // Dismiss a toast that doesn't exist
     dismissToast("non-existent-id");
     expect(get(toasts)).toHaveLength(1);
   });
 
   describe("action toasts", () => {
-    it("holds an action toast for 8s, not 5s", () => {
-      showToast("Atlas removed", { type: "info", action: { label: "Undo", run: vi.fn() } });
-      vi.advanceTimersByTime(5000);
-      expect(get(toasts)).toHaveLength(1);
-      vi.advanceTimersByTime(2999);
-      expect(get(toasts)).toHaveLength(1);
-      vi.advanceTimersByTime(2);
-      expect(get(toasts)).toHaveLength(0);
-    });
-
-    it("still dismisses a plain toast at 5s", () => {
-      showToast("Plain", { type: "info" });
-      vi.advanceTimersByTime(5001);
-      expect(get(toasts)).toHaveLength(0);
-    });
-
-    it("runs the action once and removes the toast", () => {
+    it("runs the action once from Sonner's button and removes the toast", () => {
       const run = vi.fn();
       showToast("Atlas removed", { action: { label: "Undo", run } });
-      const id = get(toasts)[0]!.id;
-
-      runToastAction(id);
-      expect(run).toHaveBeenCalledTimes(1);
-      expect(get(toasts)).toHaveLength(0);
-
-      // The auto-dismiss timer was cleared with it, so nothing fires later.
-      vi.advanceTimersByTime(8000);
+      const { action } = lastCall("error")[1];
+      expect(action?.label).toBe("Undo");
+      action!.onClick();
       expect(run).toHaveBeenCalledTimes(1);
       expect(get(toasts)).toHaveLength(0);
     });
 
-    it("does not run the action when dismissed by the close button", () => {
+    it("does not run the action when dismissed", () => {
       const run = vi.fn();
       showToast("Atlas removed", { action: { label: "Undo", run } });
-      dismissToast(get(toasts)[0]!.id);
-      expect(get(toasts)).toHaveLength(0);
-      expect(run).not.toHaveBeenCalled();
-    });
-
-    it("does not run the action when it auto-dismisses", () => {
-      const run = vi.fn();
-      showToast("Atlas removed", { type: "info", action: { label: "Undo", run } });
-      vi.advanceTimersByTime(8001);
+      lastCall("error")[1].onDismiss();
       expect(get(toasts)).toHaveLength(0);
       expect(run).not.toHaveBeenCalled();
     });
@@ -117,66 +105,14 @@ describe("toast store", () => {
     });
   });
 
-  it("can show multiple toasts and dismiss them independently", () => {
-    showToast("First", { type: "error" });
-    showToast("Second", { type: "info" });
-    showToast("Third", { type: "warning" });
-    expect(get(toasts)).toHaveLength(3);
-
-    const items = get(toasts);
-    dismissToast(items[1]!.id); // dismiss "Second"
-    const remaining = get(toasts);
-    expect(remaining).toHaveLength(2);
-    expect(remaining[0]!.title).toBe("First");
-    expect(remaining[1]!.title).toBe("Third");
-  });
-
-  it("keeps an error up until it is dismissed", () => {
-    showToast("Could not save", { body: "disk full" });
-    vi.advanceTimersByTime(600_000);
-    expect(get(toasts)).toHaveLength(1);
-  });
-
-  it("holds a warning for 8s", () => {
-    showToast("Careful", { type: "warning" });
-    vi.advanceTimersByTime(7999);
-    expect(get(toasts)).toHaveLength(1);
-    vi.advanceTimersByTime(2);
-    expect(get(toasts)).toHaveLength(0);
-  });
-
-  it("pauses the clock while hovered and resumes with the time left", () => {
-    showToast("Hover me", { type: "info" });
-    const id = get(toasts)[0]!.id;
-    vi.advanceTimersByTime(3000);
-    pauseToast(id);
-    vi.advanceTimersByTime(60_000);
-    expect(get(toasts)).toHaveLength(1);
-    resumeToast(id);
-    vi.advanceTimersByTime(1999);
-    expect(get(toasts)).toHaveLength(1);
-    vi.advanceTimersByTime(2);
-    expect(get(toasts)).toHaveLength(0);
-  });
-
-  it("shows a repeated identical toast once and gives it a fresh lifetime", () => {
+  it("shows a repeated identical toast once, re-sent under the same id", () => {
     showToast("Failed to list PRs", { body: "not found", type: "info" });
-    vi.advanceTimersByTime(3000);
     showToast("Failed to list PRs", { body: "not found", type: "info" });
     expect(get(toasts)).toHaveLength(1);
     expect(get(notificationLog)).toHaveLength(1);
-
-    vi.advanceTimersByTime(4000);
-    expect(get(toasts)).toHaveLength(1);
-    vi.advanceTimersByTime(1001);
-    expect(get(toasts)).toHaveLength(0);
-  });
-
-  it("shows only the newest three and counts the rest", () => {
-    for (let i = 0; i < 10; i++) showToast(`Failure ${i}`);
-    const { shown, hidden } = get(visibleToasts);
-    expect(shown.map((t) => t.title)).toEqual(["Failure 7", "Failure 8", "Failure 9"]);
-    expect(hidden).toBe(7);
+    const ids = sonner.info.mock.calls.map((c) => (c[1] as Opts).id);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toBe(ids[1]);
   });
 
   describe("notification log", () => {

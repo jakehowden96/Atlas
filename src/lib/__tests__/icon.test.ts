@@ -1,6 +1,6 @@
 import namesFile from "../../assets/fonts/icon-names.txt?raw";
 import { describe, expect, it } from "vitest";
-import { ICONS } from "../components/ui/Icon.svelte";
+import { ICONS } from "../components/ui/icon/icon.svelte";
 
 describe("icon glyph list", () => {
   it("matches the list the subset script reads", () => {

@@ -48,7 +48,7 @@
         y={y(d.total)}
         width={bw}
         height={Math.max(0, y(0) - y(d.total))}
-        fill="var(--accent)"
+        fill="var(--success)"
       />
       {#if i % every === 0}<text x={x + bw / 2} y={H - 6} text-anchor="middle">{d.label}</text>{/if}
     {/each}
@@ -57,7 +57,7 @@
       x2={width - R + 4}
       y1={y(mx)}
       y2={y(mx)}
-      stroke="var(--warn)"
+      stroke="var(--warning)"
       stroke-dasharray="4 3"
     />
     <text class="pk" x={width - R + 8} y={y(mx) + 4}>{fmtCost(mx)}</text>
@@ -84,13 +84,13 @@
     overflow: visible;
   }
   text {
-    fill: var(--muted);
+    fill: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
   }
   text.pk {
-    fill: var(--warn);
-    font-weight: var(--fw-semi);
+    fill: var(--warning);
+    font-weight: var(--font-weight-semibold);
   }
   .tip {
     position: absolute;
@@ -99,19 +99,19 @@
     display: flex;
     gap: var(--sp-3);
     padding: var(--sp-1) var(--sp-3);
-    border: 1px solid var(--border2);
-    border-radius: var(--r-md);
-    background: var(--surface);
+    border: 1px solid var(--input);
+    border-radius: var(--radius-md);
+    background: var(--card);
     box-shadow: var(--elev-1);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     white-space: nowrap;
     pointer-events: none;
   }
   .tip b {
     font-family: var(--font-mono);
-    font-weight: var(--fw-semi);
+    font-weight: var(--font-weight-semibold);
   }
   .m {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 </style>

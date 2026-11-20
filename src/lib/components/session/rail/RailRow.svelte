@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { RailRowData } from "../../../session-view";
-  import StatusMark from "../../ui/StatusMark.svelte";
+  import StatusMark from "../../app/common/StatusMark.svelte";
 
   let { row }: { row: RailRowData } = $props();
 </script>
@@ -53,17 +53,17 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
     line-height: 20px;
   }
 
   .title.muted {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   .status {
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
     line-height: 18px;
   }
 
@@ -72,31 +72,31 @@
   }
 
   .word.running {
-    color: var(--accent);
+    color: var(--success);
   }
 
   .word.failing {
-    color: var(--danger);
+    color: var(--destructive);
   }
 
   .word.attention {
-    color: var(--warn);
+    color: var(--warning);
   }
 
   .detail-link {
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 
   .detail-link:hover {
-    color: var(--text);
+    color: var(--foreground);
   }
 
   .meta,
   .action {
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
     line-height: 18px;
   }
 
@@ -110,8 +110,8 @@
   .chip {
     max-width: 100%;
     padding: 0 5px;
-    border: 1px solid var(--border2);
-    border-radius: var(--r-xs);
+    border: 1px solid var(--input);
+    border-radius: var(--radius-xs);
     line-height: 16px;
     overflow-wrap: anywhere;
   }

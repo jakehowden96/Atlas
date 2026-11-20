@@ -53,16 +53,19 @@
   import { showToast } from "../../stores/toast";
   import { focusedSessionId, newSessionOpen, newSessionSeed, showView } from "../../stores/view";
   import { addWorkspace, visibleWorkspaces, type Workspace } from "../../stores/workspace";
-  import Button from "../ui/Button.svelte";
-  import Icon from "../ui/Icon.svelte";
-  import IconButton from "../ui/IconButton.svelte";
-  import InlineAlert from "../ui/InlineAlert.svelte";
-  import Kbd from "../ui/Kbd.svelte";
-  import ListRow from "../ui/ListRow.svelte";
-  import Modal, { closeWith } from "../ui/Modal.svelte";
-  import RadioGroup from "../ui/RadioGroup.svelte";
-  import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
-  import Skeleton from "../ui/Skeleton.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import Icon from "../ui/icon/icon.svelte";
+  import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import { Kbd } from "$lib/components/ui/kbd/index.js";
+  import * as Item from "$lib/components/ui/item/index.js";
+  import { activateOnKey } from "../../ui/activate";
+  import * as Dialog from "$lib/components/ui/dialog/index.js";
+  import { closeWith } from "../../ui/delay";
+  import * as RadioGroup from "$lib/components/ui/radio-group/index.js";
+  import { Label } from "$lib/components/ui/label/index.js";
+  import Segmented, { type Segment } from "$lib/components/app/common/Segmented.svelte";
+  import { Skeleton } from "$lib/components/ui/skeleton/index.js";
   import { errorMessage } from "../../ipc-error";
 
   let query = $state("");
@@ -166,7 +169,7 @@
   });
 
   // Focus the command input as soon as it exists. An effect rather than a
-  // post-open `tick()` because the input is mounted by `Modal`, one flush later.
+  // post-open `tick()` because the input is mounted by the Dialog, one flush later.
   $effect(() => {
     if ($newSessionOpen) inputEl?.focus();
   });
@@ -257,7 +260,7 @@
 
   function close() {
     newSessionOpen.set(false);
-    // `Modal` owns the delayed unmount; clear the seed on the same beat so a
+    // The Dialog owns the delayed unmount; clear the seed on the same beat so a
     // Stats-seeded Resume pick cannot leak into the next ⌘N.
     closeWith(() => newSessionSeed.set(null));
   }
@@ -412,7 +415,31 @@
   );
 </script>
 
-<Modal open={$newSessionOpen} onClose={close} align="top" width="960px" title="New session">
+<!-- shadcn RadioGroup over {value, label, description?} options. -->
+{#snippet radios(
+  label: string,
+  options: { value: string; label: string; description?: string }[],
+  value: string,
+  onPick: (v: string) => void,
+)}
+  <RadioGroup.Root aria-label={label} {value} onValueChange={onPick}>
+    {#each options as o (o.value)}
+      <Label class="items-start font-normal">
+        <RadioGroup.Item value={o.value} class="mt-px" />
+        <span class="grid gap-0.5">
+          <span class="text-sm">{o.label}</span>
+          {#if o.description}<span class="text-caption text-muted-foreground">{o.description}</span>{/if}
+        </span>
+      </Label>
+    {/each}
+  </RadioGroup.Root>
+{/snippet}
+
+
+<Dialog.Root open={$newSessionOpen} onOpenChange={(o) => { if (!o) close(); }}>
+  <Dialog.Content class="w-[min(960px,calc(100vw-2rem))] top-[12vh] translate-y-0">
+    <Dialog.Header><Dialog.Title>New session</Dialog.Title></Dialog.Header>
+    <Dialog.Body>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="new-session" onkeydown={onKeydown}>
     <div class="bar">
@@ -443,17 +470,14 @@
 
         <div class="ws-list" role="listbox" aria-labelledby="ns-ws-head">
           {#each filtered as ws, i (ws.path)}
-            <ListRow
-              option
-              selected={view.column === "workspaces" && i === view.wsIndex}
-              onclick={() => pickWorkspace(i)}
-            >
-              <span class="swatch" style="background: {ws.color ?? 'var(--accent)'}"></span>
+            <Item.Root role="option" aria-selected={view.column === "workspaces" && i === view.wsIndex} data-selected={view.column === "workspaces" && i === view.wsIndex} tabindex={0} onclick={() => pickWorkspace(i)} onkeydown={activateOnKey}>
+              <span class="swatch" style="background: {ws.color ?? 'var(--success)'}"></span>
               <span class="ws-name">{ws.name}</span>
               <span class="ws-path" use:tooltip={{ text: ws.path }}>{ws.path}</span>
               <span class="ws-last">{lastUsed(ws)}</span>
-              {#snippet actions()}
-                <IconButton
+              
+            
+<Item.Actions><TooltipButton
                   icon="close"
                   size="sm"
                   label="Remove {ws.name}"
@@ -462,16 +486,10 @@
                     e.stopPropagation();
                     void removeWorkspaceWithUndo(ws.path);
                   }}
-                />
-              {/snippet}
-            </ListRow>
+                /></Item.Actions></Item.Root>
           {/each}
 
-          <ListRow
-            option
-            selected={view.column === "workspaces" && view.wsIndex === filtered.length}
-            onclick={addRow}
-          >
+          <Item.Root role="option" aria-selected={view.column === "workspaces" && view.wsIndex === filtered.length} data-selected={view.column === "workspaces" && view.wsIndex === filtered.length} tabindex={0} onclick={addRow} onkeydown={activateOnKey}>
             <Icon name="add" />
             {#if addPath}
               <span class="add-label">Add <span class="add-path">{addPath}</span></span>
@@ -479,7 +497,7 @@
               <span class="add-label">Add workspace…</span>
             {/if}
             <span class="add-kbd">{chord("O")}</span>
-          </ListRow>
+          </Item.Root>
         </div>
 
         {#if filtered.length === 0 && !addPath}
@@ -500,11 +518,12 @@
             {/if}
           </div>
           <div class="harness-pick">
-            <RadioGroup
-              label="Harness"
-              options={$harnesses.map((h) => ({ value: h.id, label: h.label }))}
-              bind:value={() => selectedHarness?.id ?? "", chooseHarness}
-            />
+            {@render radios(
+              "Harness",
+              $harnesses.map((h) => ({ value: h.id, label: h.label })),
+              selectedHarness?.id ?? "",
+              chooseHarness,
+            )}
           </div>
         </div>
 
@@ -513,7 +532,7 @@
             <span class="mode-title">Mode</span>
             <span class="mode-hint"><Kbd>tab</Kbd> switches</span>
           </div>
-          <SegmentedControl
+          <Segmented
             label="Mode"
             options={modeOptions}
             value={view.mode}
@@ -534,21 +553,22 @@
               </div>
               {#if loadingResume}
                 <div class="skeletons" role="status" aria-label="Reading transcripts">
-                  <Skeleton height="var(--h-xl)" radius="lg" />
-                  <Skeleton height="var(--h-xl)" radius="lg" />
-                  <Skeleton height="var(--h-xl)" radius="lg" />
+                  <Skeleton style="height: var(--h-xl)" class="rounded-lg" />
+                  <Skeleton style="height: var(--h-xl)" class="rounded-lg" />
+                  <Skeleton style="height: var(--h-xl)" class="rounded-lg" />
                 </div>
               {:else if resumeError}
-                <InlineAlert>Could not read prior sessions: {resumeError}</InlineAlert>
-                <div><Button size="sm" onclick={retryResume}>Retry</Button></div>
+                <Alert.Root variant="destructive" layout="inline"><Icon name="error" /><Alert.Title>Could not read prior sessions: {resumeError}</Alert.Title></Alert.Root>
+                <div><Button variant="outline" size="sm" onclick={retryResume}>Retry</Button></div>
               {:else if resumable.length === 0}
                 <p class="empty">No prior sessions in this workspace yet, start a New one</p>
               {:else}
-                <RadioGroup
-                  label="Prior sessions"
-                  options={resumeOptions}
-                  bind:value={() => pickedResume?.sessionId ?? "", pickResume}
-                />
+                {@render radios(
+                  "Prior sessions",
+                  resumeOptions,
+                  pickedResume?.sessionId ?? "",
+                  pickResume,
+                )}
               {/if}
             </div>
           {:else if view.mode === "pr"}
@@ -559,26 +579,26 @@
               {#if $prSetupProblem}
                 <p class="empty">Link GitHub to list pull requests here</p>
                 <div>
-                  <Button size="sm" onclick={() => openSettings("connectors")}>
+                  <Button variant="outline" size="sm" onclick={() => openSettings("connectors")}>
                     Open settings
                   </Button>
                 </div>
               {:else if prsLoading}
                 <div class="skeletons" role="status" aria-label="Loading pull requests">
-                  <Skeleton height="var(--h-lg)" radius="md" />
-                  <Skeleton height="var(--h-lg)" radius="md" />
-                  <Skeleton height="var(--h-lg)" radius="md" />
+                  <Skeleton style="height: var(--h-lg)" class="rounded-md" />
+                  <Skeleton style="height: var(--h-lg)" class="rounded-md" />
+                  <Skeleton style="height: var(--h-lg)" class="rounded-md" />
                 </div>
               {:else if prItems.length === 0}
                 <p class="empty">No open pull requests for this workspace</p>
               {:else}
                 <div role="listbox" aria-labelledby="ns-pr-head">
                   {#each prItems as item, i (item.repo + "#" + item.pr.number)}
-                    <ListRow option selected={i === view.prIndex} onclick={() => pickPr(i)}>
+                    <Item.Root role="option" aria-selected={i === view.prIndex} data-selected={i === view.prIndex} tabindex={0} onclick={() => pickPr(i)} onkeydown={activateOnKey}>
                       <span class="pr-num">#{item.pr.number}</span>
                       <span class="ws-name">{item.pr.title}</span>
                       <span class="ws-last">{prMeta(item.pr)}</span>
-                    </ListRow>
+                    </Item.Root>
                   {/each}
                 </div>
               {/if}
@@ -601,14 +621,16 @@
           {/each}
         </div>
 
-        <Button variant="primary" disabled={!canStart} onclick={start}>
+        <Button variant="default" disabled={!canStart} onclick={start}>
           {startLabel}
-          {#snippet trailing()}<Kbd onInk>{enterLabel()}</Kbd>{/snippet}
+          <Kbd>{enterLabel()}</Kbd>
         </Button>
       </div>
     </div>
   </div>
-</Modal>
+    </Dialog.Body>
+  </Dialog.Content>
+</Dialog.Root>
 
 <style>
   .new-session {
@@ -631,9 +653,9 @@
     flex-shrink: 0;
     padding: 7px 14px;
     border-bottom: 1px solid var(--border);
-    background: var(--surface2);
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    background: var(--muted);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -641,7 +663,7 @@
 
   .glyph {
     display: inline-flex;
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   .input {
@@ -650,19 +672,19 @@
     border: none;
     outline: none;
     background: transparent;
-    color: var(--text);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
   }
 
   /* Replaces the outline above. The field is borderless because the bar is its
      frame, so focus tints the bar's rule rather than ringing the box. */
   .bar:has(.input:focus-visible) {
-    border-bottom-color: var(--accent);
+    border-bottom-color: var(--success);
   }
 
   .input::placeholder {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   .cols {
@@ -692,9 +714,9 @@
 
   .col-head {
     padding: var(--sp-2) var(--sp-3) var(--sp-1);
-    color: var(--muted);
-    font-family: var(--font-ui);
-    font-size: var(--fs-2xs);
+    color: var(--muted-foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -702,22 +724,22 @@
 
   .col-empty {
     margin: var(--sp-1) var(--sp-3);
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 
   .swatch {
     flex-shrink: 0;
     width: 10px;
     height: 10px;
-    border-radius: var(--r-xs);
+    border-radius: var(--radius-xs);
   }
 
   .ws-name {
     flex-shrink: 0;
     max-width: 55%;
     overflow: hidden;
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -727,9 +749,9 @@
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -737,30 +759,30 @@
   .ws-last {
     flex-shrink: 0;
     margin-left: auto;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
   }
 
   .add-label {
     overflow: hidden;
-    color: var(--muted);
-    font-size: var(--fs-sm);
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .add-path {
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
 
   .add-kbd {
     margin-left: auto;
     flex-shrink: 0;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
   }
 
   /* ── Right column ──────────────────────────────────────────────────────── */
@@ -771,7 +793,7 @@
     gap: var(--sp-4);
     min-width: 0;
     padding: 14px;
-    background: var(--bg);
+    background: var(--background);
   }
 
   .right-col .col-head {
@@ -803,8 +825,8 @@
     gap: var(--sp-2);
     flex-shrink: 0;
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-body);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-normal);
     letter-spacing: 0;
     text-transform: none;
   }
@@ -825,8 +847,8 @@
 
   .fresh-copy {
     margin: 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
     line-height: 1.5;
   }
 
@@ -841,7 +863,7 @@
   }
 
   .strong {
-    color: var(--text);
+    color: var(--foreground);
   }
 
   .resume-pane {
@@ -856,14 +878,14 @@
   }
 
   .resume-caption {
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 
   .empty {
     margin: 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 
   .skeletons {
@@ -874,9 +896,9 @@
 
   .pr-num {
     flex-shrink: 0;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
   }
 
   /* ── Footer ────────────────────────────────────────────────────────────── */
@@ -885,9 +907,9 @@
     flex-wrap: wrap;
     gap: var(--sp-4);
     flex-shrink: 0;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
 
   .hints span {

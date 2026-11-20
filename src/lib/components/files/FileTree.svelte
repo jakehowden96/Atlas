@@ -50,19 +50,19 @@
   import { openDialogOpen } from "../../stores/view";
   import { activeWorkspacePath, visibleWorkspaces } from "../../stores/workspace";
   import { errorMessage } from "../../ipc-error";
-  import Button from "../ui/Button.svelte";
-  import { confirmAction } from "../ui/ConfirmDialog.svelte";
-  import Input from "../ui/Input.svelte";
-  import type { MenuItem } from "../ui/Menu.svelte";
-  import EmptyState from "../ui/EmptyState.svelte";
-  import Icon from "../ui/Icon.svelte";
-  import IconButton from "../ui/IconButton.svelte";
-  import InlineAlert from "../ui/InlineAlert.svelte";
-  import Kbd from "../ui/Kbd.svelte";
-  import SearchInput from "../ui/SearchInput.svelte";
-  import Select from "../ui/Select.svelte";
-  import Tree, { type TreeItem } from "../ui/Tree.svelte";
-  import type { TreeKind } from "../ui/TreeRow.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import { confirmAction } from "../app/common/ConfirmDialog.svelte";
+  import { Input } from "$lib/components/ui/input/index.js";
+  import type { MenuItem } from "$lib/components/app/common/menu";
+  import * as Empty from "$lib/components/ui/empty/index.js";
+  import Icon from "../ui/icon/icon.svelte";
+  import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import { Kbd } from "$lib/components/ui/kbd/index.js";
+  import SearchInput from "../app/common/SearchInput.svelte";
+  import OptionSelect from "$lib/components/app/common/OptionSelect.svelte";
+  import Tree, { type TreeItem } from "../app/files/Tree.svelte";
+  import type { TreeKind } from "../app/files/TreeRow.svelte";
 
   /** The tree filter. Matches on file and folder names, not on file contents. */
   let query = $state("");
@@ -434,7 +434,7 @@
 <aside class="tree">
   <div class="ws-row">
     <div class="ws-select">
-      <Select
+      <OptionSelect
         size="sm"
         aria-label="Workspace"
         placeholder="No workspace"
@@ -443,7 +443,7 @@
         onChange={(id) => fileWs.set(id)}
       />
     </div>
-    <IconButton icon="add" label="New note" disabled={!$fileWs} onclick={() => newNote()} />
+    <TooltipButton icon="add" label="New note" disabled={!$fileWs} onclick={() => newNote()} />
   </div>
 
   <!-- Filters the three sections below by name. No chord hint on the field,
@@ -454,7 +454,7 @@
     </div>
     <Button variant="ghost" size="sm" onclick={() => openDialogOpen.set(true)}>
       Open…
-      {#snippet trailing()}<Kbd>{$chords.openFile}</Kbd>{/snippet}
+      <Kbd>{$chords.openFile}</Kbd>
     </Button>
   </div>
 
@@ -465,16 +465,17 @@
           bind:value={edit.value}
           aria-label={edit.kind === "rename" ? `Rename ${item.label}` : "New folder name"}
           placeholder={edit.kind === "folder" ? "Folder name" : undefined}
-          invalid={!!edit.error}
-          oncommit={() => void commitEdit()}
+          aria-invalid={edit.error ? true : undefined}
+          onblur={() => void commitEdit()}
           onkeydown={(e) => {
+            if (e.key === "Enter") void commitEdit();
             if (e.key === "Escape") {
               e.stopPropagation();
               edit = null;
             }
           }}
         />
-        {#if edit.error}<InlineAlert>{edit.error}</InlineAlert>{/if}
+        {#if edit.error}<Alert.Root variant="destructive" layout="inline"><Icon name="error" /><Alert.Title>{edit.error}</Alert.Title></Alert.Root>{/if}
       </div>
     {/if}
   {/snippet}
@@ -500,7 +501,7 @@
           {editor}
         />
       {:else}
-        <EmptyState compact icon="article" title="No plans yet" />
+        <Empty.Root size="compact"><Empty.Media><Icon name="article" /></Empty.Media><Empty.Title>No plans yet</Empty.Title></Empty.Root>
       {/if}
     </section>
 
@@ -518,7 +519,7 @@
           {editor}
         />
       {:else if !searching}
-        <EmptyState compact icon="folder" title="No docs in this workspace" />
+        <Empty.Root size="compact"><Empty.Media><Icon name="folder" /></Empty.Media><Empty.Title>No docs in this workspace</Empty.Title></Empty.Root>
       {/if}
     </section>
 
@@ -528,7 +529,7 @@
         {@const items = diskItems(diskFiles(source))}
         <div class="source">
           <span class="source-name" use:tooltip={{ text: source }}>{basename(source)}</span>
-          <IconButton
+          <TooltipButton
             icon="close"
             size="sm"
             label="Forget {basename(source)}"
@@ -546,7 +547,7 @@
             {editor}
           />
         {:else}
-          <EmptyState compact icon="folder" title="No files here" />
+          <Empty.Root size="compact"><Empty.Media><Icon name="folder" /></Empty.Media><Empty.Title>No files here</Empty.Title></Empty.Root>
         {/if}
         {#if $truncatedSources.has(source)}
           <p class="note"><Icon name="info" />Only part of this folder is shown</p>
@@ -564,7 +565,7 @@
         />
       {/if}
       {#if $sources.length === 0 && looseItems.length === 0}
-        <EmptyState compact icon="folder" title="No folders added" />
+        <Empty.Root size="compact"><Empty.Media><Icon name="folder" /></Empty.Media><Empty.Title>No folders added</Empty.Title></Empty.Root>
         <div class="add">
           <Button variant="ghost" size="sm" onclick={() => openDialogOpen.set(true)}>
             Add a folder
@@ -574,7 +575,7 @@
     </section>
   </div>
 
-  {#if $listError}<InlineAlert>{$listError}</InlineAlert>{/if}
+  {#if $listError}<Alert.Root variant="destructive" layout="inline"><Icon name="error" /><Alert.Title>{$listError}</Alert.Title></Alert.Root>{/if}
   <div class="footer">
     {myPlans.length} plans · {docCount} docs{$docsTruncated ? " · list truncated" : ""}
   </div>
@@ -588,7 +589,7 @@
     width: 240px;
     min-height: 0;
     border-right: 1px solid var(--border);
-    background: var(--bg);
+    background: var(--background);
   }
 
   .ws-row {
@@ -635,9 +636,9 @@
 
   .label {
     margin: 0 0 var(--sp-1) var(--sp-2);
-    color: var(--muted);
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-semi);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-semibold);
     letter-spacing: 0.04em;
     text-transform: uppercase;
   }
@@ -653,8 +654,8 @@
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    color: var(--muted);
-    font-size: var(--fs-sm);
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -671,8 +672,8 @@
     align-items: center;
     gap: var(--sp-1);
     margin: 0 0 0 var(--sp-2);
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 
   .add {
@@ -683,7 +684,7 @@
     flex-shrink: 0;
     padding: var(--sp-2);
     border-top: 1px solid var(--border);
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 </style>

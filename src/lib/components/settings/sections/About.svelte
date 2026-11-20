@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import "./shared.css";
   import { claudeInfo, openUrl } from "../../../ipc";
   import { errorMessage } from "../../../ipc-error";
@@ -6,13 +7,13 @@
   import { revealInFileManager } from "../../../ui/reveal";
   import { autoCheckUpdates, setAutoCheckUpdates } from "../../../stores/settings";
   import { checkForUpdate, installUpdate, updateState } from "../../../updater";
-  import AtlasMark from "../../ui/AtlasMark.svelte";
-  import Button from "../../ui/Button.svelte";
-  import { confirmAction } from "../../ui/ConfirmDialog.svelte";
-  import CopyButton from "../../ui/CopyButton.svelte";
-  import InlineAlert from "../../ui/InlineAlert.svelte";
-  import Progress from "../../ui/Progress.svelte";
-  import Toggle from "../../ui/Toggle.svelte";
+  import Mark from "../../app/common/Mark.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import { confirmAction } from "../../app/common/ConfirmDialog.svelte";
+  import CopyButton from "../../app/common/CopyButton.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import { Progress } from "$lib/components/ui/progress/index.js";
+  import { Switch } from "$lib/components/ui/switch/index.js";
 
   let { version }: { version: string } = $props();
 
@@ -69,7 +70,7 @@
 
 <div class="stack sec">
   <div class="id">
-    <AtlasMark size={40} />
+    <Mark size={40} />
     <div>
       <div class="name">Atlas</div>
       <div class="meta">Version {version || "unknown"} · {import.meta.env.MODE} build</div>
@@ -95,7 +96,7 @@
       <div class="row-title">Logs</div>
       <div class="row-desc">Open the log folder to attach to a bug report</div>
     </div>
-    <Button size="sm" onclick={() => void revealInFileManager()}>Open logs</Button>
+    <Button variant="outline" size="sm" onclick={() => void revealInFileManager()}>Open logs</Button>
   </div>
 
   <div class="row">
@@ -114,18 +115,18 @@
       </div>
     </div>
     {#if $updateState.kind === "available"}
-      <Button size="sm" variant="primary" loading={installing} onclick={() => void install()}>
+      <Button size="sm" variant="default" loading={installing} onclick={() => void install()}>
         Update to {$updateState.version}
       </Button>
     {:else if $updateState.kind !== "notConfigured"}
-      <Button size="sm" loading={checking} onclick={() => void check()}>Check now</Button>
+      <Button variant="outline" size="sm" loading={checking} onclick={() => void check()}>Check now</Button>
     {/if}
   </div>
   {#if installing}
-    <Progress label="Downloading update" value={progress} />
+    <Progress aria-label="Downloading update" value={progress} />
   {/if}
   {#if $updateState.kind === "error"}
-    <InlineAlert>{$updateState.message}</InlineAlert>
+    <Alert.Root variant="destructive" layout="inline"><Icon name="error" /><Alert.Title>{$updateState.message}</Alert.Title></Alert.Root>
   {/if}
 
   <div class="row">
@@ -133,11 +134,7 @@
       <div class="row-title">Check automatically</div>
       <div class="row-desc">Look for updates every hour</div>
     </div>
-    <Toggle
-      checked={$autoCheckUpdates}
-      label="Check automatically"
-      onChange={(v) => void setAutoCheckUpdates(v)}
-    />
+    <Switch checked={$autoCheckUpdates} onCheckedChange={(v) => void setAutoCheckUpdates(v)} aria-label="Check automatically" />
   </div>
 </div>
 
@@ -149,15 +146,15 @@
   }
 
   .name {
-    font-family: var(--font-ui);
-    font-size: var(--fs-md);
+    font-family: var(--font-sans);
+    font-size: var(--text-md);
     font-weight: 600;
   }
 
   .meta {
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-    color: var(--muted);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
   }
 
   .links {

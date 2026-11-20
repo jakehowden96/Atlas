@@ -1,11 +1,13 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import tailwindcss from "@tailwindcss/vite";
+import { fileURLToPath } from "node:url";
 
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [tailwindcss(), svelte()],
   clearScreen: false,
   build: {
     /* The default 500 kB warning is about download time over a network. Atlas
@@ -48,7 +50,10 @@ export default defineConfig({
   },
   /* Svelte 5 resolves its server build under node unless told otherwise;
      component tests need the client runtime for `mount`. */
-  resolve: process.env.VITEST ? { conditions: ["browser"] } : undefined,
+  resolve: {
+    alias: { $lib: fileURLToPath(new URL("./src/lib", import.meta.url)) },
+    ...(process.env.VITEST ? { conditions: ["browser"] } : {}),
+  },
   test: {
     /* `app.css` is imported with `?raw` by `theme.test.ts`, which asserts the
        real token blocks rather than a copy of them. Vitest stubs CSS imports to

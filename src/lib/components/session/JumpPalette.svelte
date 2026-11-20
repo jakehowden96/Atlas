@@ -14,12 +14,13 @@
   import { focusedSessionId, jumpOpen, openNewSession, showView } from "../../stores/view";
   import { activeWorkspacePath, visibleWorkspaces } from "../../stores/workspace";
   import { modLabel, isMacPlatform } from "../../platform";
-  import Icon from "../ui/Icon.svelte";
-  import Kbd from "../ui/Kbd.svelte";
-  import ListRow from "../ui/ListRow.svelte";
-  import Modal from "../ui/Modal.svelte";
-  import Skeleton from "../ui/Skeleton.svelte";
-  import StatusMark, { type MarkState } from "../ui/StatusMark.svelte";
+  import Icon from "../ui/icon/icon.svelte";
+  import { Kbd } from "$lib/components/ui/kbd/index.js";
+  import * as Item from "$lib/components/ui/item/index.js";
+  import { activateOnKey } from "../../ui/activate";
+  import * as Dialog from "$lib/components/ui/dialog/index.js";
+  import { Skeleton } from "$lib/components/ui/skeleton/index.js";
+  import StatusMark, { type MarkState } from "../app/common/StatusMark.svelte";
 
   /** A `JumpRow` plus what ⏎ should do with it, so the ranking stays pure. */
   interface Row extends JumpRow {
@@ -194,13 +195,9 @@
   }
 </script>
 
-<Modal
-  open={$jumpOpen}
-  onClose={() => jumpOpen.set(false)}
-  align="top"
-  width="560px"
-  ariaLabel="Jump to"
->
+<Dialog.Root open={$jumpOpen} onOpenChange={(o) => { if (!o) (() => jumpOpen.set(false))(); }}>
+  <Dialog.Content class="top-[12vh] translate-y-0" aria-label="Jump to">
+    <Dialog.Body>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="jump" onkeydown={onKeydown}>
     <div class="bar">
@@ -225,16 +222,16 @@
 
     <div class="list" id="jump-list" role="listbox" aria-label="Results" bind:this={listEl}>
       {#if loading}
-        <Skeleton height="var(--h-lg)" radius="md" />
-        <Skeleton height="var(--h-lg)" radius="md" />
-        <Skeleton height="var(--h-lg)" radius="md" />
+        <Skeleton style="height: var(--h-lg)" class="rounded-md" />
+        <Skeleton style="height: var(--h-lg)" class="rounded-md" />
+        <Skeleton style="height: var(--h-lg)" class="rounded-md" />
       {:else if rows.length === 0}
         <p class="empty" role="presentation">
           {all.length === 0 ? "Nothing to jump to yet" : `Nothing matches “${query}”`}
         </p>
       {:else}
         {#each rows as row, i (row.id)}
-          <ListRow option id={optionId(i)} selected={i === selected} onclick={() => jump(i)}>
+          <Item.Root role="option" id={optionId(i)} aria-selected={i === selected} data-selected={i === selected} tabindex={0} onclick={() => jump(i)} onkeydown={activateOnKey}>
             <span class="pill">{row.kind}</span>
             <span class="text">
               <span class="label">{row.label}</span>
@@ -245,7 +242,7 @@
                 <StatusMark state={MARK[row.state] ?? "idle"} />{STATE_LABEL[row.state]}
               </span>
             {/if}
-          </ListRow>
+          </Item.Root>
         {/each}
       {/if}
     </div>
@@ -257,7 +254,9 @@
       </div>
     {/if}
   </div>
-</Modal>
+    </Dialog.Body>
+  </Dialog.Content>
+</Dialog.Root>
 
 <style>
   .jump {
@@ -281,19 +280,19 @@
     border: none;
     outline: none;
     background: transparent;
-    color: var(--text);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
   }
 
   /* Replaces the outline above. The field is borderless because the bar is its
      frame, so focus tints the bar's rule rather than ringing the box. */
   .bar:has(.input:focus-visible) {
-    border-bottom-color: var(--accent);
+    border-bottom-color: var(--success);
   }
 
   .input::placeholder {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   .list {
@@ -306,19 +305,19 @@
 
   .empty {
     margin: 6px 8px;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 
   .pill {
     flex-shrink: 0;
     width: 52px;
     padding: 2px 0;
-    border-radius: var(--r-xs);
-    background: var(--surface2);
-    color: var(--muted);
+    border-radius: var(--radius-xs);
+    background: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     text-align: center;
     text-transform: uppercase;
   }
@@ -332,7 +331,7 @@
 
   .label {
     overflow: hidden;
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -340,9 +339,9 @@
 
   .meta {
     overflow: hidden;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -353,8 +352,8 @@
     justify-content: space-between;
     padding: 8px 14px;
     border-top: 1px solid var(--border);
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 
   .state {
@@ -362,12 +361,12 @@
     align-items: center;
     gap: 6px;
     flex-shrink: 0;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
   }
 
   .state.warn {
-    color: var(--warn);
+    color: var(--warning);
   }
 </style>

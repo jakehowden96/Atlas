@@ -151,7 +151,7 @@ function toTile(
     terminalTabId: tabId,
     workspacePath: workspace?.path ?? "",
     workspaceName: workspace?.name ?? "",
-    workspaceColour: workspace?.color ?? "var(--surface3)",
+    workspaceColour: workspace?.color ?? "var(--accent)",
     label: live.title ?? row?.label ?? "Session",
     branch: live.gitBranch ?? "",
     state: flagged || asking ? "needsYou" : live.state,

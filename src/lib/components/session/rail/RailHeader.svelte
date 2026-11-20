@@ -34,8 +34,8 @@
     overflow: hidden;
     padding: 9px 16px;
     border-bottom: 1px solid var(--border);
-    color: var(--warn);
-    font-size: var(--fs-xs);
+    color: var(--warning);
+    font-size: var(--text-caption);
     font-weight: 500;
     line-height: 18px;
     text-overflow: ellipsis;

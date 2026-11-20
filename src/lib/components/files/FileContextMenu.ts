@@ -1,4 +1,4 @@
-import type { MenuItem } from "../ui/Menu.svelte";
+import type { MenuItem } from "$lib/components/app/common/menu";
 
 /** What was right-clicked: a row, or `null` for the empty space of the tree. */
 export interface FileTarget {

@@ -20,13 +20,13 @@ afterEach(() => {
   resolve.mockClear();
 });
 
-// happy-dom does no layout; Modal's tabbables() skips zero-size elements.
+// happy-dom does no layout; focus helpers skip zero-size elements.
 Object.defineProperty(HTMLElement.prototype, "offsetWidth", { configurable: true, get: () => 1 });
 
 describe("UnsavedDialog", () => {
   it("is named and focuses Cancel first", async () => {
     render(UnsavedDialog);
-    expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
+    expect(screen.getByRole("alertdialog", { name: "Unsaved changes" })).toBeTruthy();
     await waitFor(() =>
       expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" })),
     );

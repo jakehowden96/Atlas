@@ -30,8 +30,8 @@
     min-width: 0;
     padding: var(--sp-5);
     border: 1px solid var(--border);
-    border-radius: var(--r-card);
-    background: var(--surface);
+    border-radius: var(--radius-lg);
+    background: var(--card);
   }
   .label {
     display: flex;
@@ -39,14 +39,14 @@
     justify-content: space-between;
     gap: var(--sp-3);
     margin: 0 0 var(--sp-3);
-    color: var(--text);
-    font-size: var(--fs-sm);
-    font-weight: var(--fw-semi);
+    color: var(--foreground);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-semibold);
   }
   .label small {
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-body);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-normal);
   }
   .flush {
     padding: 0;

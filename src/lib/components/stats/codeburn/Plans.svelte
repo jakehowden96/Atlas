@@ -1,14 +1,15 @@
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import type { BudgetStatus, Quota } from "../../../../types/codeburn-plans";
   import { filterArgs, type Filters } from "../../../../types/codeburn";
   import { codeburnAction } from "../../../ipc";
   import { errorMessage } from "../../../ipc-error";
   import { fmtCost } from "../../../stats-derive";
   import { tooltip } from "../../../ui/tooltip";
-  import Banner from "../../ui/Banner.svelte";
-  import Button from "../../ui/Button.svelte";
-  import Progress from "../../ui/Progress.svelte";
-  import Select from "../../ui/Select.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import { Progress } from "$lib/components/ui/progress/index.js";
+  import OptionSelect from "$lib/components/app/common/OptionSelect.svelte";
   import Card from "./Card.svelte";
   import Loader from "./Loader.svelte";
   import { PLAN_PRESETS, resetCountdown } from "./plans";
@@ -80,13 +81,16 @@
                 <span class="muted">resets in {resetCountdown(w.resetsAt, now)}</span></span
               >
               <div use:tooltip={{ text: `${w.label} ${w.usedPct}% used`, delay: 0, side: "top" }}>
-                <Progress
-                  thick
-                  thresholds
-                  label={`${p.name} ${w.label}`}
-                  value={w.usedPct}
-                  count={`${w.usedPct}%`}
-                />
+                <div class="flex items-center gap-2">
+                  <!-- Amber above 75%, red above 90%. -->
+                  <Progress
+                    class="h-2 flex-1 rounded-full"
+                    indicatorClass={w.usedPct > 90 ? "bg-destructive" : w.usedPct > 75 ? "bg-warning" : undefined}
+                    aria-label={`${p.name} ${w.label}`}
+                    value={w.usedPct}
+                  />
+                  <span class="font-mono text-caption tabular-nums">{w.usedPct}%</span>
+                </div>
               </div>
             </div>
           {:else}
@@ -102,18 +106,22 @@
   <Card title="Plan">
     <div class="controls">
       <div class="sel">
-        <Select
+        <OptionSelect
           {options}
           bind:value={preset}
           placeholder="Choose a plan"
           aria-label="Plan preset"
         />
       </div>
-      <Button variant="primary" disabled={!preset} loading={saving} onclick={apply}>Set plan</Button
+      <Button variant="default" disabled={!preset} loading={saving} onclick={apply}>Set plan</Button
       >
     </div>
     {#if error}
-      <Banner tone="error" title="Couldn't set plan">{error}</Banner>
+      <Alert.Root variant="destructive">
+<Icon name="error" />
+<Alert.Title>Couldn't set plan</Alert.Title>
+<Alert.Description>{error}</Alert.Description>
+</Alert.Root>
     {:else if saved}
       <p class="muted">Plan set to {saved}.</p>
     {/if}
@@ -140,27 +148,27 @@
     min-width: 0;
     padding: var(--sp-5);
     border: 1px solid var(--border);
-    border-radius: var(--r-card);
-    background: var(--surface);
+    border-radius: var(--radius-lg);
+    background: var(--card);
   }
   .k {
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-semi);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-semibold);
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .v {
     margin-top: var(--sp-1);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xl);
-    font-weight: var(--fw-semi);
+    font-size: var(--text-2xl);
+    font-weight: var(--font-weight-semibold);
     font-variant-numeric: tabular-nums;
   }
   .n {
     margin-top: var(--sp-1);
-    font-size: var(--fs-xs);
-    color: var(--muted);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
   }
   .live-row {
     display: grid;
@@ -168,7 +176,7 @@
     align-items: center;
     gap: var(--sp-4);
     padding: var(--sp-1) 0;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   .controls {
     display: flex;
@@ -180,7 +188,7 @@
   }
   .muted {
     margin: 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 </style>

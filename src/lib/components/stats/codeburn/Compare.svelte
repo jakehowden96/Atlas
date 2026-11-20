@@ -3,9 +3,9 @@
   import type { CohortComparison, ModelCompareRow } from "../../../../types/codeburn-compare";
   import { fmtCost, fmtCount, fmtTokens } from "../../../stats-derive";
   import { tooltip } from "../../../ui/tooltip";
-  import Button from "../../ui/Button.svelte";
-  import Select from "../../ui/Select.svelte";
-  import SegmentedControl from "../../ui/SegmentedControl.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import OptionSelect from "$lib/components/app/common/OptionSelect.svelte";
+  import Segmented from "$lib/components/app/common/Segmented.svelte";
   import Card from "./Card.svelte";
   import { cohortRows, metricsOf, modelColor, modelStats, verdict, win } from "./compare-derive";
   import Loader from "./Loader.svelte";
@@ -134,7 +134,7 @@
         <p class="empty">Need activity from at least two models in this period to compare.</p>
       {:else}
         <div class="bar">
-          <SegmentedControl
+          <Segmented
             size="sm"
             label="Compare view"
             options={[
@@ -147,7 +147,7 @@
         </div>
         <div class="bar">
           <div class="sel">
-            <Select
+            <OptionSelect
               options={opts}
               value={A}
               onChange={(id) => (pickA = id)}
@@ -155,11 +155,11 @@
               aria-label="Model A"
             />
           </div>
-          <Button size="sm" aria-label="Swap models" onclick={() => ([pickA, pickB] = [B, A])}
+          <Button variant="outline" size="sm" aria-label="Swap models" onclick={() => ([pickA, pickB] = [B, A])}
             >⇄</Button
           >
           <div class="sel">
-            <Select
+            <OptionSelect
               options={opts}
               value={B}
               onChange={(id) => (pickB = id)}
@@ -268,7 +268,7 @@
                   note={`cost / edit · same ${by === "category" ? "task type" : "project"} for both models`}
                 >
                   <div class="bar">
-                    <SegmentedControl
+                    <Segmented
                       size="sm"
                       role="radiogroup"
                       label="Cohort basis"
@@ -355,9 +355,9 @@
     gap: var(--sp-4);
     padding: var(--sp-5);
     border: 1px solid var(--border);
-    border-radius: var(--r-card);
-    background: var(--surface);
-    font-size: var(--fs-sm);
+    border-radius: var(--radius-lg);
+    background: var(--card);
+    font-size: var(--text-sm);
   }
   .two {
     display: grid;
@@ -376,14 +376,14 @@
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   th {
     padding: var(--sp-2);
-    border-bottom: 1px solid var(--border2);
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-medium);
+    border-bottom: 1px solid var(--input);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-medium);
     text-align: left;
     white-space: nowrap;
   }
@@ -396,7 +396,7 @@
     border-bottom: 0;
   }
   tbody tr:hover {
-    background: var(--surface2);
+    background: var(--muted);
   }
   th:first-child,
   td:first-child {
@@ -423,20 +423,20 @@
     border-radius: 50%;
   }
   .good {
-    color: var(--accent);
-    font-weight: var(--fw-semi);
+    color: var(--success);
+    font-weight: var(--font-weight-semibold);
   }
   .foot,
   .muted {
     margin: 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
   .empty {
     margin: 0;
     padding: var(--sp-7) 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
     text-align: center;
   }
   .pill {
@@ -444,11 +444,11 @@
     align-items: center;
     height: var(--h-xs);
     padding: 0 var(--sp-3);
-    border-radius: var(--r-pill);
-    background: color-mix(in srgb, var(--warn) 16%, transparent);
-    color: var(--warn);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-medium);
+    border-radius: var(--radius-full);
+    background: color-mix(in srgb, var(--warning) 16%, transparent);
+    color: var(--warning);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-medium);
   }
   .legend {
     display: flex;
@@ -458,8 +458,8 @@
     margin: 0 0 var(--sp-4);
     padding: 0;
     list-style: none;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
   }
   .legend li {
     display: inline-flex;
@@ -479,8 +479,8 @@
   .cat b {
     grid-row: 1 / span 2;
     grid-column: 1;
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-semi);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-semibold);
   }
   .cmp {
     display: grid;
@@ -488,7 +488,7 @@
     grid-template-columns: minmax(0, 1fr) 80px;
     gap: var(--sp-3);
     align-items: center;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   .cmp.low {
     opacity: 0.55;
@@ -499,8 +499,8 @@
   .track {
     height: 6px;
     overflow: hidden;
-    border-radius: var(--r-pill);
-    background: var(--surface3);
+    border-radius: var(--radius-full);
+    background: var(--accent);
   }
   .fill {
     display: block;

@@ -10,9 +10,9 @@
     validateRepo,
     watchedRepos,
   } from "../../../stores/settings";
-  import ChipInput from "../../ui/ChipInput.svelte";
-  import SegmentedControl, { type Segment } from "../../ui/SegmentedControl.svelte";
-  import Toggle from "../../ui/Toggle.svelte";
+  import ChipInput from "../../app/common/ChipInput.svelte";
+  import Segmented, { type Segment } from "$lib/components/app/common/Segmented.svelte";
+  import { Switch } from "$lib/components/ui/switch/index.js";
 
   const REFRESH: Segment[] = PR_REFRESH_CHOICES.map((m) => ({ id: String(m), label: `${m}m` }));
 </script>
@@ -39,11 +39,7 @@
       <div class="row-title">Auto-add repos from workspaces</div>
       <div class="row-desc">Watch every workspace's GitHub remote.</div>
     </div>
-    <Toggle
-      checked={$autoAddReposFromWorkspaces}
-      label="Auto-add repos from workspaces"
-      onChange={(v) => void setAutoAddReposFromWorkspaces(v)}
-    />
+    <Switch checked={$autoAddReposFromWorkspaces} onCheckedChange={(v) => void setAutoAddReposFromWorkspaces(v)} aria-label="Auto-add repos from workspaces" />
   </div>
 
   <div class="row">
@@ -51,7 +47,7 @@
       <div class="row-title">Refresh interval</div>
       <div class="row-desc">How often pull requests are re-polled.</div>
     </div>
-    <SegmentedControl
+    <Segmented
       options={REFRESH}
       value={String($prRefreshMinutes)}
       size="sm"

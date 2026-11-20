@@ -1,12 +1,13 @@
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import type { AuthMethod } from "../../../../../types/generated/AuthMethod";
   import type { ConnectorState } from "../../../../../types/generated/ConnectorState";
   import { linkCli } from "../../../../stores/connectors";
-  import Button from "../../../ui/Button.svelte";
-  import ConnectorLogoTile from "../../../ui/ConnectorLogoTile.svelte";
-  import InlineAlert from "../../../ui/InlineAlert.svelte";
-  import SegmentedControl from "../../../ui/SegmentedControl.svelte";
-  import StatusMark, { type MarkState } from "../../../ui/StatusMark.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import ConnectorLogoTile from "../../../app/connectors/ConnectorLogoTile.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import Segmented from "$lib/components/app/common/Segmented.svelte";
+  import StatusMark, { type MarkState } from "../../../app/common/StatusMark.svelte";
   import ApiKeyForm from "./ApiKeyForm.svelte";
 
   interface Props {
@@ -94,14 +95,14 @@
     </div>
   </div>
   {#if status.kind !== "notLinked"}
-    <Button size="sm" variant="danger" onclick={onDisconnect}>Disconnect</Button>
+    <Button size="sm" variant="destructive" onclick={onDisconnect}>Disconnect</Button>
   {/if}
 </div>
 
 <div class="signin">
   {#if info.methods.length > 1}
     <div class="picker">
-      <SegmentedControl
+      <Segmented
         role="radiogroup"
         size="sm"
         label={`How ${info.name} signs in`}
@@ -119,7 +120,7 @@
     <div class="line">
       <span class="note" class:warn={note.warn}>{note.text}</span>
       {#if choice === "cli"}
-        <Button size="sm" variant="primary" disabled={busy} onclick={useCli}
+        <Button size="sm" variant="default" disabled={busy} onclick={useCli}
           >{busy
             ? "Checking…"
             : current
@@ -131,7 +132,7 @@
       {:else}
         <Button
           size="sm"
-          variant="primary"
+          variant="default"
           disabled={!info.configured}
           onclick={() => {
             picked = null;
@@ -141,7 +142,7 @@
       {/if}
     </div>
   {/if}
-  {#if cliError}<InlineAlert>{cliError}</InlineAlert>{/if}
+  {#if cliError}<Alert.Root variant="destructive" layout="inline"><Icon name="error" /><Alert.Title>{cliError}</Alert.Title></Alert.Root>{/if}
 </div>
 
 <style>
@@ -155,15 +156,15 @@
     min-width: 0;
   }
   .name {
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
     font-weight: 500;
   }
   .meta {
     display: flex;
     align-items: center;
     gap: var(--sp-2);
-    font-size: var(--fs-xs);
-    color: var(--muted);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
   }
   /* Indented past the logo. */
   .signin {
@@ -184,11 +185,11 @@
     min-height: var(--h-md);
   }
   .note {
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     line-height: 1.45;
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .note.warn {
-    color: var(--warn);
+    color: var(--warning);
   }
 </style>

@@ -2,9 +2,9 @@
   import { filterArgs, type Filters } from "../../../../types/codeburn";
   import type { ModelRow } from "../../../../types/codeburn-models";
   import { fmtCost, fmtCount, fmtTokens } from "../../../stats-derive";
-  import Button from "../../ui/Button.svelte";
-  import Drawer from "../../ui/Drawer.svelte";
-  import SegmentedControl from "../../ui/SegmentedControl.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import * as Sheet from "$lib/components/ui/sheet/index.js";
+  import Segmented from "$lib/components/app/common/Segmented.svelte";
   import Card from "./Card.svelte";
   import Loader from "./Loader.svelte";
   import {
@@ -21,7 +21,7 @@
     refresh,
     onCompare,
   }: { filters: Filters; refresh: number; onCompare: (model: string) => void } = $props();
-  const DOTS = ["var(--accent)", "var(--warn)", "var(--muted)", "var(--danger)"];
+  const DOTS = ["var(--success)", "var(--warning)", "var(--muted-foreground)", "var(--destructive)"];
   const TABS = [
     { id: "by-model", label: "By model" },
     { id: "audit", label: "Audit" },
@@ -73,14 +73,14 @@
     <Card title="By model">
       {#snippet note()}
         <span class="tools">
-          <SegmentedControl
+          <Segmented
             size="sm"
             label="Models view"
             options={[...TABS]}
             value={tab}
             onChange={(id) => (tab = id)}
           />
-          <Button size="sm" onclick={() => onCompare(rows[0]?.model ?? "")}>Compare…</Button>
+          <Button variant="outline" size="sm" onclick={() => onCompare(rows[0]?.model ?? "")}>Compare…</Button>
         </span>
       {/snippet}
       {#if rows.length === 0}
@@ -152,12 +152,9 @@
   {/snippet}
 </Loader>
 
-<Drawer
-  open={picked !== null}
-  onClose={() => (picked = null)}
-  ariaLabel="{picked?.modelDisplayName ?? 'Model'} details"
-  width="520px"
->
+<Sheet.Root open={picked !== null} onOpenChange={(o) => { if (!o) (() => (picked = null))(); }}>
+  <Sheet.Content class="w-[min(520px,calc(100vw-3rem))]" aria-label="{picked?.modelDisplayName ?? 'Model'} details">
+    <Sheet.Body>
   {#if picked}
     <div class="dr">
       <h2>{picked.modelDisplayName}</h2>
@@ -176,13 +173,15 @@
       </div>
       <div class="kv"><span>Cache hit</span><span>{cacheHit(picked).toFixed(1)}%</span></div>
       <p class="act">
-        <Button variant="primary" onclick={() => onCompare(picked!.model)}
+        <Button variant="default" onclick={() => onCompare(picked!.model)}
           >Compare {picked.modelDisplayName}…</Button
         >
       </p>
     </div>
   {/if}
-</Drawer>
+    </Sheet.Body>
+  </Sheet.Content>
+</Sheet.Root>
 
 <style>
   .tools {
@@ -192,8 +191,8 @@
   }
   .sub {
     margin: 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
   .lead {
     margin-bottom: var(--sp-3);
@@ -202,8 +201,8 @@
     margin: 0;
     padding: var(--sp-7) 0;
     text-align: center;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
   .scroll {
     overflow-x: auto;
@@ -211,26 +210,26 @@
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   th {
     padding: var(--sp-2);
     text-align: left;
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-medium);
-    color: var(--muted);
-    border-bottom: 1px solid var(--border2);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--muted-foreground);
+    border-bottom: 1px solid var(--input);
     white-space: nowrap;
   }
   th[aria-sort] {
-    color: var(--text);
+    color: var(--foreground);
   }
   th button {
     all: unset;
     cursor: pointer;
   }
   th button:focus-visible {
-    outline: 2px solid var(--text);
+    outline: 2px solid var(--foreground);
     outline-offset: 2px;
   }
   td {
@@ -242,7 +241,7 @@
     border-bottom: 0;
   }
   tbody tr:hover {
-    background: var(--surface2);
+    background: var(--muted);
   }
   th:first-child,
   td:first-child {
@@ -270,43 +269,43 @@
   .mo-link {
     all: unset;
     cursor: pointer;
-    color: var(--text);
-    font-weight: var(--fw-medium);
+    color: var(--foreground);
+    font-weight: var(--font-weight-medium);
     text-decoration: underline;
-    text-decoration-color: var(--border2);
+    text-decoration-color: var(--input);
     text-underline-offset: 2px;
   }
   .mo-link:hover {
-    color: var(--accent);
-    text-decoration-color: var(--accent);
+    color: var(--success);
+    text-decoration-color: var(--success);
   }
   .mo-link:focus-visible {
-    outline: 2px solid var(--text);
+    outline: 2px solid var(--foreground);
     outline-offset: 2px;
   }
   .mo-prov {
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
   }
   .pill {
     display: inline-flex;
     align-items: center;
     height: var(--h-xs);
     padding: 0 var(--sp-3);
-    border-radius: var(--r-pill);
+    border-radius: var(--radius-full);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-medium);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-    color: var(--accent);
+    background: color-mix(in srgb, var(--success) 16%, transparent);
+    color: var(--success);
   }
   .pill.warn {
-    background: color-mix(in srgb, var(--warn) 16%, transparent);
-    color: var(--warn);
+    background: color-mix(in srgb, var(--warning) 16%, transparent);
+    color: var(--warning);
   }
   .pill.bad {
-    background: color-mix(in srgb, var(--danger) 16%, transparent);
-    color: var(--danger);
+    background: color-mix(in srgb, var(--destructive) 16%, transparent);
+    color: var(--destructive);
   }
   .dr {
     /* the top bar (z 70) paints over the drawer layer (z 20), so clear it */
@@ -314,22 +313,22 @@
   }
   .dr h2 {
     margin: 0 0 var(--sp-1);
-    font-size: var(--fs-md, 15px);
-    font-weight: var(--fw-semi);
+    font-size: var(--text-md, 15px);
+    font-weight: var(--font-weight-semibold);
   }
   .kv {
     display: flex;
     justify-content: space-between;
     gap: var(--sp-4);
     padding: var(--sp-2) 0;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   .kv > :first-child {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .kv > :last-child {
     font-family: var(--font-mono);
-    font-weight: var(--fw-medium);
+    font-weight: var(--font-weight-medium);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }

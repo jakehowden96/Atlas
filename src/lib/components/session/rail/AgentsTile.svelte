@@ -43,7 +43,7 @@
 
 <style>
   .none {
-    color: var(--muted);
-    font-size: var(--fs-sm);
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
   }
 </style>

@@ -1,11 +1,12 @@
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import type { ConnectorInfo } from "../../../../../types/generated/ConnectorInfo";
   import type { SignInState } from "../../../../stores/connectors";
-  import Button from "../../../ui/Button.svelte";
-  import ConnectorLogoTile from "../../../ui/ConnectorLogoTile.svelte";
-  import InlineAlert from "../../../ui/InlineAlert.svelte";
-  import Modal from "../../../ui/Modal.svelte";
-  import Spinner from "../../../ui/Spinner.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import ConnectorLogoTile from "../../../app/connectors/ConnectorLogoTile.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import * as Dialog from "$lib/components/ui/dialog/index.js";
+  import { Spinner } from "$lib/components/ui/spinner/index.js";
 
   interface Props {
     connector: ConnectorInfo;
@@ -27,26 +28,26 @@
   );
 </script>
 
-<Modal open onClose={onCancel} width="420px" labelledBy={titleId}>
+<Dialog.Root open onOpenChange={(o) => { if (!o) onCancel(); }}>
+  <Dialog.Content size="sm" aria-labelledby={titleId}>
+    <Dialog.Body>
   <div class="head">
     <ConnectorLogoTile connector={connector.id} label={connector.name} />
     <h2 id={titleId}>Finish in your browser</h2>
   </div>
   <div class="body">
     {#if outcome}
-      <InlineAlert>{outcome}</InlineAlert>
+      <Alert.Root variant="destructive" layout="inline"><Icon name="error" /><Alert.Title>{outcome}</Alert.Title></Alert.Root>
     {:else}
       <p class="muted">Sign in to {connector.name} in the window that just opened</p>
-      <Spinner
-        label={progress.kind === "exchanging" ? "Finishing sign-in" : "Waiting for your browser"}
-      />
+      <span class="inline-flex items-center gap-2 text-caption text-muted-foreground" role="status"><Spinner />{progress.kind === "exchanging" ? "Finishing sign-in" : "Waiting for your browser"}</span>
     {/if}
   </div>
-  {#snippet footer()}
-    <Button onclick={onCancel}>Cancel</Button>
-    {#if outcome}<Button variant="primary" onclick={onRetry}>Retry</Button>{/if}
-  {/snippet}
-</Modal>
+    </Dialog.Body>
+    <Dialog.Footer><Button variant="outline" onclick={onCancel}>Cancel</Button>
+    {#if outcome}<Button variant="default" onclick={onRetry}>Retry</Button>{/if}</Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
 
 <style>
   .head {
@@ -57,7 +58,7 @@
   }
   h2 {
     margin: 0;
-    font-size: var(--fs-md);
+    font-size: var(--text-md);
     font-weight: 600;
   }
   .body {
@@ -69,7 +70,7 @@
   }
   .muted {
     margin: 0;
-    font-size: var(--fs-sm);
-    color: var(--muted);
+    font-size: var(--text-sm);
+    color: var(--muted-foreground);
   }
 </style>

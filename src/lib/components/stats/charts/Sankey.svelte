@@ -30,7 +30,7 @@
 
   const color = (label: string) => {
     const fam = ["opus", "sonnet", "haiku"].find((f) => label.toLowerCase().includes(f));
-    return fam ? `var(--model-${fam})` : "var(--muted)";
+    return fam ? `var(--model-${fam})` : "var(--muted-foreground)";
   };
 
   interface Node {
@@ -103,7 +103,7 @@
 </script>
 
 {#snippet node(n: Node, on: boolean)}
-  <rect x={RX} y={n.y} width="4" height={n.h} fill={on ? "var(--accent)" : "var(--muted)"} />
+  <rect x={RX} y={n.y} width="4" height={n.h} fill={on ? "var(--success)" : "var(--muted-foreground)"} />
   <text x={RX + 10} y={n.y + n.h / 2 + 4}>{n.label} · {fmtCost(n.cost)}</text>
 {/snippet}
 
@@ -185,9 +185,9 @@
     overflow: visible;
   }
   text {
-    fill: var(--muted);
+    fill: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
   }
   path {
     transition: opacity 0.15s;
@@ -201,17 +201,17 @@
   }
   .pick:hover text,
   .pick:focus-visible text {
-    fill: var(--text);
+    fill: var(--foreground);
     text-decoration: underline;
   }
   .on text {
-    fill: var(--accent);
+    fill: var(--success);
   }
   .empty {
     margin: 0;
     padding: var(--sp-7) 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
     text-align: center;
   }
 </style>

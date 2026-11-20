@@ -75,7 +75,7 @@
       style:grid-column={d.col + 2}
       style:grid-row={d.row + 2}
       style:background={step(d.value)
-        ? `color-mix(in srgb, var(--accent) ${step(d.value) * 25}%, var(--surface3))`
+        ? `color-mix(in srgb, var(--success) ${step(d.value) * 25}%, var(--accent))`
         : undefined}
       use:tooltip={{ text: tip(d), delay: 0, side: "top" }}
     ></i>
@@ -90,8 +90,8 @@
     gap: 2px;
     width: 100%;
     max-width: 320px;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
     line-height: 10px;
   }
   span {
@@ -99,16 +99,16 @@
   }
   i {
     aspect-ratio: 1;
-    border-radius: var(--r-xs);
-    background: var(--surface3);
+    border-radius: var(--radius-xs);
+    background: var(--accent);
     cursor: default;
   }
   i:hover {
-    outline: 1.5px solid var(--text);
+    outline: 1.5px solid var(--foreground);
     outline-offset: 1px;
   }
   i.now {
-    outline: 1.5px solid var(--text);
+    outline: 1.5px solid var(--foreground);
     outline-offset: 1px;
   }
 </style>

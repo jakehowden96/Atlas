@@ -4,10 +4,10 @@
   import { log } from "../../logger";
   import { searchSettings, type SectionId, type SettingEntry } from "../../settings-search";
   import { settingsOpen, settingsSection } from "../../stores/settings";
-  import IconButton from "../ui/IconButton.svelte";
-  import Modal from "../ui/Modal.svelte";
-  import SearchInput from "../ui/SearchInput.svelte";
-  import Tabs, { type Tab } from "../ui/Tabs.svelte";
+  import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
+  import * as Dialog from "$lib/components/ui/dialog/index.js";
+  import SearchInput from "../app/common/SearchInput.svelte";
+  import Tabs, { type Tab } from "../app/common/TabStrip.svelte";
   import { errorMessage } from "../../ipc-error";
   import About from "./sections/About.svelte";
   import ClaudeCode from "./sections/ClaudeCode.svelte";
@@ -79,7 +79,9 @@
 
 <svelte:window onkeydown={onWindowKeydown} />
 
-<Modal open={$settingsOpen} onClose={close} width="760px" ariaLabel="Settings">
+<Dialog.Root open={$settingsOpen} onOpenChange={(o) => { if (!o) close(); }}>
+  <Dialog.Content class="w-[min(760px,calc(100vw-2rem))]" aria-label="Settings">
+    <Dialog.Body>
   <div class="settings">
     <nav class="nav">
       <div class="nav-title">Settings</div>
@@ -108,7 +110,7 @@
       <div class="pane-head">
         {query ? "Search results" : title}
         <div class="pane-spacer"></div>
-        <IconButton icon="close" size="sm" label="Close settings" onclick={close} />
+        <TooltipButton icon="close" size="sm" label="Close settings" onclick={close} />
       </div>
 
       <div class="pane-body" bind:this={paneBody}>
@@ -149,7 +151,9 @@
       </div>
     </div>
   </div>
-</Modal>
+    </Dialog.Body>
+  </Dialog.Content>
+</Dialog.Root>
 
 <style>
   .settings {
@@ -166,14 +170,14 @@
     width: 200px;
     padding: 14px 8px;
     border-right: 1px solid var(--border);
-    background: var(--bg);
+    background: var(--background);
     overflow: auto;
   }
 
   .nav-title {
     padding: 0 10px 4px;
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
     font-weight: 600;
   }
 
@@ -184,8 +188,8 @@
   .version {
     padding: 0 10px;
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    color: var(--muted);
+    font-size: var(--text-xs);
+    color: var(--muted-foreground);
   }
 
   /* ── Right pane ────────────────────────────────────────────────────────── */
@@ -203,8 +207,8 @@
     height: var(--h-bar);
     padding: 0 18px;
     border-bottom: 1px solid var(--border);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
     font-weight: 600;
   }
 
@@ -221,8 +225,8 @@
   /* ── Search results ────────────────────────────────────────────────────── */
   .none {
     margin: 0;
-    color: var(--muted);
-    font-size: var(--fs-sm);
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
   }
 
   .results {
@@ -240,33 +244,33 @@
     width: 100%;
     padding: 7px 10px;
     border: none;
-    border-radius: var(--r-md);
+    border-radius: var(--radius-md);
     background: transparent;
-    color: var(--text);
-    font-family: var(--font-ui);
+    color: var(--foreground);
+    font-family: var(--font-sans);
     text-align: left;
     cursor: pointer;
   }
 
   .result:hover {
-    background: var(--surface2);
+    background: var(--muted);
   }
 
   .r-title {
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
     font-weight: 500;
   }
 
   .r-desc {
-    font-size: var(--fs-xs);
-    color: var(--muted);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
   }
 
   /* Added to a section's row by jump(); the section components own the rows. */
   :global(.pane-body .row.found) {
-    outline: var(--focus-width) solid var(--focus);
+    outline: var(--focus-width) solid var(--ring);
     outline-offset: var(--focus-offset);
-    border-radius: var(--r-md);
+    border-radius: var(--radius-md);
   }
 
   @media (prefers-reduced-motion: no-preference) {

@@ -2,9 +2,10 @@
   import { untrack, type Snippet } from "svelte";
   import { errorMessage } from "../../../ipc-error";
   import { codeburn, onCodeburn, peekCodeburn } from "../../../stores/codeburn";
-  import Banner from "../../ui/Banner.svelte";
-  import Button from "../../ui/Button.svelte";
-  import Skeleton from "../../ui/Skeleton.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import Icon from "$lib/components/ui/icon/icon.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import { Skeleton } from "$lib/components/ui/skeleton/index.js";
 
   interface Props {
     /** The `codeburn` argv; reloads when it changes. */
@@ -56,14 +57,14 @@
 </script>
 
 {#if error}
-  <Banner tone="error" title="Couldn't read codeburn stats">
-    {error}
-    {#snippet actions()}
-      <Button size="sm" onclick={() => retries++}>Retry</Button>
-    {/snippet}
-  </Banner>
+  <Alert.Root variant="destructive">
+<Icon name="error" />
+<Alert.Title>Couldn't read codeburn stats</Alert.Title>
+<Alert.Description>{error}</Alert.Description>
+<Alert.Action><Button variant="outline" size="sm" onclick={() => retries++}>Retry</Button></Alert.Action>
+</Alert.Root>
 {:else if data === null}
-  <Skeleton height="var(--sp-10)" />
+  <Skeleton style="height: var(--sp-10)" class="rounded-sm" />
 {:else}
   <div class="body" class:busy={loading} aria-busy={loading}>
     {@render children(data)}

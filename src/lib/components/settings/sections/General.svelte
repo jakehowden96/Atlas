@@ -15,9 +15,9 @@
     type OverviewOrdering,
   } from "../../../stores/settings";
   import { themeMode, type ThemeMode } from "../../../theme";
-  import SegmentedControl, { type Segment } from "../../ui/SegmentedControl.svelte";
-  import NumberStepper from "../../ui/NumberStepper.svelte";
-  import Toggle from "../../ui/Toggle.svelte";
+  import Segmented, { type Segment } from "$lib/components/app/common/Segmented.svelte";
+  import NumberStepper from "../../app/common/NumberStepper.svelte";
+  import { Switch } from "$lib/components/ui/switch/index.js";
 
   const APPEARANCE: Segment<ThemeMode>[] = [
     { id: "system", label: "System" },
@@ -39,7 +39,7 @@
       <div class="row-title">Appearance</div>
       <div class="row-desc">Follows the OS unless you pin one.</div>
     </div>
-    <SegmentedControl
+    <Segmented
       options={APPEARANCE}
       value={$themeMode}
       size="sm"
@@ -54,11 +54,7 @@
       <div class="row-title">System notifications</div>
       <div class="row-desc">Notify when a session needs you and Atlas isn't focused.</div>
     </div>
-    <Toggle
-      checked={$enableNotifications}
-      label="System notifications"
-      onChange={(v) => void setEnableNotifications(v)}
-    />
+    <Switch checked={$enableNotifications} onCheckedChange={(v) => void setEnableNotifications(v)} aria-label="System notifications" />
   </div>
 
   <div class="row">
@@ -66,11 +62,7 @@
       <div class="row-title">Sound on needs-you</div>
       <div class="row-desc">A short ping when a permission prompt appears.</div>
     </div>
-    <Toggle
-      checked={$soundOnNeedsYou}
-      label="Sound on needs-you"
-      onChange={(v) => void setSoundOnNeedsYou(v)}
-    />
+    <Switch checked={$soundOnNeedsYou} onCheckedChange={(v) => void setSoundOnNeedsYou(v)} aria-label="Sound on needs-you" />
   </div>
 
   <div class="row">
@@ -92,7 +84,7 @@
       <div class="row-title">Sessions ordering</div>
       <div class="row-desc">Needs-you first, then running, then idle.</div>
     </div>
-    <SegmentedControl
+    <Segmented
       options={ORDERING}
       value={$overviewOrdering}
       size="sm"

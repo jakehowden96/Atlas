@@ -1,12 +1,13 @@
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import { filterArgs, type Filters } from "../../../../types/codeburn";
   import type { SessionRow, SessionWhy } from "../../../../types/codeburn-sessions";
   import { fmtCost, fmtCount, fmtTokens } from "../../../stats-derive";
   import { sessionTarget } from "../../../stores/sessionTarget";
   import { openNewSession } from "../../../stores/view";
-  import Button from "../../ui/Button.svelte";
-  import ConnectorLogo from "../../ui/ConnectorLogo.svelte";
-  import EmptyState from "../../ui/EmptyState.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import ConnectorLogo from "../../app/connectors/ConnectorLogo.svelte";
+  import * as Empty from "$lib/components/ui/empty/index.js";
   import Loader from "./Loader.svelte";
   import { codeburn } from "../../../stores/codeburn";
   import { cancelPrefetch, prefetch, whyArgs } from "./prefetch";
@@ -94,7 +95,12 @@
 >
   {#snippet children(rows: SessionRow[])}
     {#if rows.length === 0}
-      <EmptyState icon="folder" title="No sessions in this period" />
+      <Empty.Root>
+  <Empty.Header>
+    <Empty.Media variant="icon"><Icon name="folder" size={20} /></Empty.Media>
+    <Empty.Title>No sessions in this period</Empty.Title>
+  </Empty.Header>
+</Empty.Root>
     {:else}
       {@const list = visible(rows)}
       <div class="wrap">
@@ -252,7 +258,7 @@
                                 <span>{fmtCost(t.cost)} · {plural(t.calls, "call")}</span>
                               </div>
                             {/each}
-                            <Button
+                            <Button variant="outline"
                               size="sm"
                               onclick={() =>
                                 openNewSession({
@@ -300,9 +306,9 @@
     display: inline-flex;
     gap: 2px;
     padding: 2px;
-    background: var(--surface2);
+    background: var(--muted);
     border: 1px solid var(--border);
-    border-radius: var(--r-md);
+    border-radius: var(--radius-md);
     max-width: 100%;
     overflow-x: auto;
     align-self: flex-start;
@@ -314,21 +320,21 @@
     height: var(--h-sm);
     padding: 0 var(--sp-4);
     border: 1px solid transparent;
-    border-radius: var(--r-sm);
+    border-radius: var(--radius-sm);
     background: none;
-    color: var(--muted);
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-medium);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
     cursor: pointer;
   }
   .seg button:hover {
-    color: var(--text);
+    color: var(--foreground);
   }
   .seg button[aria-checked="true"] {
-    background: var(--surface);
-    border-color: var(--border2);
-    color: var(--text);
+    background: var(--card);
+    border-color: var(--input);
+    color: var(--foreground);
   }
   .cap {
     text-transform: capitalize;
@@ -336,23 +342,23 @@
   .se-n {
     margin-left: var(--sp-2);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    color: var(--muted);
+    font-size: var(--text-xs);
+    color: var(--muted-foreground);
   }
   .search {
     height: var(--h-md);
     width: 240px;
     max-width: 100%;
     padding: 0 var(--sp-4);
-    border: 1px solid var(--border2);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    color: var(--text);
+    border: 1px solid var(--input);
+    border-radius: var(--radius-md);
+    background: var(--card);
+    color: var(--foreground);
     font: inherit;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   .search:focus-visible {
-    outline: 2px solid var(--text);
+    outline: 2px solid var(--foreground);
     outline-offset: 2px;
   }
   .se-sort {
@@ -365,42 +371,42 @@
     border: 0;
     border-bottom: 2px solid transparent;
     background: none;
-    color: var(--muted);
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-medium);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
   }
   .se-sort button:hover {
-    color: var(--text);
+    color: var(--foreground);
   }
   .se-sort button[aria-pressed="true"] {
-    color: var(--text);
-    border-bottom-color: var(--accent);
+    color: var(--foreground);
+    border-bottom-color: var(--success);
   }
   .btn {
     height: var(--h-sm);
     padding: 0 var(--sp-4);
-    border: 1px solid var(--border2);
-    border-radius: var(--r-pill);
-    background: var(--surface);
-    color: var(--text);
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-medium);
+    border: 1px solid var(--input);
+    border-radius: var(--radius-full);
+    background: var(--card);
+    color: var(--foreground);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     white-space: nowrap;
   }
   .btn:hover {
-    background: var(--surface2);
+    background: var(--muted);
   }
   .btn.primary {
-    background: var(--ink, var(--accent));
-    border-color: var(--ink, var(--accent));
-    color: var(--ink-text, var(--accent-ink));
+    background: var(--primary, var(--success));
+    border-color: var(--primary, var(--success));
+    color: var(--primary-foreground, var(--success-foreground));
   }
   .sub {
     margin: 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
   .gap {
     margin-top: var(--sp-3);
@@ -412,16 +418,16 @@
     margin: 0;
     padding: var(--sp-6) 0;
     text-align: center;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
   .link {
     border: 0;
     background: none;
     padding: 0;
-    color: var(--accent);
-    font-weight: var(--fw-semi);
-    font-size: var(--fs-xs);
+    color: var(--success);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--text-caption);
     cursor: pointer;
   }
   .link:hover {
@@ -438,11 +444,11 @@
     align-items: center;
     gap: var(--sp-3);
     padding: 0 calc(var(--sp-4) + 1px);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-semi);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-semibold);
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .cols button {
     all: unset;
@@ -450,10 +456,10 @@
   }
   .cols button:hover,
   .cols button[aria-pressed="true"] {
-    color: var(--text);
+    color: var(--foreground);
   }
   .cols button:focus-visible {
-    outline: 2px solid var(--text);
+    outline: 2px solid var(--foreground);
     outline-offset: 2px;
   }
   .cols .r {
@@ -462,21 +468,21 @@
   .card {
     min-width: 0;
     overflow: hidden;
-    background: var(--surface);
+    background: var(--card);
     border: 1px solid var(--border);
-    border-radius: var(--r-card);
+    border-radius: var(--radius-lg);
   }
   .ghead {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: var(--sp-3) var(--sp-4);
-    background: var(--surface2);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-semi);
+    background: var(--muted);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-semibold);
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .ghead span:last-child {
     font-family: var(--font-mono);
@@ -502,29 +508,29 @@
     padding: var(--sp-3) var(--sp-4);
     border: 0;
     background: none;
-    color: var(--text);
+    color: var(--foreground);
     text-align: left;
     cursor: pointer;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   .row:hover {
-    background: var(--surface2);
+    background: var(--muted);
   }
   .t {
     min-width: 0;
   }
   .t b {
     display: block;
-    font-size: var(--fs-sm);
-    font-weight: var(--fw-semi);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-semibold);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .id {
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
   }
   .id :global(svg),
   .id :global(img) {
@@ -532,7 +538,7 @@
     vertical-align: -2px;
   }
   .muted {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .num {
     font-family: var(--font-mono);
@@ -540,7 +546,7 @@
   }
   .chev {
     display: inline-block;
-    color: var(--muted);
+    color: var(--muted-foreground);
     transition: transform 0.12s;
   }
   .chev.open {
@@ -556,14 +562,14 @@
     justify-content: space-between;
     gap: var(--sp-4);
     padding: var(--sp-2) 0;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   .kv > :first-child {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .kv > :last-child {
     font-family: var(--font-mono);
-    font-weight: var(--fw-medium);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
   .why :global(button) {

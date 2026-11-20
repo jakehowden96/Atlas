@@ -101,28 +101,28 @@
     overflow-y: auto;
     overflow-x: hidden;
     border-right: 1px solid var(--border);
-    font: var(--fs-xs) var(--font-mono);
+    font: var(--text-caption) var(--font-mono);
   }
 
   .filter {
     margin-bottom: 8px;
     padding: 4px 7px;
     border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    background: var(--surface2);
-    color: var(--text);
-    font: var(--fs-xs) var(--font-mono);
+    border-radius: var(--radius-md);
+    background: var(--muted);
+    color: var(--foreground);
+    font: var(--text-caption) var(--font-mono);
     outline: none;
   }
 
-  /* Replaces the outline above. --border2 was too close to --border to read as
+  /* Replaces the outline above. --input was too close to --border to read as
      focus at all, so the focused box takes the accent. */
   .filter:focus-visible {
-    border-color: var(--accent);
+    border-color: var(--success);
   }
 
   .filter::placeholder {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   .list {
@@ -141,16 +141,16 @@
     padding-bottom: 2px;
     padding-right: 4px;
     border: none;
-    border-radius: var(--r-sm);
+    border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--muted);
-    font: var(--fs-xs) var(--font-mono);
+    color: var(--muted-foreground);
+    font: var(--text-caption) var(--font-mono);
     text-align: left;
     cursor: pointer;
   }
 
   .row:hover {
-    background: var(--surface2);
+    background: var(--muted);
   }
 
   .check {
@@ -158,7 +158,7 @@
     width: 11px;
     height: 11px;
     margin: 0;
-    accent-color: var(--accent);
+    accent-color: var(--success);
     cursor: pointer;
   }
 
@@ -169,8 +169,8 @@
     padding: 0;
     border: none;
     background: transparent;
-    color: var(--text);
-    font: var(--fs-xs) var(--font-mono);
+    color: var(--foreground);
+    font: var(--text-caption) var(--font-mono);
     text-align: left;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -178,19 +178,19 @@
   }
 
   .name.viewed {
-    color: var(--muted);
+    color: var(--muted-foreground);
     text-decoration: line-through;
   }
 
   .add {
     flex-shrink: 0;
-    color: var(--accent);
+    color: var(--success);
   }
 
   .chev {
     flex-shrink: 0;
     width: 11px;
-    color: var(--muted);
+    color: var(--muted-foreground);
     text-align: center;
     transition: transform 0.15s ease;
   }
@@ -203,7 +203,7 @@
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    color: var(--text);
+    color: var(--foreground);
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -212,7 +212,7 @@
   /* Repo rows wrap instead of truncating: the name is what tells repos apart. */
   .repo {
     margin-top: 4px;
-    background: var(--surface2);
+    background: var(--muted);
   }
 
   .repo .dir-name {

@@ -44,22 +44,22 @@
 
 <style>
   .meter {
-    background: var(--surface3);
+    background: var(--accent);
   }
 
   .line {
     height: 2px;
-    background: var(--border2);
+    background: var(--input);
   }
 
   .fill {
     display: block;
     height: 100%;
-    background: var(--accent);
+    background: var(--success);
   }
 
   .fill.hot {
-    background: var(--warn);
+    background: var(--warning);
   }
 
   .cells {
@@ -77,15 +77,15 @@
 
   .lbl {
     overflow: hidden;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .val {
     font-family: var(--font-mono);
-    font-size: var(--fs-md);
+    font-size: var(--text-md);
     font-variant-numeric: tabular-nums;
     font-weight: 500;
   }

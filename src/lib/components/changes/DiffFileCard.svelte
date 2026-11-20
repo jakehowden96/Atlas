@@ -12,8 +12,9 @@
   } from "../../diff-view";
   import { anchorDomKey, type ReviewAnchor, type ReviewComment } from "../../stores/reviewComments";
   import { tooltip } from "../../ui/tooltip";
-  import Button from "../ui/Button.svelte";
-  import Checkbox from "../ui/Checkbox.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import { Checkbox } from "$lib/components/ui/checkbox/index.js";
+  import { Label } from "$lib/components/ui/label/index.js";
   import DiffCommentThread from "./DiffCommentThread.svelte";
 
   const STATUS_NAME = {
@@ -180,13 +181,13 @@
       <span class="removed">−{item.removedCount}</span>
     </button>
     <span class="viewed-toggle">
-      <Checkbox bind:checked={() => viewed, () => onToggleViewed(item.key)}>Viewed</Checkbox>
+      <Label class="font-normal"><Checkbox bind:checked={() => viewed, () => onToggleViewed(item.key)} />Viewed</Label>
     </span>
   </header>
 
   {#if collapsed}
     <div class="collapsed-notice">
-      <Button size="sm" onclick={() => onToggleExpand(item.key)}>
+      <Button variant="outline" size="sm" onclick={() => onToggleExpand(item.key)}>
         Show {totalLines(item.file)} lines
       </Button>
     </div>
@@ -336,7 +337,7 @@
         {/if}
       </div>
       {#if hiddenRows > 0}
-        <Button size="sm" onclick={() => (rowLimit += ROW_PAGE)}>
+        <Button variant="outline" size="sm" onclick={() => (rowLimit += ROW_PAGE)}>
           Show {Math.min(ROW_PAGE, hiddenRows)} more lines ({hiddenRows} hidden)
         </Button>
       {/if}
@@ -361,11 +362,11 @@
     align-items: center;
     gap: 8px;
     padding-right: 14px;
-    background: var(--surface);
+    background: var(--card);
   }
 
   .head:hover {
-    background: var(--surface2);
+    background: var(--muted);
   }
 
   .toggle {
@@ -388,9 +389,9 @@
   .chev {
     flex-shrink: 0;
     width: 10px;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
     transition: transform 0.15s ease;
   }
 
@@ -404,26 +405,26 @@
     flex-shrink: 0;
     width: 16px;
     height: 16px;
-    border-radius: var(--r-xs);
-    background: var(--surface2);
-    color: var(--muted);
+    border-radius: var(--radius-xs);
+    background: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
     font-weight: 700;
   }
 
   .status-added {
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    background: color-mix(in srgb, var(--success) 16%, transparent);
     color: var(--t-step);
   }
 
   .status-deleted {
-    background: color-mix(in srgb, var(--danger) 16%, transparent);
-    color: var(--danger);
+    background: color-mix(in srgb, var(--destructive) 16%, transparent);
+    color: var(--destructive);
   }
 
   .status-renamed {
-    background: color-mix(in srgb, var(--warn) 18%, transparent);
+    background: color-mix(in srgb, var(--warning) 18%, transparent);
     color: var(--t-warn);
   }
 
@@ -431,9 +432,9 @@
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    color: var(--text);
+    color: var(--foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -443,33 +444,33 @@
   .removed {
     flex-shrink: 0;
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
 
   .added {
-    color: var(--accent);
+    color: var(--success);
   }
 
   .removed {
-    color: var(--danger);
+    color: var(--destructive);
   }
 
   .viewed-toggle {
     flex-shrink: 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 
   .file-card.viewed .viewed-toggle {
-    color: var(--accent);
+    color: var(--success);
   }
 
   /* ── Diff lines ────────────────────────────────────────────────────────── */
   .lines {
     overflow-x: auto;
     overflow-y: hidden;
-    background: var(--surface);
-    font: var(--fs-sm)/1.7 var(--font-mono);
+    background: var(--card);
+    font: var(--text-sm)/1.7 var(--font-mono);
     contain: content;
   }
 
@@ -483,7 +484,7 @@
   .row {
     display: flex;
     padding: 0 14px;
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   .rows.split .row {
@@ -498,7 +499,7 @@
   .num {
     flex-shrink: 0;
     width: 34px;
-    color: var(--muted);
+    color: var(--muted-foreground);
     user-select: none;
   }
 
@@ -510,15 +511,15 @@
   .row.ins,
   .rows.split .code.ins,
   .rows.split .num.ins {
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    background: color-mix(in srgb, var(--success) 14%, transparent);
     color: var(--t-step);
   }
 
   .row.del,
   .rows.split .code.del,
   .rows.split .num.del {
-    background: color-mix(in srgb, var(--danger) 12%, transparent);
-    color: var(--danger);
+    background: color-mix(in srgb, var(--destructive) 12%, transparent);
+    color: var(--destructive);
   }
 
   .row.ins .num,
@@ -532,12 +533,12 @@
     padding-bottom: 2px;
     border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
-    background: var(--surface2);
+    background: var(--muted);
   }
 
   .hunk-text {
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 
   .row.commentable {
@@ -545,12 +546,12 @@
   }
 
   .row.commentable:hover .num {
-    color: var(--text);
+    color: var(--foreground);
   }
 
   /* The cursor row. Inset because the row runs the full scroll width. */
   .row.commentable:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--success);
     outline-offset: -2px;
   }
 
@@ -559,6 +560,6 @@
     display: grid;
     place-items: center;
     padding: 12px;
-    background: var(--surface);
+    background: var(--card);
   }
 </style>

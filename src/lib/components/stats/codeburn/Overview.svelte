@@ -7,7 +7,7 @@
   import type { Yield } from "../../../../types/codeburn-yield";
   import { fmtCost, fmtCount, fmtTokens, localDayKey } from "../../../stats-derive";
   import { monthCost } from "../../../stores/cost";
-  import SegmentedControl, { type Segment } from "../../ui/SegmentedControl.svelte";
+  import Segmented, { type Segment } from "$lib/components/app/common/Segmented.svelte";
   import ActivityGrid from "../charts/ActivityGrid.svelte";
   import DailySpend from "../charts/DailySpend.svelte";
   import Ring from "../charts/Ring.svelte";
@@ -497,7 +497,7 @@
 
         <Card title="Top activities">
           {#snippet note()}
-            <SegmentedControl
+            <Segmented
               role="radiogroup"
               label="Sort activities"
               options={actMetrics}
@@ -559,18 +559,18 @@
     font-family: var(--font-mono);
   }
   .accent {
-    color: var(--accent);
+    color: var(--success);
   }
   .sub {
     margin: 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
   .mt {
     margin-top: var(--sp-3);
   }
   .muted {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .gap-top {
     margin-top: var(--sp-3);
@@ -579,8 +579,8 @@
     min-width: 0;
     padding: var(--sp-5);
     border: 1px solid var(--border);
-    border-radius: var(--r-card);
-    background: var(--surface);
+    border-radius: var(--radius-lg);
+    background: var(--card);
   }
   @media (max-width: 860px) {
     .grid,
@@ -599,18 +599,18 @@
   .big {
     margin: var(--sp-1) 0;
     font-family: var(--font-mono);
-    font-size: calc(var(--fs-2xl) * 1.6);
-    font-weight: var(--fw-semi);
+    font-size: calc(var(--text-2xl) * 1.6);
+    font-weight: var(--font-weight-semibold);
     line-height: 1.1;
     letter-spacing: -0.02em;
   }
   .big.sm {
-    font-size: var(--fs-2xl);
+    font-size: var(--text-2xl);
   }
   .est {
-    color: var(--muted);
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-body);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-normal);
     letter-spacing: 0;
   }
   .stat3 {
@@ -631,20 +631,20 @@
   }
   .stat3 span {
     display: block;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
     white-space: nowrap;
   }
   .stat3 b {
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-medium);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-medium);
   }
   .up {
-    color: var(--danger);
+    color: var(--destructive);
   }
   .down {
-    color: var(--accent);
+    color: var(--success);
   }
   .ring-wrap {
     display: flex;
@@ -668,32 +668,32 @@
     justify-content: space-between;
     align-items: baseline;
     gap: var(--sp-3);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   .ef-h span {
     white-space: nowrap;
   }
   .ef-h b {
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-semi);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-semibold);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
   .ef .t {
     height: 6px;
-    border-radius: var(--r-pill);
-    background: var(--surface3);
+    border-radius: var(--radius-full);
+    background: var(--accent);
     overflow: hidden;
   }
   .ef .f {
     display: block;
     height: 100%;
-    border-radius: var(--r-pill);
-    background: var(--accent);
+    border-radius: var(--radius-full);
+    background: var(--success);
   }
   .ef .f.bad {
-    background: var(--danger);
+    background: var(--destructive);
   }
 
   /* pills, links */
@@ -702,26 +702,26 @@
     align-items: center;
     height: var(--h-xs);
     padding: 0 var(--sp-3);
-    border-radius: var(--r-pill);
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-    color: var(--accent);
+    border-radius: var(--radius-full);
+    background: color-mix(in srgb, var(--success) 16%, transparent);
+    color: var(--success);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-medium);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
     box-sizing: border-box;
   }
   .pill.warn {
-    background: color-mix(in srgb, var(--warn) 16%, transparent);
-    color: var(--warn);
+    background: color-mix(in srgb, var(--warning) 16%, transparent);
+    color: var(--warning);
   }
   .pill.bad {
-    background: color-mix(in srgb, var(--danger) 16%, transparent);
-    color: var(--danger);
+    background: color-mix(in srgb, var(--destructive) 16%, transparent);
+    color: var(--destructive);
   }
   .pill.neutral {
-    background: var(--surface3);
-    color: var(--muted);
+    background: var(--accent);
+    color: var(--muted-foreground);
   }
   .chips {
     display: inline-flex;
@@ -732,17 +732,17 @@
     padding: 0;
     border: 0;
     background: none;
-    color: var(--accent);
+    color: var(--success);
     font: inherit;
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-semi);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-semibold);
     cursor: pointer;
   }
   .link:hover {
     text-decoration: underline;
   }
   .link:focus-visible {
-    outline: var(--focus-width) solid var(--focus);
+    outline: var(--focus-width) solid var(--ring);
     outline-offset: var(--focus-offset);
   }
   .dot {
@@ -771,7 +771,7 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     border: 1px solid var(--border);
-    border-radius: var(--r-md);
+    border-radius: var(--radius-md);
   }
   .ov-pair > div {
     padding: var(--sp-4);
@@ -780,8 +780,8 @@
     border-left: 1px solid var(--border);
   }
   .ov-big {
-    font-size: var(--fs-xl);
-    font-weight: var(--fw-semi);
+    font-size: var(--text-xl);
+    font-weight: var(--font-weight-semibold);
   }
 
   /* banner */
@@ -790,7 +790,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--sp-4);
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
   }
   .spacer {
     flex: 1;
@@ -804,8 +804,8 @@
   }
   .wir h5 {
     margin: 0 0 var(--sp-3);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-semi);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-semibold);
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
@@ -816,17 +816,17 @@
     margin: 0;
     padding: 0;
     list-style: none;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
   }
   .wins h5 {
-    color: var(--accent);
+    color: var(--success);
   }
   .imps h5 {
-    color: var(--warn);
+    color: var(--warning);
   }
   .risks h5 {
-    color: var(--danger);
+    color: var(--destructive);
   }
   .imps,
   .risks {
@@ -864,12 +864,12 @@
     min-width: 0;
   }
   .ov-wi b {
-    color: var(--text);
-    font-weight: var(--fw-semi);
+    color: var(--foreground);
+    font-weight: var(--font-weight-semibold);
   }
   .ov-asof {
-    color: var(--muted);
-    font-size: var(--fs-2xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
     white-space: nowrap;
   }
 
@@ -880,14 +880,14 @@
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   th {
     padding: var(--sp-2);
-    border-bottom: 1px solid var(--border2);
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-medium);
+    border-bottom: 1px solid var(--input);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-medium);
     text-align: left;
     white-space: nowrap;
   }
@@ -900,7 +900,7 @@
     border-bottom: 0;
   }
   tbody tr:hover {
-    background: var(--surface2);
+    background: var(--muted);
   }
   th:first-child,
   td:first-child {
@@ -928,9 +928,9 @@
     border: 0;
     border-bottom: 1px solid var(--border);
     background: none;
-    color: var(--text);
+    color: var(--foreground);
     font: inherit;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     text-align: left;
     cursor: pointer;
   }
@@ -938,16 +938,16 @@
     border-bottom: 0;
   }
   .lrow:hover {
-    background: var(--surface2);
+    background: var(--muted);
   }
   .lrow:focus-visible {
-    outline: var(--focus-width) solid var(--focus);
+    outline: var(--focus-width) solid var(--ring);
     outline-offset: var(--focus-offset);
   }
   .lrow .i {
     width: 22px;
     flex-shrink: 0;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
   }
   .lrow .b {
@@ -957,25 +957,25 @@
   .lrow .b b {
     display: block;
     overflow: hidden;
-    font-size: var(--fs-sm);
-    font-weight: var(--fw-semi);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-semibold);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .lrow .b span {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .lrow .v {
     font-family: var(--font-mono);
-    font-size: var(--fs-sm);
-    font-weight: var(--fw-medium);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
   .empty {
     margin: 0;
     padding: var(--sp-7) 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
     text-align: center;
   }
 
@@ -987,31 +987,31 @@
   .ov-act > .t {
     height: 3px;
     margin-bottom: var(--sp-2);
-    background: var(--surface3);
+    background: var(--accent);
   }
   .ov-act > .t .f {
     height: 100%;
-    background: var(--accent);
+    background: var(--success);
   }
   .kv {
     display: flex;
     justify-content: space-between;
     gap: var(--sp-4);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   .kv > :first-child {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .kv > :last-child {
     font-family: var(--font-mono);
-    font-weight: var(--fw-medium);
+    font-weight: var(--font-weight-medium);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
   .kv > b {
-    color: var(--text);
-    font-family: var(--font-ui);
-    font-weight: var(--fw-semi);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-weight: var(--font-weight-semibold);
   }
   @media (max-width: 860px) {
     .hero {

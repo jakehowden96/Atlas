@@ -2,8 +2,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import ChipInput from "../components/ui/ChipInput.svelte";
-import NumberStepper from "../components/ui/NumberStepper.svelte";
+import ChipInput from "../components/app/common/ChipInput.svelte";
+import NumberStepper from "../components/app/common/NumberStepper.svelte";
 
 afterEach(cleanup);
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { alertTone } from "$lib/components/ui/alert/index.js";
   import { onDestroy, onMount } from "svelte";
   import { setupHint } from "../../pr-setup";
   import { retryLabel, searchPrs, SORT_OPTIONS, sortPrs, type PrSort } from "../../pr-view";
@@ -28,15 +29,15 @@
   import { visibleWorkspaces } from "../../stores/workspace";
   import { formatAgo } from "../../format";
   import { tooltip } from "../../ui/tooltip";
-  import Banner from "../ui/Banner.svelte";
-  import Button from "../ui/Button.svelte";
-  import ChipInput from "../ui/ChipInput.svelte";
-  import EmptyState from "../ui/EmptyState.svelte";
-  import Icon from "../ui/Icon.svelte";
-  import SearchInput from "../ui/SearchInput.svelte";
-  import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
-  import Select from "../ui/Select.svelte";
-  import Skeleton from "../ui/Skeleton.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import ChipInput from "../app/common/ChipInput.svelte";
+  import * as Empty from "$lib/components/ui/empty/index.js";
+  import Icon from "../ui/icon/icon.svelte";
+  import SearchInput from "../app/common/SearchInput.svelte";
+  import Segmented, { type Segment } from "$lib/components/app/common/Segmented.svelte";
+  import OptionSelect from "$lib/components/app/common/OptionSelect.svelte";
+  import { Skeleton } from "$lib/components/ui/skeleton/index.js";
   import PrRow from "./PrRow.svelte";
 
   // Track "now" so "Updated 2m ago" ticks between polls. Fetching itself is
@@ -129,7 +130,7 @@
 
 <div class="prs-view">
   <div class="toolbar">
-    <SegmentedControl
+    <Segmented
       options={filterOptions}
       value={activeFilter}
       role="radiogroup"
@@ -144,7 +145,7 @@
       />
     </div>
     <div class="sort">
-      <Select
+      <OptionSelect
         size="sm"
         aria-label="Sort pull requests"
         options={SORT_OPTIONS}
@@ -156,40 +157,41 @@
     <span class="meta" use:tooltip={{ text: `Refreshes every ${$prRefreshMinutes} minutes` }}>
       {$prsLoading ? "Updating" : updatedLabel($prsLastUpdated, now)}
     </span>
-    <Button size="sm" loading={$prsLoading} onclick={() => refreshPrs()}>
-      {#snippet leading()}<Icon name="refresh" size={16} />{/snippet}
+    <Button variant="outline" size="sm" loading={$prsLoading} onclick={() => refreshPrs()}>
+      <Icon name="refresh" size={16} />
       Refresh
     </Button>
-    <Button size="sm" onclick={() => openSettings("pullRequests")}>Watched repos</Button>
+    <Button variant="outline" size="sm" onclick={() => openSettings("pullRequests")}>Watched repos</Button>
   </div>
 
   <div class="cards">
     {#if setup}
-      <EmptyState
-        icon={rateLimit ? "warning" : "error"}
-        title={setup.title}
-        description={rateLimit
+      <Empty.Root>
+  <Empty.Header>
+    <Empty.Media variant="icon"><Icon name={rateLimit ? "warning" : "error"} size={20} /></Empty.Media>
+    <Empty.Title>{setup.title}</Empty.Title>
+    {#if rateLimit
           ? `${setup.detail} ${retryLabel(rateLimit.retryAt, now)}`
-          : setup.detail}
-      >
-        {#snippet action()}
-          {#if setup.action === "connect" || setup.action === "reconnect"}
-            <Button variant="primary" onclick={() => openSettings("connectors")}
+          : setup.detail}<Empty.Description>{rateLimit
+          ? `${setup.detail} ${retryLabel(rateLimit.retryAt, now)}`
+          : setup.detail}</Empty.Description>{/if}
+  </Empty.Header>
+  <Empty.Content>{#if setup.action === "connect" || setup.action === "reconnect"}
+            <Button variant="default" onclick={() => openSettings("connectors")}
               >Open connectors</Button
             >
           {:else if setup.action === "retry"}
-            <Button onclick={() => refreshPrs()}>Retry</Button>
-          {/if}
-        {/snippet}
-      </EmptyState>
+            <Button variant="outline" onclick={() => refreshPrs()}>Retry</Button>
+          {/if}</Empty.Content>
+</Empty.Root>
     {:else if $effectiveWatchedRepos.length === 0}
-      <EmptyState
-        icon="info"
-        title="No repositories watched yet"
-        description="Add the repositories whose open pull requests you want here"
-      >
-        {#snippet action()}
-          <div class="add">
+      <Empty.Root>
+  <Empty.Header>
+    <Empty.Media variant="icon"><Icon name="info" size={20} /></Empty.Media>
+    <Empty.Title>No repositories watched yet</Empty.Title>
+    <Empty.Description>Add the repositories whose open pull requests you want here</Empty.Description>
+  </Empty.Header>
+  <Empty.Content><div class="add">
             <ChipInput
               label="Watched repositories"
               placeholder="owner/name"
@@ -200,44 +202,47 @@
             {#if suggestions.length > 0}
               <div class="suggest" role="group" aria-label="Repositories in your workspaces">
                 {#each suggestions as slug (slug)}
-                  <Button size="sm" onclick={() => void setWatchedRepos([...$watchedRepos, slug])}>
+                  <Button variant="outline" size="sm" onclick={() => void setWatchedRepos([...$watchedRepos, slug])}>
                     Add {slug}
                   </Button>
                 {/each}
               </div>
             {/if}
-          </div>
-        {/snippet}
-      </EmptyState>
+          </div></Empty.Content>
+</Empty.Root>
     {:else if $prRepos === null}
       <div class="card" aria-busy="true" aria-label="Loading pull requests">
         {#each [0, 1, 2] as i (i)}
           <div class="skel-row">
-            <Skeleton width="60%" height="var(--sp-4)" />
-            <Skeleton width="35%" height="var(--sp-4)" />
+            <Skeleton style="width: 60%; height: var(--sp-4)" class="rounded-sm" />
+            <Skeleton style="width: 35%; height: var(--sp-4)" class="rounded-sm" />
           </div>
         {/each}
       </div>
     {:else if cards.length === 0}
       {#if activeFilter === "all" && !query.trim()}
-        <EmptyState
-          icon="info"
-          title="No open pull requests"
-          description="Nothing is open in the watched repositories"
-        />
+        <Empty.Root>
+  <Empty.Header>
+    <Empty.Media variant="icon"><Icon name="info" size={20} /></Empty.Media>
+    <Empty.Title>No open pull requests</Empty.Title>
+    <Empty.Description>Nothing is open in the watched repositories</Empty.Description>
+  </Empty.Header>
+</Empty.Root>
       {:else}
-        <EmptyState
-          icon="info"
-          title="Nothing matches"
-          description="Try another filter or search"
-        />
+        <Empty.Root>
+  <Empty.Header>
+    <Empty.Media variant="icon"><Icon name="info" size={20} /></Empty.Media>
+    <Empty.Title>Nothing matches</Empty.Title>
+    <Empty.Description>Try another filter or search</Empty.Description>
+  </Empty.Header>
+</Empty.Root>
       {/if}
     {:else}
       {#each cards as card (card.repo)}
         {@const ws = workspaceFor(card.repo)}
         <section class="card">
           <header class="card-head">
-            <span class="ws-dot" style="background: {ws?.color ?? 'var(--surface3)'}"></span>
+            <span class="ws-dot" style="background: {ws?.color ?? 'var(--accent)'}"></span>
             <span class="repo">{card.repo}</span>
             <span class="open-count">{card.openCount} open</span>
             <div class="spacer"></div>
@@ -251,17 +256,14 @@
           </header>
 
           {#if card.error}
-            <Banner
-              tone={card.error.kind === "connectorRateLimited" ? "warn" : "error"}
-              title={card.error.message}
-            >
-              {#if card.error.kind === "connectorRateLimited"}
+            <Alert.Root variant={alertTone[card.error.kind === "connectorRateLimited" ? "warn" : "error"].variant}>
+<Icon name={alertTone[card.error.kind === "connectorRateLimited" ? "warn" : "error"].icon} />
+<Alert.Title>{card.error.message}</Alert.Title>
+<Alert.Description>{#if card.error.kind === "connectorRateLimited"}
                 {retryLabel(card.error.retryAt ?? 0, now)}
-              {/if}
-              {#snippet actions()}
-                <Button size="sm" onclick={() => refreshPrs()}>Retry</Button>
-              {/snippet}
-            </Banner>
+              {/if}</Alert.Description>
+<Alert.Action><Button variant="outline" size="sm" onclick={() => refreshPrs()}>Retry</Button></Alert.Action>
+</Alert.Root>
           {/if}
 
           {#each card.prs as pr (pr.number)}
@@ -280,9 +282,9 @@
     flex-direction: column;
     min-height: 0;
     overflow: auto;
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--font-ui);
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
   }
 
   .toolbar {
@@ -307,8 +309,8 @@
   }
 
   .meta {
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
     white-space: nowrap;
   }
 
@@ -344,8 +346,8 @@
   .card {
     overflow: hidden;
     border: 1px solid var(--border);
-    border-radius: var(--r-card-lg);
-    background: var(--surface);
+    border-radius: var(--radius-xl);
+    background: var(--card);
   }
 
   .card-head {
@@ -360,32 +362,32 @@
     flex-shrink: 0;
     width: var(--sp-3);
     height: var(--sp-3);
-    border-radius: var(--r-xs);
+    border-radius: var(--radius-xs);
   }
 
   .repo {
     overflow: hidden;
     font-family: var(--font-mono);
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .open-count {
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     white-space: nowrap;
   }
 
   .linked {
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
     white-space: nowrap;
   }
 
   .linked-name {
-    color: var(--text);
+    color: var(--foreground);
   }
 </style>

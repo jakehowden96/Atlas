@@ -7,7 +7,7 @@
   import { closeSession } from "../../session-actions";
   import { refreshPanel } from "../../ipc";
   import { revealInFileManager } from "../../ui/reveal";
-  import type { MenuItem } from "../ui/Menu.svelte";
+  import type { MenuItem } from "$lib/components/app/common/menu";
   import { tabIdForSession } from "../../session-view";
   import { liveTiles } from "../../stores/liveTiles";
   import { panelData } from "../../stores/panel";
@@ -16,11 +16,11 @@
   import { workspaces } from "../../stores/workspace";
   import ChangesDrawer from "../changes/ChangesDrawer.svelte";
   import TerminalContainer from "../terminal/TerminalContainer.svelte";
-  import Button from "../ui/Button.svelte";
-  import IconButton from "../ui/IconButton.svelte";
-  import MenuButton from "../ui/MenuButton.svelte";
-  import StatePill, { type PillState } from "../ui/StatePill.svelte";
-  import Icon from "../ui/Icon.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
+  import MenuButton from "../app/common/MenuButton.svelte";
+  import StatePill, { type PillState } from "../app/common/StatePill.svelte";
+  import Icon from "../ui/icon/icon.svelte";
   import { tooltip } from "../../ui/tooltip";
   import ActivityRail from "./ActivityRail.svelte";
 
@@ -119,7 +119,7 @@
 <div class="session">
   <div class="main">
     <header class="head">
-      <IconButton
+      <TooltipButton
         icon="arrow_back"
         label="Back to Sessions"
         shortcut={$chords.backToSessions}
@@ -147,15 +147,15 @@
       {/if}
 
       {#if tile}
-        <IconButton
+        <TooltipButton
           icon="folder"
           label="Reveal workspace in file manager"
           onclick={() => void revealInFileManager(tile.workspacePath)}
         />
       {/if}
 
-      <Button aria-pressed={$diffOpen} onclick={() => diffOpen.update((v) => !v)}>
-        {#snippet leading()}<Icon name="difference" />{/snippet}
+      <Button variant="outline" aria-pressed={$diffOpen} onclick={() => diffOpen.update((v) => !v)}>
+        <Icon name="difference" />
         <span class="changes-word">Changes</span>
         {#if changed}
           <span class="added">+{tile?.diff?.linesAdded ?? 0}</span>
@@ -163,7 +163,7 @@
         {/if}
       </Button>
 
-      <IconButton
+      <TooltipButton
         icon="close"
         label="Close session"
         shortcut={$chords.closeSession}
@@ -201,7 +201,7 @@
     flex-direction: column;
     flex: 1;
     min-width: 0;
-    background: var(--surface);
+    background: var(--card);
   }
 
   /* ── Header ────────────────────────────────────────────────────────────── */
@@ -218,15 +218,15 @@
   .label {
     min-width: 0;
     overflow: hidden;
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .empty-label {
-    color: var(--muted);
-    font-weight: var(--fw-body);
+    color: var(--muted-foreground);
+    font-weight: var(--font-weight-normal);
   }
 
   .ws {
@@ -235,15 +235,15 @@
     flex-shrink: 0;
     gap: var(--sp-2);
     max-width: 180px;
-    color: var(--text);
-    font-size: var(--fs-sm);
+    color: var(--foreground);
+    font-size: var(--text-sm);
   }
 
   .swatch {
     flex: none;
     width: 10px;
     height: 10px;
-    border-radius: var(--r-sm);
+    border-radius: var(--radius-sm);
     background: var(--tc);
   }
 
@@ -255,9 +255,9 @@
 
   .subtitle {
     overflow: hidden;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -267,12 +267,12 @@
   }
 
   .added {
-    color: var(--accent);
+    color: var(--success);
     font-family: var(--font-mono);
   }
 
   .removed {
-    color: var(--danger);
+    color: var(--destructive);
     font-family: var(--font-mono);
   }
 

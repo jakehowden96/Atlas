@@ -1,12 +1,12 @@
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import "./shared.css";
-  import Banner from "../../ui/Banner.svelte";
-  import Button from "../../ui/Button.svelte";
-  import { confirmAction } from "../../ui/ConfirmDialog.svelte";
-  import InlineAlert from "../../ui/InlineAlert.svelte";
-  import Kbd from "../../ui/Kbd.svelte";
-  import StatusMark from "../../ui/StatusMark.svelte";
-  import Tooltip from "../../ui/Tooltip.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import { confirmAction } from "../../app/common/ConfirmDialog.svelte";
+  import { Kbd } from "$lib/components/ui/kbd/index.js";
+  import StatusMark from "../../app/common/StatusMark.svelte";
+  import * as Tooltip from "$lib/components/ui/tooltip/index.js";
   import { get } from "svelte/store";
   import {
     ACTION_LABELS,
@@ -110,7 +110,10 @@
 
 <div class="stack sec">
   {#if conflicts.length > 0}
-    <Banner tone="warn" title="Two actions share a chord. Nothing is saved until one changes" />
+    <Alert.Root variant="warning">
+<Icon name="warning" />
+<Alert.Title>Two actions share a chord. Nothing is saved until one changes</Alert.Title>
+</Alert.Root>
   {/if}
 
   <p class="copy">
@@ -128,9 +131,8 @@
             {#if isReachable(binding)}
               <Kbd>{formatBinding(binding)}</Kbd>
             {:else}
-              <Tooltip text="Your system uses this chord, so Atlas never sees it">
-                <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-                <span
+              <Tooltip.Root><Tooltip.Trigger>{#snippet child({ props })}<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                <span {...props}
                   class="key-chord"
                   tabindex="0"
                   role="group"
@@ -138,12 +140,11 @@
                 >
                   <StatusMark state="attention" label="Not available" />
                   <Kbd>{formatBinding(binding)}</Kbd>
-                </span>
-              </Tooltip>
+                </span>{/snippet}</Tooltip.Trigger><Tooltip.Content>Your system uses this chord, so Atlas never sees it</Tooltip.Content></Tooltip.Root>
             {/if}
           {/each}
         </span>
-        <Button
+        <Button variant="outline"
           size="sm"
           onclick={() => (recording = isRecording(action, 0) ? null : { action, index: 0 })}
         >
@@ -151,21 +152,21 @@
         </Button>
         {#if draft[action].length > 1}
           {#if altDroppable(action)}
-            <Button size="sm" onclick={() => clearAlt(action)}>Drop alt</Button>
+            <Button variant="outline" size="sm" onclick={() => clearAlt(action)}>Drop alt</Button>
           {/if}
         {:else}
-          <Button
+          <Button variant="outline"
             size="sm"
             onclick={() => (recording = isRecording(action, 1) ? null : { action, index: 1 })}
           >
             {isRecording(action, 1) ? "Press a chord…" : "Add alt"}
           </Button>
         {/if}
-        <Button size="sm" onclick={() => applyChords(action, [...DEFAULT_KEYMAP[action]])}>
+        <Button variant="outline" size="sm" onclick={() => applyChords(action, [...DEFAULT_KEYMAP[action]])}>
           Reset
         </Button>
         {#if clash}
-          <InlineAlert tone="error">Another action uses this chord</InlineAlert>
+          <Alert.Root variant="destructive" layout="inline"><Icon name="error" /><Alert.Title>Another action uses this chord</Alert.Title></Alert.Root>
         {/if}
       </div>
     {/each}
@@ -176,7 +177,7 @@
       <div class="row-title">Reset all shortcuts</div>
       <div class="row-desc">Put every chord back to its default</div>
     </div>
-    <Button size="sm" onclick={confirmReset}>Reset all</Button>
+    <Button variant="outline" size="sm" onclick={confirmReset}>Reset all</Button>
   </div>
 
   <p class="copy">
@@ -194,8 +195,8 @@
   .key-name {
     flex: 1;
     min-width: 0;
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
   }
 
   .key-chords {

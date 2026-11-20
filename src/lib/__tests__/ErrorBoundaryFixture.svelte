@@ -1,5 +1,5 @@
 <script lang="ts">
-  import ErrorBoundary from "../components/ui/ErrorBoundary.svelte";
+  import ErrorBoundary from "../components/app/shell/ErrorBoundary.svelte";
   import Thrower from "./ThrowerFixture.svelte";
   let { fail }: { fail: { on: boolean } } = $props();
 </script>

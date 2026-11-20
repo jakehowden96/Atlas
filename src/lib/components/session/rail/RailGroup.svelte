@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { RailRowData } from "../../../session-view";
-  import Icon from "../../ui/Icon.svelte";
-  import StatusMark from "../../ui/StatusMark.svelte";
+  import Icon from "../../ui/icon/icon.svelte";
+  import StatusMark from "../../app/common/StatusMark.svelte";
   import RailRow from "./RailRow.svelte";
 
   interface Props {
@@ -64,9 +64,9 @@
     padding: 0;
     border: 0;
     background: none;
-    color: var(--muted);
-    font-family: var(--font-ui);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
     line-height: 18px;
     text-align: left;
     cursor: pointer;

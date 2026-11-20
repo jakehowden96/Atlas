@@ -2,8 +2,8 @@
   import type { Snippet } from "svelte";
   import { tileOpen, type TileState } from "../../../session-view";
   import { railTiles, setRailTile, type RailTiles } from "../../../stores/settings";
-  import Icon from "../../ui/Icon.svelte";
-  import StatusMark from "../../ui/StatusMark.svelte";
+  import Icon from "../../ui/icon/icon.svelte";
+  import StatusMark from "../../app/common/StatusMark.svelte";
 
   interface Props {
     key: keyof RailTiles;
@@ -53,16 +53,16 @@
   .tile {
     flex-shrink: 0;
     border: 1px solid var(--border);
-    border-radius: var(--r-card-lg);
-    background: var(--surface);
+    border-radius: var(--radius-xl);
+    background: var(--card);
   }
 
   .tile.failing {
-    border-color: var(--danger);
+    border-color: var(--destructive);
   }
 
   .tile.attention {
-    border-color: var(--warn);
+    border-color: var(--warning);
   }
 
   .head {
@@ -74,11 +74,11 @@
     width: 100%;
     padding: 10px 14px;
     border: 0;
-    border-radius: var(--r-card-lg);
+    border-radius: var(--radius-xl);
     background: none;
-    color: var(--text);
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
     line-height: 22px;
     text-align: left;
     cursor: pointer;
@@ -93,8 +93,8 @@
 
   .label {
     margin-right: 8px;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -104,7 +104,7 @@
     display: flex;
     align-items: center;
     height: var(--h-xs);
-    color: var(--muted);
+    color: var(--muted-foreground);
     transition: transform var(--dur-fast) var(--ease-out);
   }
 
@@ -114,8 +114,8 @@
 
   .detail {
     padding: 0 14px 12px 34px;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
     line-height: 18px;
     display: -webkit-box;
     -webkit-line-clamp: 2;

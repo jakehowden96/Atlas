@@ -1,6 +1,6 @@
 import { render } from "svelte/server";
 import { describe, expect, it } from "vitest";
-import ConnectorLogo from "../components/ui/ConnectorLogo.svelte";
+import ConnectorLogo from "../components/app/connectors/ConnectorLogo.svelte";
 import { connectorLogo } from "../connector-logos";
 
 describe("connector logos", () => {

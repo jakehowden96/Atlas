@@ -28,12 +28,16 @@ export function tooltip(node: HTMLElement, initial: TooltipOptions) {
     if (bubble || !opts.text) return;
     bubble = document.createElement("div");
     bubble.id = id;
-    bubble.className = "atlas-tooltip";
+    // Same look as shadcn TooltipContent; the data-slot lets Kbd pick its in-tooltip style.
+    bubble.className =
+      "pointer-events-none fixed z-(--z-tooltip) inline-flex w-fit max-w-xs items-center gap-2 rounded-sm bg-primary px-2 py-1 text-xs leading-4 text-primary-foreground shadow-elev-1";
+    bubble.dataset.slot = "tooltip-content";
     bubble.setAttribute("role", "tooltip");
     bubble.textContent = opts.text;
     if (opts.shortcut) {
       const k = document.createElement("kbd");
-      k.className = "atlas-tooltip-kbd";
+      k.className =
+        "inline-grid h-[18px] min-w-[18px] place-items-center rounded-xs border border-b-2 border-primary-foreground/35 px-[5px] font-mono text-xs leading-none";
       k.textContent = opts.shortcut;
       bubble.append(k);
     }

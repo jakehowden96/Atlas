@@ -1,8 +1,8 @@
 <script lang="ts">
   import { enterLabel } from "../../platform";
-  import Button from "../ui/Button.svelte";
-  import IconButton from "../ui/IconButton.svelte";
-  import Textarea from "../ui/Textarea.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
+  import { Textarea } from "$lib/components/ui/textarea/index.js";
   import { anchorDomKey, type ReviewAnchor, type ReviewComment } from "../../stores/reviewComments";
 
   interface Props {
@@ -49,7 +49,7 @@
     <div class="card">
       <div class="card-top">
         <span class="card-body">{c.body}</span>
-        <IconButton
+        <TooltipButton
           icon="delete"
           size="sm"
           label="Delete comment"
@@ -72,8 +72,8 @@
         rows={2}
       />
       <div class="actions">
-        <Button size="sm" onclick={onClose}>Cancel</Button>
-        <Button size="sm" variant="primary" onclick={save}>Save</Button>
+        <Button variant="outline" size="sm" onclick={onClose}>Cancel</Button>
+        <Button size="sm" variant="default" onclick={save}>Save</Button>
       </div>
     </div>
   {/if}
@@ -85,16 +85,16 @@
     flex-direction: column;
   }
 
-  /* Design: the inline review card sits in the diff column, --bg on an accent
+  /* Design: the inline review card sits in the diff column, --background on an accent
      hairline, with a muted caption underneath. */
   .card {
     margin: 6px 14px;
     padding: 8px 10px;
-    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-    border-radius: var(--r-md);
-    background: var(--bg);
-    font: var(--fs-sm)/1.4 var(--font-ui);
-    color: var(--text);
+    border: 1px solid color-mix(in srgb, var(--success) 40%, transparent);
+    border-radius: var(--radius-md);
+    background: var(--background);
+    font: var(--text-sm)/1.4 var(--font-sans);
+    color: var(--foreground);
   }
 
   .card-top {
@@ -112,8 +112,8 @@
 
   .caption {
     margin-top: 6px;
-    color: var(--muted);
-    font: var(--fs-xs) var(--font-ui);
+    color: var(--muted-foreground);
+    font: var(--text-caption) var(--font-sans);
   }
 
   .composer {

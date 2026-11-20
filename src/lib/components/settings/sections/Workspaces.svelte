@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import "./shared.css";
   import { stopServersFor } from "../../../lsp-client";
   import { log } from "../../../logger";
@@ -11,10 +12,10 @@
     visibleWorkspaces,
     WORKSPACE_COLORS,
   } from "../../../stores/workspace";
-  import Toggle from "../../ui/Toggle.svelte";
-  import Button from "../../ui/Button.svelte";
-  import EmptyState from "../../ui/EmptyState.svelte";
-  import Tooltip from "../../ui/Tooltip.svelte";
+  import { Switch } from "$lib/components/ui/switch/index.js";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import * as Empty from "$lib/components/ui/empty/index.js";
+  import * as Tooltip from "$lib/components/ui/tooltip/index.js";
   import { tooltip } from "../../../ui/tooltip";
   import { errorMessage } from "../../../ipc-error";
   import { revealInFileManager } from "../../../ui/reveal";
@@ -80,7 +81,7 @@
 </script>
 
 {#snippet addButton()}
-  <Button onclick={addFolder}>Add workspace…</Button>
+  <Button variant="outline" onclick={addFolder}>Add workspace…</Button>
   <span class="add-hint">or drop a folder anywhere in Atlas</span>
 {/snippet}
 
@@ -90,13 +91,14 @@
     GitHub repo lets you start sessions from its pull requests.
   </p>
   {#if $visibleWorkspaces.length === 0}
-    <EmptyState
-      icon="folder"
-      title="No workspaces yet"
-      description="Add a folder for Claude to run in"
-    >
-      {#snippet action()}{@render addButton()}{/snippet}
-    </EmptyState>
+    <Empty.Root>
+  <Empty.Header>
+    <Empty.Media variant="icon"><Icon name="folder" size={20} /></Empty.Media>
+    <Empty.Title>No workspaces yet</Empty.Title>
+    <Empty.Description>Add a folder for Claude to run in</Empty.Description>
+  </Empty.Header>
+  <Empty.Content>{@render addButton()}</Empty.Content>
+</Empty.Root>
   {:else}
     <div class="list">
       {#each $visibleWorkspaces as ws (ws.path)}
@@ -135,20 +137,12 @@
           </div>
           <span class="ws-count">{ws.sessions.length} sessions</span>
           <div class="lsp">
-            <Tooltip
-              text="Runs a language server (TypeScript, Rust and others) for diagnostics in Files. It executes this workspace's own code, so it stays off until you trust the workspace"
-            >
-              <span class="lsp-label">Language servers</span>
-            </Tooltip>
-            <Toggle
-              checked={$lspTrustedWorkspaces.includes(ws.path)}
-              label="Language servers for {ws.name}"
-              onChange={(v) => void setWorkspaceLsp(ws.path, v)}
-            />
+            <Tooltip.Root><Tooltip.Trigger>{#snippet child({ props })}<span {...props} class="inline-flex min-w-0"><span class="lsp-label">Language servers</span></span>{/snippet}</Tooltip.Trigger><Tooltip.Content>Runs a language server (TypeScript, Rust and others) for diagnostics in Files. It executes this workspace's own code, so it stays off until you trust the workspace</Tooltip.Content></Tooltip.Root>
+            <Switch checked={$lspTrustedWorkspaces.includes(ws.path)} onCheckedChange={(v) => void setWorkspaceLsp(ws.path, v)} aria-label="Language servers for {ws.name}" />
             <span class="lsp-note">Runs this workspace's code</span>
           </div>
-          <Button size="sm" onclick={() => void revealInFileManager(ws.path)}>Reveal</Button>
-          <Button variant="danger" size="sm" onclick={() => void removeWorkspaceWithUndo(ws.path)}>
+          <Button variant="outline" size="sm" onclick={() => void revealInFileManager(ws.path)}>Reveal</Button>
+          <Button variant="destructive" size="sm" onclick={() => void removeWorkspaceWithUndo(ws.path)}>
             Remove
           </Button>
         </div>
@@ -173,14 +167,14 @@
     height: 14px;
     padding: 0;
     border: none;
-    border-radius: var(--r-sm);
+    border-radius: var(--radius-sm);
     cursor: pointer;
   }
 
   .swatch.picked {
     box-shadow:
-      0 0 0 2px var(--surface),
-      0 0 0 3.5px var(--text);
+      0 0 0 2px var(--card),
+      0 0 0 3.5px var(--foreground);
   }
 
   .ws-text {
@@ -190,8 +184,8 @@
 
   .ws-name {
     overflow: hidden;
-    font-family: var(--font-ui);
-    font-size: var(--fs-sm);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
     font-weight: 500;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -200,8 +194,8 @@
   .ws-path {
     overflow: hidden;
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    color: var(--muted);
+    font-size: var(--text-xs);
+    color: var(--muted-foreground);
     white-space: nowrap;
     text-overflow: ellipsis;
   }
@@ -213,9 +207,9 @@
   }
 
   .lsp-note {
-    font-family: var(--font-ui);
-    font-size: var(--fs-xs);
-    color: var(--muted);
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
     white-space: nowrap;
   }
 
@@ -224,25 +218,25 @@
     align-items: center;
     gap: 10px;
     padding: 10px 12px;
-    background: var(--bg);
+    background: var(--background);
   }
 
   .add-hint {
-    font-size: var(--fs-xs);
-    color: var(--muted);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
   }
 
   .lsp-label {
-    font-family: var(--font-ui);
-    font-size: var(--fs-xs);
-    color: var(--muted);
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
     white-space: nowrap;
   }
 
   .ws-count {
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-    color: var(--muted);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
     white-space: nowrap;
   }
 </style>

@@ -1,11 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
-import { createRawSnippet } from "svelte";
 import { render, screen } from "@testing-library/svelte";
-import StatusMark from "../components/ui/StatusMark.svelte";
-import Kbd from "../components/ui/Kbd.svelte";
-import Chip from "../components/ui/Chip.svelte";
-import StatePill from "../components/ui/StatePill.svelte";
+import StatusMark from "../components/app/common/StatusMark.svelte";
+import StatePill from "../components/app/common/StatePill.svelte";
 
 const states = ["running", "failing", "attention", "done", "idle"] as const;
 
@@ -31,20 +28,3 @@ describe("StatePill", () => {
   });
 });
 
-describe("Kbd", () => {
-  it("renders one kbd style, with an ink variant by prop", () => {
-    const children = createRawSnippet(() => ({ render: () => "<span>K</span>" }));
-    const { container } = render(Kbd, { children, onInk: true });
-    const el = container.querySelector("kbd") as HTMLElement;
-    expect(el.classList.contains("on-ink")).toBe(true);
-  });
-});
-
-describe("Chip", () => {
-  it("reflects selection via aria-pressed", () => {
-    render(Chip, { label: "A", onClick: () => {}, selected: true });
-    render(Chip, { label: "B", onClick: () => {} });
-    expect(screen.getByRole("button", { name: "A" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "B" }).getAttribute("aria-pressed")).toBe("false");
-  });
-});

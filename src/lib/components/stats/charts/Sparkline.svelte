@@ -84,12 +84,12 @@
     height: 72px;
   }
   .area {
-    fill: var(--accent);
+    fill: var(--success);
     fill-opacity: 0.12;
   }
   .line {
     fill: none;
-    stroke: var(--accent);
+    stroke: var(--success);
     stroke-width: 2;
     vector-effect: non-scaling-stroke;
   }
@@ -97,7 +97,7 @@
     stroke-dasharray: 4 4;
   }
   .x {
-    stroke: var(--text);
+    stroke: var(--foreground);
     stroke-width: 1;
     stroke-dasharray: 2 2;
     vector-effect: non-scaling-stroke;
@@ -107,8 +107,8 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 0 2px var(--surface);
+    background: var(--success);
+    box-shadow: 0 0 0 2px var(--card);
     transform: translate(-50%, -50%);
     pointer-events: none;
   }
@@ -119,20 +119,20 @@
     display: flex;
     gap: var(--sp-3);
     padding: var(--sp-1) var(--sp-3);
-    border: 1px solid var(--border2);
-    border-radius: var(--r-md);
-    background: var(--surface);
+    border: 1px solid var(--input);
+    border-radius: var(--radius-md);
+    background: var(--card);
     box-shadow: var(--elev-1);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     white-space: nowrap;
     transform: translateX(-50%);
     pointer-events: none;
   }
   .tip b {
     font-family: var(--font-mono);
-    font-weight: var(--fw-semi);
+    font-weight: var(--font-weight-semibold);
   }
   .m {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 </style>

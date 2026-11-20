@@ -2,7 +2,7 @@
   import { filterArgs, type Filters } from "../../../../types/codeburn";
   import type { PeriodCompare, PeriodTotals } from "../../../../types/codeburn-compare";
   import { fmtCost, fmtCount, fmtTokens } from "../../../stats-derive";
-  import SegmentedControl from "../../ui/SegmentedControl.svelte";
+  import Segmented from "$lib/components/app/common/Segmented.svelte";
   import {
     dayPairs,
     movers,
@@ -142,7 +142,7 @@
 
 <section class="card">
   <div class="bar">
-    <SegmentedControl
+    <Segmented
       role="radiogroup"
       size="sm"
       label="Preset"
@@ -156,7 +156,7 @@
     <button class="btn" type="button" onclick={swap}>⇄ Swap</button>
   </div>
   <div class="pp-win">
-    <span class="pp-k"><span class="dot" style:background="var(--muted)"></span>A · Reference</span>
+    <span class="pp-k"><span class="dot" style:background="var(--muted-foreground)"></span>A · Reference</span>
     {#if mode === "custom"}
       <input type="date" aria-label="A · Reference start" bind:value={r.a0} />
       <span class="muted">–</span>
@@ -164,7 +164,7 @@
     {:else}
       <span class="pill neutral">{full(r.a0)} – {full(r.a1)}</span>
     {/if}
-    <span class="pp-k"><span class="dot" style:background="var(--accent)"></span>B · Analyzed</span>
+    <span class="pp-k"><span class="dot" style:background="var(--success)"></span>B · Analyzed</span>
     {#if mode === "custom"}
       <input type="date" aria-label="B · Analyzed start" bind:value={r.b0} />
       <span class="muted">–</span>
@@ -300,10 +300,10 @@
                 <h3 class="label">Cost, day by day, both periods side by side</h3>
                 <ul class="legend">
                   <li onpointerenter={() => (only = "a")} onpointerleave={() => (only = null)}>
-                    <span class="dot" style:background="var(--muted)"></span>A · {rng(p.rangeA)}
+                    <span class="dot" style:background="var(--muted-foreground)"></span>A · {rng(p.rangeA)}
                   </li>
                   <li onpointerenter={() => (only = "b")} onpointerleave={() => (only = null)}>
-                    <span class="dot" style:background="var(--accent)"></span>B · {rng(p.rangeB)}
+                    <span class="dot" style:background="var(--success)"></span>B · {rng(p.rangeB)}
                   </li>
                 </ul>
                 <div class="chart" bind:clientWidth={cw}>
@@ -325,7 +325,7 @@
                         y={T}
                         width={slot}
                         height={H - T - BT}
-                        style="fill:var(--surface2)"
+                        style="fill:var(--muted)"
                       />
                     {/if}
                     {#each grid as t (t)}
@@ -342,7 +342,7 @@
                           y={y(x.a)}
                           width={bw}
                           height={y(0) - y(x.a)}
-                          style="fill:var(--muted)"
+                          style="fill:var(--muted-foreground)"
                           class:fade={only === "b"}
                         />
                       {/if}
@@ -352,7 +352,7 @@
                           y={y(x.b)}
                           width={bw}
                           height={y(0) - y(x.b)}
-                          style="fill:var(--accent)"
+                          style="fill:var(--success)"
                           class:fade={only === "a"}
                         />
                       {/if}
@@ -366,9 +366,9 @@
                       y1={y(mx)}
                       y2={y(mx)}
                       stroke-dasharray="4 3"
-                      style="stroke:var(--accent)"
+                      style="stroke:var(--success)"
                     />
-                    <text x={cw - R + 6} y={y(mx) + 4} style="fill:var(--accent)"
+                    <text x={cw - R + 6} y={y(mx) + 4} style="fill:var(--success)"
                       >{fmtCost(mx)}</text
                     >
                   </svg>
@@ -381,14 +381,14 @@
                       <span>Day {i + 1}</span>
                       {#if i < p.rangeA.days}
                         <span class="part"
-                          ><span class="dot" style:background="var(--muted)"></span><span
+                          ><span class="dot" style:background="var(--muted-foreground)"></span><span
                             class="muted">{dayAt(p.rangeA.from, i)}</span
                           > <b>{fmtCost(rows[i]?.a ?? 0)}</b></span
                         >
                       {/if}
                       {#if i < p.rangeB.days}
                         <span class="part"
-                          ><span class="dot" style:background="var(--accent)"></span><span
+                          ><span class="dot" style:background="var(--success)"></span><span
                             class="muted">{dayAt(p.rangeB.from, i)}</span
                           > <b>{fmtCost(rows[i]?.b ?? 0)}</b></span
                         >
@@ -423,7 +423,7 @@
         <div class="bar">
           <h3 class="label nm">What changed, biggest movers</h3>
           <span class="spacer"></span>
-          <SegmentedControl
+          <Segmented
             role="radiogroup"
             size="sm"
             label="Group"
@@ -434,7 +434,7 @@
               { id: "models", label: "By model" },
             ]}
           />
-          <SegmentedControl
+          <Segmented
             role="radiogroup"
             size="sm"
             label="Basis"
@@ -561,12 +561,12 @@
     min-width: 0;
     padding: var(--sp-5);
     border: 1px solid var(--border);
-    border-radius: var(--r-card);
-    background: var(--surface);
+    border-radius: var(--radius-lg);
+    background: var(--card);
     transition: border-color 0.12s;
   }
   .card:hover {
-    border-color: var(--border2);
+    border-color: var(--input);
   }
   .bar {
     display: flex;
@@ -579,53 +579,53 @@
   }
   .label {
     margin: 0 0 var(--sp-3);
-    color: var(--text);
-    font-size: var(--fs-sm);
-    font-weight: var(--fw-semi);
+    color: var(--foreground);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-semibold);
   }
   .label.nm {
     margin: 0;
   }
   .sub {
     margin: 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
   .sub.gap {
     margin-top: var(--sp-3);
   }
   .muted {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .btn {
     height: var(--h-sm);
     padding: 0 var(--sp-4);
-    border: 1px solid var(--border2);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    color: var(--text);
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-medium);
+    border: 1px solid var(--input);
+    border-radius: var(--radius-md);
+    background: var(--card);
+    color: var(--foreground);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
     cursor: pointer;
   }
   .btn:hover {
-    background: var(--surface2);
+    background: var(--muted);
   }
   .link {
     padding: 0;
     border: 0;
     background: none;
-    color: var(--accent);
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-semi);
+    color: var(--success);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-semibold);
     cursor: pointer;
   }
   .link:hover {
     text-decoration: underline;
   }
   button:focus-visible {
-    outline: 2px solid var(--text);
+    outline: 2px solid var(--foreground);
     outline-offset: 2px;
   }
   .pp-win {
@@ -638,9 +638,9 @@
   .pp-k {
     display: inline-flex;
     align-items: center;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-semi);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-semibold);
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
@@ -648,12 +648,12 @@
     height: var(--h-sm);
     max-width: 100%;
     padding: 0 var(--sp-3);
-    border: 1px solid var(--border2);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    color: var(--text);
+    border: 1px solid var(--input);
+    border-radius: var(--radius-md);
+    background: var(--card);
+    color: var(--foreground);
     font: inherit;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   .dot {
     display: inline-block;
@@ -671,21 +671,21 @@
     align-items: center;
     height: var(--h-xs);
     padding: 0 var(--sp-3);
-    border-radius: var(--r-pill);
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-    color: var(--accent);
+    border-radius: var(--radius-full);
+    background: color-mix(in srgb, var(--success) 16%, transparent);
+    color: var(--success);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-medium);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
   .pill.neutral {
-    background: var(--surface3);
-    color: var(--muted);
+    background: var(--accent);
+    color: var(--muted-foreground);
   }
   .story {
     margin: 0 0 var(--sp-4);
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
   }
   .grid {
     display: grid;
@@ -708,29 +708,29 @@
     cursor: default;
   }
   .kpi .k {
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-semi);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-semibold);
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
   .kpi .v {
     margin-top: var(--sp-1);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xl);
-    font-weight: var(--fw-semi);
+    font-size: var(--text-2xl);
+    font-weight: var(--font-weight-semibold);
     font-variant-numeric: tabular-nums;
   }
   .kpi .n {
     margin-top: var(--sp-1);
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
   .up {
-    color: var(--danger);
+    color: var(--destructive);
   }
   .down {
-    color: var(--accent);
+    color: var(--success);
   }
   .pp-tw {
     position: relative;
@@ -745,13 +745,13 @@
     display: none;
     min-width: 170px;
     padding: var(--sp-3) var(--sp-4);
-    border: 1px solid var(--border2);
-    border-radius: var(--r-md);
-    background: var(--surface);
+    border: 1px solid var(--input);
+    border-radius: var(--radius-md);
+    background: var(--card);
     box-shadow: var(--elev-1);
-    font-family: var(--font-ui);
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-body);
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-normal);
   }
   .pp-tw:hover .pp-tt,
   .pp-tw:focus .pp-tt {
@@ -762,14 +762,14 @@
     justify-content: space-between;
     gap: var(--sp-4);
     padding: var(--sp-2) 0;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   .kv > :first-child {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .kv > :last-child {
     font-family: var(--font-mono);
-    font-weight: var(--fw-medium);
+    font-weight: var(--font-weight-medium);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
@@ -780,8 +780,8 @@
     margin: 0 0 var(--sp-3);
     padding: 0;
     list-style: none;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
   }
   .legend li {
     display: inline-flex;
@@ -799,9 +799,9 @@
     overflow: visible;
   }
   .chart text {
-    fill: var(--muted);
+    fill: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
   }
   .fade {
     opacity: 0.18;
@@ -812,11 +812,11 @@
     display: flex;
     gap: var(--sp-3);
     padding: var(--sp-1) var(--sp-3);
-    border: 1px solid var(--border2);
-    border-radius: var(--r-md);
-    background: var(--surface);
+    border: 1px solid var(--input);
+    border-radius: var(--radius-md);
+    background: var(--card);
     box-shadow: var(--elev-1);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     white-space: nowrap;
     transform: translateX(-50%);
     pointer-events: none;
@@ -831,7 +831,7 @@
   }
   .tip b {
     font-family: var(--font-mono);
-    font-weight: var(--fw-semi);
+    font-weight: var(--font-weight-semibold);
   }
   .chart + .sub {
     margin-top: var(--sp-2);
@@ -842,19 +842,19 @@
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   th {
     padding: var(--sp-2);
-    border-bottom: 1px solid var(--border2);
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-medium);
+    border-bottom: 1px solid var(--input);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-medium);
     text-align: left;
     white-space: nowrap;
   }
   .pm th {
-    font-weight: var(--fw-semi);
+    font-weight: var(--font-weight-semibold);
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
@@ -866,11 +866,11 @@
     cursor: pointer;
   }
   th button:focus-visible {
-    outline: 2px solid var(--text);
+    outline: 2px solid var(--foreground);
     outline-offset: 2px;
   }
   th[aria-sort] {
-    color: var(--text);
+    color: var(--foreground);
   }
   td {
     padding: var(--sp-3) var(--sp-2);
@@ -881,7 +881,7 @@
     border-bottom: 0;
   }
   tbody tr:hover {
-    background: var(--surface2);
+    background: var(--muted);
   }
   th:first-child,
   td:first-child {
@@ -901,8 +901,8 @@
   .empty {
     margin: 0;
     padding: var(--sp-7) 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
     text-align: center;
   }
   .flush {
@@ -917,14 +917,14 @@
     padding: var(--sp-4) var(--sp-5);
     border: 0;
     background: none;
-    color: var(--text);
-    font-size: var(--fs-sm);
-    font-weight: var(--fw-medium);
+    color: var(--foreground);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-medium);
     text-align: left;
     cursor: pointer;
   }
   .pp-dis:hover {
-    background: var(--surface2);
+    background: var(--muted);
   }
   .inner {
     padding: var(--sp-4) var(--sp-5);
@@ -933,6 +933,6 @@
     margin-bottom: var(--sp-3);
   }
   .counted b {
-    color: var(--text);
+    color: var(--foreground);
   }
 </style>

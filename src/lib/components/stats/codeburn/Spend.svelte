@@ -3,7 +3,7 @@
   import type { SpendBranches, SpendFlow } from "../../../../types/codeburn-spend";
   import { fmtCost } from "../../../stats-derive";
   import { statsFilters } from "../../../stores/statsFilters";
-  import Select from "../../ui/Select.svelte";
+  import OptionSelect from "$lib/components/app/common/OptionSelect.svelte";
   import SpendChart from "../charts/SpendChart.svelte";
   import RankList, { type RankItem } from "../charts/RankList.svelte";
   import Sankey from "../charts/Sankey.svelte";
@@ -175,7 +175,7 @@
       <Card title="By branch" note="spend per project and branch">
         {#if d.projects.length > 1}
           <div class="pick">
-            <Select
+            <OptionSelect
               size="sm"
               aria-label="Project"
               options={d.projects.map((p) => ({ id: p.id, label: `projects/${p.label}` }))}
@@ -247,8 +247,8 @@
   }
   .note {
     margin: 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
   .note.first {
     margin-top: var(--sp-3);
@@ -256,8 +256,8 @@
   .empty {
     margin: 0;
     padding: var(--sp-7) 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
     text-align: center;
   }
 

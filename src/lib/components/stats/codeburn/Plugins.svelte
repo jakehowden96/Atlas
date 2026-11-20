@@ -1,6 +1,7 @@
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import type { Quota } from "../../../../types/codeburn-plans";
-  import EmptyState from "../../ui/EmptyState.svelte";
+  import * as Empty from "$lib/components/ui/empty/index.js";
   import Card from "./Card.svelte";
   import Loader from "./Loader.svelte";
 
@@ -13,7 +14,12 @@
     <Card title="Plugins">
       <p class="sub">No third-party plugins installed. Built-in providers:</p>
       {#if q.providers.length === 0}
-        <EmptyState icon="search" title="No providers" />
+        <Empty.Root>
+  <Empty.Header>
+    <Empty.Media variant="icon"><Icon name="search" size={20} /></Empty.Media>
+    <Empty.Title>No providers</Empty.Title>
+  </Empty.Header>
+</Empty.Root>
       {:else}
         {#each q.providers as p, i (p.id)}
           <div class="lrow">
@@ -35,8 +41,8 @@
 <style>
   .sub {
     margin: 0 0 var(--sp-3);
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
   .lrow {
     display: flex;
@@ -44,18 +50,18 @@
     gap: var(--sp-4);
     padding: var(--sp-3) 0;
     border-bottom: 1px solid var(--border);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   .lrow:last-child {
     border-bottom: 0;
   }
   .lrow:hover {
-    background: var(--surface2);
+    background: var(--muted);
   }
   .i {
     width: 22px;
     flex-shrink: 0;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
   }
   .b {
@@ -67,27 +73,27 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--fs-sm);
-    font-weight: var(--fw-semi);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-semibold);
   }
   .b span {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .pill {
     display: inline-flex;
     align-items: center;
     height: var(--h-xs);
     padding: 0 var(--sp-3);
-    border-radius: var(--r-pill);
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-    color: var(--accent);
+    border-radius: var(--radius-full);
+    background: color-mix(in srgb, var(--success) 16%, transparent);
+    color: var(--success);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-medium);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
   .pill.neutral {
-    background: var(--surface3);
-    color: var(--muted);
+    background: var(--accent);
+    color: var(--muted-foreground);
   }
 </style>

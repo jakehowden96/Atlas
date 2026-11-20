@@ -105,8 +105,8 @@
     grid-template-columns: auto 1fr;
     column-gap: var(--sp-3);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    color: var(--muted);
+    font-size: var(--text-xs);
+    color: var(--muted-foreground);
   }
   .y,
   .plot {
@@ -128,7 +128,7 @@
     border-top: 1px solid var(--border);
   }
   .grid.base {
-    border-top-color: var(--border2);
+    border-top-color: var(--input);
   }
   .empty {
     position: absolute;
@@ -136,8 +136,8 @@
     display: grid;
     place-items: center;
     margin: 0;
-    font-family: var(--font-ui);
-    color: var(--muted);
+    font-family: var(--font-sans);
+    color: var(--muted-foreground);
   }
   .bars {
     position: absolute;
@@ -158,36 +158,36 @@
     min-height: 0;
     padding: 0;
     border: 0;
-    border-radius: var(--r-xs) var(--r-xs) 0 0;
+    border-radius: var(--radius-xs) var(--radius-xs) 0 0;
     display: flex;
     flex-direction: column-reverse;
     background: transparent;
     cursor: pointer;
   }
   .bar.accent {
-    background: var(--accent);
+    background: var(--success);
   }
   .bar:focus-visible {
-    outline: var(--focus-width) solid var(--focus);
+    outline: var(--focus-width) solid var(--ring);
     outline-offset: 1px;
   }
   .seg {
     position: relative;
     flex-basis: 0;
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 40%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 40%, transparent);
   }
   .seg.opus {
     background-color: var(--model-opus);
     background-image: repeating-linear-gradient(
       45deg,
-      color-mix(in srgb, var(--text) 35%, transparent) 0 2px,
+      color-mix(in srgb, var(--foreground) 35%, transparent) 0 2px,
       transparent 2px 6px
     );
   }
   .seg.sonnet {
     background-color: var(--model-sonnet);
     background-image: radial-gradient(
-      color-mix(in srgb, var(--text) 45%, transparent) 1px,
+      color-mix(in srgb, var(--foreground) 45%, transparent) 1px,
       transparent 1.5px
     );
     background-size: 6px 6px;
@@ -197,12 +197,12 @@
     background-image:
       repeating-linear-gradient(
         0deg,
-        color-mix(in srgb, var(--text) 35%, transparent) 0 1px,
+        color-mix(in srgb, var(--foreground) 35%, transparent) 0 1px,
         transparent 1px 5px
       ),
       repeating-linear-gradient(
         90deg,
-        color-mix(in srgb, var(--text) 35%, transparent) 0 1px,
+        color-mix(in srgb, var(--foreground) 35%, transparent) 0 1px,
         transparent 1px 5px
       );
   }
@@ -212,7 +212,7 @@
     left: 50%;
     transform: translateX(-50%);
     padding-bottom: var(--sp-0);
-    color: var(--text);
+    color: var(--foreground);
     white-space: nowrap;
   }
   .name {
@@ -220,8 +220,8 @@
     left: calc(100% + var(--sp-2));
     top: 50%;
     transform: translateY(-50%);
-    font-family: var(--font-ui);
-    color: var(--text);
+    font-family: var(--font-sans);
+    color: var(--foreground);
     white-space: nowrap;
   }
   .x {
@@ -240,7 +240,7 @@
   .pinned {
     grid-column: 2;
     margin: var(--sp-2) 0 0;
-    color: var(--text);
+    color: var(--foreground);
   }
   .sr {
     position: absolute;

@@ -26,11 +26,11 @@
     tabs,
   } from "../../stores/terminal";
   import { focusedSessionId, showView } from "../../stores/view";
-  import Button from "../ui/Button.svelte";
-  import IconButton from "../ui/IconButton.svelte";
-  import Kbd from "../ui/Kbd.svelte";
-  import StatePill, { type PillState } from "../ui/StatePill.svelte";
-  import StatusMark from "../ui/StatusMark.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
+  import { Kbd } from "$lib/components/ui/kbd/index.js";
+  import StatePill, { type PillState } from "../app/common/StatePill.svelte";
+  import StatusMark from "../app/common/StatusMark.svelte";
 
   interface Props {
     tile: SessionTile;
@@ -201,14 +201,14 @@
   <div class="head">
     <div class="row1">
       <button type="button" class="label" tabindex="-1" onclick={open}>{tile.label}</button>
-      <IconButton
+      <TooltipButton
         icon="keep"
         size="sm"
         label="{pinned ? 'Unpin' : 'Pin'} session {tile.label}"
         aria-pressed={pinned}
         onclick={togglePin}
       />
-      <IconButton icon="close" size="sm" label="Close session {tile.label}" onclick={close} />
+      <TooltipButton icon="close" size="sm" label="Close session {tile.label}" onclick={close} />
     </div>
     <div class="row2">
       <StatePill state={PILL[tile.state]} />
@@ -292,8 +292,8 @@
         >{#if live.pendingTool.inputSummary}
           · {live.pendingTool.inputSummary}{/if}
       </span>
-      <Button size="sm" variant="secondary" onclick={deny}>Deny <Kbd>n</Kbd></Button>
-      <Button size="sm" variant="primary" onclick={allow}>Allow <Kbd onInk>y</Kbd></Button>
+      <Button size="sm" variant="outline" onclick={deny}>Deny <Kbd>n</Kbd></Button>
+      <Button size="sm" variant="default" onclick={allow}>Allow <Kbd>y</Kbd></Button>
     </div>
   {:else if question}
     <div class="ask">
@@ -323,15 +323,15 @@
     flex-direction: column;
     min-height: 0;
     overflow: hidden;
-    border-radius: var(--r-card-lg);
-    background: var(--surface);
+    border-radius: var(--radius-xl);
+    background: var(--card);
     box-shadow: 0 0 0 1px var(--border);
     text-align: left;
     cursor: pointer;
   }
 
   .tile:hover {
-    box-shadow: 0 0 0 1px var(--border2);
+    box-shadow: 0 0 0 1px var(--input);
   }
 
   /* Needs-you draws no ring: the amber action bar (`.ask`) carries it, so the
@@ -341,7 +341,7 @@
      pseudo-class alone is not enough). Inset: the card clips its overflow. */
   .tile:focus-visible,
   .tile.focus-ring {
-    outline: var(--focus-width) solid var(--focus);
+    outline: var(--focus-width) solid var(--ring);
     outline-offset: -2px;
   }
 
@@ -370,9 +370,9 @@
     padding: 0;
     border: none;
     background: none;
-    color: var(--text);
+    color: var(--foreground);
     font: inherit;
-    font-size: var(--fs-md);
+    font-size: var(--text-md);
     font-weight: 600;
     text-align: left;
     text-overflow: ellipsis;
@@ -386,15 +386,15 @@
     flex-shrink: 0;
     gap: var(--sp-2);
     max-width: 40%;
-    color: var(--text);
-    font-size: var(--fs-xs);
+    color: var(--foreground);
+    font-size: var(--text-caption);
   }
 
   .swatch {
     flex-shrink: 0;
     width: 8px;
     height: 8px;
-    border-radius: var(--r-xs);
+    border-radius: var(--radius-xs);
   }
 
   .ws-name {
@@ -408,19 +408,19 @@
     flex-shrink: 0;
     gap: 10px;
     margin-left: auto;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     font-variant-numeric: tabular-nums;
   }
 
   .ticket {
-    color: var(--text);
+    color: var(--foreground);
   }
 
   /* A pin is state, not just an action — it stays lit once set. */
   .row1 :global([aria-pressed="true"]) {
-    color: var(--accent);
+    color: var(--success);
   }
 
   /* ── Card body ───────────────────────────────────────────────────────── */
@@ -436,15 +436,15 @@
     min-height: 0;
     overflow: hidden;
     padding: 20px 14px 14px;
-    font-size: var(--fs-sm);
-    mask-image: linear-gradient(to bottom, transparent, var(--text) 20px);
+    font-size: var(--text-sm);
+    mask-image: linear-gradient(to bottom, transparent, var(--foreground) 20px);
   }
 
   .kept-prompts {
     display: grid;
     gap: 3px;
     padding: 12px 14px 0;
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
   }
 
   /* Clamped rows would otherwise shrink to nothing under the column's squeeze. */
@@ -463,18 +463,18 @@
   }
 
   .lbl {
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-semi);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-semibold);
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   .you {
-    background: var(--surface2);
-    border-radius: var(--r-md);
+    background: var(--muted);
+    border-radius: var(--radius-md);
     padding: 8px 10px;
-    color: var(--text);
+    color: var(--foreground);
   }
 
   /* The clamp sits on the inner span: clamped on the padded box itself, the
@@ -495,13 +495,13 @@
     line-clamp: 3;
     overflow: hidden;
     overflow-wrap: anywhere;
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   .reply.latest {
     -webkit-line-clamp: 6;
     line-clamp: 6;
-    color: var(--text);
+    color: var(--foreground);
   }
 
   .step {
@@ -509,9 +509,9 @@
     gap: 8px;
     min-width: 0;
     padding-left: 8px;
-    border-left: 2px solid var(--border2);
+    border-left: 2px solid var(--input);
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     white-space: nowrap;
   }
 
@@ -523,14 +523,14 @@
   .step-arg {
     min-width: 0;
     overflow: hidden;
-    color: var(--muted);
+    color: var(--muted-foreground);
     text-overflow: ellipsis;
   }
 
   .step.alert {
     overflow: hidden;
-    border-left-color: var(--danger);
-    color: var(--danger);
+    border-left-color: var(--destructive);
+    color: var(--destructive);
     text-overflow: ellipsis;
   }
 
@@ -541,7 +541,7 @@
     gap: 4px;
     padding: 8px 14px;
     border-top: 1px solid var(--border);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
 
   .agent {
@@ -557,7 +557,7 @@
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--accent);
+    background: var(--success);
     animation: agentPulse 1.6s ease-in-out infinite;
   }
 
@@ -571,14 +571,14 @@
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    color: var(--text);
+    color: var(--foreground);
     text-overflow: ellipsis;
   }
 
   .agent-meta,
   .agent-more {
     flex-shrink: 0;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
@@ -590,16 +590,16 @@
     align-content: center;
     gap: 4px;
     text-align: center;
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   .empty strong {
-    color: var(--text);
-    font-weight: var(--fw-medium);
+    color: var(--foreground);
+    font-weight: var(--font-weight-medium);
   }
 
   /* ── Callout ─────────────────────────────────────────────────────────── */
-  /* Solid full-width action bar. `--surface` is the ink: dark on the dark
+  /* Solid full-width action bar. `--card` is the ink: dark on the dark
      theme's amber, white on the light theme's. */
   .ask {
     display: flex;
@@ -607,9 +607,9 @@
     flex-shrink: 0;
     gap: 10px;
     padding: 8px 14px;
-    background: var(--warn);
-    color: var(--surface);
-    font-size: var(--fs-sm);
+    background: var(--warning);
+    color: var(--card);
+    font-size: var(--text-sm);
     font-weight: 600;
   }
 
@@ -618,14 +618,14 @@
     align-items: center;
     flex-shrink: 0;
     gap: var(--sp-2);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
 
   .wants {
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -643,8 +643,8 @@
     min-width: 0;
     padding: 0 14px 10px;
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-    color: var(--text);
+    font-size: var(--text-caption);
+    color: var(--foreground);
   }
 
   .now span {
@@ -654,16 +654,16 @@
   }
 
   .now.done {
-    color: var(--muted);
-    font-family: var(--font-ui);
+    color: var(--muted-foreground);
+    font-family: var(--font-sans);
   }
 
   .spin {
     flex-shrink: 0;
     width: 10px;
     height: 10px;
-    border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
-    border-top-color: var(--accent);
+    border: 2px solid color-mix(in srgb, var(--success) 25%, transparent);
+    border-top-color: var(--success);
     border-radius: 50%;
     animation: tileSpin 0.9s linear infinite;
   }

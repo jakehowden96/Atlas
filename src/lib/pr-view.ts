@@ -1,6 +1,6 @@
 /** Pure helpers behind the Pull requests screen: sort, search, summaries, checks. */
 import type { Check } from "../types/generated/Check";
-import type { MarkState } from "./components/ui/StatusMark.svelte";
+import type { MarkState } from "./components/app/common/StatusMark.svelte";
 import { needsMyReview, type Pr } from "./stores/prs";
 
 export type PrSort = "updated" | "created" | "repo" | "ci" | "review";

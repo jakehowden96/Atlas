@@ -62,9 +62,9 @@
     border: 0;
     border-bottom: 1px solid var(--border);
     background: none;
-    color: var(--text);
+    color: var(--foreground);
     font: inherit;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     text-align: left;
   }
   .lrow:last-child {
@@ -73,18 +73,18 @@
   div.lrow:hover,
   button.lrow:hover,
   .on {
-    background: var(--surface2);
+    background: var(--muted);
   }
   button.lrow {
     cursor: pointer;
   }
   .on .b b {
-    color: var(--accent);
+    color: var(--success);
   }
   .i {
     flex-shrink: 0;
     width: 22px;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
   }
   .b {
@@ -94,30 +94,30 @@
   .b b {
     display: block;
     overflow: hidden;
-    font-size: var(--fs-sm);
-    font-weight: var(--fw-semi);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-semibold);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .b span {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
   .v {
     font-family: var(--font-mono);
-    font-size: var(--fs-sm);
-    font-weight: var(--fw-medium);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
   .chev {
     margin-left: var(--sp-3);
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-style: normal;
   }
   .empty {
     margin: 0;
     padding: var(--sp-7) 0;
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
     text-align: center;
   }
 </style>

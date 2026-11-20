@@ -37,14 +37,14 @@
   } from "../../stores/files";
   import { openFiles } from "../../stores/file-tabs";
   import { fileRailOpen, openDialogOpen, openNewSession } from "../../stores/view";
-  import Banner from "../ui/Banner.svelte";
-  import Button from "../ui/Button.svelte";
-  import EmptyState from "../ui/EmptyState.svelte";
-  import Icon from "../ui/Icon.svelte";
-  import IconButton from "../ui/IconButton.svelte";
-  import Kbd from "../ui/Kbd.svelte";
-  import Tabs from "../ui/Tabs.svelte";
-  import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import * as Empty from "$lib/components/ui/empty/index.js";
+  import Icon from "../ui/icon/icon.svelte";
+  import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
+  import { Kbd } from "$lib/components/ui/kbd/index.js";
+  import Tabs from "../app/common/TabStrip.svelte";
+  import Segmented, { type Segment } from "$lib/components/app/common/Segmented.svelte";
   import CodeEditor from "./CodeEditor.svelte";
 
   let key = $derived($activeFile);
@@ -185,11 +185,13 @@
 
 <div class="editor">
   {#if $openFiles.length === 0}
-    <EmptyState icon="description" title="No file open">
-      {#snippet action()}
-        <Button onclick={() => openDialogOpen.set(true)}>Open a file…</Button>
-      {/snippet}
-    </EmptyState>
+    <Empty.Root>
+  <Empty.Header>
+    <Empty.Media variant="icon"><Icon name="description" size={20} /></Empty.Media>
+    <Empty.Title>No file open</Empty.Title>
+  </Empty.Header>
+  <Empty.Content><Button variant="outline" onclick={() => openDialogOpen.set(true)}>Open a file…</Button></Empty.Content>
+</Empty.Root>
   {:else}
     <div class="tabs">
       <Tabs
@@ -213,7 +215,7 @@
 
       <div class="spacer"></div>
 
-      <SegmentedControl
+      <Segmented
         options={modeOptions}
         value={mode}
         size="sm"
@@ -221,26 +223,26 @@
         label="View mode"
         onChange={(id) => fileMode.set(id as "source" | "split" | "preview")}
       />
-      <IconButton
+      <TooltipButton
         size="sm"
         icon="folder"
         label="Reveal in file manager"
         onclick={() => void revealInFileManager(absolutePath(file.source, file.path))}
       />
-      <Button size="sm" onclick={askClaude}>
-        {#snippet leading()}<Icon name="terminal" />{/snippet}
+      <Button variant="outline" size="sm" onclick={askClaude}>
+        <Icon name="terminal" />
         Ask Claude
       </Button>
       <Button
         size="sm"
-        variant={dirty ? "primary" : "secondary"}
+        variant={dirty ? "default" : "outline"}
         disabled={!dirty}
         onclick={() => void saveActiveFile()}
       >
         Save
-        {#snippet trailing()}<Kbd onInk={dirty}>{$chords.saveFile}</Kbd>{/snippet}
+        <Kbd>{$chords.saveFile}</Kbd>
       </Button>
-      <IconButton
+      <TooltipButton
         size="sm"
         icon={$fileRailOpen ? "right_panel_close" : "right_panel_open"}
         label="Toggle the file rail"
@@ -250,15 +252,12 @@
     </div>
 
     {#if conflicted}
-      <Banner
-        tone="warn"
-        title="This file changed on disk (or was removed) while you had unsaved edits"
-      >
-        {#snippet actions()}
-          <Button size="sm" onclick={() => keepMine(key)}>Keep mine</Button>
-          <Button size="sm" onclick={() => void reloadFromDisk(key)}>Reload from disk</Button>
-        {/snippet}
-      </Banner>
+      <Alert.Root variant="warning">
+<Icon name="warning" />
+<Alert.Title>This file changed on disk (or was removed) while you had unsaved edits</Alert.Title>
+<Alert.Action><Button variant="outline" size="sm" onclick={() => keepMine(key)}>Keep mine</Button>
+          <Button variant="outline" size="sm" onclick={() => void reloadFromDisk(key)}>Reload from disk</Button></Alert.Action>
+</Alert.Root>
     {/if}
 
     <div class="body">
@@ -300,12 +299,12 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    background: var(--surface);
+    background: var(--card);
   }
 
   .tabs {
     flex-shrink: 0;
-    background: var(--bg);
+    background: var(--background);
     border-bottom: 1px solid var(--border);
   }
 
@@ -327,26 +326,26 @@
     min-width: 0;
     overflow: hidden;
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     white-space: nowrap;
   }
 
   .crumb,
   .sep {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   .crumb.leaf {
-    color: var(--text);
+    color: var(--foreground);
   }
 
   .pill {
     flex-shrink: 0;
     padding: 1px var(--sp-3);
-    border-radius: var(--r-pill);
-    background: var(--surface2);
-    color: var(--warn);
-    font-size: var(--fs-2xs);
+    border-radius: var(--radius-full);
+    background: var(--muted);
+    color: var(--warning);
+    font-size: var(--text-xs);
     font-weight: 600;
   }
 
@@ -374,9 +373,9 @@
 
   .page {
     max-width: 640px;
-    color: var(--text);
-    font-family: var(--font-ui);
-    font-size: var(--fs-md);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-md);
     line-height: 1.65;
   }
 
@@ -387,8 +386,8 @@
     height: var(--h-md);
     padding: 0 12px;
     border-top: 1px solid var(--border);
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
 
   /* ── Rendered markdown ─────────────────────────────────────────────────── */
@@ -396,19 +395,19 @@
     margin: 0 0 12px;
     padding-bottom: 8px;
     border-bottom: 1px solid var(--border);
-    font-size: var(--fs-2xl);
+    font-size: var(--text-2xl);
     font-weight: 600;
   }
 
   .page :global(h2) {
     margin: 24px 0 8px;
-    font-size: var(--fs-xl);
+    font-size: var(--text-xl);
     font-weight: 600;
   }
 
   .page :global(h3) {
     margin: 20px 0 6px;
-    font-size: var(--fs-md);
+    font-size: var(--text-md);
     font-weight: 600;
   }
 
@@ -433,34 +432,34 @@
 
   .page :global(li.task input) {
     margin-right: 6px;
-    accent-color: var(--accent);
+    accent-color: var(--success);
   }
 
   .page :global(li.task.done) {
-    color: var(--muted);
+    color: var(--muted-foreground);
     text-decoration: line-through;
   }
 
   .page :global(blockquote) {
     margin: 0 0 12px;
     padding-left: 12px;
-    border-left: 2px solid var(--accent);
-    color: var(--muted);
+    border-left: 2px solid var(--success);
+    color: var(--muted-foreground);
   }
 
   .page :global(.md-code) {
     padding: 1px 5px;
-    border-radius: var(--r-xs);
-    background: var(--surface2);
+    border-radius: var(--radius-xs);
+    background: var(--muted);
     font-family: var(--font-mono);
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
   }
 
   .page :global(.md-pre) {
     margin: 0 0 12px;
     padding: 12px 14px;
     border: 1px solid var(--border);
-    border-radius: var(--r-card);
+    border-radius: var(--radius-lg);
     background: var(--term-bg);
     overflow-x: auto;
   }
@@ -468,18 +467,18 @@
   .page :global(.md-pre code) {
     color: var(--term-text);
     font-family: var(--font-mono);
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
     line-height: 1.6;
   }
 
   .page :global(.md-link),
   .page :global(.wikilink) {
-    color: var(--accent);
+    color: var(--success);
     cursor: pointer;
   }
 
   .page :global(.wikilink.broken) {
-    color: var(--muted);
+    color: var(--muted-foreground);
     cursor: default;
   }
 </style>

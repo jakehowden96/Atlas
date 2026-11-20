@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import { onMount, onDestroy } from "svelte";
   import {
     closeSessionForTab,
@@ -7,9 +8,9 @@
   } from "../../session-actions";
   import { TerminalSession } from "../../terminal-session";
   import { copyText } from "../../ui/copy";
-  import Banner from "../ui/Banner.svelte";
-  import Button from "../ui/Button.svelte";
-  import Spinner from "../ui/Spinner.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import { Spinner } from "$lib/components/ui/spinner/index.js";
   import "@xterm/xterm/css/xterm.css";
 
   interface Props {
@@ -70,18 +71,18 @@
 
 {#if spawnError}
   <div class="loading-overlay">
-    <Banner tone="error" title="Could not start the terminal">
-      <span class="error-detail">{spawnError}</span>
-      {#snippet actions()}
-        <Button onclick={() => void copyText(spawnError)}>Copy details</Button>
-        <Button onclick={() => void retrySessionForTab(tabId)}>Retry</Button>
-        <Button onclick={() => void closeSessionForTab(tabId)}>Close session</Button>
-      {/snippet}
-    </Banner>
+    <Alert.Root variant="destructive">
+<Icon name="error" />
+<Alert.Title>Could not start the terminal</Alert.Title>
+<Alert.Description><span class="error-detail">{spawnError}</span></Alert.Description>
+<Alert.Action><Button variant="outline" onclick={() => void copyText(spawnError)}>Copy details</Button>
+        <Button variant="outline" onclick={() => void retrySessionForTab(tabId)}>Retry</Button>
+        <Button variant="outline" onclick={() => void closeSessionForTab(tabId)}>Close session</Button></Alert.Action>
+</Alert.Root>
   </div>
 {:else if !ready}
   <div class="loading-overlay">
-    <Spinner label={`Starting ${harnessLabel}`} />
+    <span class="inline-flex items-center gap-2 text-caption text-muted-foreground" role="status"><Spinner />{`Starting ${harnessLabel}`}</span>
   </div>
 {/if}
 <div class="terminal-container" bind:this={containerEl}></div>

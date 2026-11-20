@@ -5,11 +5,11 @@
   import { prRepos, prsForTicket } from "../../../stores/prs";
   import { openSettings } from "../../../stores/settings";
   import { retry, tickets, unlinkTicket } from "../../../stores/tickets";
-  import Button from "../../ui/Button.svelte";
-  import ConnectorLogo from "../../ui/ConnectorLogo.svelte";
-  import IconButton from "../../ui/IconButton.svelte";
-  import MenuButton from "../../ui/MenuButton.svelte";
-  import Spinner from "../../ui/Spinner.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import ConnectorLogo from "../../app/connectors/ConnectorLogo.svelte";
+  import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
+  import MenuButton from "../../app/common/MenuButton.svelte";
+  import { Spinner } from "$lib/components/ui/spinner/index.js";
   import TicketEditor from "./TicketEditor.svelte";
 
   let {
@@ -77,7 +77,7 @@
   <div class="bar">
     <span class="branch">{branchLine}</span>
     {#if compact}
-      <IconButton
+      <TooltipButton
         icon="confirmation_number"
         data-trigger
         label={noService ? `Connect ${providerName} to link tickets` : "Link ticket"}
@@ -125,11 +125,11 @@
           </div>
         {/if}
       {:else if st.kind === "loading"}
-        <Spinner label="Loading ticket" />
+        <span class="inline-flex items-center gap-2 text-caption text-muted-foreground" role="status"><Spinner />Loading ticket</span>
       {:else if entry?.link}
         <div class="head"><span class="id">{entry.link.id}</span></div>
         <div class="none">Couldn't load this ticket</div>
-        <Button size="sm" onclick={() => void retry(sessionId)}>Retry</Button>
+        <Button variant="outline" size="sm" onclick={() => void retry(sessionId)}>Retry</Button>
       {/if}
     </div>
   {/if}
@@ -142,7 +142,7 @@
     gap: 8px;
     min-height: 134px;
     padding: 16px 16px 14px;
-    background: var(--surface2);
+    background: var(--muted);
   }
   .bar {
     display: flex;
@@ -158,7 +158,7 @@
     text-overflow: ellipsis;
   }
   .ticket.stale {
-    box-shadow: inset 0 0 0 1px var(--warn);
+    box-shadow: inset 0 0 0 1px var(--warning);
   }
   .head {
     display: flex;
@@ -167,7 +167,7 @@
   }
   .id {
     font-family: var(--font-mono);
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
     font-weight: 600;
   }
   .menu {
@@ -179,7 +179,7 @@
     margin: 0;
     padding: 0;
     list-style: none;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
   .prs li {
     display: flex;
@@ -188,25 +188,25 @@
   }
   .pr-title {
     overflow: hidden;
-    color: var(--muted);
+    color: var(--muted-foreground);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .chip {
     padding: 0 8px;
-    border: 1px solid var(--muted);
-    border-radius: var(--r-pill);
-    color: var(--muted);
-    font-size: var(--fs-xs);
+    border: 1px solid var(--muted-foreground);
+    border-radius: var(--radius-full);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
   }
   .chip.inProgress,
   .chip.done {
-    border-color: var(--accent);
-    color: var(--accent);
+    border-color: var(--success);
+    color: var(--success);
   }
   .chip.inReview {
-    border-color: var(--warn);
-    color: var(--warn);
+    border-color: var(--warning);
+    color: var(--warning);
   }
   .title {
     display: -webkit-box;
@@ -214,7 +214,7 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
     line-clamp: 3;
-    font-size: var(--fs-lg);
+    font-size: var(--text-lg);
     font-weight: 600;
     overflow-wrap: anywhere;
   }
@@ -223,13 +223,13 @@
   }
   .note,
   .none {
-    color: var(--muted);
-    font-size: var(--fs-sm);
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
   }
   .branch {
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
     white-space: nowrap;
   }
 </style>

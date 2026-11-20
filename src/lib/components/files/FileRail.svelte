@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   /**
    * The Files screen's right-hand rail: the active document's outline, its
    * properties, the sessions editing it and the files it links to.
@@ -29,10 +30,10 @@
   import { liveTiles } from "../../stores/liveTiles";
   import { sessionTouchedFiles } from "../../stores/panel";
   import { fileRailOpen, focusedSessionId, showView } from "../../stores/view";
-  import { closeWith } from "../ui/Modal.svelte";
-  import EmptyState from "../ui/EmptyState.svelte";
-  import Tooltip from "../ui/Tooltip.svelte";
-  import StatePill, { type PillState } from "../ui/StatePill.svelte";
+  import { closeWith } from "../../ui/delay";
+  import * as Empty from "$lib/components/ui/empty/index.js";
+  import * as Tooltip from "$lib/components/ui/tooltip/index.js";
+  import StatePill, { type PillState } from "../app/common/StatePill.svelte";
 
   const EXIT_MS = 200;
   const encoder = new TextEncoder();
@@ -141,7 +142,7 @@
           {heading.text}
         </button>
       {:else}
-        <EmptyState compact icon="article" title="No headings" />
+        <Empty.Root size="compact"><Empty.Media><Icon name="article" /></Empty.Media><Empty.Title>No headings</Empty.Title></Empty.Root>
       {/each}
     </section>
 
@@ -171,7 +172,7 @@
           </span>
         </button>
       {:else}
-        <EmptyState compact icon="terminal" title="No session has this file open" />
+        <Empty.Root size="compact"><Empty.Media><Icon name="terminal" /></Empty.Media><Empty.Title>No session has this file open</Empty.Title></Empty.Root>
       {/each}
     </section>
 
@@ -179,8 +180,7 @@
       <h3 class="label">Links</h3>
       {#each links as link (link.target)}
         {#if link.rel}
-          <Tooltip text={link.rel} side="left">
-            <a
+          <Tooltip.Root><Tooltip.Trigger>{#snippet child({ props })}<a {...props}
               class="row link"
               href="#{link.rel}"
               onclick={(e) => {
@@ -189,13 +189,12 @@
               }}
             >
               {link.target}
-            </a>
-          </Tooltip>
+            </a>{/snippet}</Tooltip.Trigger><Tooltip.Content side="left">{link.rel}</Tooltip.Content></Tooltip.Root>
         {:else}
           <span class="row broken">{link.target}</span>
         {/if}
       {:else}
-        <EmptyState compact icon="link_off" title="No links" />
+        <Empty.Root size="compact"><Empty.Media><Icon name="link_off" /></Empty.Media><Empty.Title>No links</Empty.Title></Empty.Root>
       {/each}
     </section>
   </aside>
@@ -211,7 +210,7 @@
     padding: 16px 8px;
     overflow-y: auto;
     border-left: 1px solid var(--border);
-    background: var(--bg);
+    background: var(--background);
     animation: atlasSlideIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
@@ -226,8 +225,8 @@
 
   .label {
     margin: 0 0 4px 8px;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -241,9 +240,9 @@
     display: block;
     width: 100%;
     padding: 4px 8px;
-    border-radius: var(--r-sm);
-    color: var(--text);
-    font-size: var(--fs-sm);
+    border-radius: var(--radius-sm);
+    color: var(--foreground);
+    font-size: var(--text-sm);
     overflow: hidden;
     text-align: left;
     text-overflow: ellipsis;
@@ -257,16 +256,16 @@
 
   .heading-row:hover,
   .link:hover {
-    background: var(--surface2);
+    background: var(--muted);
   }
 
   .link {
-    color: var(--accent);
+    color: var(--success);
     text-decoration: none;
   }
 
   .broken {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   /* ── Properties ────────────────────────────────────────────────────────── */
@@ -276,17 +275,17 @@
     gap: 4px 10px;
     margin: 0;
     padding: 0 8px;
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
 
   .props dt {
-    color: var(--muted);
+    color: var(--muted-foreground);
   }
 
   .props dd {
     margin: 0;
     overflow: hidden;
-    color: var(--text);
+    color: var(--foreground);
     font-family: var(--font-mono);
     text-align: right;
     text-overflow: ellipsis;
@@ -294,7 +293,7 @@
   }
 
   .props dd.warn {
-    color: var(--warn);
+    color: var(--warning);
   }
 
   /* ── Touched by ────────────────────────────────────────────────────────── */
@@ -306,14 +305,14 @@
     margin-bottom: 6px;
     padding: 8px 10px;
     border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    background: var(--surface);
+    border-radius: var(--radius-lg);
+    background: var(--card);
     text-align: left;
     cursor: pointer;
   }
 
   .card:hover {
-    border-color: var(--border2);
+    border-color: var(--input);
   }
 
   .card-head {
@@ -326,8 +325,8 @@
   .card-name {
     min-width: 0;
     overflow: hidden;
-    color: var(--text);
-    font-size: var(--fs-sm);
+    color: var(--foreground);
+    font-size: var(--text-sm);
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -335,15 +334,15 @@
 
   .delta {
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--text-xs);
   }
 
   .added {
-    color: var(--accent);
+    color: var(--success);
   }
 
   .removed {
     margin-left: 6px;
-    color: var(--danger);
+    color: var(--destructive);
   }
 </style>

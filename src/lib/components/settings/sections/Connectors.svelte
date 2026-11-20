@@ -8,7 +8,7 @@
     signIn,
     signingIn,
   } from "../../../stores/connectors";
-  import { confirmAction } from "../../ui/ConfirmDialog.svelte";
+  import { confirmAction } from "../../app/common/ConfirmDialog.svelte";
   import BrowserSignInDialog from "./connectors/BrowserSignInDialog.svelte";
   import ConnectorRow from "./connectors/ConnectorRow.svelte";
   import DeviceCodeDialog from "./connectors/DeviceCodeDialog.svelte";

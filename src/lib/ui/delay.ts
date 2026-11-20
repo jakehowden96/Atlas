@@ -15,3 +15,12 @@ export function delayedFlag(onChange: (visible: boolean) => void, ms = LOADING_D
     },
   };
 }
+
+/**
+ * Delay a state change so an exit animation can finish before unmount: flip
+ * the closing flag, paint the exit keyframes, and only then clear the state
+ * that unmounts the node. Clearing it immediately makes the exit frame flicker.
+ */
+export function closeWith(after: () => void, ms = 200): ReturnType<typeof setTimeout> {
+  return setTimeout(after, ms);
+}

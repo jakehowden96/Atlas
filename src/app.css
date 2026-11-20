@@ -1,121 +1,138 @@
+@import "tailwindcss";
+@import "tw-animate-css";
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
 
+/* Dark is opt-in through either `data-theme="dark"` (Atlas) or `.dark` (shadcn).
+   System dark (no data-theme) is handled by the media block below, and the
+   `dark:` variant follows it too. */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *, .dark, .dark *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
+
 /* ── Design tokens ─────────────────────────────────────────────────────────
-   Mission Control palette. Light is the base on bare `:root`; dark is layered
-   twice so a manual choice wins in either direction:
+   shadcn-svelte variable names, Atlas values. Light is the base on bare
+   `:root`; dark is layered twice so a manual choice wins in either direction:
      - `:root[data-theme="dark"]`                → explicit dark
      - `@media (prefers-color-scheme: dark)`     → system dark, unless the user
        has explicitly picked light (`:not([data-theme="light"])`)
    Both dark selectors carry the same specificity, so the media block must stay
    last for the explicit-light escape hatch to win.
 
-   `src/lib/theme.ts` mirrors --term-bg / --term-text / --accent as plain hex
+   Contrast floors (enforced by `__tests__/theme.test.ts`): --foreground and
+   --muted-foreground hold 7:1 on every ground; --success, --warning and
+   --destructive hold 4.5:1 as text on --accent.
+
+   `src/lib/theme.ts` mirrors --term-bg / --term-text / --success as plain hex
    for xterm.js, which takes a static theme object and cannot read CSS vars.
    Keep the two in sync.
    ------------------------------------------------------------------------ */
 :root {
   color-scheme: light;
 
-  --bg: #f5f5f7;
-  --surface: #ffffff;
-  --surface2: #f0f0f3;
-  --surface3: #e5e5ea;
-  --border: rgba(0, 0, 0, 0.08);
-  --border2: rgba(0, 0, 0, 0.14);
-  --text: #17181b;
-  /* Body ink is held to 7:1 (WCAG AAA), not 4.5. This is the token behind
-     every secondary label in the app — the status line, tile metadata, tree
-     rows, footers — so it was the whole of the "text is thin and doesn't
-     stand out" report. Scaled proportionally, one factor across all three
-     channels so the hue holds, until the worst surface (--surface3) clears 7. */
-  --muted: #474a50;
-  /* Round 1 darkened the terminal ink for light and left these, its chrome
-     twins, at the dark theme's values: as text on --surface3 they measured
-     accent 3.16, warn 2.18, danger 3.70. All three are text far more often
-     than they are fills (--accent 25 times, --danger 18, --warn 6), and
-     --accent-ink sits on --accent as button text, which was 3.16 itself.
-     Scaled proportionally — every channel by one factor, so the hue holds —
-     until the worst surface clears 4.5. */
-  --accent: #217457;
-  --accent-ink: #ffffff;
-  --warn: #846122;
-  --danger: #b1403a;
-  --ink: #17181b;
-  --ink-text: #ffffff;
-  --term-bg: #fafafb;
-  --term-text: #2b2e35;
-  /* Row-block tints for the classified terminal transcript. xterm's
-     decoration API only takes `#RRGGBB`, so `theme.ts` mirrors these. The
-     tool tint is a neutral surface tone — the block is distinguished by a
-     left rule, not by hue. */
-  --term-tint-user: #f0f0f3;
-  --term-tint-tool: #eaeaee;
-  /* Transcript line roles. Their surface is --term-bg — SessionTile's preview
-     pane and the session terminal — not --surface3, so 4.5:1 is measured
-     against that. --t-tool is the muted role inside the terminal, so it *is*
-     --muted in both themes now; it had been left at the value --muted was
-     raised off, which made the same role two colours depending on which pane
-     it was in. --t-step and --t-warn were scaled for light in round 1 and are
-     unchanged. */
-  --t-user: #17181b;
-  --t-step: #207956;
-  --t-tool: #474a50;
-  --t-warn: #906415;
-  --overlay: rgba(23, 24, 27, 0.35);
-  --shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+  --radius: 8px;
 
-  /* Model colors — fixed in both themes */
+  --background: #f5f5f7;
+  --foreground: #17181b;
+  --card: #ffffff;
+  --card-foreground: #17181b;
+  --popover: #ffffff;
+  --popover-foreground: #17181b;
+  --primary: #17181b;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f0f3;
+  --secondary-foreground: #17181b;
+  --muted: #f0f0f3;
+  --muted-foreground: #474a50;
+  --accent: #e5e5ea;
+  --accent-foreground: #17181b;
+  --destructive: #b1403a;
+  --destructive-foreground: #ffffff;
+  --border: rgba(0, 0, 0, 0.08);
+  --input: rgba(0, 0, 0, 0.14);
+  --ring: #17181b;
+
+  /* Atlas additions in the same pair pattern */
+  --success: #217457; /* running, healthy, linked */
+  --success-foreground: #ffffff;
+  --warning: #846122; /* needs you, attention, expiring */
+  --warning-foreground: #ffffff;
+
+  /* Charts: series colours */
+  --chart-1: #4aa3df; /* Sonnet */
+  --chart-2: #8b7cf6; /* Opus */
+  --chart-3: #e089b8; /* Haiku */
+  --chart-4: #217457; /* activity heatmap ramp */
+  --chart-5: #474a50;
+
+  /* Sidebar roles: Files tree pane, Settings nav */
+  --sidebar: #f0f0f3;
+  --sidebar-foreground: #17181b;
+  --sidebar-primary: #17181b;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e5e5ea;
+  --sidebar-accent-foreground: #17181b;
+  --sidebar-border: rgba(0, 0, 0, 0.08);
+  --sidebar-ring: #17181b;
+
+  /* Model colours: fixed in both themes */
   --model-opus: #8b7cf6;
   --model-sonnet: #4aa3df;
   --model-haiku: #e089b8;
 
-  /* Radii — small chips, controls, cards, modals */
-  --r-xs: 3px;
-  --r-sm: 4px;
-  --r-md: 6px;
-  --r-lg: 7px;
-  --r-card: 8px;
-  --r-card-lg: 10px;
-  --r-modal: 12px;
+  /* Terminal and transcript. Row-block tints: xterm's decoration API only
+     takes `#RRGGBB`, so `theme.ts` mirrors them. --t-tool is --muted-foreground. */
+  --term-bg: #fafafb;
+  --term-text: #2b2e35;
+  --term-tint-user: #f0f0f3;
+  --term-tint-tool: #eaeaee;
+  --t-user: #17181b;
+  --t-step: #207956;
+  --t-tool: #474a50;
+  --t-warn: #906415;
 
-  /* Type — @fontsource-variable ships the families as "* Variable" */
-  --font-ui: "Geist Variable", Geist, system-ui, sans-serif;
+  /* Elevation: 0 = flat card outline, 1 = menu/popover/tooltip, 2 = dialog/sheet/toast */
+  --overlay: rgba(23, 24, 27, 0.35);
+  --elev-0: 0 0 0 1px var(--border);
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 16px rgba(0, 0, 0, 0.08);
+  --elev-2: 0 12px 32px rgba(0, 0, 0, 0.12);
+
+  /* Default-button hover */
+  --primary-hover: color-mix(in srgb, var(--primary) 88%, var(--background));
+
+  /* Type. 12px is the floor: nothing in the app renders smaller
+     (`__tests__/typography.test.ts`). 450 for body: Geist reads thin at 400. */
+  --font-sans: "Geist Variable", Geist, system-ui, sans-serif;
   --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
+  --text-xs: 12px;
+  --text-caption: 13px;
+  --text-sm: 14px;
+  --text-md: 15px;
+  --text-lg: 16px;
+  --text-xl: 19px;
+  --text-2xl: 24px;
+  --font-weight-normal: 450;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
 
-  /* Type scale.
+  /* Radius: sm 4 · md 6 · lg 8 · xl 12 */
+  --radius-xs: 3px;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-full: 9999px;
 
-     The review said the text is thin and does not stand out, in both themes,
-     and separately named the Sessions tab label and the "N running · N needs
-     you" status line as hard to read. Ninety-seven of the app's font-size
-     declarations were under 12px, twenty-one of them at 10px, and there were
-     sixteen distinct sizes in half-pixel steps with no scale behind them.
-
-     12px is the floor: nothing in the app renders smaller. The steps are
-     close together at the bottom because this is a dense screen, and open up
-     for the display numbers. Anything not on the scale is a bug in the
-     stylesheet that declares it — `__tests__/typography.test.ts` says so. */
-  --fs-2xs: 12px;
-  --fs-xs: 13px;
-  --fs-sm: 14px;
-  --fs-md: 15px;
-  --fs-lg: 16px;
-  --fs-xl: 19px;
-  --fs-2xl: 24px;
-
-  /* Weight. 450 rather than 400 for body: Geist is a variable face, and at
-     400 on these backgrounds it is exactly the "thin" the review reported. */
-  --fw-body: 450;
-  --fw-medium: 500;
-  --fw-semi: 600;
-  --fw-bold: 700;
-
-  /* ── Additions from the 2026-11 polish pass (docs/design-handoff/tokens).
-     Nothing above is renamed. Theme-independent, so they resolve under light,
-     explicit dark and system dark; only --elev-1 differs, and is re-set in the
-     two dark blocks below. */
-
-  /* Spacing — 4px base with a 2px and 6px step for dense rows */
+  /* Spacing and control heights for scoped styles; Tailwind's 4px scale
+     (h-5 20 · h-6 24 · h-7 28 · h-8 32 · h-10 40 · h-11 44) is the same grid. */
   --sp-0: 2px;
   --sp-1: 4px;
   --sp-2: 6px;
@@ -126,27 +143,15 @@
   --sp-7: 24px;
   --sp-8: 32px;
   --sp-9: 48px;
+  --h-2xs: 18px;
+  --h-xs: 20px;
+  --h-sm: 24px;
+  --h-md: 28px;
+  --h-lg: 32px;
+  --h-xl: 40px;
+  --h-bar: 44px;
 
-  /* Control heights */
-  --h-2xs: 18px; /* switch, count badge */
-  --h-xs: 20px; /* status pill, inline tag */
-  --h-sm: 24px; /* small button, compact row action */
-  --h-md: 28px; /* default button, field, menu row, tree row */
-  --h-lg: 32px; /* large button, list row, tab */
-  --h-xl: 40px; /* palette input */
-  --h-bar: 44px; /* top bar, view header, modal header */
-
-  --r-pill: 999px;
-
-  /* Elevation — 0 is the flat card ring; 1 = menu, popover, tooltip;
-     2 = modal, drawer, toast */
-  --ring: 0 0 0 1px var(--border);
-  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 16px rgba(0, 0, 0, 0.08);
-  --elev-2: var(--shadow);
-
-  /* Focus — one ring everywhere, neutral ink so a focused failing row still
-     reads as failing. */
-  --focus: var(--text);
+  /* Focus: one ring everywhere, neutral ink so a focused failing row still reads as failing. */
   --focus-width: 2px;
   --focus-offset: 2px;
 
@@ -170,36 +175,48 @@
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --pulse: atlasPulse 1.6s ease-in-out infinite;
-
-  /* Hover / active / disabled recipes. Disabled is these three plus
-     `cursor: default`; never use opacity. */
-  --hover-bg: var(--surface2);
-  --active-bg: var(--surface3);
-  --ink-hover-bg: color-mix(in srgb, var(--ink) 88%, var(--bg));
-  --disabled-bg: var(--surface2);
-  --disabled-border: var(--border);
-  --disabled-ink: var(--muted);
 }
 
-:root[data-theme="dark"] {
+:root[data-theme="dark"],
+.dark {
   color-scheme: dark;
 
-  --bg: #0f1012;
-  --surface: #16171a;
-  --surface2: #1d1f23;
-  --surface3: #25272c;
+  --background: #0f1012;
+  --foreground: #e6e7ea;
+  --card: #16171a;
+  --card-foreground: #e6e7ea;
+  --popover: #16171a;
+  --popover-foreground: #e6e7ea;
+  --primary: #e6e7ea;
+  --primary-foreground: #0f1012;
+  --secondary: #1d1f23;
+  --secondary-foreground: #e6e7ea;
+  --muted: #1d1f23;
+  --muted-foreground: #acb2bc;
+  --accent: #25272c;
+  --accent-foreground: #e6e7ea;
+  --destructive: #f55950;
+  --destructive-foreground: #0f1012;
   --border: rgba(255, 255, 255, 0.08);
-  --border2: rgba(255, 255, 255, 0.16);
-  --text: #e6e7ea;
-  --muted: #acb2bc;
-  --accent: #2fa37a;
-  --accent-ink: #0f1012;
-  --warn: #e0a53a;
-  /* 4.04 on --surface3 — the one dark token under the floor. Scaled up the
-     same proportional way the light tokens were scaled down. */
-  --danger: #f55950;
-  --ink: #e6e7ea;
-  --ink-text: #0f1012;
+  --input: rgba(255, 255, 255, 0.16);
+  --ring: #e6e7ea;
+  --success: #2fa37a;
+  --success-foreground: #0f1012;
+  --warning: #e0a53a;
+  --warning-foreground: #0f1012;
+  --chart-1: #4aa3df;
+  --chart-2: #8b7cf6;
+  --chart-3: #e089b8;
+  --chart-4: #2fa37a;
+  --chart-5: #acb2bc;
+  --sidebar: #1d1f23;
+  --sidebar-foreground: #e6e7ea;
+  --sidebar-primary: #e6e7ea;
+  --sidebar-primary-foreground: #0f1012;
+  --sidebar-accent: #25272c;
+  --sidebar-accent-foreground: #e6e7ea;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #e6e7ea;
   --term-bg: #111214;
   --term-text: #c9cbd1;
   --term-tint-user: #1a1c1f;
@@ -209,28 +226,50 @@
   --t-tool: #acb2bc;
   --t-warn: #e0a53a;
   --overlay: rgba(0, 0, 0, 0.55);
-  --shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   --elev-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 16px rgba(0, 0, 0, 0.4);
+  --elev-2: 0 12px 32px rgba(0, 0, 0, 0.45);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
 
-    --bg: #0f1012;
-    --surface: #16171a;
-    --surface2: #1d1f23;
-    --surface3: #25272c;
+    --background: #0f1012;
+    --foreground: #e6e7ea;
+    --card: #16171a;
+    --card-foreground: #e6e7ea;
+    --popover: #16171a;
+    --popover-foreground: #e6e7ea;
+    --primary: #e6e7ea;
+    --primary-foreground: #0f1012;
+    --secondary: #1d1f23;
+    --secondary-foreground: #e6e7ea;
+    --muted: #1d1f23;
+    --muted-foreground: #acb2bc;
+    --accent: #25272c;
+    --accent-foreground: #e6e7ea;
+    --destructive: #f55950;
+    --destructive-foreground: #0f1012;
     --border: rgba(255, 255, 255, 0.08);
-    --border2: rgba(255, 255, 255, 0.16);
-    --text: #e6e7ea;
-    --muted: #acb2bc;
-    --accent: #2fa37a;
-    --accent-ink: #0f1012;
-    --warn: #e0a53a;
-    --danger: #f55950;
-    --ink: #e6e7ea;
-    --ink-text: #0f1012;
+    --input: rgba(255, 255, 255, 0.16);
+    --ring: #e6e7ea;
+    --success: #2fa37a;
+    --success-foreground: #0f1012;
+    --warning: #e0a53a;
+    --warning-foreground: #0f1012;
+    --chart-1: #4aa3df;
+    --chart-2: #8b7cf6;
+    --chart-3: #e089b8;
+    --chart-4: #2fa37a;
+    --chart-5: #acb2bc;
+    --sidebar: #1d1f23;
+    --sidebar-foreground: #e6e7ea;
+    --sidebar-primary: #e6e7ea;
+    --sidebar-primary-foreground: #0f1012;
+    --sidebar-accent: #25272c;
+    --sidebar-accent-foreground: #e6e7ea;
+    --sidebar-border: rgba(255, 255, 255, 0.08);
+    --sidebar-ring: #e6e7ea;
     --term-bg: #111214;
     --term-text: #c9cbd1;
     --term-tint-user: #1a1c1f;
@@ -240,105 +279,158 @@
     --t-tool: #acb2bc;
     --t-warn: #e0a53a;
     --overlay: rgba(0, 0, 0, 0.55);
-    --shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
     --elev-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 16px rgba(0, 0, 0, 0.4);
+    --elev-2: 0 12px 32px rgba(0, 0, 0, 0.45);
   }
 }
 
-/* ── Reset ─────────────────────────────────────────────────────────────────
-   Tailwind was dropped in 2.0.0 — it was installed but never used (not one
-   utility class anywhere in src/). Its preflight *was* doing work, though:
-   every component styles its own buttons and assumes no UA margin, padding or
-   border underneath. This is that part of preflight and nothing else, so the
-   rendering is unchanged by the removal.
+/* Tailwind v4 wiring: exposes each variable to utilities (bg-background,
+   text-muted-foreground, border-input, rounded-lg, shadow-elev-1, …). */
+@theme inline {
+  --font-sans: "Geist Variable", Geist, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
+
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-caption: 13px;
+  --text-caption--line-height: 18px;
+  --text-sm: 14px;
+  --text-sm--line-height: 20px;
+  --text-md: 15px;
+  --text-md--line-height: 22px;
+  --text-lg: 16px;
+  --text-lg--line-height: 24px;
+  --text-xl: 19px;
+  --text-xl--line-height: 26px;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 32px;
+  --font-weight-normal: 450;
+
+  --radius-xs: 3px;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-model-opus: var(--model-opus);
+  --color-model-sonnet: var(--model-sonnet);
+  --color-model-haiku: var(--model-haiku);
+  --color-overlay: var(--overlay);
+
+  --shadow-elev-0: var(--elev-0);
+  --shadow-elev-1: var(--elev-1);
+  --shadow-elev-2: var(--elev-2);
+  --animate-pulse-live: atlasPulse 1.6s ease-in-out infinite;
+  --animate-spin-atlas: atlasSpin 0.9s linear infinite;
+}
+
+/* ── Base elements ───────────────────────────────────────────────────────────
+   Tailwind's preflight is the reset. Everything here sits in `@layer base` so
+   utilities and component classes always win over it; only the focus ring
+   below stays unlayered, so no component can remove it by accident.
    ------------------------------------------------------------------------ */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  border: 0 solid;
-}
+@layer base {
+  body {
+    overflow: hidden;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-normal);
+    line-height: 1.5;
+  }
 
-button,
-input,
-optgroup,
-select,
-textarea {
-  border-radius: 0;
-  background-color: transparent;
-  color: inherit;
-  font: inherit;
-  letter-spacing: inherit;
-  opacity: 1;
-}
+  /* No `-webkit-font-smoothing: antialiased`. On macOS that switches off
+     subpixel rendering, which makes every glyph in the app measurably lighter.
+     The default gives the strokes their full weight back. */
 
-img,
-video {
-  display: block;
-  max-width: 100%;
-  height: auto;
-}
+  /* Preflight sets a pointer on buttons only via utilities; Atlas never shows
+     one on disabled controls. */
+  button:disabled {
+    cursor: default;
+  }
 
-/* ── Base elements ───────────────────────────────────────────────────────── */
-body {
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-ui);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-body);
-  line-height: 1.5;
-}
+  ::selection {
+    background: color-mix(in srgb, var(--success) 35%, transparent);
+    color: var(--foreground);
+  }
 
-/* No `-webkit-font-smoothing: antialiased`. On macOS that switches off
-   subpixel rendering, which makes every glyph in the app measurably lighter —
-   it was half of "the text is thin", the other half being the sizes above.
-   The default gives the strokes their full weight back. */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
 
-::selection {
-  background: color-mix(in srgb, var(--accent) 35%, transparent);
-  color: var(--text);
-}
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+  ::-webkit-scrollbar-thumb {
+    background: var(--input);
+    border-radius: var(--radius-xs);
+  }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--border2);
-  border-radius: var(--r-xs);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+  }
 }
 
 /* ── Focus ring ──────────────────────────────────────────────────────────────
    One ring for every control. Inset (-2px) inside clipped lists and rows via
-   `[data-focus-inset]` or `.focus-inset`; 1px on text inputs. Never remove an
-   outline elsewhere without drawing this one in its place. */
-:focus-visible {
-  outline: var(--focus-width) solid var(--focus);
-  outline-offset: var(--focus-offset);
-}
+   `[data-focus-inset]` or `.focus-inset`; 1px on text inputs. It sits in the
+   base layer so a component that draws its own state (a highlighted menu row)
+   can opt out with `outline-hidden`; never remove it without that state. */
+@layer base {
+  :focus-visible {
+    outline: var(--focus-width) solid var(--ring);
+    outline-offset: var(--focus-offset);
+  }
 
-[data-focus-inset]:focus-visible,
-.focus-inset:focus-visible {
-  outline-offset: -2px;
-}
+  [data-focus-inset]:focus-visible,
+  .focus-inset:focus-visible {
+    outline-offset: -2px;
+  }
 
-input:focus-visible,
-textarea:focus-visible {
-  outline-offset: 1px;
+  input:focus-visible,
+  textarea:focus-visible,
+  [data-slot="select-trigger"]:focus-visible {
+    outline-offset: 1px;
+  }
 }
 
 /* ── Motion ──────────────────────────────────────────────────────────────── */

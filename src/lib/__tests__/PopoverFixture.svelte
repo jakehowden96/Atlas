@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Popover from "../components/ui/Popover.svelte";
+  import Popover from "../components/app/common/AnchoredPopover.svelte";
 
   let open = $state(false);
   let trigger = $state<HTMLElement>();

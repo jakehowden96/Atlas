@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import { get } from "svelte/store";
   import { toggled } from "../../sets";
   import { parseDiff, type DiffFile } from "../../diff-parser";
@@ -28,14 +29,14 @@
   import { activeTabId, tabs } from "../../stores/terminal";
   import { showToast } from "../../stores/toast";
   import { diffOpen } from "../../stores/view";
-  import Banner from "../ui/Banner.svelte";
-  import Button from "../ui/Button.svelte";
-  import { confirmAction } from "../ui/ConfirmDialog.svelte";
-  import CopyButton from "../ui/CopyButton.svelte";
-  import Drawer from "../ui/Drawer.svelte";
-  import EmptyState from "../ui/EmptyState.svelte";
-  import IconButton from "../ui/IconButton.svelte";
-  import SegmentedControl, { type Segment } from "../ui/SegmentedControl.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import { confirmAction } from "../app/common/ConfirmDialog.svelte";
+  import CopyButton from "../app/common/CopyButton.svelte";
+  import * as Sheet from "$lib/components/ui/sheet/index.js";
+  import * as Empty from "$lib/components/ui/empty/index.js";
+  import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
+  import Segmented, { type Segment } from "$lib/components/app/common/Segmented.svelte";
   import DiffFileCard from "./DiffFileCard.svelte";
   import DiffFileTree from "./DiffFileTree.svelte";
   import { errorMessage } from "../../ipc-error";
@@ -277,12 +278,9 @@
 
 <!-- Esc is left to shortcuts.ts (composer first, then this drawer), so Modal's own
      Esc handling is switched off by marking the event handled before it sees it. -->
-<Drawer
-  {open}
-  onClose={() => diffOpen.set(false)}
-  labelledBy="changes-title"
-  width="min(1080px, 92vw)"
->
+<Sheet.Root open={open} onOpenChange={(o) => { if (!o) (() => diffOpen.set(false))(); }}>
+  <Sheet.Content class="w-[min(min(1080px, 92vw),calc(100vw-3rem))]" aria-labelledby="changes-title">
+    <Sheet.Body>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="content" onkeydown={(e) => e.key === "Escape" && e.preventDefault()}>
     <header class="head">
@@ -294,7 +292,7 @@
       </span>
       <div class="spacer"></div>
 
-      <SegmentedControl
+      <Segmented
         size="sm"
         role="radiogroup"
         label="Diff layout"
@@ -303,7 +301,7 @@
         onChange={(id) => (diffMode = id)}
       />
       <span class="viewed">viewed {viewedCount}/{flatFiles.length}</span>
-      <IconButton
+      <TooltipButton
         icon="close"
         size="sm"
         label="Close changes"
@@ -312,25 +310,32 @@
     </header>
 
     {#if truncation}
-      <div class="notice"><Banner tone="info" title={truncation} /></div>
+      <div class="notice"><Alert.Root variant="default">
+<Icon name="info" />
+<Alert.Title>{truncation}</Alert.Title>
+</Alert.Root></div>
     {/if}
 
     <div class="body">
       {#if flatFiles.length === 0}
         <div class="clean">
           {#if gitMissing}
-            <EmptyState
-              icon="terminal"
-              title="Git was not found"
-              description="Install git, then reopen this panel"
-            >
-              {#snippet action()}
-                <code class="cmd">{installCommand}</code>
-                <CopyButton value={installCommand} variant="text" label="Copy install command" />
-              {/snippet}
-            </EmptyState>
+            <Empty.Root>
+  <Empty.Header>
+    <Empty.Media variant="icon"><Icon name="terminal" size={20} /></Empty.Media>
+    <Empty.Title>Git was not found</Empty.Title>
+    <Empty.Description>Install git, then reopen this panel</Empty.Description>
+  </Empty.Header>
+  <Empty.Content><code class="cmd">{installCommand}</code>
+                <CopyButton value={installCommand} variant="text" label="Copy install command" /></Empty.Content>
+</Empty.Root>
           {:else}
-            <EmptyState icon="check_circle" title="Working tree clean" />
+            <Empty.Root>
+  <Empty.Header>
+    <Empty.Media variant="icon"><Icon name="check_circle" size={20} /></Empty.Media>
+    <Empty.Title>Working tree clean</Empty.Title>
+  </Empty.Header>
+</Empty.Root>
           {/if}
         </div>
       {:else}
@@ -368,13 +373,15 @@
         {/if}
       </span>
       <div class="spacer"></div>
-      <Button size="sm" disabled={commentCount === 0} onclick={discard}>Discard</Button>
-      <Button size="sm" variant="primary" disabled={commentCount === 0 || submitting} onclick={send}
+      <Button variant="outline" size="sm" disabled={commentCount === 0} onclick={discard}>Discard</Button>
+      <Button size="sm" variant="default" disabled={commentCount === 0 || submitting} onclick={send}
         >{submitting ? "Sending…" : "Send to Claude"}</Button
       >
     </footer>
   </div>
-</Drawer>
+    </Sheet.Body>
+  </Sheet.Content>
+</Sheet.Root>
 
 {#snippet fileCard(item: FlatFile)}
   <DiffFileCard
@@ -418,24 +425,24 @@
   .title {
     flex-shrink: 0;
     margin: 0;
-    font-size: var(--fs-sm);
+    font-size: var(--text-sm);
     font-weight: 600;
   }
 
   .counts {
     flex-shrink: 0;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     white-space: nowrap;
   }
 
   .added {
-    color: var(--accent);
+    color: var(--success);
   }
 
   .removed {
-    color: var(--danger);
+    color: var(--destructive);
   }
 
   .spacer {
@@ -444,9 +451,9 @@
 
   .viewed {
     flex-shrink: 0;
-    color: var(--muted);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     white-space: nowrap;
   }
 
@@ -471,10 +478,10 @@
     z-index: var(--z-sticky);
     padding: 6px 14px;
     border-bottom: 1px solid var(--border);
-    background: var(--surface2);
-    color: var(--text);
+    background: var(--muted);
+    color: var(--foreground);
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
     font-weight: 600;
   }
 
@@ -492,10 +499,10 @@
 
   .cmd {
     padding: 4px 8px;
-    border-radius: var(--r-sm);
-    background: var(--surface2);
+    border-radius: var(--radius-sm);
+    background: var(--muted);
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+    font-size: var(--text-caption);
   }
 
   /* ── Footer ────────────────────────────────────────────────────────────── */
@@ -506,13 +513,13 @@
     gap: 10px;
     padding: 10px 14px;
     border-top: 1px solid var(--border);
-    background: var(--bg);
+    background: var(--background);
   }
 
   .foot-text {
     overflow: hidden;
-    color: var(--muted);
-    font-size: var(--fs-sm);
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
   }

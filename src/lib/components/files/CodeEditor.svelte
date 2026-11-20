@@ -237,20 +237,20 @@
     gap: 8px;
     padding: 4px 8px;
     border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    font-family: var(--font-ui);
-    font-size: var(--fs-2xs);
-    color: var(--muted);
+    border-radius: var(--radius-md);
+    background: var(--card);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    color: var(--muted-foreground);
   }
 
   .lsp-note button {
     padding: 0 6px;
     border: 1px solid var(--border);
-    border-radius: var(--r-sm);
+    border-radius: var(--radius-sm);
     background: transparent;
     font: inherit;
-    color: var(--text);
+    color: var(--foreground);
     cursor: pointer;
   }
 

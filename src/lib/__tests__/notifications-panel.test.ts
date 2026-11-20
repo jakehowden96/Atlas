@@ -6,7 +6,7 @@ import { get } from "svelte/store";
 import NotificationsPanel, {
   relativeTime,
   unreadNotificationCount,
-} from "../components/ui/NotificationsPanel.svelte";
+} from "../components/app/shell/NotificationsPanel.svelte";
 import { notificationLog } from "../stores/toast";
 
 const entry = (id: string, title: string, read = false) => ({

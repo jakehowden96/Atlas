@@ -1,15 +1,16 @@
 <script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
   import type { ConnectorInfo } from "../../../../../types/generated/ConnectorInfo";
   import { errorMessage } from "../../../../ipc-error";
   import { openUrl } from "../../../../ipc";
   import type { SignInState } from "../../../../stores/connectors";
   import { showToast } from "../../../../stores/toast";
-  import Button from "../../../ui/Button.svelte";
-  import ConnectorLogoTile from "../../../ui/ConnectorLogoTile.svelte";
-  import CopyButton from "../../../ui/CopyButton.svelte";
-  import InlineAlert from "../../../ui/InlineAlert.svelte";
-  import Modal from "../../../ui/Modal.svelte";
-  import Spinner from "../../../ui/Spinner.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import ConnectorLogoTile from "../../../app/connectors/ConnectorLogoTile.svelte";
+  import CopyButton from "../../../app/common/CopyButton.svelte";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import * as Dialog from "$lib/components/ui/dialog/index.js";
+  import { Spinner } from "$lib/components/ui/spinner/index.js";
 
   interface Props {
     connector: ConnectorInfo;
@@ -40,7 +41,9 @@
   }
 </script>
 
-<Modal open onClose={onCancel} width="420px" labelledBy={titleId}>
+<Dialog.Root open onOpenChange={(o) => { if (!o) onCancel(); }}>
+  <Dialog.Content size="sm" aria-labelledby={titleId}>
+    <Dialog.Body>
   <div class="head">
     <ConnectorLogoTile connector={connector.id} label={connector.name} />
     <h2 id={titleId}>Connect {connector.name}</h2>
@@ -61,34 +64,34 @@
           openSignIn(progress.verificationUri);
         }}>{progress.verificationUri}</a
       >
-      <Button variant="primary" onclick={() => openSignIn(progress.verificationUri)}>
+      <Button variant="default" onclick={() => openSignIn(progress.verificationUri)}>
         Open sign-in page
       </Button>
       <div class="wait">
-        <Spinner label="Waiting for you to approve" />
+        <span class="inline-flex items-center gap-2 text-caption text-muted-foreground" role="status"><Spinner />Waiting for you to approve</span>
         <span class="clock" class:low={left < 60000} data-testid="countdown">{clock}</span>
       </div>
     {:else if progress.kind === "denied"}
-      <InlineAlert>Sign-in was denied</InlineAlert>
+      <Alert.Root variant="destructive" layout="inline"><Icon name="error" /><Alert.Title>Sign-in was denied</Alert.Title></Alert.Root>
     {:else if progress.kind === "expired"}
-      <InlineAlert tone="warn">The code expired</InlineAlert>
+      <Alert.Root variant="warning" layout="inline"><Icon name="warning" /><Alert.Title>The code expired</Alert.Title></Alert.Root>
     {:else if progress.kind === "failed"}
-      <InlineAlert>{progress.reason}</InlineAlert>
+      <Alert.Root variant="destructive" layout="inline"><Icon name="error" /><Alert.Title>{progress.reason}</Alert.Title></Alert.Root>
     {:else}
-      <Spinner label={progress.kind === "exchanging" ? "Finishing sign-in" : "Requesting a code"} />
+      <span class="inline-flex items-center gap-2 text-caption text-muted-foreground" role="status"><Spinner />{progress.kind === "exchanging" ? "Finishing sign-in" : "Requesting a code"}</span>
     {/if}
   </div>
-  {#snippet footer()}
-    <Button onclick={onCancel}>Cancel</Button>
+    </Dialog.Body>
+    <Dialog.Footer><Button variant="outline" onclick={onCancel}>Cancel</Button>
     {#if progress.kind === "denied"}
-      <Button variant="primary" onclick={onRetry}>Try again</Button>
+      <Button variant="default" onclick={onRetry}>Try again</Button>
     {:else if progress.kind === "expired"}
-      <Button variant="primary" onclick={onRetry}>Get a new code</Button>
+      <Button variant="default" onclick={onRetry}>Get a new code</Button>
     {:else if progress.kind === "failed"}
-      <Button variant="primary" onclick={onRetry}>Retry</Button>
-    {/if}
-  {/snippet}
-</Modal>
+      <Button variant="default" onclick={onRetry}>Retry</Button>
+    {/if}</Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
 
 <style>
   .head {
@@ -99,7 +102,7 @@
   }
   h2 {
     margin: 0;
-    font-size: var(--fs-md);
+    font-size: var(--text-md);
     font-weight: 600;
   }
   .body {
@@ -111,8 +114,8 @@
   }
   .muted {
     margin: 0;
-    font-size: var(--fs-sm);
-    color: var(--muted);
+    font-size: var(--text-sm);
+    color: var(--muted-foreground);
   }
   .code-row {
     display: flex;
@@ -121,12 +124,12 @@
   }
   .code {
     font-family: var(--font-mono);
-    font-size: var(--fs-xl);
+    font-size: var(--text-xl);
     letter-spacing: 0.1em;
   }
   .link {
-    font-size: var(--fs-xs);
-    color: var(--muted);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
     word-break: break-all;
   }
   .wait {
@@ -136,10 +139,10 @@
   }
   .clock {
     font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-    color: var(--muted);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
   }
   .clock.low {
-    color: var(--warn);
+    color: var(--warning);
   }
 </style>
