@@ -131,18 +131,22 @@ const HOME_BIN_DIRS: &[&str] = &[
     ".asdf/shims",
     ".bun/bin",
     ".npm-global/bin",
+    "Library/pnpm", // pnpm's global bin on macOS
     ".cargo/bin",
 ];
 
 /// System-wide locations: Homebrew on Apple Silicon and on Intel.
 const SYSTEM_BIN_DIRS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
 
-/// The newest `~/.nvm/versions/node/<version>/bin`, if nvm is installed. nvm
-/// only puts a version on PATH from a shell's rc file, which a GUI never runs.
-fn newest_nvm_bin(home: &std::path::Path) -> Option<std::path::PathBuf> {
+/// Every `~/.nvm/versions/node/<version>/bin`, newest first. nvm only puts a
+/// version on PATH from a shell's rc file, which a GUI never runs, and a global
+/// tool lives under whichever version was active when it was installed.
+fn nvm_bins(home: &std::path::Path) -> Vec<std::path::PathBuf> {
     let versions = home.join(".nvm").join("versions").join("node");
-    let mut dirs: Vec<(Vec<u64>, std::path::PathBuf)> = std::fs::read_dir(versions)
-        .ok()?
+    let Ok(entries) = std::fs::read_dir(versions) else {
+        return Vec::new();
+    };
+    let mut dirs: Vec<(Vec<u64>, std::path::PathBuf)> = entries
         .flatten()
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -156,7 +160,7 @@ fn newest_nvm_bin(home: &std::path::Path) -> Option<std::path::PathBuf> {
         .filter(|(_, bin)| bin.is_dir())
         .collect();
     dirs.sort();
-    dirs.pop().map(|(_, bin)| bin)
+    dirs.into_iter().rev().map(|(_, bin)| bin).collect()
 }
 
 /// Every well-known tool directory that exists on this machine.
@@ -167,7 +171,7 @@ pub(crate) fn gui_path_additions(home: Option<&std::path::Path>) -> Vec<std::pat
         .collect();
     if let Some(home) = home {
         dirs.extend(HOME_BIN_DIRS.iter().map(|d| home.join(d)));
-        dirs.extend(newest_nvm_bin(home));
+        dirs.extend(nvm_bins(home));
     }
     dirs.retain(|d| d.is_dir());
     dirs
@@ -499,11 +503,13 @@ mod tests {
 
         assert!(added.contains(&local));
         assert!(!added.contains(&home.path().join(".volta/bin")));
-        let nvm = home.path().join(".nvm/versions/node/v20.11.1/bin");
-        assert!(
-            added.contains(&nvm),
-            "newest nvm node, not the newest string: {added:?}"
-        );
-        assert!(!added.contains(&home.path().join(".nvm/versions/node/v9.0.0/bin")));
+        // Every nvm version, newest by number first, so a global tool installed
+        // under an older Node is still found.
+        let nvm: Vec<_> = ["v20.11.1", "v18.19.0", "v9.0.0"]
+            .iter()
+            .map(|v| home.path().join(".nvm/versions/node").join(v).join("bin"))
+            .collect();
+        let found: Vec<_> = added.iter().filter(|d| nvm.contains(d)).cloned().collect();
+        assert_eq!(found, nvm, "{added:?}");
     }
 }
