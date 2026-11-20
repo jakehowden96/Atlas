@@ -19,7 +19,7 @@ vi.mock("../stores/settings", async (importOriginal) => ({
   setOpenFiles: vi.fn(),
 }));
 
-import FileTree from "../components/files/FileTree.svelte";
+import FileTree from "../components/app/files/FileTree.svelte";
 import { fileKey } from "../files";
 import { docEntries, docs, expanded, fileWs, plans } from "../stores/files";
 import { workspaces } from "../stores/workspace";

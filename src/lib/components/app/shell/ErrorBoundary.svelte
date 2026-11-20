@@ -35,21 +35,26 @@
   {#snippet failed(error, reset)}
     <div class="crash" role="alert">
       <Empty.Root>
-  <Empty.Header>
-    <Empty.Media variant="icon"><Icon name="warning" size={20} /></Empty.Media>
-    <Empty.Title>{`${name} hit a problem`}</Empty.Title>
-    <Empty.Description>The rest of Atlas is still running. Reload this view to try again</Empty.Description>
-  </Empty.Header>
-  <Empty.Content><div class="actions">
+        <Empty.Header>
+          <Empty.Media variant="icon"><Icon name="warning" size={20} /></Empty.Media>
+          <Empty.Title>{`${name} hit a problem`}</Empty.Title>
+          <Empty.Description
+            >The rest of Atlas is still running. Reload this view to try again</Empty.Description
+          >
+        </Empty.Header>
+        <Empty.Content
+          ><div class="actions">
             <Button variant="default" onclick={reset}>Reload view</Button>
             <CopyButton variant="text" value={details(error)} label="Copy details" />
-            <Button variant="outline"
+            <Button
+              variant="outline"
               onclick={() => revealLogsDir().catch((e) => log.error("ui", "open logs failed", e))}
             >
               Open logs
             </Button>
-          </div></Empty.Content>
-</Empty.Root>
+          </div></Empty.Content
+        >
+      </Empty.Root>
     </div>
   {/snippet}
 </svelte:boundary>

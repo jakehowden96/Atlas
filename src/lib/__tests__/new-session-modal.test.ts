@@ -23,7 +23,7 @@ vi.mock("../session-actions", () => ({
 
 import { listResumableSessions } from "../ipc";
 import { spawnHarnessSession, workOnPr } from "../session-actions";
-import NewSessionModal from "../components/session/NewSessionModal.svelte";
+import NewSessionModal from "../components/app/session/NewSessionModal.svelte";
 import { prRepos, reposByWorkspace } from "../stores/prs";
 import { claudeMissing } from "../stores/claude";
 import { newSessionOpen } from "../stores/view";

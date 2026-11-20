@@ -16,7 +16,7 @@
  * process.
  */
 import { mount, unmount } from "svelte";
-import TerminalTab from "./components/terminal/TerminalTab.svelte";
+import TerminalTab from "./components/app/terminal/TerminalTab.svelte";
 
 interface TerminalProps {
   tabId: string;

@@ -27,4 +27,3 @@ describe("StatePill", () => {
     expect(container.textContent).toContain("Needs you");
   });
 });
-

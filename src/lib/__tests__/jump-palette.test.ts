@@ -11,7 +11,7 @@ vi.mock("../stores/liveTiles", async () => {
   return { liveTiles: writable([]) };
 });
 
-import JumpPalette from "../components/session/JumpPalette.svelte";
+import JumpPalette from "../components/app/session/JumpPalette.svelte";
 import { liveTiles } from "../stores/liveTiles";
 import { newSessionOpen, jumpOpen, focusedSessionId } from "../stores/view";
 import { docEntries, plans } from "../stores/files";

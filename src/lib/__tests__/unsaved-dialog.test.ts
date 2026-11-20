@@ -13,7 +13,7 @@ vi.mock("../stores/files", async () => {
   };
 });
 
-import UnsavedDialog from "../components/files/UnsavedDialog.svelte";
+import UnsavedDialog from "../components/app/files/UnsavedDialog.svelte";
 
 afterEach(() => {
   cleanup();

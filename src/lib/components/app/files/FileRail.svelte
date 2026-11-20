@@ -1,0 +1,363 @@
+<script lang="ts">
+  import Icon from "$lib/components/ui/icon/icon.svelte";
+  /**
+   * The Files screen's right-hand rail: the active document's outline, its
+   * properties, the sessions editing it and the files it links to.
+   *
+   * Mounts and unmounts on `fileRailOpen` with the same delayed-unmount shape as
+   * `session/ActivityRail.svelte`, so it slides in and out rather than blinking.
+   */
+  import type { SessionState } from "../../../../types/generated/SessionState";
+  import {
+    absolutePath,
+    parseFileKey,
+    resolveWikilink,
+    touchedBy,
+    type FileTouch,
+  } from "../../../files";
+  import { formatAgo, formatBytes } from "../../../format";
+  import { outline, wikilinks } from "../../../markdown";
+  import {
+    activeFile,
+    diskDocs,
+    docEntries,
+    docs,
+    fileWs,
+    jumpToHeading,
+    openFile,
+    plans,
+  } from "../../../stores/files";
+  import { liveTiles } from "../../../stores/liveTiles";
+  import { sessionTouchedFiles } from "../../../stores/panel";
+  import { fileRailOpen, focusedSessionId, showView } from "../../../stores/view";
+  import { closeWith } from "../../../ui/delay";
+  import * as Empty from "$lib/components/ui/empty/index.js";
+  import * as Tooltip from "$lib/components/ui/tooltip/index.js";
+  import StatePill, { type PillState } from "../common/StatePill.svelte";
+
+  const EXIT_MS = 200;
+  const encoder = new TextEncoder();
+
+  const PILL: Record<SessionState, PillState> = {
+    running: "running",
+    needsYou: "needs",
+    idle: "idle",
+    error: "error",
+  };
+
+  let visible = $state(false);
+  let closing = $state(false);
+  /** Cancelled on reopen, or a stale exit would hide a rail that is open. */
+  let exitTimer: ReturnType<typeof setTimeout> | undefined;
+
+  $effect(() => {
+    if ($fileRailOpen) {
+      clearTimeout(exitTimer);
+      visible = true;
+      closing = false;
+    } else if (visible && !closing) {
+      closing = true;
+      exitTimer = closeWith(() => {
+        visible = false;
+        closing = false;
+      }, EXIT_MS);
+    }
+  });
+
+  let key = $derived($activeFile);
+  let file = $derived(parseFileKey(key));
+  let text = $derived($docs.get(key) ?? $diskDocs.get(key) ?? "");
+  /* Outline, links and size are whole-document passes, so they follow typing
+     after a pause rather than on every key. A different file shows at once. */
+  let settled = $state({ key: "", text: "" });
+  let slowText = $derived(settled.key === key ? settled.text : text);
+  $effect(() => {
+    const next = { key, text };
+    const timer = setTimeout(() => (settled = next), 150);
+    return () => clearTimeout(timer);
+  });
+  let headings = $derived(key ? outline(slowText) : []);
+  let files = $derived($docEntries.filter((e) => !e.is_dir));
+
+  // Every wikilink in the document, paired with the doc it names — an
+  // unresolved one is listed greyed rather than hidden, so a typo is visible.
+  let links = $derived(
+    key
+      ? wikilinks(slowText).map((target) => ({ target, rel: resolveWikilink(target, files) }))
+      : [],
+  );
+
+  let touches = $derived(
+    key ? touchedBy(absolutePath(file.source, file.path), $liveTiles, $sessionTouchedFiles) : [],
+  );
+
+  let modified = $derived.by(() => {
+    if (!key) return "—";
+    const stamp =
+      file.source === "plans"
+        ? $plans.find((p) => p.path === file.path)?.modified
+        : $docEntries.find((e) => e.rel_path === file.path)?.modified;
+    const at = stamp ? Date.parse(stamp) : Number.NaN;
+    return Number.isNaN(at) ? "—" : formatAgo(at, Date.now());
+  });
+
+  // The size of what is on screen, unsaved edit included — the listing's own
+  // byte count would go stale the moment the document is typed into.
+  let size = $derived(key ? formatBytes(encoder.encode(slowText).length) : "—");
+
+  /**
+   * The git line. Plans live in `~/.claude/plans` and a disk file can be
+   * anywhere, so neither is under a repo the Files screen knows about; a
+   * workspace doc reports whatever a session has done to it.
+   *
+   * Sessions sharing a workspace share its working tree, so the first touch's
+   * counts are the file's counts — summing them would count the same diff twice.
+   */
+  let git = $derived.by<{ text: string; warn: boolean }>(() => {
+    if (!key) return { text: "—", warn: false };
+    if (file.source === "plans") return { text: "not tracked", warn: false };
+    if (file.source === "disk") return { text: "outside workspace", warn: false };
+    const touch = touches[0];
+    if (!touch) return { text: "clean", warn: false };
+    return { text: `modified · +${touch.added} −${touch.removed}`, warn: true };
+  });
+
+  function focusSession(touch: FileTouch) {
+    focusedSessionId.set(touch.sessionId);
+    showView("session");
+  }
+</script>
+
+{#if visible}
+  <aside class="rail" class:closing>
+    <section>
+      <h3 class="label">Outline</h3>
+      {#each headings as heading (heading.id)}
+        <button
+          type="button"
+          class="row heading-row"
+          style="padding-left: {8 + (heading.level - 1) * 12}px"
+          onclick={() => jumpToHeading(heading)}
+        >
+          {heading.text}
+        </button>
+      {:else}
+        <Empty.Root size="compact"
+          ><Empty.Media><Icon name="article" /></Empty.Media><Empty.Title>No headings</Empty.Title
+          ></Empty.Root
+        >
+      {/each}
+    </section>
+
+    <section>
+      <h3 class="label">Properties</h3>
+      <dl class="props">
+        <dt>Modified</dt>
+        <dd>{modified}</dd>
+        <dt>Size</dt>
+        <dd>{size}</dd>
+        <dt>Git status</dt>
+        <dd class:warn={git.warn}>{git.text}</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h3 class="label">Touched by</h3>
+      {#each touches as touch (touch.sessionId)}
+        <button type="button" class="card" onclick={() => focusSession(touch)}>
+          <span class="card-head">
+            <span class="card-name">{touch.label}</span>
+            <StatePill state={PILL[touch.state]} />
+          </span>
+          <span class="delta">
+            <span class="added">+{touch.added}</span>
+            <span class="removed">−{touch.removed}</span>
+          </span>
+        </button>
+      {:else}
+        <Empty.Root size="compact"
+          ><Empty.Media><Icon name="terminal" /></Empty.Media><Empty.Title
+            >No session has this file open</Empty.Title
+          ></Empty.Root
+        >
+      {/each}
+    </section>
+
+    <section>
+      <h3 class="label">Links</h3>
+      {#each links as link (link.target)}
+        {#if link.rel}
+          <Tooltip.Root
+            ><Tooltip.Trigger
+              >{#snippet child({ props })}<a
+                  {...props}
+                  class="row link"
+                  href="#{link.rel}"
+                  onclick={(e) => {
+                    e.preventDefault();
+                    openFile($fileWs, link.rel as string);
+                  }}
+                >
+                  {link.target}
+                </a>{/snippet}</Tooltip.Trigger
+            ><Tooltip.Content side="left">{link.rel}</Tooltip.Content></Tooltip.Root
+          >
+        {:else}
+          <span class="row broken">{link.target}</span>
+        {/if}
+      {:else}
+        <Empty.Root size="compact"
+          ><Empty.Media><Icon name="link_off" /></Empty.Media><Empty.Title>No links</Empty.Title
+          ></Empty.Root
+        >
+      {/each}
+    </section>
+  </aside>
+{/if}
+
+<style>
+  .rail {
+    display: flex;
+    flex: 0 0 240px;
+    flex-direction: column;
+    gap: 18px;
+    width: 240px;
+    padding: 16px 8px;
+    overflow-y: auto;
+    border-left: 1px solid var(--border);
+    background: var(--background);
+    animation: atlasSlideIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .rail.closing {
+    animation: atlasSlideOut 0.2s ease both;
+  }
+
+  section {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .label {
+    margin: 0 0 4px 8px;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  section :global(.compact) {
+    margin-left: 8px;
+  }
+
+  .row {
+    display: block;
+    width: 100%;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    color: var(--foreground);
+    font-size: var(--text-sm);
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .heading-row,
+  .link {
+    cursor: pointer;
+  }
+
+  .heading-row:hover,
+  .link:hover {
+    background: var(--muted);
+  }
+
+  .link {
+    color: var(--success);
+    text-decoration: none;
+  }
+
+  .broken {
+    color: var(--muted-foreground);
+  }
+
+  /* ── Properties ────────────────────────────────────────────────────────── */
+  .props {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 10px;
+    margin: 0;
+    padding: 0 8px;
+    font-size: var(--text-caption);
+  }
+
+  .props dt {
+    color: var(--muted-foreground);
+  }
+
+  .props dd {
+    margin: 0;
+    overflow: hidden;
+    color: var(--foreground);
+    font-family: var(--font-mono);
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .props dd.warn {
+    color: var(--warning);
+  }
+
+  /* ── Touched by ────────────────────────────────────────────────────────── */
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+    margin-bottom: 6px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--card);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .card:hover {
+    border-color: var(--input);
+  }
+
+  .card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .card-name {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--foreground);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .delta {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+
+  .added {
+    color: var(--success);
+  }
+
+  .removed {
+    margin-left: 6px;
+    color: var(--destructive);
+  }
+</style>

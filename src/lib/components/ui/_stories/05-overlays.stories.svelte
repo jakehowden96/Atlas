@@ -17,7 +17,9 @@
       <Tooltip.Root>
         <Tooltip.Trigger>
           {#snippet child({ props })}
-            <Button variant="ghost" size="icon" aria-label="Settings" {...props}><Icon name="settings" size={18} /></Button>
+            <Button variant="ghost" size="icon" aria-label="Settings" {...props}
+              ><Icon name="settings" size={18} /></Button
+            >
           {/snippet}
         </Tooltip.Trigger>
         <Tooltip.Content>Settings <Kbd>⌘,</Kbd></Tooltip.Content>
@@ -39,14 +41,22 @@
     <DropdownMenu.Root open>
       <DropdownMenu.Trigger>
         {#snippet child({ props })}
-          <Button variant="ghost" size="icon" aria-label="Ticket actions" {...props}><Icon name="more_horiz" size={18} /></Button>
+          <Button variant="ghost" size="icon" aria-label="Ticket actions" {...props}
+            ><Icon name="more_horiz" size={18} /></Button
+          >
         {/snippet}
       </DropdownMenu.Trigger>
       <DropdownMenu.Content align="start">
         <DropdownMenu.Label>Ticket</DropdownMenu.Label>
-        <DropdownMenu.Item><Icon name="edit" />Change<DropdownMenu.Shortcut>E</DropdownMenu.Shortcut></DropdownMenu.Item>
+        <DropdownMenu.Item
+          ><Icon name="edit" />Change<DropdownMenu.Shortcut>E</DropdownMenu.Shortcut
+          ></DropdownMenu.Item
+        >
         <DropdownMenu.Item><Icon name="open_in_new" />Open in Linear</DropdownMenu.Item>
-        <DropdownMenu.Item><Icon name="content_copy" />Copy ID<DropdownMenu.Shortcut>⌘C</DropdownMenu.Shortcut></DropdownMenu.Item>
+        <DropdownMenu.Item
+          ><Icon name="content_copy" />Copy ID<DropdownMenu.Shortcut>⌘C</DropdownMenu.Shortcut
+          ></DropdownMenu.Item
+        >
         <DropdownMenu.CheckboxItem checked>Show in rail</DropdownMenu.CheckboxItem>
         <DropdownMenu.Separator />
         <DropdownMenu.Item variant="destructive"><Icon name="link_off" />Unlink</DropdownMenu.Item>
@@ -64,9 +74,14 @@
       Right-click here
     </ContextMenu.Trigger>
     <ContextMenu.Content>
-      <ContextMenu.Item><Icon name="open_in_new" />Open<ContextMenu.Shortcut>⏎</ContextMenu.Shortcut></ContextMenu.Item>
+      <ContextMenu.Item
+        ><Icon name="open_in_new" />Open<ContextMenu.Shortcut>⏎</ContextMenu.Shortcut
+        ></ContextMenu.Item
+      >
       <ContextMenu.Item><Icon name="content_copy" />Copy path</ContextMenu.Item>
-      <ContextMenu.Item><Icon name="edit" />Rename<ContextMenu.Shortcut>F2</ContextMenu.Shortcut></ContextMenu.Item>
+      <ContextMenu.Item
+        ><Icon name="edit" />Rename<ContextMenu.Shortcut>F2</ContextMenu.Shortcut></ContextMenu.Item
+      >
       <ContextMenu.Separator />
       <ContextMenu.Item variant="destructive"><Icon name="delete" />Delete</ContextMenu.Item>
     </ContextMenu.Content>
@@ -78,13 +93,17 @@
     <Popover.Root open>
       <Popover.Trigger>
         {#snippet child({ props })}
-          <Button variant="outline" {...props}><Icon name="notifications" size={18} />Notifications</Button>
+          <Button variant="outline" {...props}
+            ><Icon name="notifications" size={18} />Notifications</Button
+          >
         {/snippet}
       </Popover.Trigger>
       <Popover.Content align="start">
         <Popover.Header>
           <Popover.Title>Connector health</Popover.Title>
-          <Popover.Description>GitHub and Linear are linked and polling every 60s.</Popover.Description>
+          <Popover.Description
+            >GitHub and Linear are linked and polling every 60s.</Popover.Description
+          >
         </Popover.Header>
         <Button size="sm" variant="outline" class="self-start">Open settings</Button>
       </Popover.Content>

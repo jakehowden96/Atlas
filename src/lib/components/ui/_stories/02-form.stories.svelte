@@ -71,7 +71,12 @@
     </InputGroup.Root>
     <Field.Field>
       <Field.Label for="t1">Comment</Field.Label>
-      <Textarea id="t1" counter maxlength={280} value="This should handle the empty worktree case." />
+      <Textarea
+        id="t1"
+        counter
+        maxlength={280}
+        value="This should handle the empty worktree case."
+      />
     </Field.Field>
   </div>
 </Story>
@@ -93,7 +98,9 @@
     <Field.Field>
       <Field.Label>Native select</Field.Label>
       <NativeSelect.Root>
-        {#each models as m (m.value)}<NativeSelect.Option value={m.value}>{m.label}</NativeSelect.Option>{/each}
+        {#each models as m (m.value)}<NativeSelect.Option value={m.value}
+            >{m.label}</NativeSelect.Option
+          >{/each}
       </NativeSelect.Root>
     </Field.Field>
     <Select.Root type="single" open value="sonnet">

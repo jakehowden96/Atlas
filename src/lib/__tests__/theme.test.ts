@@ -373,7 +373,13 @@ describe("app.css token blocks", () => {
      amber and a red cannot reach 7:1 on a light surface without all three
      collapsing towards black, which costs them the only thing they are there
      for. They carry state that is also spelled out in words next to them. */
-  const BODY_INKS = new Set(["--foreground", "--muted-foreground", "--term-text", "--t-user", "--t-tool"]);
+  const BODY_INKS = new Set([
+    "--foreground",
+    "--muted-foreground",
+    "--term-text",
+    "--t-user",
+    "--t-tool",
+  ]);
   const floorFor = (ink: string) => (BODY_INKS.has(ink) ? 7 : 4.5);
 
   for (const [name, tokens] of [

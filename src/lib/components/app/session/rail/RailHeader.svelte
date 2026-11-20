@@ -1,0 +1,44 @@
+<script lang="ts">
+  import type { Snippet } from "svelte";
+  import type { SessionTile } from "../../../../overview";
+  import { branchLine, waitingSummary } from "../../../../session-view";
+  import MeterStrip from "./MeterStrip.svelte";
+  import RailTicket from "./RailTicket.svelte";
+
+  let { tile, now, actions }: { tile: SessionTile | null; now: number; actions?: Snippet } =
+    $props();
+
+  let live = $derived(tile?.live ?? null);
+  let waiting = $derived(tile?.state === "needsYou");
+</script>
+
+<div class="header">
+  <RailTicket
+    sessionId={tile?.atlasSessionId ?? ""}
+    branch={tile?.branch || live?.gitBranch || ""}
+    branchLine={branchLine(tile?.branch || live?.gitBranch, live?.worktree ?? null)}
+    {actions}
+  />
+  {#if waiting}
+    <div class="waiting">Waiting for you: {waitingSummary(live?.pendingTool ?? null)}</div>
+  {/if}
+  <MeterStrip {live} {now} />
+</div>
+
+<style>
+  .header {
+    flex-shrink: 0;
+  }
+
+  .waiting {
+    overflow: hidden;
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--border);
+    color: var(--warning);
+    font-size: var(--text-caption);
+    font-weight: 500;
+    line-height: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+</style>

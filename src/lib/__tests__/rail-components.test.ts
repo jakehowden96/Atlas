@@ -11,9 +11,9 @@ vi.mock("../ipc", () => ({
   stateSave: vi.fn(async () => undefined),
 }));
 
-import ThinRail from "../components/session/rail/ThinRail.svelte";
-import MeterStrip from "../components/session/rail/MeterStrip.svelte";
-import PlanTile from "../components/session/rail/PlanTile.svelte";
+import ThinRail from "../components/app/session/rail/ThinRail.svelte";
+import MeterStrip from "../components/app/session/rail/MeterStrip.svelte";
+import PlanTile from "../components/app/session/rail/PlanTile.svelte";
 import { sessionCosts } from "../stores/cost";
 import { railTiles } from "../stores/settings";
 import type { LiveSession } from "../../types/generated/LiveSession";

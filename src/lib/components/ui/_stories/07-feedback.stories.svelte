@@ -7,7 +7,10 @@
   import { Button } from "../button/index.js";
   import Icon from "../icon/icon.svelte";
 
-  const { Story } = defineMeta({ title: "UI/Empty, Skeleton, Spinner, Progress", tags: ["autodocs"] });
+  const { Story } = defineMeta({
+    title: "UI/Empty, Skeleton, Spinner, Progress",
+    tags: ["autodocs"],
+  });
 </script>
 
 <Story name="Empty" asChild>
@@ -17,9 +20,13 @@
         <Empty.Header>
           <Empty.Media variant="icon"><Icon name="fork_right" size={20} /></Empty.Media>
           <Empty.Title>No open pull requests</Empty.Title>
-          <Empty.Description>Pull requests you author or review in watched repositories show up here.</Empty.Description>
+          <Empty.Description
+            >Pull requests you author or review in watched repositories show up here.</Empty.Description
+          >
         </Empty.Header>
-        <Empty.Content><Button size="sm" variant="outline">Watch a repository</Button></Empty.Content>
+        <Empty.Content
+          ><Button size="sm" variant="outline">Watch a repository</Button></Empty.Content
+        >
       </Empty.Root>
     </div>
     <div class="rounded-lg border border-border bg-card p-1">
@@ -38,7 +45,9 @@
       <Skeleton class="w-full" />
       <Skeleton class="w-1/2" />
     </div>
-    <div class="flex items-center gap-2 text-caption text-muted-foreground"><Spinner /> Loading pull requests…</div>
+    <div class="flex items-center gap-2 text-caption text-muted-foreground">
+      <Spinner /> Loading pull requests…
+    </div>
     <div class="grid gap-3">
       <Progress value={32} />
       <Progress value={81} indicatorClass="bg-warning" />

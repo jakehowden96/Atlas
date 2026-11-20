@@ -8,7 +8,7 @@ vi.mock("../ipc", () => ({ refreshPanel: vi.fn(async () => null) }));
 vi.mock("../logger", () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock("../review/submitReview", () => ({ submitReview: vi.fn() }));
 
-import ChangesDrawer from "../components/changes/ChangesDrawer.svelte";
+import ChangesDrawer from "../components/app/changes/ChangesDrawer.svelte";
 import { panelData } from "../stores/panel";
 import { activeSessionComments, addComment, clearForSession } from "../stores/reviewComments";
 import { toasts } from "../stores/toast";

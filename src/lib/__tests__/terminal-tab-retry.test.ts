@@ -17,7 +17,7 @@ vi.mock("../terminal-session", () => ({
   },
 }));
 
-import TerminalTab from "../components/terminal/TerminalTab.svelte";
+import TerminalTab from "../components/app/terminal/TerminalTab.svelte";
 
 afterEach(cleanup);
 

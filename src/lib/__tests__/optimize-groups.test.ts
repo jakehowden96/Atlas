@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Finding } from "../../types/codeburn-optimize";
-import { groupFindings } from "../components/stats/codeburn/optimize-groups";
+import { groupFindings } from "../components/app/stats/codeburn/optimize-groups";
 
 const f = (id: string, cls: Finding["class"], usd: number) =>
   ({ id, class: cls, estimatedSavingsUSD: usd }) as Finding;

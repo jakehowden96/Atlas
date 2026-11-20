@@ -14,7 +14,10 @@
 <div
   bind:this={ref}
   data-slot="dialog-footer"
-  class={cn("flex shrink-0 items-center justify-end gap-2 border-t border-border px-4 py-3", className)}
+  class={cn(
+    "flex shrink-0 items-center justify-end gap-2 border-t border-border px-4 py-3",
+    className,
+  )}
   {...restProps}
 >
   {@render children?.()}

@@ -41,7 +41,9 @@
   }}
 >
   <Select.Trigger {size} aria-label={ariaLabel} class={cn("w-fit", className)}>
-    <span class={current ? "truncate" : "truncate text-muted-foreground"}>{current?.label ?? placeholder}</span>
+    <span class={current ? "truncate" : "truncate text-muted-foreground"}
+      >{current?.label ?? placeholder}</span
+    >
   </Select.Trigger>
   <Select.Content>
     {#each options as o (o.id)}

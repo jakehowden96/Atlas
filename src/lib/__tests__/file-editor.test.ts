@@ -6,7 +6,7 @@ import userEvent from "@testing-library/user-event";
 
 vi.mock("../ipc", () => ({ openUrl: vi.fn(), readTextFileAt: vi.fn() }));
 
-import FileEditor from "../components/files/FileEditor.svelte";
+import FileEditor from "../components/app/files/FileEditor.svelte";
 import { openFiles } from "../stores/file-tabs";
 import { activeFile, conflicts, diskDocs, docs } from "../stores/files";
 import { openDialogOpen } from "../stores/view";

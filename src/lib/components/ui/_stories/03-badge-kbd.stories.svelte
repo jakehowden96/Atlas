@@ -7,7 +7,15 @@
 
   const { Story } = defineMeta({ title: "UI/Badge, Kbd", tags: ["autodocs"] });
 
-  const variants = ["default", "secondary", "outline", "success", "warning", "destructive", "muted"] as const;
+  const variants = [
+    "default",
+    "secondary",
+    "outline",
+    "success",
+    "warning",
+    "destructive",
+    "muted",
+  ] as const;
 </script>
 
 <Story name="Badge" asChild>

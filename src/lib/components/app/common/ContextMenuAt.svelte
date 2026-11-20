@@ -9,8 +9,12 @@
     items,
     onselect,
     onclose,
-  }: { anchor: HTMLElement; items: MenuItem[]; onselect?: (item: MenuItem) => void; onclose: () => void } =
-    $props();
+  }: {
+    anchor: HTMLElement;
+    items: MenuItem[];
+    onselect?: (item: MenuItem) => void;
+    onclose: () => void;
+  } = $props();
   let open = $state(true);
 </script>
 

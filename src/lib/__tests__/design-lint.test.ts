@@ -95,9 +95,7 @@ describe("design lint", () => {
   });
 
   it("uses --h-* tokens for control heights", () => {
-    expect(
-      scan("style", /(?<![\w-])(?:min-)?height:\s*(?:2\d|3\d|4[0-4])px/),
-    ).toEqual([]);
+    expect(scan("style", /(?<![\w-])(?:min-)?height:\s*(?:2\d|3\d|4[0-4])px/)).toEqual([]);
   });
 
   it("uses z-index tokens, not numbers", () => {
@@ -109,15 +107,11 @@ describe("design lint", () => {
   });
 
   it("uses Icon, not Unicode glyphs, for button content", () => {
-    expect(
-      scan("markup", /<button\b[^>]*>\s*(?:[✕▥↑↗←▸›−+]|›_)\s*<\/button>/),
-    ).toEqual([]);
+    expect(scan("markup", /<button\b[^>]*>\s*(?:[✕▥↑↗←▸›−+]|›_)\s*<\/button>/)).toEqual([]);
   });
 
   it("keeps the icon font class inside Icon", () => {
-    expect(
-      scan("both", /material-symbols-outlined/, ALLOW.icon),
-    ).toEqual([]);
+    expect(scan("both", /material-symbols-outlined/, ALLOW.icon)).toEqual([]);
   });
 
   it("does not nest buttons or inputs in role=button", () => {
@@ -160,9 +154,7 @@ describe("design lint", () => {
   });
 
   it("uses Select or NativeSelect, not a raw <select>", () => {
-    expect(
-      scan("markup", /<select\b/, ["components/ui/native-select/"]),
-    ).toEqual([]);
+    expect(scan("markup", /<select\b/, ["components/ui/native-select/"])).toEqual([]);
   });
 
   it("uses Atlas dialogs, not window.alert or confirm", () => {

@@ -28,7 +28,9 @@
   <DropdownMenu.Trigger>
     {#snippet child({ props })}
       {#if icon}
-        <Button {...props} variant="ghost" size="icon" aria-label={label} title={label}><Icon name={icon} size={20} /></Button>
+        <Button {...props} variant="ghost" size="icon" aria-label={label} title={label}
+          ><Icon name={icon} size={20} /></Button
+        >
       {:else}
         <Button {...props} variant="outline" size="sm">{label}</Button>
       {/if}

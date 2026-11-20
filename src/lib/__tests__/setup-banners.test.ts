@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import SetupBanners from "../components/shell/SetupBanners.svelte";
+import SetupBanners from "../components/app/shell/SetupBanners.svelte";
 import { claudeHookStale } from "../stores/claude";
 import { claudeHook, tailTranscripts } from "../stores/settings";
 

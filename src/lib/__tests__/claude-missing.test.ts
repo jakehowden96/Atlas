@@ -8,7 +8,7 @@ vi.mock("../logger", () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
 import { claudeCheck } from "../ipc";
-import ClaudeMissing, { INSTALL_COMMANDS } from "../components/shell/ClaudeMissing.svelte";
+import ClaudeMissing, { INSTALL_COMMANDS } from "../components/app/shell/ClaudeMissing.svelte";
 import { claudeMissing, recheckClaude } from "../stores/claude";
 import { claudeBinaryPath } from "../stores/settings";
 

@@ -32,5 +32,9 @@
   {#snippet infoIcon()}<Icon name="info" size={18} />{/snippet}
   {#snippet warningIcon()}<Icon name="warning" size={18} />{/snippet}
   {#snippet errorIcon()}<Icon name="error" size={18} />{/snippet}
-  {#snippet loadingIcon()}<Icon name="progress_activity" size={18} class="animate-spin-atlas" />{/snippet}
+  {#snippet loadingIcon()}<Icon
+      name="progress_activity"
+      size={18}
+      class="animate-spin-atlas"
+    />{/snippet}
 </Sonner>

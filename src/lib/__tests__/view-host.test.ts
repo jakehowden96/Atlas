@@ -12,16 +12,16 @@ vi.mock("../ipc", () => ({ revealLogsDir: vi.fn() }));
 
 // Only Stats throws; the other views are inert stand-ins.
 const fail = vi.hoisted(() => ({ on: true }));
-vi.mock("../components/stats/StatsView.svelte", async () => {
+vi.mock("../components/app/stats/StatsView.svelte", async () => {
   const { default: Thrower } = await import("./ThrowerFixture.svelte");
   return { default: (anchor: never) => Thrower(anchor, { fail }) };
 });
-vi.mock("../components/files/FilesView.svelte", () => ({ default: () => {} }));
-vi.mock("../components/prs/PrsView.svelte", () => ({ default: () => {} }));
-vi.mock("../components/session/SessionView.svelte", () => ({ default: () => {} }));
-vi.mock("../components/sessions/SessionsView.svelte", () => ({ default: () => {} }));
+vi.mock("../components/app/files/FilesView.svelte", () => ({ default: () => {} }));
+vi.mock("../components/app/prs/PrsView.svelte", () => ({ default: () => {} }));
+vi.mock("../components/app/session/SessionView.svelte", () => ({ default: () => {} }));
+vi.mock("../components/app/sessions/SessionsView.svelte", () => ({ default: () => {} }));
 
-import ViewHost from "../components/shell/ViewHost.svelte";
+import ViewHost from "../components/app/shell/ViewHost.svelte";
 import { activeView } from "../stores/view";
 
 afterEach(cleanup);

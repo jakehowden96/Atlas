@@ -11,8 +11,14 @@
     tags: ["autodocs"],
     args: { variant: "default", size: "default", disabled: false, loading: false },
     argTypes: {
-      variant: { control: "select", options: ["default", "outline", "secondary", "ghost", "destructive", "link"] },
-      size: { control: "select", options: ["xs", "sm", "default", "lg", "icon-xs", "icon-sm", "icon", "icon-lg"] },
+      variant: {
+        control: "select",
+        options: ["default", "outline", "secondary", "ghost", "destructive", "link"],
+      },
+      size: {
+        control: "select",
+        options: ["xs", "sm", "default", "lg", "icon-xs", "icon-sm", "icon", "icon-lg"],
+      },
     },
   });
 
@@ -56,7 +62,9 @@
     <div class="flex items-center gap-3">
       <span class="w-16 font-mono text-xs text-muted-foreground">icon</span>
       {#each iconSizes as [size, px] (size)}
-        <Button {size} variant="ghost" aria-label="Settings"><Icon name="settings" size={px} /></Button>
+        <Button {size} variant="ghost" aria-label="Settings"
+          ><Icon name="settings" size={px} /></Button
+        >
       {/each}
       {#each iconSizes as [size, px] (size)}
         <Button {size} variant="outline" aria-label="Close"><Icon name="close" size={px} /></Button>

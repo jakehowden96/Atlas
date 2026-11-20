@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/svelte";
-import Keyboard from "../components/settings/sections/Keyboard.svelte";
+import Keyboard from "../components/app/settings/sections/Keyboard.svelte";
 import { DEFAULT_KEYMAP } from "../keymap";
 import { keymap } from "../stores/settings";
 

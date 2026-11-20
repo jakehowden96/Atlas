@@ -22,13 +22,26 @@
     { id: "prs", label: "PRs", count: 2, alert: true },
     { id: "stats", label: "Stats", disabled: true },
   ];
-  const files = ["App.svelte", "app.css", "theme.ts", "TopBar.svelte", "SessionView.svelte", "FileTree.svelte", "StatsView.svelte"].map(
-    (f, i) => ({ id: f, label: f, dirty: i === 1 }),
-  );
+  const files = [
+    "App.svelte",
+    "app.css",
+    "theme.ts",
+    "TopBar.svelte",
+    "SessionView.svelte",
+    "FileTree.svelte",
+    "StatsView.svelte",
+  ].map((f, i) => ({ id: f, label: f, dirty: i === 1 }));
   const menu = [
     { id: "open", label: "Open", icon: "open_in_new" as const, shortcut: "Enter" },
     { id: "rename", label: "Rename" },
-    { id: "share", label: "Share", children: [{ id: "link", label: "Copy link" }, { id: "mail", label: "Email" }] },
+    {
+      id: "share",
+      label: "Share",
+      children: [
+        { id: "link", label: "Copy link" },
+        { id: "mail", label: "Email" },
+      ],
+    },
     { id: "lock", label: "Locked", disabled: true },
     { id: "delete", label: "Delete", danger: true, separatorBefore: true },
   ];
@@ -53,7 +66,11 @@
       role="radiogroup"
       size="sm"
       label="Range"
-      options={[{ id: "1d", label: "1d" }, { id: "7d", label: "7d" }, { id: "30d", label: "30d" }]}
+      options={[
+        { id: "1d", label: "1d" },
+        { id: "7d", label: "7d" },
+        { id: "30d", label: "30d" },
+      ]}
       value={range}
       onChange={(v) => (range = v)}
     />
@@ -63,7 +80,13 @@
 <Story name="Tab strip" asChild>
   <div class="flex flex-col gap-6 p-6">
     <div class="w-[460px] border-b border-border">
-      <TabStrip label="Open files" tabs={files} value={file} onselect={(id) => (file = id)} onclose={() => {}} />
+      <TabStrip
+        label="Open files"
+        tabs={files}
+        value={file}
+        onselect={(id) => (file = id)}
+        onclose={() => {}}
+      />
     </div>
     <div class="w-56">
       <TabStrip
@@ -86,11 +109,21 @@
     <OptionSelect
       size="sm"
       aria-label="Sort"
-      options={[{ id: "updated", label: "Recently updated" }, { id: "created", label: "Newest" }, { id: "author", label: "Author" }]}
+      options={[
+        { id: "updated", label: "Recently updated" },
+        { id: "created", label: "Newest" },
+        { id: "author", label: "Author" },
+      ]}
       bind:value={pick}
     />
-    <OptionSelect aria-label="Plan" placeholder="Choose a plan" options={[{ id: "pro", label: "Pro" }]} />
-    <div class="w-64"><SearchInput bind:value={q} placeholder="Search files" aria-label="Search files" /></div>
+    <OptionSelect
+      aria-label="Plan"
+      placeholder="Choose a plan"
+      options={[{ id: "pro", label: "Pro" }]}
+    />
+    <div class="w-64">
+      <SearchInput bind:value={q} placeholder="Search files" aria-label="Search files" />
+    </div>
     <MenuButton label="Actions" items={menu} />
     <MenuButton icon="more_horiz" label="Ticket actions" items={menu} align="end" />
   </div>
@@ -98,9 +131,13 @@
 
 <Story name="Anchored popover" asChild>
   <div class="p-6">
-    <Button variant="outline" bind:ref={popTrigger} onclick={() => (popOpen = !popOpen)}>Session status</Button>
+    <Button variant="outline" bind:ref={popTrigger} onclick={() => (popOpen = !popOpen)}
+      >Session status</Button
+    >
     <AnchoredPopover bind:open={popOpen} trigger={popTrigger} label="Session status">
-      <div class="flex items-center gap-2"><StatusMark state="running" /> 2 running · 1 needs you</div>
+      <div class="flex items-center gap-2">
+        <StatusMark state="running" /> 2 running · 1 needs you
+      </div>
     </AnchoredPopover>
   </div>
 </Story>
@@ -113,7 +150,9 @@
       <CopyButton value="atlas" />
       <CopyButton value="atlas" variant="text" label="Copy path" />
     </div>
-    <div class="w-80"><ChipInput bind:value={chips} label="Branches" placeholder="Add a branch" /></div>
+    <div class="w-80">
+      <ChipInput bind:value={chips} label="Branches" placeholder="Add a branch" />
+    </div>
     <NumberStepper bind:value={n} min={0} max={10} label="Columns" />
   </div>
 </Story>

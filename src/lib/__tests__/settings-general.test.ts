@@ -12,7 +12,7 @@ vi.mock("../ipc", () => ({
 }));
 vi.mock("../logger", () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
-import General from "../components/settings/sections/General.svelte";
+import General from "../components/app/settings/sections/General.svelte";
 import { MAX_TERMINAL_FONT_SIZE, terminalFontSize } from "../stores/settings";
 
 afterEach(cleanup);

@@ -8,7 +8,10 @@
   import { Button } from "../button/index.js";
   import Icon from "../icon/icon.svelte";
 
-  const { Story } = defineMeta({ title: "UI/Card, Table, Avatar, Collapsible", tags: ["autodocs"] });
+  const { Story } = defineMeta({
+    title: "UI/Card, Table, Avatar, Collapsible",
+    tags: ["autodocs"],
+  });
 
   const rows = [
     ["Opus", "41", "$18.20", "Long plans and reviews"],
@@ -22,11 +25,17 @@
     <Card.Root>
       <Card.Header>
         <Card.Title>Spend this week</Card.Title>
-        <Card.Action><Button variant="ghost" size="icon-sm" aria-label="More"><Icon name="more_horiz" /></Button></Card.Action>
+        <Card.Action
+          ><Button variant="ghost" size="icon-sm" aria-label="More"
+            ><Icon name="more_horiz" /></Button
+          ></Card.Action
+        >
         <Card.Description>Across 14 sessions in 3 workspaces</Card.Description>
       </Card.Header>
       <Card.Content><span class="font-mono text-2xl tabular-nums">$28.56</span></Card.Content>
-      <Card.Footer><span class="text-caption text-muted-foreground">Up 12% on last week</span></Card.Footer>
+      <Card.Footer
+        ><span class="text-caption text-muted-foreground">Up 12% on last week</span></Card.Footer
+      >
     </Card.Root>
   </div>
 </Story>
@@ -35,13 +44,21 @@
   <div class="max-w-[620px] overflow-hidden rounded-xl border border-border bg-card">
     <Table.Root>
       <Table.Header>
-        <Table.Row><Table.Head>Model</Table.Head><Table.Head>Sessions</Table.Head><Table.Head>Cost</Table.Head><Table.Head>Used for</Table.Head></Table.Row>
+        <Table.Row
+          ><Table.Head>Model</Table.Head><Table.Head>Sessions</Table.Head><Table.Head
+            >Cost</Table.Head
+          ><Table.Head>Used for</Table.Head></Table.Row
+        >
       </Table.Header>
       <Table.Body>
         {#each rows as r (r[0])}
           <Table.Row>
-            <Table.Cell>{r[0]}</Table.Cell><Table.Cell class="font-mono tabular-nums">{r[1]}</Table.Cell>
-            <Table.Cell class="font-mono tabular-nums">{r[2]}</Table.Cell><Table.Cell>{r[3]}</Table.Cell>
+            <Table.Cell>{r[0]}</Table.Cell><Table.Cell class="font-mono tabular-nums"
+              >{r[1]}</Table.Cell
+            >
+            <Table.Cell class="font-mono tabular-nums">{r[2]}</Table.Cell><Table.Cell
+              >{r[3]}</Table.Cell
+            >
           </Table.Row>
         {/each}
       </Table.Body>
@@ -65,7 +82,9 @@
         3 agents
       </Collapsible.Trigger>
       <Collapsible.Content class="mt-2 grid gap-1 pl-6 text-caption text-muted-foreground">
-        <span>Explore: reading src/lib/stores</span><span>Plan: drafting phases</span><span>Review: idle</span>
+        <span>Explore: reading src/lib/stores</span><span>Plan: drafting phases</span><span
+          >Review: idle</span
+        >
       </Collapsible.Content>
     </Collapsible.Root>
     <ScrollArea class="h-32 rounded-lg border border-border bg-card">

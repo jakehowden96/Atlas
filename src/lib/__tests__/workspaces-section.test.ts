@@ -33,7 +33,7 @@ vi.mock("../stores/workspace", async () => {
   };
 });
 
-import Workspaces from "../components/settings/sections/Workspaces.svelte";
+import Workspaces from "../components/app/settings/sections/Workspaces.svelte";
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);

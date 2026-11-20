@@ -32,7 +32,9 @@
       <Dialog.Content {size} portalProps={{ disabled: true }} class="absolute">
         <Dialog.Header><Dialog.Title>Rename workspace</Dialog.Title></Dialog.Header>
         <Dialog.Body>
-          <Dialog.Description>The name shows in the top bar and the jump palette. The folder on disk is not renamed.</Dialog.Description>
+          <Dialog.Description
+            >The name shows in the top bar and the jump palette. The folder on disk is not renamed.</Dialog.Description
+          >
           <Field.Field>
             <Field.Label for="dn">Name</Field.Label>
             <Input id="dn" value="atlas" />
@@ -53,7 +55,9 @@
       <AlertDialog.Content size="sm" portalProps={{ disabled: true }} class="absolute">
         <AlertDialog.Header>
           <AlertDialog.Title>Discard 3 unsaved files?</AlertDialog.Title>
-          <AlertDialog.Description>Changes to app.css, theme.ts and ActivityRail.svelte will be lost.</AlertDialog.Description>
+          <AlertDialog.Description
+            >Changes to app.css, theme.ts and ActivityRail.svelte will be lost.</AlertDialog.Description
+          >
         </AlertDialog.Header>
         <AlertDialog.Footer>
           <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
@@ -71,10 +75,14 @@
         <Sheet.Header><Sheet.Title>Changes · 4 files</Sheet.Title></Sheet.Header>
         <Sheet.Body>
           {#each ["src/app.css", "src/lib/theme.ts", "src/lib/utils.ts", "package.json"] as f (f)}
-            <div class="flex items-center gap-2 font-mono text-caption"><Icon name="description" />{f}</div>
+            <div class="flex items-center gap-2 font-mono text-caption">
+              <Icon name="description" />{f}
+            </div>
           {/each}
         </Sheet.Body>
-        <Sheet.Footer><Button variant="outline">Discard all</Button><Button>Commit</Button></Sheet.Footer>
+        <Sheet.Footer
+          ><Button variant="outline">Discard all</Button><Button>Commit</Button></Sheet.Footer
+        >
       </Sheet.Content>
     </Sheet.Root>
   </div>
@@ -87,12 +95,22 @@
       <Command.List>
         <Command.Empty>No matches</Command.Empty>
         <Command.Group heading="Sessions">
-          <Command.Item><Icon name="terminal" />feat/rail-v6<Command.Shortcut>⌘1</Command.Shortcut></Command.Item>
-          <Command.Item><Icon name="terminal" />fix/oauth-loopback<Command.Shortcut>⌘2</Command.Shortcut></Command.Item>
+          <Command.Item
+            ><Icon name="terminal" />feat/rail-v6<Command.Shortcut>⌘1</Command.Shortcut
+            ></Command.Item
+          >
+          <Command.Item
+            ><Icon name="terminal" />fix/oauth-loopback<Command.Shortcut>⌘2</Command.Shortcut
+            ></Command.Item
+          >
         </Command.Group>
         <Command.Group heading="Commands">
-          <Command.Item><Icon name="add" />New session<Command.Shortcut>⌘N</Command.Shortcut></Command.Item>
-          <Command.Item><Icon name="settings" />Settings<Command.Shortcut>⌘,</Command.Shortcut></Command.Item>
+          <Command.Item
+            ><Icon name="add" />New session<Command.Shortcut>⌘N</Command.Shortcut></Command.Item
+          >
+          <Command.Item
+            ><Icon name="settings" />Settings<Command.Shortcut>⌘,</Command.Shortcut></Command.Item
+          >
         </Command.Group>
       </Command.List>
       <Command.Footer>

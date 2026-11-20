@@ -88,7 +88,9 @@ export function showToast(
   const t: Toast = { id: crypto.randomUUID(), title, body: opts.body, type, action: opts.action };
   toasts.update((list) => [...list, t]);
   notificationLog.update((l) =>
-    [...l, { id: t.id, title, body: opts.body, type, time: Date.now(), read: false }].slice(-MAX_LOG),
+    [...l, { id: t.id, title, body: opts.body, type, time: Date.now(), read: false }].slice(
+      -MAX_LOG,
+    ),
   );
   render(t);
 }

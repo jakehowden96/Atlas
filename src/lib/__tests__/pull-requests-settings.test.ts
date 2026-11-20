@@ -6,7 +6,7 @@ import { get } from "svelte/store";
 vi.mock("../ipc", () => ({ stateLoad: vi.fn(), stateSave: vi.fn() }));
 vi.mock("../logger", () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
-import PullRequests from "../components/settings/sections/PullRequests.svelte";
+import PullRequests from "../components/app/settings/sections/PullRequests.svelte";
 import { watchedRepos } from "../stores/settings";
 
 afterEach(cleanup);

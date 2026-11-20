@@ -1,0 +1,493 @@
+<script lang="ts">
+  /**
+   * The Files screen's middle column: tabs, toolbar, the document itself and a
+   * status footer.
+   *
+   * The source pane is CodeMirror 6 (`CodeEditor.svelte`): highlighting, line
+   * numbers, search, and diagnostics wherever a language server is installed.
+   * The preview is `markdown.ts` rather than a full CommonMark renderer, and a
+   * file with no Markdown preview simply shows its source.
+   */
+  import { untrack } from "svelte";
+  import { absolutePath, editorTarget, parseFileKey, resolveWikilink } from "../../../files";
+  import { basename, formatAgo } from "../../../format";
+  import { openUrl } from "../../../ipc";
+  import { renderMarkdown } from "../../../markdown";
+  import { revealInFileManager } from "../../../ui/reveal";
+  import { chords } from "../../../stores/settings";
+  import {
+    activeFile,
+    conflicts,
+    dirtyFiles,
+    diskDocs,
+    docEntries,
+    docs,
+    fileMode,
+    fileWs,
+    loadFileText,
+    openFile,
+    outlineJump,
+    plans,
+    requestCloseFile,
+    keepMine,
+    reloadFromDisk,
+    saveActiveFile,
+    setDoc,
+    unreadable,
+  } from "../../../stores/files";
+  import { openFiles } from "../../../stores/file-tabs";
+  import { fileRailOpen, openDialogOpen, openNewSession } from "../../../stores/view";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import * as Empty from "$lib/components/ui/empty/index.js";
+  import Icon from "../../ui/icon/icon.svelte";
+  import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
+  import { Kbd } from "$lib/components/ui/kbd/index.js";
+  import Tabs from "../common/TabStrip.svelte";
+  import Segmented, { type Segment } from "$lib/components/app/common/Segmented.svelte";
+  import CodeEditor from "./CodeEditor.svelte";
+
+  let key = $derived($activeFile);
+  let file = $derived(parseFileKey(key));
+  /** The unsaved edit if there is one, else the text last read from disk. */
+  let text = $derived($docs.get(key) ?? $diskDocs.get(key) ?? "");
+  let dirty = $derived($dirtyFiles.has(key));
+  let unreadableFile = $derived($unreadable.has(key));
+  let conflicted = $derived($conflicts.has(key));
+  let markdown = $derived(/\.(md|markdown)$/i.test(file.path));
+  /** Preview is markdown-only, so a `.txt` always shows its source. */
+  let mode = $derived(markdown ? $fileMode : "source");
+
+  let modeOptions = $derived<Segment[]>([
+    { id: "source", label: "Source" },
+    { id: "split", label: "Split" },
+    { id: "preview", label: "Preview", disabled: !markdown },
+  ]);
+
+  let tabItems = $derived(
+    $openFiles.map((tab) => ({
+      id: tab,
+      label: basename(parseFileKey(tab).path),
+      dirty: $dirtyFiles.has(tab),
+    })),
+  );
+  let files = $derived($docEntries.filter((e) => !e.is_dir));
+  /* The preview and footer counts are whole-document passes, so they follow
+     typing after a pause rather than on every key. A different file shows at once. */
+  let settled = $state({ key: "", text: "" });
+  let slowText = $derived(settled.key === key ? settled.text : text);
+  $effect(() => {
+    const next = { key, text };
+    const timer = setTimeout(() => (settled = next), 150);
+    return () => clearTimeout(timer);
+  });
+  let html = $derived(
+    mode === "source" ? "" : renderMarkdown(slowText, (t) => resolveWikilink(t, files) !== null),
+  );
+
+  let target = $derived(editorTarget(file.source, file.path));
+  let editor = $state<CodeEditor | null>(null);
+  let previewEl = $state<HTMLDivElement | null>(null);
+
+  /** Long paths would push the toolbar's controls off; the tail is the part
+   *  that identifies the file. */
+  let crumbs = $derived(file.path.split(/[\\/]/).filter(Boolean).slice(-3));
+
+  /** `src/lib/ipc.ts` → `TS`. Anything with no extension keeps the generic name. */
+  let ext = $derived(/\.([a-z0-9]+)$/i.exec(file.path)?.[1]?.toLowerCase() ?? "");
+  let kind = $derived(
+    markdown ? "Markdown" : ext === "txt" ? "Text" : ext ? ext.toUpperCase() : "Document",
+  );
+  let lines = $derived(slowText ? slowText.split("\n").length : 0);
+  let words = $derived(slowText.trim() ? slowText.trim().split(/\s+/).length : 0);
+  let modified = $derived.by(() => {
+    const stamp =
+      file.source === "plans"
+        ? $plans.find((p) => p.path === file.path)?.modified
+        : $docEntries.find((e) => e.rel_path === file.path)?.modified;
+    const at = stamp ? Date.parse(stamp) : Number.NaN;
+    return Number.isNaN(at) ? "—" : formatAgo(at, Date.now());
+  });
+
+  // `openFiles` is persisted but the active tab is not, so a restored session
+  // — and a closed last tab — needs one picked here.
+  $effect(() => {
+    const open = $openFiles;
+    if (open.length === 0) {
+      if ($activeFile) activeFile.set("");
+      return;
+    }
+    const first = open[0];
+    if (first !== undefined && !open.includes($activeFile)) activeFile.set(first);
+  });
+
+  // Pull the file off disk the first time it is shown. `loadFileText` is a
+  // no-op once the text is known, so this only fires on a genuinely new tab.
+  $effect(() => {
+    void loadFileText($activeFile);
+  });
+
+  /**
+   * Scroll to a heading the outline rail was clicked on.
+   *
+   * Only the jump itself is a dependency — everything the scroll reads is
+   * untracked, or typing in the source pane would yank the caret back to the
+   * last heading on every keystroke.
+   */
+  $effect(() => {
+    const jump = $outlineJump;
+    if (jump) untrack(() => scrollToHeading(jump));
+  });
+
+  function scrollToHeading(jump: { id: string; line: number }) {
+    // The preview has real anchors; the source pane has none, so it is scrolled
+    // by putting the caret on the heading's line instead.
+    const anchor = previewEl?.querySelector(`#${CSS.escape(jump.id)}`);
+    if (anchor) {
+      anchor.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    editor?.goToLine(jump.line);
+  }
+
+  function onPreviewClick(e: MouseEvent) {
+    const anchor = (e.target as HTMLElement | null)?.closest?.("a");
+    if (!anchor) return;
+    // Either way the webview must not navigate — it would replace the app.
+    e.preventDefault();
+    const wiki = anchor.getAttribute("data-wikilink");
+    if (wiki) {
+      const rel = resolveWikilink(wiki, files);
+      if (rel) openFile($fileWs, rel);
+      return;
+    }
+    const href = anchor.getAttribute("href") ?? "";
+    if (/^https?:/i.test(href)) void openUrl(href);
+  }
+
+  /* Wikilinks only. A `[[link]]` carries no href — the target is resolved here
+     — so ⏎ on one raises no click of its own the way an ordinary link does. */
+  function onPreviewKeydown(e: KeyboardEvent) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const anchor = (e.target as HTMLElement | null)?.closest?.("a[data-wikilink]");
+    if (!anchor) return;
+    e.preventDefault();
+    const rel = resolveWikilink(anchor.getAttribute("data-wikilink") ?? "", files);
+    if (rel) openFile($fileWs, rel);
+  }
+
+  function askClaude() {
+    if (!key) return;
+    const workspacePath = file.source === "plans" || file.source === "disk" ? $fileWs : file.source;
+    openNewSession({ workspacePath, attachPath: absolutePath(file.source, file.path) });
+  }
+</script>
+
+<div class="editor">
+  {#if $openFiles.length === 0}
+    <Empty.Root>
+      <Empty.Header>
+        <Empty.Media variant="icon"><Icon name="description" size={20} /></Empty.Media>
+        <Empty.Title>No file open</Empty.Title>
+      </Empty.Header>
+      <Empty.Content
+        ><Button variant="outline" onclick={() => openDialogOpen.set(true)}>Open a file…</Button
+        ></Empty.Content
+      >
+    </Empty.Root>
+  {:else}
+    <div class="tabs">
+      <Tabs
+        label="Open files"
+        tabs={tabItems}
+        value={$activeFile}
+        onselect={(id) => activeFile.set(id)}
+        onclose={(id) => requestCloseFile(id)}
+      />
+    </div>
+
+    <div class="toolbar">
+      <span class="crumbs">
+        {#each crumbs as crumb, i (i)}
+          {#if i > 0}<span class="sep">/</span>{/if}
+          <span class="crumb" class:leaf={i === crumbs.length - 1}>{crumb}</span>
+        {/each}
+      </span>
+      {#if unreadableFile}<span class="pill">Read-only · could not be read</span>{/if}
+      {#if dirty}<span class="pill">Unsaved</span>{/if}
+
+      <div class="spacer"></div>
+
+      <Segmented
+        options={modeOptions}
+        value={mode}
+        size="sm"
+        role="radiogroup"
+        label="View mode"
+        onChange={(id) => fileMode.set(id as "source" | "split" | "preview")}
+      />
+      <TooltipButton
+        size="sm"
+        icon="folder"
+        label="Reveal in file manager"
+        onclick={() => void revealInFileManager(absolutePath(file.source, file.path))}
+      />
+      <Button variant="outline" size="sm" onclick={askClaude}>
+        <Icon name="terminal" />
+        Ask Claude
+      </Button>
+      <Button
+        size="sm"
+        variant={dirty ? "default" : "outline"}
+        disabled={!dirty}
+        onclick={() => void saveActiveFile()}
+      >
+        Save
+        <Kbd>{$chords.saveFile}</Kbd>
+      </Button>
+      <TooltipButton
+        size="sm"
+        icon={$fileRailOpen ? "right_panel_close" : "right_panel_open"}
+        label="Toggle the file rail"
+        aria-pressed={$fileRailOpen}
+        onclick={() => fileRailOpen.update((v) => !v)}
+      />
+    </div>
+
+    {#if conflicted}
+      <Alert.Root variant="warning">
+        <Icon name="warning" />
+        <Alert.Title
+          >This file changed on disk (or was removed) while you had unsaved edits</Alert.Title
+        >
+        <Alert.Action
+          ><Button variant="outline" size="sm" onclick={() => keepMine(key)}>Keep mine</Button>
+          <Button variant="outline" size="sm" onclick={() => void reloadFromDisk(key)}
+            >Reload from disk</Button
+          ></Alert.Action
+        >
+      </Alert.Root>
+    {/if}
+
+    <div class="body">
+      {#if mode !== "preview"}
+        <CodeEditor
+          bind:this={editor}
+          docKey={key}
+          path={target.relative}
+          root={target.root}
+          {text}
+          readOnly={unreadableFile}
+          onChange={(next) => setDoc(key, next)}
+        />
+      {/if}
+      {#if mode !== "source"}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          bind:this={previewEl}
+          class="preview"
+          class:split={mode === "split"}
+          onclick={onPreviewClick}
+          onkeydown={onPreviewKeydown}
+        >
+          <div class="page">{@html html}</div>
+        </div>
+      {/if}
+    </div>
+
+    <div class="footer">
+      {kind} · {lines} lines · {words} words · modified {modified}
+    </div>
+  {/if}
+</div>
+
+<style>
+  .editor {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: var(--card);
+  }
+
+  .tabs {
+    flex-shrink: 0;
+    background: var(--background);
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── Toolbar ───────────────────────────────────────────────────────────── */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 8px;
+    height: var(--h-xl);
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .crumbs {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: var(--text-caption);
+    white-space: nowrap;
+  }
+
+  .crumb,
+  .sep {
+    color: var(--muted-foreground);
+  }
+
+  .crumb.leaf {
+    color: var(--foreground);
+  }
+
+  .pill {
+    flex-shrink: 0;
+    padding: 1px var(--sp-3);
+    border-radius: var(--radius-full);
+    background: var(--muted);
+    color: var(--warning);
+    font-size: var(--text-xs);
+    font-weight: 600;
+  }
+
+  .spacer {
+    flex: 1;
+  }
+
+  /* ── Body ──────────────────────────────────────────────────────────────── */
+  .body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .preview {
+    flex: 1;
+    min-width: 0;
+    padding: 24px 28px;
+    overflow-y: auto;
+  }
+
+  .preview.split {
+    border-left: 1px solid var(--border);
+  }
+
+  .page {
+    max-width: 640px;
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-md);
+    line-height: 1.65;
+  }
+
+  .footer {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    height: var(--h-md);
+    padding: 0 12px;
+    border-top: 1px solid var(--border);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
+  }
+
+  /* ── Rendered markdown ─────────────────────────────────────────────────── */
+  .page :global(h1) {
+    margin: 0 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    font-size: var(--text-2xl);
+    font-weight: 600;
+  }
+
+  .page :global(h2) {
+    margin: 24px 0 8px;
+    font-size: var(--text-xl);
+    font-weight: 600;
+  }
+
+  .page :global(h3) {
+    margin: 20px 0 6px;
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+
+  .page :global(p) {
+    margin: 0 0 12px;
+    white-space: pre-wrap;
+  }
+
+  .page :global(.md-list) {
+    margin: 0 0 12px;
+    padding-left: 22px;
+  }
+
+  .page :global(li) {
+    margin-bottom: 3px;
+  }
+
+  .page :global(li.task) {
+    list-style: none;
+    margin-left: -18px;
+  }
+
+  .page :global(li.task input) {
+    margin-right: 6px;
+    accent-color: var(--success);
+  }
+
+  .page :global(li.task.done) {
+    color: var(--muted-foreground);
+    text-decoration: line-through;
+  }
+
+  .page :global(blockquote) {
+    margin: 0 0 12px;
+    padding-left: 12px;
+    border-left: 2px solid var(--success);
+    color: var(--muted-foreground);
+  }
+
+  .page :global(.md-code) {
+    padding: 1px 5px;
+    border-radius: var(--radius-xs);
+    background: var(--muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+
+  .page :global(.md-pre) {
+    margin: 0 0 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--term-bg);
+    overflow-x: auto;
+  }
+
+  .page :global(.md-pre code) {
+    color: var(--term-text);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.6;
+  }
+
+  .page :global(.md-link),
+  .page :global(.wikilink) {
+    color: var(--success);
+    cursor: pointer;
+  }
+
+  .page :global(.wikilink.broken) {
+    color: var(--muted-foreground);
+    cursor: default;
+  }
+</style>

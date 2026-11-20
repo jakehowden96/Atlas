@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { get } from "svelte/store";
-import status from "../components/stats/codeburn/__fixtures__/status.json";
-import sessions from "../components/stats/codeburn/__fixtures__/sessions.json";
+import status from "../components/app/stats/codeburn/__fixtures__/status.json";
+import sessions from "../components/app/stats/codeburn/__fixtures__/sessions.json";
 import { filterArgs } from "../../types/codeburn";
 
 const codeburn = vi.hoisted(() => vi.fn());

@@ -17,7 +17,16 @@
     ["destructive", "destructive-foreground"],
   ] as const;
   const lines = ["border", "input", "ring"] as const;
-  const series = ["chart-1", "chart-2", "chart-3", "chart-4", "chart-5", "model-opus", "model-sonnet", "model-haiku"];
+  const series = [
+    "chart-1",
+    "chart-2",
+    "chart-3",
+    "chart-4",
+    "chart-5",
+    "model-opus",
+    "model-sonnet",
+    "model-haiku",
+  ];
   const type = [
     ["text-2xl", "24 · page titles"],
     ["text-xl", "19 · section and stat headings"],
@@ -27,7 +36,14 @@
     ["text-caption", "13 · secondary lines, small controls"],
     ["text-xs", "12 · labels, meta, kbd (the floor)"],
   ] as const;
-  const radii = ["rounded-xs", "rounded-sm", "rounded-md", "rounded-lg", "rounded-xl", "rounded-full"];
+  const radii = [
+    "rounded-xs",
+    "rounded-sm",
+    "rounded-md",
+    "rounded-lg",
+    "rounded-xl",
+    "rounded-full",
+  ];
 </script>
 
 <Story name="Colours" asChild>
@@ -35,10 +51,16 @@
     <div class="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3">
       {#each pairs as [bg, fg] (bg)}
         <div class="overflow-hidden rounded-lg border border-border">
-          <div class="flex h-14 items-end p-2 text-caption font-medium" style:background="var(--{bg})" style:color="var(--{fg})">
+          <div
+            class="flex h-14 items-end p-2 text-caption font-medium"
+            style:background="var(--{bg})"
+            style:color="var(--{fg})"
+          >
             Aa {bg}
           </div>
-          <div class="bg-card px-2 py-1 font-mono text-xs text-muted-foreground">--{bg} / --{fg}</div>
+          <div class="bg-card px-2 py-1 font-mono text-xs text-muted-foreground">
+            --{bg} / --{fg}
+          </div>
         </div>
       {/each}
     </div>
@@ -49,7 +71,12 @@
         </div>
       {/each}
       {#each ["elev-0", "elev-1", "elev-2"] as e (e)}
-        <div class="grid h-12 w-28 place-items-center rounded-lg bg-card text-caption" style:box-shadow="var(--{e})">--{e}</div>
+        <div
+          class="grid h-12 w-28 place-items-center rounded-lg bg-card text-caption"
+          style:box-shadow="var(--{e})"
+        >
+          --{e}
+        </div>
       {/each}
     </div>
     <div class="flex flex-wrap gap-2">

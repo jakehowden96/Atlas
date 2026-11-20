@@ -21,7 +21,7 @@ vi.mock("../stores/prs", async (orig) => ({
   loadWorkspaceRepos: vi.fn(async () => undefined),
 }));
 
-import PrTile from "../components/session/rail/PrTile.svelte";
+import PrTile from "../components/app/session/rail/PrTile.svelte";
 import {
   prHeadline,
   prHeadlineText,

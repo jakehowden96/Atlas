@@ -15,7 +15,7 @@ vi.mock("../logger", () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(
 
 import { connectorGetTicket } from "../ipc";
 import { IpcError } from "../ipc-error";
-import RailTicket from "../components/session/rail/RailTicket.svelte";
+import RailTicket from "../components/app/session/rail/RailTicket.svelte";
 import { connectors } from "../stores/connectors";
 import { settingsOpen } from "../stores/settings";
 import { tickets } from "../stores/tickets";

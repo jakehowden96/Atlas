@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resetCountdown } from "../components/stats/codeburn/plans";
+import { resetCountdown } from "../components/app/stats/codeburn/plans";
 
 describe("resetCountdown", () => {
   const now = Date.parse("2026-11-05T00:00:00Z");

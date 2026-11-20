@@ -21,7 +21,10 @@
 >
   {#snippet children({ checked })}
     {#if checked}
-      <span data-slot="radio-group-indicator" class="size-[7px] rounded-full bg-primary in-disabled:bg-muted-foreground"></span>
+      <span
+        data-slot="radio-group-indicator"
+        class="size-[7px] rounded-full bg-primary in-disabled:bg-muted-foreground"
+      ></span>
     {/if}
   {/snippet}
 </RadioGroupPrimitive.Item>

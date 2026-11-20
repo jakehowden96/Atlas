@@ -10,7 +10,8 @@
         default: "bg-primary text-primary-foreground hover:bg-(--primary-hover)",
         outline: "border-input bg-card text-foreground hover:bg-muted aria-expanded:bg-accent",
         secondary: "bg-secondary text-secondary-foreground hover:bg-accent aria-expanded:bg-accent",
-        ghost: "bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground aria-pressed:bg-accent aria-pressed:text-foreground",
+        ghost:
+          "bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground aria-pressed:bg-accent aria-pressed:text-foreground",
         destructive: "bg-destructive/10 text-destructive hover:bg-destructive/20",
         link: "h-auto! bg-transparent p-0! text-foreground underline decoration-input underline-offset-3 hover:decoration-foreground",
       },

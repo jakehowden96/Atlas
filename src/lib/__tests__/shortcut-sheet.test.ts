@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/svelte";
-import ShortcutSheet from "../components/settings/ShortcutSheet.svelte";
+import ShortcutSheet from "../components/app/settings/ShortcutSheet.svelte";
 import { ACTIONS, ACTION_LABELS } from "../keymap";
 import { shortcutsOpen } from "../stores/view";
 

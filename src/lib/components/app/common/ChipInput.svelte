@@ -90,7 +90,9 @@
       onblur={() => (touched = true)}
     />
   </div>
-  {#if shown}<Alert.Root variant="destructive" layout="inline"><Icon name="error" /><Alert.Title>{shown}</Alert.Title></Alert.Root>{/if}
+  {#if shown}<Alert.Root variant="destructive" layout="inline"
+      ><Icon name="error" /><Alert.Title>{shown}</Alert.Title></Alert.Root
+    >{/if}
   <span class="sr" aria-live="polite">{announcement}</span>
 </div>
 

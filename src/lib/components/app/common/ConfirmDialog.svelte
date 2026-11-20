@@ -68,7 +68,10 @@
     </AlertDialog.Header>
     <AlertDialog.Footer>
       <AlertDialog.Cancel bind:ref={cancel}>Cancel</AlertDialog.Cancel>
-      <AlertDialog.Action variant={tone === "danger" ? "destructive" : "default"} onclick={onConfirm}>
+      <AlertDialog.Action
+        variant={tone === "danger" ? "destructive" : "default"}
+        onclick={onConfirm}
+      >
         {confirmLabel}
       </AlertDialog.Action>
     </AlertDialog.Footer>

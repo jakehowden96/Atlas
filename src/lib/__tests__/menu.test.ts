@@ -60,7 +60,9 @@ describe("Menu", () => {
     expect(onselect).not.toHaveBeenCalled();
     expect(screen.getByRole("menuitem", { name: "Delete" }).dataset.variant).toBe("destructive");
     expect(screen.getByRole("menuitem", { name: /Open/ }).textContent).toContain("Enter");
-    expect(screen.getByRole("menuitem", { name: "Share" }).getAttribute("aria-haspopup")).toBe("menu");
+    expect(screen.getByRole("menuitem", { name: "Share" }).getAttribute("aria-haspopup")).toBe(
+      "menu",
+    );
   });
 });
 

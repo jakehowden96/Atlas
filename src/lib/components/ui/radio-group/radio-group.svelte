@@ -16,6 +16,9 @@
   bind:value
   {orientation}
   data-slot="radio-group"
-  class={cn("flex gap-3.5 data-[orientation=vertical]:flex-col data-[orientation=vertical]:gap-2", className)}
+  class={cn(
+    "flex gap-3.5 data-[orientation=vertical]:flex-col data-[orientation=vertical]:gap-2",
+    className,
+  )}
   {...restProps}
 />

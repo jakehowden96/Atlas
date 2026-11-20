@@ -36,17 +36,27 @@
     label?: string;
   }
 
-  let { options, value, onChange, size = "md", fill = false, role = "tablist", label }: Props = $props();
+  let {
+    options,
+    value,
+    onChange,
+    size = "md",
+    fill = false,
+    role = "tablist",
+    label,
+  }: Props = $props();
   const lg = $derived(size === "md");
 </script>
 
 {#snippet extras(o: Segment<string>)}
-  {#if o.dot}<span class="size-1.5 rounded-full bg-warning" aria-hidden="true"></span><span class="sr-only"
-      >needs attention</span
+  {#if o.dot}<span class="size-1.5 rounded-full bg-warning" aria-hidden="true"></span><span
+      class="sr-only">needs attention</span
     >{/if}
   {#if o.count !== undefined}
     {#if o.alert}
-      <Badge variant="warning" size="sm">{o.count}<span class="sr-only"> need attention</span></Badge>
+      <Badge variant="warning" size="sm"
+        >{o.count}<span class="sr-only"> need attention</span></Badge
+      >
     {:else}
       <span class="font-mono text-xs text-muted-foreground tabular-nums">{o.count}</span>
     {/if}
@@ -57,7 +67,11 @@
   <Tabs.Root {value} onValueChange={(v) => onChange(v as Id)} class={cn(fill && "w-full")}>
     <Tabs.List size={lg ? "lg" : "default"} aria-label={label} class={cn(fill && "w-full")}>
       {#each options as o (o.id)}
-        <Tabs.Trigger value={o.id} disabled={o.disabled} class={cn(fill && "flex-1 justify-center")}>
+        <Tabs.Trigger
+          value={o.id}
+          disabled={o.disabled}
+          class={cn(fill && "flex-1 justify-center")}
+        >
           {o.label}{@render extras(o)}
         </Tabs.Trigger>
       {/each}

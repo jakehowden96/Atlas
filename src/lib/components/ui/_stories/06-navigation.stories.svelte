@@ -8,7 +8,10 @@
   import { Badge } from "../badge/index.js";
   import Icon from "../icon/icon.svelte";
 
-  const { Story } = defineMeta({ title: "UI/Tabs, Toggle group, Item, Separator", tags: ["autodocs"] });
+  const { Story } = defineMeta({
+    title: "UI/Tabs, Toggle group, Item, Separator",
+    tags: ["autodocs"],
+  });
 
   const files = [
     { name: "ActivityRail.svelte", path: "src/lib/components/app/session", selected: false },
@@ -40,7 +43,11 @@
         <Tabs.Trigger value="c">ActivityRail.svelte</Tabs.Trigger>
       </Tabs.List>
     </Tabs.Root>
-    <Tabs.Root value="connectors" orientation="vertical" class="max-w-[220px] rounded-lg bg-sidebar p-2">
+    <Tabs.Root
+      value="connectors"
+      orientation="vertical"
+      class="max-w-[220px] rounded-lg bg-sidebar p-2"
+    >
       <Tabs.List>
         <Tabs.Trigger value="general">General</Tabs.Trigger>
         <Tabs.Trigger value="workspaces">Workspaces</Tabs.Trigger>
@@ -79,8 +86,12 @@
           <Item.Media><Icon name="description" /></Item.Media>
           <Item.Content><Item.Title>{f.name}</Item.Title></Item.Content>
           <Item.Actions reveal>
-            <Button variant="ghost" size="icon-xs" aria-label="Copy path"><Icon name="content_copy" /></Button>
-            <Button variant="ghost" size="icon-xs" aria-label="More"><Icon name="more_horiz" /></Button>
+            <Button variant="ghost" size="icon-xs" aria-label="Copy path"
+              ><Icon name="content_copy" /></Button
+            >
+            <Button variant="ghost" size="icon-xs" aria-label="More"
+              ><Icon name="more_horiz" /></Button
+            >
           </Item.Actions>
         </Item.Root>
       {/each}
@@ -96,7 +107,10 @@
           <Item.Title>GitHub</Item.Title>
           <Item.Description>Linked as jakehowden · 4 repositories watched</Item.Description>
         </Item.Content>
-        <Item.Actions><Badge variant="success">Linked</Badge><Button size="sm" variant="outline">Manage</Button></Item.Actions>
+        <Item.Actions
+          ><Badge variant="success">Linked</Badge><Button size="sm" variant="outline">Manage</Button
+          ></Item.Actions
+        >
       </Item.Root>
       <Item.Root variant="outline">
         <Item.Media><Icon name="confirmation_number" size={18} /></Item.Media>

@@ -65,7 +65,13 @@
     <Button size="sm" variant="ghost" onclick={clearLog}>Clear</Button>
   </header>
   {#if items.length === 0}
-    <div class="empty"><Empty.Root size="compact"><Empty.Media><Icon name="notifications" /></Empty.Media><Empty.Title>No notifications</Empty.Title></Empty.Root></div>
+    <div class="empty">
+      <Empty.Root size="compact"
+        ><Empty.Media><Icon name="notifications" /></Empty.Media><Empty.Title
+          >No notifications</Empty.Title
+        ></Empty.Root
+      >
+    </div>
   {:else}
     <ul role="list">
       {#each items as e (e.id)}

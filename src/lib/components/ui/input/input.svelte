@@ -44,7 +44,15 @@
 </script>
 
 {#if type === "file"}
-  <input bind:this={ref} data-slot={dataSlot} class={cls} type="file" bind:files bind:value {...restProps} />
+  <input
+    bind:this={ref}
+    data-slot={dataSlot}
+    class={cls}
+    type="file"
+    bind:files
+    bind:value
+    {...restProps}
+  />
 {:else}
   <input bind:this={ref} data-slot={dataSlot} class={cls} {type} bind:value {...restProps} />
 {/if}
