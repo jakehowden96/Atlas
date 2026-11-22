@@ -18,18 +18,18 @@ vi.mock("../session-actions", () => ({
   openSession: vi.fn(),
   handleTerminalExit: vi.fn(),
 }));
-vi.mock("../components/terminal/TerminalContainer.svelte", async () => ({
+vi.mock("../components/app/terminal/TerminalContainer.svelte", async () => ({
   default: (await import("./HarnessFixture.svelte")).default,
 }));
-vi.mock("../components/session/ActivityRail.svelte", async () => ({
+vi.mock("../components/app/session/ActivityRail.svelte", async () => ({
   default: (await import("./HarnessFixture.svelte")).default,
 }));
-vi.mock("../components/changes/ChangesDrawer.svelte", async () => ({
+vi.mock("../components/app/changes/ChangesDrawer.svelte", async () => ({
   default: (await import("./HarnessFixture.svelte")).default,
 }));
 
-import SessionView from "../components/session/SessionView.svelte";
-import TerminalTab from "../components/terminal/TerminalTab.svelte";
+import SessionView from "../components/app/session/SessionView.svelte";
+import TerminalTab from "../components/app/terminal/TerminalTab.svelte";
 import { liveTiles } from "../stores/liveTiles";
 import { activeTabId } from "../stores/terminal";
 import { focusedSessionId } from "../stores/view";
@@ -70,7 +70,8 @@ describe("session view header", () => {
     focusedSessionId.set("s1");
     const user = userEvent.setup();
     render(SessionView);
-    await user.click(screen.getByRole("button", { name: /Other sessions/ }));
+    screen.getByRole("button", { name: /Other sessions/ }).focus();
+    await user.keyboard("{Enter}");
     const rows = screen.getAllByRole("menuitem");
     expect(rows.map((r) => r.textContent)).toEqual([
       expect.stringContaining("Session 2 · needs input"),

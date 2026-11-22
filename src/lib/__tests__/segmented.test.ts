@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import SegmentedControl, { type Segment } from "../components/ui/SegmentedControl.svelte";
+import SegmentedControl, { type Segment } from "../components/app/common/Segmented.svelte";
 
 const options: Segment[] = [
   { id: "a", label: "One" },

@@ -12,6 +12,7 @@ import { connectorListPullRequests, listWorkspaceRepos } from "../ipc";
 import { IpcError } from "../ipc-error";
 import { connectors } from "../stores/connectors";
 import {
+  allPrs,
   isMine,
   matchesFilter,
   prsForTicket,
@@ -485,6 +486,22 @@ describe("pr refresh", () => {
     expect(all[0]?.prs[0]?.title).toBe("fresh");
     expect(all[1]?.prs).toHaveLength(1);
     expect(listPrs).toHaveBeenCalledWith("github", [{ slug: "owner/repo" }]);
+  });
+
+  it("keeps a rail-only repo through a full refresh, out of the watched list", async () => {
+    watchedRepos.set(["owner/repo"]);
+    prRepos.set([]);
+    listPrs.mockResolvedValue([neutral({ title: "rail" })]);
+    await refreshPrsForBranch("other/repo", "feat/x");
+    listPrs.mockResolvedValue([neutral({ title: "watched" })]);
+    await refreshPrs();
+
+    const all = get(prRepos) ?? [];
+    expect(all.map((r) => [r.repo, !!r.railOnly])).toEqual([
+      ["owner/repo", false],
+      ["other/repo", true],
+    ]);
+    expect(get(allPrs).map((p) => p.title)).toEqual(["watched"]);
   });
 
   it("does not stack rail refreshes for the same repo", async () => {

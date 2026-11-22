@@ -8,7 +8,7 @@ vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ writeText: (t: string) 
 vi.mock("../logger", () => ({ log: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 
 import { copyText } from "../ui/copy";
-import CopyButton from "../components/ui/CopyButton.svelte";
+import CopyButton from "../components/app/common/CopyButton.svelte";
 
 beforeEach(() => {
   writeText.mockReset();

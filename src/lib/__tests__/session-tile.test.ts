@@ -19,7 +19,7 @@ vi.mock("../stores/terminal", async (importOriginal) => ({
   canAnswerPermission: () => true,
 }));
 
-import SessionTile from "../components/sessions/SessionTile.svelte";
+import SessionTile from "../components/app/sessions/SessionTile.svelte";
 import type { SessionTile as Tile } from "../overview";
 import { tickets } from "../stores/tickets";
 import { focusedSessionId } from "../stores/view";

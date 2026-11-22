@@ -6,7 +6,10 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["src/**", "!src/types/generated"]
+    "includes": [
+      "src/**",
+      "!src/types/generated"
+    ]
   },
   "formatter": {
     "enabled": false
@@ -23,7 +26,9 @@
   },
   "overrides": [
     {
-      "includes": ["**/*.svelte"],
+      "includes": [
+        "**/*.svelte"
+      ],
       "linter": {
         "rules": {
           "style": {
@@ -36,6 +41,23 @@
           }
         }
       }
+    },
+    {
+      "includes": [
+        "src/lib/components/ui/**"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noShadowRestrictedNames": "off"
+          }
+        }
+      }
     }
-  ]
+  ],
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  }
 }

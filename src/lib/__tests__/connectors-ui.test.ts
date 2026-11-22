@@ -18,7 +18,7 @@ vi.mock("../ipc", () => ({
 vi.mock("../logger", () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
 import { connectorConnect, connectorDisconnect, connectorLinkCli } from "../ipc";
-import Connectors from "../components/settings/sections/Connectors.svelte";
+import Connectors from "../components/app/settings/sections/Connectors.svelte";
 import { connect, connectors, signIn } from "../stores/connectors";
 import type { AuthMethod } from "../../types/generated/AuthMethod";
 import type { ConnectorState } from "../../types/generated/ConnectorState";

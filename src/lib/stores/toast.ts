@@ -1,9 +1,13 @@
-import { derived, get, writable } from "svelte/store";
+import { get, writable } from "svelte/store";
+import { toast as sonner } from "svelte-sonner";
 
 /**
  * Two-line toasts: a title over an optional body. Callers holding only one
  * string pass it as the title. An `action` adds a button before the close
  * control (the workspace-removal Undo).
+ *
+ * svelte-sonner draws them and owns their clocks (hover and focus pause them);
+ * this store keeps what is on screen and the Notifications log.
  */
 export interface Toast {
   id: string;
@@ -27,35 +31,16 @@ export interface NotificationEntry {
  *  their body is often the only place the detail appears. */
 const TOAST_DURATION_MS = 5000;
 const TOAST_LONG_DURATION_MS = 8000;
-/** Only this many show at once; the rest collapse into a "+n" line. */
+/** Only this many show at once; Sonner stacks the rest behind them. */
 export const MAX_VISIBLE_TOASTS = 3;
 const MAX_LOG = 50;
 
-function durationFor(type: Toast["type"], hasAction: boolean): number | null {
-  if (type === "error") return null;
+export function durationFor(type: Toast["type"], hasAction: boolean): number {
+  if (type === "error") return Number.POSITIVE_INFINITY;
   return type === "warning" || hasAction ? TOAST_LONG_DURATION_MS : TOAST_DURATION_MS;
 }
 
-interface Timer {
-  handle?: ReturnType<typeof setTimeout>;
-  remaining: number;
-  startedAt: number;
-}
-const timers = new Map<string, Timer>();
-
-function startTimer(id: string, ms: number) {
-  const t: Timer = { remaining: ms, startedAt: Date.now() };
-  t.handle = setTimeout(() => dismissToast(id), ms);
-  timers.set(id, t);
-}
-
 export const toasts = writable<Toast[]>([]);
-
-/** The newest few, plus how many older ones are folded away. */
-export const visibleToasts = derived(toasts, ($t) => ({
-  shown: $t.slice(-MAX_VISIBLE_TOASTS),
-  hidden: Math.max(0, $t.length - MAX_VISIBLE_TOASTS),
-}));
 
 export const notificationLog = writable<NotificationEntry[]>([]);
 
@@ -67,52 +52,52 @@ export function clearLog() {
   notificationLog.set([]);
 }
 
+/** Sonner closed it (timer, swipe or close button): drop it from the store. */
+function forget(id: string) {
+  toasts.update((t) => t.filter((toast) => toast.id !== id));
+}
+
+function render(t: Toast) {
+  sonner[t.type](t.title, {
+    id: t.id,
+    description: t.body,
+    duration: durationFor(t.type, !!t.action),
+    action: t.action ? { label: t.action.label, onClick: () => runToastAction(t.id) } : undefined,
+    onDismiss: () => forget(t.id),
+    onAutoClose: () => forget(t.id),
+  });
+}
+
 export function showToast(
   title: string,
   opts: { body?: string; type?: Toast["type"]; action?: Toast["action"] } = {},
 ) {
   const type = opts.type ?? "error";
-  const duration = durationFor(type, !!opts.action);
 
-  // The same message again while it is still up is one toast, not two: its
-  // clock restarts and nothing stacks.
+  // The same message again while it is still up is one toast, not two:
+  // re-sending it under the same id restarts its clock and nothing stacks.
   const repeat = get(toasts).find(
     (t) =>
       t.title === title && t.body === opts.body && t.type === type && !t.action && !opts.action,
   );
   if (repeat) {
-    clearTimeout(timers.get(repeat.id)?.handle);
-    if (duration !== null) startTimer(repeat.id, duration);
+    render(repeat);
     return;
   }
 
-  const id = crypto.randomUUID();
-  toasts.update((t) => [...t, { id, title, body: opts.body, type, action: opts.action }]);
+  const t: Toast = { id: crypto.randomUUID(), title, body: opts.body, type, action: opts.action };
+  toasts.update((list) => [...list, t]);
   notificationLog.update((l) =>
-    [...l, { id, title, body: opts.body, type, time: Date.now(), read: false }].slice(-MAX_LOG),
+    [...l, { id: t.id, title, body: opts.body, type, time: Date.now(), read: false }].slice(
+      -MAX_LOG,
+    ),
   );
-  if (duration !== null) startTimer(id, duration);
-}
-
-/** Hold a toast's clock while the pointer or focus is on it. */
-export function pauseToast(id: string) {
-  const t = timers.get(id);
-  if (!t?.handle) return;
-  clearTimeout(t.handle);
-  t.handle = undefined;
-  t.remaining = Math.max(0, t.remaining - (Date.now() - t.startedAt));
-}
-
-export function resumeToast(id: string) {
-  const t = timers.get(id);
-  if (!t || t.handle) return;
-  startTimer(id, t.remaining);
+  render(t);
 }
 
 /**
- * Run a toast's action and take it off screen. Dismissing first routes the
- * timer cleanup through `dismissToast` rather than repeating it here, and
- * leaves nothing behind if the callback throws.
+ * Run a toast's action and take it off screen. Dismissing first leaves
+ * nothing behind if the callback throws.
  */
 export function runToastAction(id: string) {
   const action = get(toasts).find((t) => t.id === id)?.action;
@@ -121,7 +106,6 @@ export function runToastAction(id: string) {
 }
 
 export function dismissToast(id: string) {
-  clearTimeout(timers.get(id)?.handle);
-  timers.delete(id);
-  toasts.update((t) => t.filter((toast) => toast.id !== id));
+  forget(id);
+  sonner.dismiss(id);
 }

@@ -193,9 +193,9 @@ describe("effectiveTheme / windowBackground", () => {
     }
   });
 
-  it("mirrors --bg", () => {
-    expect(windowBackground.light).toBe(LIGHT["--bg"]);
-    expect(windowBackground.dark).toBe(DARK_EXPLICIT["--bg"]);
+  it("mirrors --background", () => {
+    expect(windowBackground.light).toBe(LIGHT["--background"]);
+    expect(windowBackground.dark).toBe(DARK_EXPLICIT["--background"]);
   });
 });
 
@@ -271,8 +271,8 @@ describe("themeMode / applyTheme", () => {
 // real token blocks rather than a copy that could drift from them.
 import APP_CSS from "../../app.css?raw";
 
-/** Where the header comment stops naming selectors and the real ones begin. */
-const AFTER_HEADER = APP_CSS.indexOf("*/") + 2;
+/** Where the token blocks begin: after the header comment and the `dark` custom variant, whose selectors repeat the ones below. */
+const AFTER_HEADER = APP_CSS.indexOf("\n:root {");
 
 /** The `--token: value` pairs inside the block that `selector` opens. */
 function tokenBlock(selector: string): Record<string, string> {
@@ -292,24 +292,24 @@ function tokenBlock(selector: string): Record<string, string> {
   return out;
 }
 
-const LIGHT = tokenBlock(":root");
+const LIGHT = tokenBlock(":root {");
 const DARK_EXPLICIT = tokenBlock('[data-theme="dark"]');
-const DARK_MEDIA = tokenBlock(':root:not([data-theme="light"])');
+const DARK_MEDIA = tokenBlock('  :root:not([data-theme="light"])');
 
 /** Every ink token, against the surfaces it is actually rendered on. */
 const ON: Record<string, string[]> = {
-  "--text": ["--bg", "--surface", "--surface2", "--surface3"],
-  "--muted": ["--bg", "--surface", "--surface2", "--surface3"],
-  "--accent": ["--bg", "--surface", "--surface2", "--surface3"],
-  "--danger": ["--bg", "--surface", "--surface2", "--surface3"],
-  "--warn": ["--bg", "--surface", "--surface2", "--surface3"],
+  "--foreground": ["--background", "--card", "--muted", "--accent"],
+  "--muted-foreground": ["--background", "--card", "--muted", "--accent"],
+  "--success": ["--background", "--card", "--muted", "--accent"],
+  "--destructive": ["--background", "--card", "--muted", "--accent"],
+  "--warning": ["--background", "--card", "--muted", "--accent"],
   "--term-text": ["--term-bg", "--term-tint-user", "--term-tint-tool"],
   "--t-user": ["--term-bg"],
   "--t-step": ["--term-bg"],
   "--t-tool": ["--term-bg"],
   "--t-warn": ["--term-bg"],
-  "--accent-ink": ["--accent"],
-  "--ink-text": ["--ink"],
+  "--success-foreground": ["--success"],
+  "--primary-foreground": ["--primary"],
 };
 
 describe("app.css token blocks", () => {
@@ -329,19 +329,17 @@ describe("app.css token blocks", () => {
       "--sp-1",
       "--h-md",
       "--h-bar",
-      "--r-pill",
-      "--ring",
+      "--radius-full",
+      "--elev-0",
       "--elev-2",
-      "--focus",
+      "--ring",
       "--focus-width",
       "--focus-offset",
       "--z-popover",
       "--dur-base",
       "--ease-out",
       "--pulse",
-      "--hover-bg",
-      "--active-bg",
-      "--disabled-ink",
+      "--primary-hover",
     ]) {
       expect(LIGHT[t], t).toBeTruthy();
     }
@@ -375,7 +373,13 @@ describe("app.css token blocks", () => {
      amber and a red cannot reach 7:1 on a light surface without all three
      collapsing towards black, which costs them the only thing they are there
      for. They carry state that is also spelled out in words next to them. */
-  const BODY_INKS = new Set(["--text", "--muted", "--term-text", "--t-user", "--t-tool"]);
+  const BODY_INKS = new Set([
+    "--foreground",
+    "--muted-foreground",
+    "--term-text",
+    "--t-user",
+    "--t-tool",
+  ]);
   const floorFor = (ink: string) => (BODY_INKS.has(ink) ? 7 : 4.5);
 
   for (const [name, tokens] of [
@@ -423,29 +427,29 @@ describe("app.css token blocks", () => {
     expect(Math.abs(light - dark)).toBeLessThan(1.5);
   });
 
-  it("keeps --t-tool the muted role rather than a leftover", () => {
+  it("keeps --t-tool the muted-foreground role rather than a leftover", () => {
     // It had been left at the value --muted was raised off, which made the same
     // role two different colours depending on which pane it was in.
-    expect(LIGHT["--t-tool"]).toBe(LIGHT["--muted"]);
-    expect(DARK_EXPLICIT["--t-tool"]).toBe(DARK_EXPLICIT["--muted"]);
+    expect(LIGHT["--t-tool"]).toBe(LIGHT["--muted-foreground"]);
+    expect(DARK_EXPLICIT["--t-tool"]).toBe(DARK_EXPLICIT["--muted-foreground"]);
   });
 
-  it("mirrors --term-bg / --term-text / --accent into theme.ts", () => {
+  it("mirrors --term-bg / --term-text / --success into theme.ts", () => {
     expect(lightXtermTheme.background).toBe(LIGHT["--term-bg"]);
     expect(lightXtermTheme.foreground).toBe(LIGHT["--term-text"]);
-    expect(lightXtermTheme.cursor).toBe(LIGHT["--accent"]);
+    expect(lightXtermTheme.cursor).toBe(LIGHT["--success"]);
     expect(darkXtermTheme.background).toBe(DARK_EXPLICIT["--term-bg"]);
     expect(darkXtermTheme.foreground).toBe(DARK_EXPLICIT["--term-text"]);
-    expect(darkXtermTheme.cursor).toBe(DARK_EXPLICIT["--accent"]);
+    expect(darkXtermTheme.cursor).toBe(DARK_EXPLICIT["--success"]);
   });
 
   /* `black` is the ANSI *background* slot, and Claude Code fills the row behind
      your own messages with it. Light had it at near-black, which turned every
-     prompt into a black bar; pinning it to --surface3 in both themes is what
+     prompt into a black bar; pinning it to --accent in both themes is what
      makes an `ESC[40m` fill read as a raised surface rather than as ink. */
-  it("maps the ANSI black slot onto --surface3 in both themes", () => {
-    expect(lightXtermTheme.black).toBe(LIGHT["--surface3"]);
-    expect(darkXtermTheme.black).toBe(DARK_EXPLICIT["--surface3"]);
+  it("maps the ANSI black slot onto --accent in both themes", () => {
+    expect(lightXtermTheme.black).toBe(LIGHT["--accent"]);
+    expect(darkXtermTheme.black).toBe(DARK_EXPLICIT["--accent"]);
     for (const [name, palette, tokens] of [
       ["light", lightXtermTheme, LIGHT],
       ["dark", darkXtermTheme, DARK_EXPLICIT],

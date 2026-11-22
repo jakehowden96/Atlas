@@ -17,7 +17,7 @@ vi.mock("../ipc", () => ({
   }),
 }));
 
-import OpenDialog from "../components/files/OpenDialog.svelte";
+import OpenDialog from "../components/app/files/OpenDialog.svelte";
 import { openDialogOpen } from "../stores/view";
 
 afterEach(() => {

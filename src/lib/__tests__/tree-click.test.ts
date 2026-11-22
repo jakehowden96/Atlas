@@ -2,7 +2,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
-import Tree, { type TreeItem } from "../components/ui/Tree.svelte";
+import Tree, { type TreeItem } from "../components/app/files/Tree.svelte";
 
 afterEach(cleanup);
 

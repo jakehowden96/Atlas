@@ -12,7 +12,7 @@ vi.mock("../session-actions", () => ({ workOnPr: vi.fn(async () => false) }));
 
 import { workOnPr } from "../session-actions";
 import { checkoutCommand, groupChecks, retryLabel, searchPrs, sortPrs, prStatus } from "../pr-view";
-import PrsView from "../components/prs/PrsView.svelte";
+import PrsView from "../components/app/prs/PrsView.svelte";
 import { connectors } from "../stores/connectors";
 import { prRepos, reposByWorkspace, type Pr } from "../stores/prs";
 import { watchedRepos } from "../stores/settings";

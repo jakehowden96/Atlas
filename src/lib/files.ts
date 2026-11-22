@@ -183,6 +183,17 @@ export function slugifyPath(path: string): string {
 }
 
 /**
+ * A plan's name without the slugified workspace path Claude Code starts it with,
+ * so `-users-me-code-app-quiet-fox.md` reads `quiet-fox.md` for that workspace.
+ */
+export function planLabel(name: string, workspacePath: string | null): string {
+  const slug = workspacePath ? slugifyPath(workspacePath) : "";
+  const stem = name.replace(/^-+/, "");
+  if (!slug || !stem.toLowerCase().startsWith(slug)) return name;
+  return stem.slice(slug.length).replace(/^-+/, "") || name;
+}
+
+/**
  * The workspace a plan belongs to, or null when none of them owns it.
  *
  * Plan stems are a slugified cwd plus a random suffix

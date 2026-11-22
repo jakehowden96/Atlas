@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 const run = vi.fn((args: string[]) => Promise.resolve(args.join(" ")));
 vi.mock("../ipc", () => ({ codeburnRun: (args: string[]) => run(args), codeburnInfo: vi.fn() }));
 
-const { prefetch } = await import("../components/stats/codeburn/prefetch");
+const { prefetch } = await import("../components/app/stats/codeburn/prefetch");
 const { codeburn } = await import("../stores/codeburn");
 
 describe("prefetch", () => {

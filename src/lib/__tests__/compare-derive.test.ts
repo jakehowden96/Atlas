@@ -6,7 +6,7 @@ import {
   shortKey,
   verdict,
   win,
-} from "../components/stats/codeburn/compare-derive";
+} from "../components/app/stats/codeburn/compare-derive";
 
 const row = (o: Partial<ModelCompareRow>): ModelCompareRow => ({
   model: "m",

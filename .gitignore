@@ -1,7 +1,5 @@
 node_modules/
 dist/
-dist-gallery/
-gallery-shots/
 target/
 src-tauri/gen/
 .DS_Store
@@ -14,3 +12,5 @@ coverage/
 .idea/
 *.log
 .design-sync/
+storybook-static/
+*storybook.log

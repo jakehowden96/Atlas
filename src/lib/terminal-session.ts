@@ -425,7 +425,7 @@ export class TerminalSession {
         if (want === "tool") {
           el.style.borderLeftWidth = "2px";
           el.style.borderLeftStyle = "solid";
-          el.style.borderLeftColor = "var(--border2)";
+          el.style.borderLeftColor = "var(--input)";
           // Sit the rule in the 6px left padding TerminalTab.svelte gives
           // `.xterm`, so it never overlaps column 0's glyph.
           el.style.marginLeft = "-3px";

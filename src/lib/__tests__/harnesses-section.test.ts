@@ -12,7 +12,7 @@ vi.mock("../ipc", () => ({
 }));
 vi.mock("../logger", () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
-import Harnesses from "../components/settings/sections/Harnesses.svelte";
+import Harnesses from "../components/app/settings/sections/Harnesses.svelte";
 import { DEFAULT_HARNESSES, harnesses } from "../stores/settings";
 import { toasts } from "../stores/toast";
 

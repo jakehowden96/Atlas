@@ -2,14 +2,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/svelte";
 import { get } from "svelte/store";
-import status from "../components/stats/codeburn/__fixtures__/status.json";
-import sessions from "../components/stats/codeburn/__fixtures__/sessions.json";
+import status from "../components/app/stats/codeburn/__fixtures__/status.json";
+import sessions from "../components/app/stats/codeburn/__fixtures__/sessions.json";
 import { costTodayLine, fmtCost } from "../format-cost";
 
 const codeburn = vi.hoisted(() => vi.fn());
 vi.mock("../stores/codeburn", () => ({ codeburn }));
 vi.mock("../ipc", () => ({}));
-import MeterStrip from "../components/session/rail/MeterStrip.svelte";
+import MeterStrip from "../components/app/session/rail/MeterStrip.svelte";
 import { refreshCosts, sessionCosts, todayCost } from "../stores/cost";
 import type { LiveSession } from "../../types/generated/LiveSession";
 

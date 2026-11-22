@@ -1,7 +1,7 @@
 ﻿// @vitest-environment happy-dom
 import { cleanup, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vitest";
-import TopBar from "../components/shell/TopBar.svelte";
+import TopBar from "../components/app/shell/TopBar.svelte";
 import { statusParts, topBarTier } from "../topbar";
 
 const c = { running: 2, needsYou: 1, idle: 3, spend: 4.5 };

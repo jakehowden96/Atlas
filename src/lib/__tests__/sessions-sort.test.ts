@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionRow } from "../../types/codeburn-sessions";
-import { sortSessions, topCategory } from "../components/stats/codeburn/sessions-sort";
+import { sortSessions, topCategory } from "../components/app/stats/codeburn/sessions-sort";
 
 const row = (o: Partial<SessionRow>) => ({ title: "", cost: 0, ...o }) as SessionRow;
 

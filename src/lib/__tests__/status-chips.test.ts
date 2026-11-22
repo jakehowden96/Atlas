@@ -9,7 +9,7 @@ vi.mock("../updater", async () => {
   return { updateState: writable({ kind: "notConfigured" }), installUpdate: vi.fn() };
 });
 
-import StatusChips, { statusChipCount } from "../components/shell/StatusChips.svelte";
+import StatusChips, { statusChipCount } from "../components/app/shell/StatusChips.svelte";
 import { connectors, offlineSince } from "../stores/connectors";
 import { prRepos, refreshPrs } from "../stores/prs";
 import { notificationLog } from "../stores/toast";

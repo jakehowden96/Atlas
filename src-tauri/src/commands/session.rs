@@ -166,14 +166,15 @@ fn refresh_path() {
 const LOGIN_SHELL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// PATH as the user's login shell sets it, which is what their terminal sees.
-/// A GUI launch never runs the rc files that set it.
+/// A GUI launch never runs the rc files that set it. Interactive too (`-i`):
+/// zsh only reads ~/.zshrc, where nvm, fnm and pnpm add themselves, then.
 #[cfg(unix)]
 fn login_shell_path() -> Option<OsString> {
     use std::io::Read;
     use std::process::Stdio;
     let shell = std::env::var_os("SHELL").unwrap_or_else(|| "/bin/sh".into());
     let mut child = Command::new(shell)
-        .args(["-lc", "printf '\n%s' \"$PATH\""])
+        .args(["-ilc", "printf '\n%s' \"$PATH\""])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

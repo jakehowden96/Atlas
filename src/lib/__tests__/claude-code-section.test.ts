@@ -17,7 +17,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
 import { open } from "@tauri-apps/plugin-dialog";
 import { claudeCheck, claudeInfo, setClaudeHook } from "../ipc";
-import ClaudeCode from "../components/settings/sections/ClaudeCode.svelte";
+import ClaudeCode from "../components/app/settings/sections/ClaudeCode.svelte";
 import { claudeBinaryPath, settingsOpen } from "../stores/settings";
 import type { ClaudeInfo } from "../../types/generated/ClaudeInfo";
 

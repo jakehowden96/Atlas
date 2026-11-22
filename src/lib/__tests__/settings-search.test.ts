@@ -25,8 +25,8 @@ vi.mock("@tauri-apps/api/app", () => ({ getVersion: vi.fn().mockResolvedValue("1
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
 import { SETTINGS_INDEX, searchSettings } from "../settings-search";
-import About from "../components/settings/sections/About.svelte";
-import SettingsModal from "../components/settings/SettingsModal.svelte";
+import About from "../components/app/settings/sections/About.svelte";
+import SettingsDialog from "../components/app/settings/SettingsDialog.svelte";
 import { settingsOpen } from "../stores/settings";
 
 afterEach(cleanup);
@@ -51,7 +51,7 @@ describe("searchSettings", () => {
 
 describe("index completeness", () => {
   it("lists every row title found in the section components", () => {
-    const files = import.meta.glob("../components/settings/sections/*.svelte", {
+    const files = import.meta.glob("../components/app/settings/sections/*.svelte", {
       query: "?raw",
       import: "default",
       eager: true,
@@ -92,11 +92,11 @@ describe("About updates", () => {
   });
 });
 
-describe("SettingsModal", () => {
+describe("SettingsDialog", () => {
   beforeEach(() => settingsOpen.set(true));
 
   it("groups the nav and switches sections by arrow key", async () => {
-    render(SettingsModal);
+    render(SettingsDialog);
     expect(screen.getByText("Work")).toBeTruthy();
     expect(screen.getByText("App")).toBeTruthy();
     const general = await screen.findByRole("tab", { name: "General" });
@@ -108,7 +108,7 @@ describe("SettingsModal", () => {
   });
 
   it("jumps from a search result to its section", async () => {
-    render(SettingsModal);
+    render(SettingsDialog);
     const box = await screen.findByLabelText("Search settings");
     await fireEvent.input(box, { target: { value: "check automatically" } });
     await fireEvent.click(await screen.findByText("Check automatically"));

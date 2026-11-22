@@ -29,36 +29,15 @@ describe("Menu", () => {
     expect(focused()).toContain("Open");
   });
 
-  it("moves with arrows (skipping disabled), Home, End and type-ahead", async () => {
-    const { user, button } = await setup();
-    await user.click(button);
-    await tick();
-    await user.keyboard("{ArrowDown}");
-    expect(focused()).toBe("Rename");
-    await user.keyboard("{ArrowDown}{ArrowDown}");
-    expect(focused()).toContain("Delete");
-    await user.keyboard("{ArrowDown}");
-    expect(focused()).toContain("Open");
-    await user.keyboard("{End}");
-    expect(focused()).toContain("Delete");
-    await user.keyboard("{Home}");
-    expect(focused()).toContain("Open");
-    await user.keyboard("d");
-    expect(focused()).toContain("Delete");
-  });
-
-  it("activates with Enter and Space and closes", async () => {
+  // Arrow roving, type-ahead and submenu keys are bits-ui's (shadcn DropdownMenu); these check our mapping.
+  it("selects a clicked item and closes", async () => {
     const { onselect, user, button } = await setup();
     await user.click(button);
     await tick();
-    await user.keyboard("{Enter}");
+    await user.click(screen.getByRole("menuitem", { name: "Rename" }));
     await tick();
-    expect(onselect).toHaveBeenCalledWith(expect.objectContaining({ id: "open" }));
+    expect(onselect).toHaveBeenCalledWith(expect.objectContaining({ id: "rename" }));
     expect(screen.queryByRole("menu")).toBeNull();
-    await user.click(button);
-    await tick();
-    await user.keyboard("{ArrowDown} ");
-    expect(onselect).toHaveBeenLastCalledWith(expect.objectContaining({ id: "rename" }));
   });
 
   it("closes on Esc and returns focus to the trigger", async () => {
@@ -71,7 +50,7 @@ describe("Menu", () => {
     expect(document.activeElement).toBe(button);
   });
 
-  it("marks disabled and danger rows and does not activate disabled", async () => {
+  it("marks disabled and danger rows, renders shortcuts and a submenu trigger", async () => {
     const { onselect, user, button } = await setup();
     await user.click(button);
     await tick();
@@ -79,28 +58,11 @@ describe("Menu", () => {
     expect(locked.getAttribute("aria-disabled")).toBe("true");
     await user.click(locked);
     expect(onselect).not.toHaveBeenCalled();
-    expect(screen.getByRole("menuitem", { name: "Delete" }).className).toContain("danger");
-  });
-
-  it("opens a submenu with Right, closes it with Left or Esc without closing the root", async () => {
-    const { onselect, user, button } = await setup();
-    await user.click(button);
-    await tick();
-    await user.keyboard("{ArrowDown}{ArrowDown}{ArrowRight}");
-    await tick();
-    expect(screen.getAllByRole("menu")).toHaveLength(2);
-    expect(focused()).toBe("Copy link");
-    await user.keyboard("{ArrowLeft}");
-    await tick();
-    expect(screen.getAllByRole("menu")).toHaveLength(1);
-    expect(focused()).toContain("Share");
-    await user.keyboard("{ArrowRight}{Escape}");
-    await tick();
-    expect(screen.getAllByRole("menu")).toHaveLength(1);
-    await user.keyboard("{ArrowRight}{ArrowDown}{Enter}");
-    await tick();
-    expect(onselect).toHaveBeenCalledWith(expect.objectContaining({ id: "mail" }));
-    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Delete" }).dataset.variant).toBe("destructive");
+    expect(screen.getByRole("menuitem", { name: /Open/ }).textContent).toContain("Enter");
+    expect(screen.getByRole("menuitem", { name: "Share" }).getAttribute("aria-haspopup")).toBe(
+      "menu",
+    );
   });
 });
 

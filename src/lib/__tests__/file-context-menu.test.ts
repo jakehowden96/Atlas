@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fileMenuItems } from "../components/files/FileContextMenu";
+import { fileMenuItems } from "../components/app/files/FileContextMenu";
 
 describe("fileMenuItems", () => {
   it("offers reveal for a row but not for the empty tree", () => {

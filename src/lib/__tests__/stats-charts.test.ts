@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vitest";
-import BarChart from "../components/stats/charts/BarChart.svelte";
-import ChartCard from "../components/stats/charts/ChartCard.svelte";
+import BarChart from "../components/app/stats/charts/BarChart.svelte";
+import ChartCard from "../components/app/stats/charts/ChartCard.svelte";
 import type { Point } from "../stats-chart";
 
 const pts: Point[] = [

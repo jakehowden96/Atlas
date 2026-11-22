@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import Overlays from "./lib/components/shell/Overlays.svelte";
-  import TopBar from "./lib/components/shell/TopBar.svelte";
-  import ViewHost from "./lib/components/shell/ViewHost.svelte";
+  import Overlays from "./lib/components/app/shell/Overlays.svelte";
+  import TopBar from "./lib/components/app/shell/TopBar.svelte";
+  import ViewHost from "./lib/components/app/shell/ViewHost.svelte";
   import { bootApp } from "./lib/app-boot";
   import { log } from "./lib/logger";
   import { shouldClearNeedsInput } from "./lib/overview";
@@ -67,6 +67,6 @@
     flex-direction: column;
     height: 100vh;
     width: 100vw;
-    background: var(--bg);
+    background: var(--background);
   }
 </style>

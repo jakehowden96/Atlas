@@ -54,18 +54,26 @@ Each `tauri-plugin-*` crate and its `@tauri-apps/plugin-*` npm package must shar
 Bump the three versions, update `CHANGELOG.md`, and push a tag `vX.Y.Z`. The release workflow builds
 the macOS (arm64 and x86_64) and Windows installers into a draft GitHub release.
 
-## Component tests and the gallery
+## Components, Storybook and tests
+
+UI is built from two folders. `src/lib/components/ui/` holds the shadcn-svelte base components
+(added with `pnpm dlx shadcn-svelte@latest add <name>`, then edited to Atlas density), themed only
+through the variables in `src/app.css`; nothing in it knows about sessions or connectors.
+`src/lib/components/app/` holds Atlas's own components, composed from `ui/`. `ui/` never imports
+from `app/`. Style with Tailwind utilities on those variables (`bg-card`, `text-muted-foreground`,
+`border-input`); never add a colour outside `src/app.css`, and give a `ui/` component a new variant
+rather than restyling it at the call site.
+
+`pnpm storybook` serves every `*.stories.svelte` at http://127.0.0.1:6006, with a light/dark
+switch in the toolbar. Add a story next to the component it shows.
 
 Component tests opt in to a DOM with `// @vitest-environment happy-dom` on the first line and use
 `@testing-library/svelte` (see `src/lib/__tests__/harness.test.ts`). Query by role and name, and
 drive the keyboard with `@testing-library/user-event`.
 
-`pnpm gallery` serves every `src/gallery/sections/*.svelte` at http://localhost:1430 in a plain
-browser, with theme, width and reduced-motion switches. Add a section by adding one file; no
-registry to edit. `node scripts/gallery-shots.mjs [--section <id>] [--width 1100]` writes light and
-dark PNGs to `gallery-shots/` using your installed Chrome. The gallery is not part of `pnpm build`.
-
 `src/lib/__tests__/design-lint.test.ts` fails the test run on hex or rgba literals and other
-off-token values in component styles; use the custom properties from `src/app.css`.
+off-token values in component styles; use the custom properties from `src/app.css`. It also
+fails on a loose `.svelte` file directly in `components/ui/`: each shadcn component gets its own
+folder, and anything Atlas-specific goes in `components/app/<area>/`.
 Connector setup is documented in [docs/connectors.md](docs/connectors.md) and
 [docs/manual-setup.md](docs/manual-setup.md).

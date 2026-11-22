@@ -8,7 +8,7 @@ vi.mock("../ipc", () => ({ refreshPanel: vi.fn(async () => null) }));
 vi.mock("../logger", () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock("../review/submitReview", () => ({ submitReview: vi.fn() }));
 
-import ChangesDrawer from "../components/changes/ChangesDrawer.svelte";
+import ChangesDrawer from "../components/app/changes/ChangesDrawer.svelte";
 import { panelData } from "../stores/panel";
 import { activeSessionComments, addComment, clearForSession } from "../stores/reviewComments";
 import { toasts } from "../stores/toast";
@@ -129,14 +129,14 @@ describe("discard", () => {
     render(ChangesDrawer, { open: true });
 
     await user.click(await screen.findByRole("button", { name: "Discard" }));
-    const dialog = await screen.findByRole("dialog", { name: "Discard 2 review comments?" });
+    const dialog = await screen.findByRole("alertdialog", { name: "Discard 2 review comments?" });
     expect(dialog.textContent).toContain("cannot be recovered");
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Discard/ })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: /Discard/ })).toBeNull());
     expect(get(activeSessionComments)).toHaveLength(2);
 
     await user.click(screen.getByRole("button", { name: "Discard" }));
-    const again = await screen.findByRole("dialog", { name: "Discard 2 review comments?" });
+    const again = await screen.findByRole("alertdialog", { name: "Discard 2 review comments?" });
     await user.click(within(again).getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(get(activeSessionComments)).toHaveLength(0));
 
@@ -148,7 +148,7 @@ describe("discard", () => {
 });
 
 describe("Esc order", () => {
-  it("closes the composer first and leaves the drawer to the window handler after", async () => {
+  it("closes the composer first and the drawer on the next Esc", async () => {
     const user = userEvent.setup();
     const onWindowKey = vi.fn();
     window.addEventListener("keydown", onWindowKey);
@@ -162,12 +162,11 @@ describe("Esc order", () => {
       expect(onWindowKey).not.toHaveBeenCalled();
       expect(get(diffOpen)).toBe(true);
 
-      // No composer: Esc bubbles to shortcuts.ts, and Modal does not act on it too.
+      // No composer: the Sheet takes Esc and closes, once.
       const toggle = await fileToggle();
       toggle.focus();
       await user.keyboard("{Escape}");
-      expect(onWindowKey).toHaveBeenCalledTimes(1);
-      expect(get(diffOpen)).toBe(true);
+      await waitFor(() => expect(get(diffOpen)).toBe(false));
     } finally {
       window.removeEventListener("keydown", onWindowKey);
     }

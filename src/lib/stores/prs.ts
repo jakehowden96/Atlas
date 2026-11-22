@@ -37,6 +37,8 @@ export interface PrRepoError {
 }
 
 export interface RepoPrs {
+  /** Fetched only for a session rail, not a watched repo: the Pull requests screen skips it. */
+  railOnly?: boolean;
   repo: string;
   prs: Pr[];
   error: PrRepoError | null;
@@ -58,7 +60,9 @@ export const prSetupProblem = derived([connectors, prRepos], ([$c, $repos]) =>
 export const prFilter = writable<PrFilter>("all");
 
 /** Every PR across every watched repo, flattened. */
-export const allPrs = derived(prRepos, ($repos) => ($repos ?? []).flatMap((r) => r.prs));
+export const allPrs = derived(prRepos, ($repos) =>
+  ($repos ?? []).filter((r) => !r.railOnly).flatMap((r) => r.prs),
+);
 
 export function isMine(pr: Pr, viewer: string | null): boolean {
   return viewer !== null && pr.author.login === viewer;
@@ -227,7 +231,7 @@ const LEGACY_REVIEW = {
   approved: "approved",
 } as const;
 
-function toPr(p: PullRequest, repo: string): Pr {
+export function toPr(p: PullRequest, repo: string): Pr {
   return {
     number: p.number,
     title: p.title,
@@ -287,7 +291,11 @@ export async function refreshPrs(): Promise<void> {
         )
       : [];
     if (mine !== latestRefresh) return;
-    prRepos.set(result);
+    // A rail's unwatched repo survives, or its PR tile would drop back to loading.
+    prRepos.update((all) => [
+      ...result,
+      ...(all ?? []).filter((r) => r.railOnly && !result.some((x) => x.repo === r.repo)),
+    ]);
     prsLastUpdated.set(Date.now());
     const failed = result.length > 0 && result.every((r) => r.error);
     if (result.some((r) => r.error?.kind === "connectorOffline")) reportFetch(false);
@@ -321,8 +329,8 @@ export async function refreshPrsForBranch(repo: string, _branch: string): Promis
     prRepos.update((all) => {
       const rest = all ?? [];
       return rest.some((r) => r.repo === repo)
-        ? rest.map((r) => (r.repo === repo ? fresh : r))
-        : [...rest, fresh];
+        ? rest.map((r) => (r.repo === repo ? { ...fresh, railOnly: r.railOnly } : r))
+        : [...rest, { ...fresh, railOnly: true }];
     });
   } finally {
     repoInFlight.delete(repo);
