@@ -130,7 +130,7 @@
 {/snippet}
 
 {#snippet staleLine()}
-  <span class="warn mono">couldn't refresh · {ago} · </span><button
+  <span class="warn mono">couldn't refresh · {ago}{" · "}</span><button
     type="button"
     class="link warn mono"
     onclick={retry}>Retry</button
@@ -153,7 +153,7 @@
       {@const p = prOpenHeadline(pr)}
       <span class="phrase {p.tone} strong">{p.text}</span>
     {:else}
-      {#each prHeadline(pr) as p, i (i)}{#if i > 0}<span class="muted">, </span>{/if}<span
+      {#each prHeadline(pr) as p, i (i)}{#if i > 0}<span class="muted">{", "}</span>{/if}<span
           class="phrase {p.tone}"
           class:strong={p.strong}>{p.text}</span
         >{/each}
@@ -186,7 +186,7 @@
       {#if stale}<div>{@render staleLine()}</div>{/if}
     {:else if entry?.error && !rateLimited}
       <div>
-        <span class="warn mono">couldn't load · </span><button
+        <span class="warn mono">{"couldn't load · "}</span><button
           type="button"
           class="link warn mono"
           onclick={retry}>Retry</button

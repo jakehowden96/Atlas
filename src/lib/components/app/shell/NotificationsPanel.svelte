@@ -80,7 +80,7 @@
           <div class="text">
             <div class="title">
               {#if !e.read}<span class="dot" role="img" aria-label="Unread"></span>{/if}
-              <span class="sr">{e.type}: </span>{e.title}
+              <span class="sr">{`${e.type}: `}</span>{e.title}
               <time>{relativeTime(e.time, now)}</time>
             </div>
             {#if e.body}

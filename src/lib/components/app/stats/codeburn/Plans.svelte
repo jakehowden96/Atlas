@@ -17,7 +17,7 @@
   let { filters, refresh }: { filters: Filters; refresh: number } = $props();
 
   const options = PLAN_PRESETS.map((id) => ({ id, label: id }));
-  let preset = $state<string | undefined>(undefined);
+  let preset = $state("");
   let saving = $state(false);
   let error = $state<string | null>(null);
   let saved = $state<string | null>(null);

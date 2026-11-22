@@ -9,7 +9,15 @@
    * file with no Markdown preview simply shows its source.
    */
   import { untrack } from "svelte";
-  import { absolutePath, editorTarget, parseFileKey, resolveWikilink } from "../../../files";
+  import {
+    absolutePath,
+    editorTarget,
+    parseFileKey,
+    planLabel,
+    planWorkspace,
+    resolveWikilink,
+  } from "../../../files";
+  import { visibleWorkspaces } from "../../../stores/workspace";
   import { basename, formatAgo } from "../../../format";
   import { openUrl } from "../../../ipc";
   import { renderMarkdown } from "../../../markdown";
@@ -67,7 +75,7 @@
   let tabItems = $derived(
     $openFiles.map((tab) => ({
       id: tab,
-      label: basename(parseFileKey(tab).path),
+      label: displayName(tab),
       dirty: $dirtyFiles.has(tab),
     })),
   );
@@ -91,7 +99,17 @@
 
   /** Long paths would push the toolbar's controls off; the tail is the part
    *  that identifies the file. */
-  let crumbs = $derived(file.path.split(/[\\/]/).filter(Boolean).slice(-3));
+  let crumbs = $derived(
+    file.path ? [...file.path.split(/[\\/]/).filter(Boolean).slice(-3, -1), displayName(key)] : [],
+  );
+
+  /** A plan reads by its own name, not the workspace slug its file name starts with. */
+  function displayName(k: string): string {
+    const f = parseFileKey(k);
+    const name = basename(f.path);
+    if (f.source !== "plans") return name;
+    return planLabel(name, planWorkspace({ path: f.path, name, modified: null }, $visibleWorkspaces));
+  }
 
   /** `src/lib/ipc.ts` → `TS`. Anything with no extension keeps the generic name. */
   let ext = $derived(/\.([a-z0-9]+)$/i.exec(file.path)?.[1]?.toLowerCase() ?? "");

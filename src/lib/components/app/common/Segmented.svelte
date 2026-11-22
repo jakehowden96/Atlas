@@ -55,7 +55,7 @@
   {#if o.count !== undefined}
     {#if o.alert}
       <Badge variant="warning" size="sm"
-        >{o.count}<span class="sr-only"> need attention</span></Badge
+        >{o.count}<span class="sr-only">{" need attention"}</span></Badge
       >
     {:else}
       <span class="font-mono text-xs text-muted-foreground tabular-nums">{o.count}</span>

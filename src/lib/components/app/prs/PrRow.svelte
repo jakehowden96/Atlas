@@ -64,13 +64,12 @@
     >
       <span class="chev" class:open={expanded}><Icon name="chevron_right" size={16} /></span>
     </button>
-    <StatusMark state={status.state} />
+    <span class="mark-slot"><StatusMark state={status.state} /></span>
     <div class="pr-body">
       <div class="pr-line">
         <span class="status">{status.word}</span>
         <span class="pr-title">{pr.title}</span>
         <span class="pr-number">#{pr.number}</span>
-        {#if pr.isDraft}<span class="draft">Draft</span>{/if}
       </div>
       <div class="pr-sub">{pr.headRefName} · opened {opened} · @{pr.author.login}</div>
     </div>
@@ -145,6 +144,14 @@
     transform: rotate(90deg);
   }
 
+  /* Marks differ in width; a fixed slot keeps every title on one left edge. */
+  .mark-slot {
+    display: grid;
+    flex-shrink: 0;
+    place-items: center;
+    width: 10px;
+  }
+
   .pr-body {
     display: flex;
     flex: 1;
@@ -179,15 +186,6 @@
     color: var(--muted-foreground);
     font-family: var(--font-mono);
     font-size: var(--text-caption);
-  }
-
-  .draft {
-    padding: 0 var(--sp-2);
-    border: 1px solid var(--input);
-    border-radius: var(--radius-full);
-    color: var(--muted-foreground);
-    font-size: var(--text-xs);
-    white-space: nowrap;
   }
 
   .pr-sub {

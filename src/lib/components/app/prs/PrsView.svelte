@@ -81,6 +81,7 @@
   // fetch keeps its card so the error stays visible on that repo alone.
   const cards = $derived(
     ($prRepos ?? [])
+      .filter((entry) => !entry.railOnly)
       .map((entry) => ({
         repo: entry.repo,
         error: entry.error,

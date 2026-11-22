@@ -289,11 +289,10 @@
       <StatusMark state="attention" />
       <span class="wants">
         Wants to run <span class="tool">{shortToolName(live.pendingTool.name)}</span
-        >{#if live.pendingTool.inputSummary}
-          · {live.pendingTool.inputSummary}{/if}
+        >{#if live.pendingTool.inputSummary}{` · ${live.pendingTool.inputSummary}`}{/if}
       </span>
-      <Button size="sm" variant="outline" onclick={deny}>Deny <Kbd>n</Kbd></Button>
-      <Button size="sm" variant="default" onclick={allow}>Allow <Kbd>y</Kbd></Button>
+      <Button size="sm" variant="outline" class="ask-deny" onclick={deny}>Deny <Kbd>n</Kbd></Button>
+      <Button size="sm" variant="default" class="ask-allow" onclick={allow}>Allow <Kbd>y</Kbd></Button>
     </div>
   {:else if question}
     <div class="ask">
@@ -611,6 +610,31 @@
     color: var(--card);
     font-size: var(--text-sm);
     font-weight: 600;
+  }
+
+  /* The mark is amber by default, which vanishes on the amber bar: draw it in the ink. */
+  .ask :global(.mark) {
+    background: currentColor;
+  }
+
+  /* On the amber bar the theme's button fills read backwards (design: Deny outlined in
+     the ink, Allow filled with it), so both take the bar's own colours. */
+  .ask :global(.ask-deny) {
+    border-color: currentColor;
+    background: transparent;
+    color: inherit;
+  }
+
+  .ask :global(.ask-allow) {
+    background: var(--card);
+    color: var(--foreground);
+  }
+
+  .ask :global(.ask-deny kbd),
+  .ask :global(.ask-allow kbd) {
+    border-color: color-mix(in oklab, currentColor 35%, transparent);
+    background: transparent;
+    color: currentColor;
   }
 
   .open-hint {

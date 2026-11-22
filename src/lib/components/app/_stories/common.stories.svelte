@@ -12,6 +12,14 @@
   import NumberStepper from "../common/NumberStepper.svelte";
   import StatusMark from "../common/StatusMark.svelte";
   import StatePill from "../common/StatePill.svelte";
+  import ConfirmDialog from "../common/ConfirmDialog.svelte";
+  import ContextMenuAt from "../common/ContextMenuAt.svelte";
+  import MenuItems from "../common/MenuItems.svelte";
+  import Mark from "../common/Mark.svelte";
+  import ConnectorLogo from "../connectors/ConnectorLogo.svelte";
+  import ConnectorLogoTile from "../connectors/ConnectorLogoTile.svelte";
+  import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js";
+  import type { MenuItem } from "../common/menu";
   import { Button } from "$lib/components/ui/button/index.js";
 
   const { Story } = defineMeta({ title: "App/Common", tags: ["autodocs"] });
@@ -45,6 +53,20 @@
     { id: "lock", label: "Locked", disabled: true },
     { id: "delete", label: "Delete", danger: true, separatorBefore: true },
   ];
+
+  const fileMenu: MenuItem[] = [
+    { id: "open", label: "Open", icon: "open_in_new", shortcut: "Enter" },
+    { id: "copy", label: "Copy path", icon: "content_copy" },
+    { id: "move", label: "Move to", children: [{ id: "atlas", label: "atlas" }, { id: "billing", label: "billing" }] },
+    { id: "rename", label: "Rename", disabled: true },
+    { id: "delete", label: "Delete", icon: "delete", danger: true, separatorBefore: true },
+  ];
+  /** ContextMenuAt opens at an element; a fixed point stands in for the right-clicked row. */
+  const anchor = typeof document === "undefined" ? (null as unknown as HTMLElement) : document.createElement("div");
+  if (anchor) {
+    anchor.style.cssText = "position: fixed; left: 40px; top: 40px; width: 1px; height: 1px";
+    document.body.append(anchor);
+  }
 </script>
 
 <script lang="ts">
@@ -163,5 +185,32 @@
       <span class="inline-flex items-center gap-1.5 text-sm"><StatusMark state={s} />{s}</span>
     {/each}
     {#each ["running", "needs", "idle", "error"] as const as s (s)}<StatePill state={s} />{/each}
+  </div>
+</Story>
+
+<Story name="Confirm dialog" parameters={{ layout: "fullscreen" }}>
+  {#snippet template()}
+    <ConfirmDialog open title="Disconnect GitHub?" body="Pull requests and checks stop updating in every session." confirmLabel="Disconnect" tone="danger" onConfirm={() => {}} onCancel={() => {}} />
+  {/snippet}
+</Story>
+
+<Story name="Context menu" parameters={{ layout: "fullscreen" }}>
+  {#snippet template()}<ContextMenuAt {anchor} items={fileMenu} onclose={() => {}} />{/snippet}
+</Story>
+
+<Story name="Menu items">
+  {#snippet template()}
+    <DropdownMenu.Root open>
+      <DropdownMenu.Trigger>Menu</DropdownMenu.Trigger>
+      <DropdownMenu.Content><MenuItems items={fileMenu} /></DropdownMenu.Content>
+    </DropdownMenu.Root>
+  {/snippet}
+</Story>
+
+<Story name="Mark and logos" asChild>
+  <div class="flex items-center gap-4">
+    <Mark size={20} /><Mark size={40} label="Atlas" />
+    {#each ["github", "linear", "jira", "gitlab"] as c (c)}<ConnectorLogo connector={c} size={24} />{/each}
+    {#each ["github", "linear"] as c (c)}<ConnectorLogoTile connector={c} />{/each}
   </div>
 </Story>

@@ -134,7 +134,7 @@
           <span class="ws-name">{tile.workspaceName}</span>
         </span>
         <span class="subtitle">
-          {#if tile.branch}<span class="branch">{tile.branch} · </span>{/if}{elapsed}
+          {#if tile.branch}<span class="branch">{tile.branch}{" · "}</span>{/if}{elapsed}
         </span>
       {:else}
         <span class="label empty-label">No session selected</span>

@@ -10,7 +10,7 @@
     hasUnsavedUnder,
     parseFileKey,
     planWorkspace,
-    slugifyPath,
+    planLabel,
     type FileSource,
     type TreeNode,
   } from "../../../files";
@@ -58,7 +58,6 @@
   import Icon from "../../ui/icon/icon.svelte";
   import TooltipButton from "$lib/components/app/common/TooltipButton.svelte";
   import * as Alert from "$lib/components/ui/alert/index.js";
-  import { Kbd } from "$lib/components/ui/kbd/index.js";
   import SearchInput from "../common/SearchInput.svelte";
   import OptionSelect from "$lib/components/app/common/OptionSelect.svelte";
   import Tree, { type TreeItem } from "./Tree.svelte";
@@ -75,7 +74,7 @@
   let myPlans = $derived(
     $plans
       .filter((p) => planWorkspace(p, $visibleWorkspaces) === $fileWs)
-      .filter((p) => !searching || matches(planLabel(p.name))),
+      .filter((p) => !searching || matches(planLabel(p.name, $fileWs))),
   );
 
   // `hasUnsavedUnder` compares rel paths, so the dirty keys are narrowed to the
@@ -88,16 +87,6 @@
         .map((f) => f.path),
     ),
   );
-
-  // Show the plan's random suffix rather than the slugified cwd it starts with;
-  // the whole section is already scoped to one workspace. The leading `-` a
-  // posix cwd slugifies to is dropped first, as `planWorkspace` does.
-  function planLabel(name: string): string {
-    const slug = slugifyPath($fileWs);
-    const stem = name.replace(/^-+/, "");
-    if (!slug || !stem.toLowerCase().startsWith(slug)) return name;
-    return stem.slice(slug.length).replace(/^-+/, "") || name;
-  }
 
   // Disk files opened one at a time, listed under the registered folders so a
   // file picked from Open… does not vanish from the tree the moment it is
@@ -218,7 +207,7 @@
   let planItems = $derived(
     leaves(
       "plans",
-      myPlans.map((p) => ({ id: p.path, label: planLabel(p.name) })),
+      myPlans.map((p) => ({ id: p.path, label: planLabel(p.name, $fileWs) })),
     ).map((item) => ({ ...item, kind: "md" as const })),
   );
   let looseItems = $derived(
@@ -452,10 +441,10 @@
     <div class="search">
       <SearchInput placeholder="Search files" aria-label="Search files" bind:value={query} />
     </div>
-    <Button variant="ghost" size="sm" onclick={() => openDialogOpen.set(true)}>
-      Open…
-      <Kbd>{$chords.openFile}</Kbd>
-    </Button>
+    <!-- The chord lives in the tooltip: inline, it squeezed the search field to a stub. -->
+    <span use:tooltip={{ text: "Open a file", shortcut: $chords.openFile }}>
+      <Button variant="ghost" size="sm" onclick={() => openDialogOpen.set(true)}>Open…</Button>
+    </span>
   </div>
 
   {#snippet editor(item: TreeItem)}
